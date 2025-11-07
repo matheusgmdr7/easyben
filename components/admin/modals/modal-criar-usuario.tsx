@@ -92,7 +92,7 @@ export default function ModalCriarUsuario({
 
   return (
     <>
-      <div className="fixed inset-0 z-[95] bg-black/60 backdrop-blur-md" />
+      <div className="fixed inset-0 z-40 bg-black/60 backdrop-blur-md" />
       <div className="fixed inset-0 flex items-center justify-center z-[100] p-4">
         <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col">
           {/* Header */}
