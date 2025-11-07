@@ -774,6 +774,11 @@ export default function NovaPropostaPage() {
 
       await updateLoadingProgress("Preparando dados da proposta...", 10)
 
+      const limitarTamanho = (valor: string | null | undefined, limite: number) =>
+        valor ? valor.trim().slice(0, limite) : ""
+
+      const siglaPlanoLimitada = limitarTamanho(data.sigla_plano, 20)
+
       // Dados da proposta para a tabela UNIFICADA
       const dadosProposta = {
         // Campos originais da tabela propostas
@@ -794,7 +799,7 @@ export default function NovaPropostaPage() {
         nome_mae: data.nome_mae,
         sexo: data.sexo,
         orgao_emissor: data.orgao_emissor,
-        sigla_plano: data.sigla_plano,
+        sigla_plano: siglaPlanoLimitada,
         cobertura: data.cobertura, // Adicionar campo cobertura
         acomodacao: data.acomodacao, // Adicionar campo acomodacao
         valor_mensal: Number(valorNumerico.toFixed(2)),
@@ -816,8 +821,8 @@ export default function NovaPropostaPage() {
         nome_mae_cliente: data.nome_mae,
         estado_civil: data.estado_civil,
         // Novos campos para exibição correta na etapa 3
-        produto_nome: produtoSelecionadoInterno?.nome || "",
-        produto_descricao: produtoSelecionadoInterno?.descricao || "",
+        produto_nome: (produtoSelecionadoInterno?.nome || data.sigla_plano || "").slice(0, 255),
+        produto_descricao: (produtoSelecionadoInterno?.descricao || "").slice(0, 255),
         // Dependentes (garantir campos extras)
         dependentes: (data.dependentes || []).map((dep) => ({
           ...dep,
@@ -1864,11 +1869,17 @@ export default function NovaPropostaPage() {
                       name="sigla_plano"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Nome do Produto</FormLabel>
+                          <FormLabel>Código do Plano (máx. 20 caracteres)</FormLabel>
                           <FormControl>
-                            <Input placeholder="Ex: Plano Saúde Premium" {...field} />
+                            <Input
+                              placeholder="Ex: PLANO-PREMIUM"
+                              maxLength={20}
+                              {...field}
+                            />
                           </FormControl>
-                          <FormDescription>Nome ou código do produto escolhido</FormDescription>
+                          <FormDescription>
+                            Informe um identificador curto. O nome completo do produto é salvo automaticamente.
+                          </FormDescription>
                           <FormMessage />
                         </FormItem>
                       )}
