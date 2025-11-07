@@ -1,0 +1,325 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+)
+
+interface ResultadoImportacao {
+  clientes_importados: number
+  clientes_nao_encontrados: number
+  faturas_importadas: number
+  erros: string[]
+}
+
+/**
+ * API Route para importar clientes e faturas do Asaas
+ * Roda no servidor para evitar problemas de CORS
+ */
+export async function POST(request: NextRequest) {
+  try {
+    const { administradora_id } = await request.json()
+
+    if (!administradora_id) {
+      return NextResponse.json(
+        { error: 'administradora_id é obrigatório' },
+        { status: 400 }
+      )
+    }
+
+    const resultado: ResultadoImportacao = {
+      clientes_importados: 0,
+      clientes_nao_encontrados: 0,
+      faturas_importadas: 0,
+      erros: []
+    }
+
+    // 1. Buscar configuração do Asaas
+    console.log('🔍 Buscando configuração para:', administradora_id)
+    
+    const { data: config, error: configError } = await supabase
+      .from('administradoras_config_financeira')
+      .select('api_key, ambiente')
+      .eq('administradora_id', administradora_id)
+      .eq('instituicao_financeira', 'asaas')
+      .eq('status_integracao', 'ativa')
+      .single()
+
+    console.log('📊 Resultado da busca:', { config, configError })
+
+    if (configError || !config) {
+      console.error('❌ Configuração não encontrada:', configError)
+      return NextResponse.json(
+        { 
+          error: 'Configuração do Asaas não encontrada',
+          debug: {
+            administradora_id,
+            error: configError?.message,
+            code: configError?.code
+          }
+        },
+        { status: 404 }
+      )
+    }
+
+    console.log('✅ Configuração encontrada!')
+
+    const API_KEY = config.api_key
+    const BASE_URL = config.ambiente === 'sandbox' 
+      ? 'https://sandbox.asaas.com/api/v3'
+      : 'https://api.asaas.com/v3'
+
+    // 2. Buscar clientes do banco
+    const { data: clientesBanco, error: errorBanco } = await supabase
+      .from('clientes_administradoras')
+      .select(`
+        id,
+        asaas_customer_id,
+        valor_mensal,
+        data_vencimento,
+        proposta:propostas(
+          id,
+          nome,
+          cpf,
+          email,
+          telefone
+        )
+      `)
+      .eq('administradora_id', administradora_id)
+
+    if (errorBanco) {
+      return NextResponse.json(
+        { error: `Erro ao buscar clientes: ${errorBanco.message}` },
+        { status: 500 }
+      )
+    }
+
+    console.log(`📊 Total de clientes no banco: ${clientesBanco?.length || 0}`)
+
+    // 3. Buscar customers do Asaas (paginado)
+    let offset = 0
+    const limit = 100
+    let hasMore = true
+    const customersAsaas: any[] = []
+
+    while (hasMore) {
+      try {
+        const response = await fetch(
+          `${BASE_URL}/customers?offset=${offset}&limit=${limit}`,
+          {
+            headers: {
+              'access_token': API_KEY,
+              'Content-Type': 'application/json'
+            }
+          }
+        )
+
+        if (!response.ok) {
+          console.error(`Erro ao buscar customers: ${response.status}`)
+          break
+        }
+
+        const data = await response.json()
+        customersAsaas.push(...(data.data || []))
+        
+        console.log(`📥 Buscados ${data.data?.length || 0} customers do Asaas (offset: ${offset})`)
+        
+        hasMore = data.hasMore || false
+        offset += limit
+
+        // Limite de segurança para não sobrecarregar
+        if (offset >= 1000) {
+          console.log('⚠️ Limite de 1000 customers atingido')
+          break
+        }
+      } catch (error) {
+        console.error('Erro ao buscar customers:', error)
+        break
+      }
+    }
+
+    console.log(`📊 Total de customers no Asaas: ${customersAsaas.length}`)
+
+    // 4. Fazer match e importar
+    for (const clienteBanco of clientesBanco || []) {
+      try {
+        const proposta = Array.isArray(clienteBanco.proposta) 
+          ? clienteBanco.proposta[0] 
+          : clienteBanco.proposta
+
+        if (!proposta || !proposta.cpf) {
+          resultado.erros.push(`Cliente ${clienteBanco.id} sem CPF`)
+          continue
+        }
+
+        // Limpar CPF
+        const cpfLimpo = proposta.cpf.replace(/\D/g, '')
+
+        let asaasCustomerId = clienteBanco.asaas_customer_id
+
+        // Se não tem customer_id, buscar no Asaas
+        if (!asaasCustomerId) {
+          const customerAsaas = customersAsaas.find(c => 
+            c.cpfCnpj?.replace(/\D/g, '') === cpfLimpo
+          )
+
+          if (customerAsaas) {
+            // Match encontrado! Salvar customer_id
+            const { error: updateError } = await supabase
+              .from('clientes_administradoras')
+              .update({ 
+                asaas_customer_id: customerAsaas.id,
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', clienteBanco.id)
+
+            if (updateError) {
+              resultado.erros.push(`Erro ao atualizar ${proposta.nome}: ${updateError.message}`)
+              continue
+            } else {
+              resultado.clientes_importados++
+              asaasCustomerId = customerAsaas.id
+              console.log(`✅ ${proposta.nome} → ${customerAsaas.id}`)
+            }
+          } else {
+            resultado.clientes_nao_encontrados++
+            console.log(`⚠️ ${proposta.nome} (${cpfLimpo}) não encontrado`)
+            continue
+          }
+        }
+
+        // Importar cobranças (para clientes novos E existentes)
+        if (asaasCustomerId) {
+          console.log(`📥 Buscando cobranças para ${proposta.nome} (${asaasCustomerId})`)
+          await importarCobrancasCliente(
+            clienteBanco.id,
+            administradora_id,
+            asaasCustomerId,
+            proposta,
+            API_KEY,
+            BASE_URL,
+            resultado
+          )
+        }
+      } catch (error: any) {
+        resultado.erros.push(`Erro: ${error.message}`)
+      }
+    }
+
+    return NextResponse.json(resultado)
+  } catch (error: any) {
+    console.error('Erro na importação:', error)
+    return NextResponse.json(
+      { error: error.message },
+      { status: 500 }
+    )
+  }
+}
+
+/**
+ * Importa cobranças de um cliente específico
+ */
+async function importarCobrancasCliente(
+  clienteId: string,
+  administradoraId: string,
+  asaasCustomerId: string,
+  proposta: any,
+  apiKey: string,
+  baseUrl: string,
+  resultado: ResultadoImportacao
+) {
+  try {
+    // Buscar TODAS as cobranças do Asaas (sem filtro de status para evitar rate limit)
+    const url = `${baseUrl}/payments?customer=${asaasCustomerId}&limit=100`
+    
+    const response = await fetch(url, {
+      headers: {
+        'access_token': apiKey,
+        'Content-Type': 'application/json'
+      }
+    })
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      console.error(`❌ Erro ${response.status} ao buscar cobranças: ${errorText}`)
+      return
+    }
+
+    const { data: charges } = await response.json()
+
+    if (!charges || charges.length === 0) {
+      console.log(`⚠️ Nenhuma cobrança encontrada para customer ${asaasCustomerId}`)
+      return
+    }
+
+    console.log(`✅ Buscadas ${charges.length} cobranças para customer ${asaasCustomerId}`)
+    
+    // Pequeno delay para evitar rate limit
+    await new Promise(resolve => setTimeout(resolve, 100))
+
+    // Mapear status
+    const statusMap: Record<string, string> = {
+      'PENDING': 'pendente',
+      'RECEIVED': 'paga',
+      'CONFIRMED': 'paga',
+      'OVERDUE': 'atrasada',
+      'REFUNDED': 'cancelada',
+      'RECEIVED_IN_CASH': 'paga',
+      'REFUND_REQUESTED': 'cancelada',
+      'CHARGEBACK_REQUESTED': 'cancelada',
+      'AWAITING_RISK_ANALYSIS': 'pendente'
+    }
+
+    // Importar cada cobrança
+    for (const charge of charges) {
+      try {
+        // Verificar se já existe
+        const { data: existe } = await supabase
+          .from('faturas')
+          .select('id')
+          .eq('asaas_charge_id', charge.id)
+          .single()
+
+        if (existe) {
+          continue
+        }
+
+        // Inserir fatura
+        const { error: insertError } = await supabase
+          .from('faturas')
+          .insert({
+            cliente_administradora_id: clienteId,
+            administradora_id: administradoraId,
+            cliente_id: proposta.cpf,
+            cliente_nome: proposta.nome,
+            cliente_email: proposta.email || '',
+            cliente_telefone: proposta.telefone || '',
+            valor: charge.value,
+            vencimento: charge.dueDate,
+            status: statusMap[charge.status] || 'pendente',
+            asaas_charge_id: charge.id,
+            asaas_boleto_url: charge.bankSlipUrl || null,
+            asaas_invoice_url: charge.invoiceUrl || null,
+            asaas_payment_link: charge.invoiceUrl || null,
+            boleto_codigo: charge.nossoNumero || null,
+            boleto_linha_digitavel: charge.identificationField || null,
+            pagamento_data: charge.paymentDate || null,
+            pagamento_valor: charge.status === 'RECEIVED' ? charge.value : null,
+            created_at: charge.dateCreated,
+            updated_at: new Date().toISOString()
+          })
+
+        if (insertError) {
+          console.error(`❌ Erro ao inserir fatura:`, insertError)
+        } else {
+          resultado.faturas_importadas++
+        }
+      } catch (error: any) {
+        resultado.erros.push(`Erro ao importar cobrança: ${error.message}`)
+      }
+    }
+  } catch (error: any) {
+    console.error('Erro ao importar cobranças:', error)
+  }
+}

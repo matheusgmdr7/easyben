@@ -19,7 +19,7 @@ import { downloadPropostaComDocumentos } from "@/services/download-service"
 import { buscarCorretores } from "@/services/corretores-service"
 import { gerarPDFCompleto, gerarPDFSimples } from "@/services/pdf-completo-service"
 import { toast } from "sonner"
-import { ChevronLeft, ChevronRight, Download, Eye, FileText, Heart, Clock, Search, User, UserCheck, Edit, Save, CheckCircle, X } from "lucide-react"
+import { ChevronLeft, ChevronRight, Download, Eye, FileText, Heart, Clock, Search, User, UserCheck, Edit, Save, CheckCircle, X, XCircle, Building, Camera, Filter, RefreshCw } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
@@ -27,6 +27,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { supabase } from "@/lib/supabase"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { formatarMoeda } from "@/utils/formatters"
+import { useModalOverlay } from "@/hooks/use-modal-overlay"
 
 // Função para obter o texto da pergunta por ID
 function obterTextoPergunta(perguntaId: number): string {
@@ -85,6 +87,12 @@ export default function PropostasPage() {
   // Paginação
   const [paginaAtual, setPaginaAtual] = useState(1)
   const [itensPorPagina] = useState(25)
+
+  const [documentosParte, setDocumentosParte] = useState<any>({})
+
+  useModalOverlay(showModalDetalhes)
+  useModalOverlay(showModalRejeicao)
+  useModalOverlay(showModalPDF)
 
   useEffect(() => {
     carregarPropostas()
@@ -1301,75 +1309,193 @@ export default function PropostasPage() {
   }
 
   function renderDeclaracaoSaudeUnificada() {
+    // Mostrar fotos do titular se existirem
+    const temFotos = propostaDetalhada?.foto_rosto || propostaDetalhada?.foto_corpo_inteiro
+    const titularQuestionario = questionariosSaude?.find((q: any) => q.pessoa_tipo === "titular")
+    
     if (!questionariosSaude || questionariosSaude.length === 0) {
       return (
-        <Card>
-          <CardHeader>
-            <CardTitle>
-              Declaração de Saúde
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-gray-500">Nenhuma resposta encontrada</p>
-          </CardContent>
-        </Card>
+        <div className="space-y-4 sm:space-y-6">
+          {/* Fotos do Cliente - Mostrar mesmo se não houver questionário */}
+          {temFotos && (
+            <Card className="border-2 border-gray-200 shadow-sm">
+              <CardHeader className="bg-gradient-to-r from-blue-50 to-blue-100/50 border-b border-gray-200 px-3 sm:px-6 py-3 sm:py-4">
+                <CardTitle className="flex items-center gap-2 text-[#168979] text-base sm:text-lg">
+                  <Camera className="h-4 w-4 sm:h-5 sm:w-5" />
+                  Fotos do Titular
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pt-4 sm:pt-6 px-3 sm:px-6 pb-4 sm:pb-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
+                  {propostaDetalhada?.foto_rosto && (
+                    <div className="space-y-2">
+                      <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide">
+                        Foto de Rosto
+                      </label>
+                      <div className="relative group">
+                        <img
+                          src={propostaDetalhada.foto_rosto}
+                          alt="Foto de rosto"
+                          className="w-full rounded-lg border-2 border-gray-200 shadow-sm cursor-pointer hover:shadow-md transition-shadow"
+                          onClick={() => window.open(propostaDetalhada.foto_rosto, '_blank')}
+                        />
+                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors rounded-lg flex items-center justify-center opacity-0 group-hover:opacity-100">
+                          <span className="text-white text-sm font-medium bg-black/50 px-3 py-1 rounded">Clique para ampliar</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  {propostaDetalhada?.foto_corpo_inteiro && (
+                    <div className="space-y-2">
+                      <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide">
+                        Foto de Corpo Inteiro
+                      </label>
+                      <div className="relative group">
+                        <img
+                          src={propostaDetalhada.foto_corpo_inteiro}
+                          alt="Foto de corpo inteiro"
+                          className="w-full rounded-lg border-2 border-gray-200 shadow-sm cursor-pointer hover:shadow-md transition-shadow"
+                          onClick={() => window.open(propostaDetalhada.foto_corpo_inteiro, '_blank')}
+                        />
+                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors rounded-lg flex items-center justify-center opacity-0 group-hover:opacity-100">
+                          <span className="text-white text-sm font-medium bg-black/50 px-3 py-1 rounded">Clique para ampliar</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+          
+          <Card className="border-2 border-gray-200 shadow-sm">
+            <CardHeader className="bg-gradient-to-r from-red-50 to-red-100/50 border-b border-gray-200 px-3 sm:px-6 py-3 sm:py-4">
+              <CardTitle className="flex items-center gap-2 text-[#168979] text-base sm:text-lg">
+                <Heart className="h-4 w-4 sm:h-5 sm:w-5 text-red-500" />
+                Declaração de Saúde
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="pt-4 sm:pt-6 px-3 sm:px-6 pb-4 sm:pb-6">
+              <p className="text-gray-500">Nenhuma resposta encontrada</p>
+            </CardContent>
+          </Card>
+        </div>
       )
     }
     return (
-      <div className="space-y-6">
-        {questionariosSaude.map((q, idx) => (
-          <Card key={q.id || idx}>
-        <CardHeader>
-          <CardTitle>
-                {q.pessoa_tipo === "titular"
-                  ? "Declaração de Saúde - Titular"
-                  : `Declaração de Saúde - ${q.pessoa_nome}`}
-          </CardTitle>
-        </CardHeader>
-            <CardContent>
-              <div className="mb-2 text-sm text-gray-700">
-                <span className="mr-4">Peso: <b>{q.peso || "-"} kg</b></span>
-                <span>Altura: <b>{q.altura || "-"} cm</b></span>
-              </div>
-              {q.respostas_questionario && q.respostas_questionario.length > 0 ? (
-                // Remover duplicatas baseado em pergunta_id
-                Array.from(new Map(q.respostas_questionario.map((r: any) => [r.pergunta_id, r])).values())
-                  .map((resposta: any, i: any) => (
-                    <div key={`${q.id}-${resposta.pergunta_id}-${i}`} className="border-l-4 border-blue-200 pl-4 py-2 mb-2">
-                    <div className="font-medium text-gray-900 mb-1">Pergunta {resposta.pergunta_id}</div>
-                      <div className="text-sm text-gray-600 mb-2">
-                        {resposta.pergunta_texto || resposta.pergunta || obterTextoPergunta(resposta.pergunta_id)}
-                      </div>
-                    <div className={`inline-flex px-2 py-1 rounded-full text-xs font-medium ${resposta.resposta === "sim" || resposta.resposta === true ? "bg-red-100 text-red-800" : "bg-green-100 text-green-800"}`}>
-                {resposta.resposta === "sim" || resposta.resposta === true ? "SIM" : "NÃO"}
-              </div>
-                    {resposta.observacao && (
-                <div className="mt-2 text-sm text-gray-700 bg-gray-50 p-2 rounded">
-                        <strong>Observações:</strong> {resposta.observacao}
+      <div className="space-y-4 sm:space-y-6">
+        {questionariosSaude.map((q, idx) => {
+          const isTitular = q.pessoa_tipo === "titular"
+          const mostrarFotos = isTitular && temFotos
+          
+          return (
+            <Card key={q.id || idx} className="border-2 border-gray-200 shadow-sm">
+              <CardHeader className="bg-gradient-to-r from-red-50 to-red-100/50 border-b border-gray-200 px-3 sm:px-6 py-3 sm:py-4">
+                <CardTitle className="flex items-center gap-2 text-[#168979] text-base sm:text-lg">
+                  <Heart className="h-4 w-4 sm:h-5 sm:w-5 text-red-500" />
+                  <span className="truncate">{isTitular
+                      ? "Declaração de Saúde - Titular"
+                      : `Declaração de Saúde - ${q.pessoa_nome}`}</span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pt-4 sm:pt-6 px-3 sm:px-6 pb-4 sm:pb-6 space-y-6">
+                {/* Fotos do Titular - Mostrar apenas para o titular */}
+                {mostrarFotos && (
+                  <div className="border-b border-gray-200 pb-6">
+                    <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-4 flex items-center gap-2">
+                      <Camera className="h-4 w-4" />
+                      Fotos do Titular
+                    </h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
+                      {propostaDetalhada?.foto_rosto && (
+                        <div className="space-y-2">
+                          <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide">
+                            Foto de Rosto
+                          </label>
+                          <div className="relative group">
+                            <img
+                              src={propostaDetalhada.foto_rosto}
+                              alt="Foto de rosto"
+                              className="w-full rounded-lg border-2 border-gray-200 shadow-sm cursor-pointer hover:shadow-md transition-shadow"
+                              onClick={() => window.open(propostaDetalhada.foto_rosto, '_blank')}
+                            />
+                            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors rounded-lg flex items-center justify-center opacity-0 group-hover:opacity-100">
+                              <span className="text-white text-sm font-medium bg-black/50 px-3 py-1 rounded">Clique para ampliar</span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                      {propostaDetalhada?.foto_corpo_inteiro && (
+                        <div className="space-y-2">
+                          <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide">
+                            Foto de Corpo Inteiro
+                          </label>
+                          <div className="relative group">
+                            <img
+                              src={propostaDetalhada.foto_corpo_inteiro}
+                              alt="Foto de corpo inteiro"
+                              className="w-full rounded-lg border-2 border-gray-200 shadow-sm cursor-pointer hover:shadow-md transition-shadow"
+                              onClick={() => window.open(propostaDetalhada.foto_corpo_inteiro, '_blank')}
+                            />
+                            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors rounded-lg flex items-center justify-center opacity-0 group-hover:opacity-100">
+                              <span className="text-white text-sm font-medium bg-black/50 px-3 py-1 rounded">Clique para ampliar</span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+                
+                {/* Dados Físicos e Questionário */}
+                <div>
+                  <div className="mb-4 text-sm text-gray-700">
+                    <span className="mr-4">Peso: <b>{q.peso || "-"} kg</b></span>
+                    <span>Altura: <b>{q.altura || "-"} cm</b></span>
+                  </div>
+                  {q.respostas_questionario && q.respostas_questionario.length > 0 ? (
+                    // Remover duplicatas baseado em pergunta_id
+                    Array.from(new Map(q.respostas_questionario.map((r: any) => [r.pergunta_id, r])).values())
+                      .map((resposta: any, i: any) => (
+                        <div key={`${q.id}-${resposta.pergunta_id}-${i}`} className="border-l-4 border-blue-200 pl-4 py-2 mb-2">
+                          <div className="font-medium text-gray-900 mb-1">Pergunta {resposta.pergunta_id}</div>
+                          <div className="text-sm text-gray-600 mb-2">
+                            {resposta.pergunta_texto || resposta.pergunta || obterTextoPergunta(resposta.pergunta_id)}
+                          </div>
+                          <div className={`inline-flex px-2 py-1 rounded-full text-xs font-medium ${resposta.resposta === "sim" || resposta.resposta === true ? "bg-red-100 text-red-800" : "bg-green-100 text-green-800"}`}>
+                            {resposta.resposta === "sim" || resposta.resposta === true ? "SIM" : "NÃO"}
+                          </div>
+                          {resposta.observacao && (
+                            <div className="mt-2 text-sm text-gray-700 bg-gray-50 p-2 rounded">
+                              <strong>Observações:</strong> {resposta.observacao}
+                            </div>
+                          )}
+                        </div>
+                      ))
+                  ) : (
+                    <div className="text-gray-500">Nenhuma resposta encontrada</div>
+                  )}
                 </div>
-              )}
-            </div>
-                ))
-              ) : (
-                <div className="text-gray-500">Nenhuma resposta encontrada</div>
-              )}
-        </CardContent>
-      </Card>
-        ))}
+              </CardContent>
+            </Card>
+          )
+        })}
       </div>
     )
   }
 
   function renderDocumentos(documentos: any, titulo: any = "Documentos", pessoa: any = "titular") {
+    const isTitular = pessoa === "titular"
     if (!documentos || Object.keys(documentos).length === 0) {
       return (
-        <Card>
-          <CardHeader>
-            <CardTitle>
+        <Card className="border-2 border-gray-200 shadow-sm">
+          <CardHeader className={`bg-gradient-to-r ${isTitular ? 'from-blue-50 to-blue-100/50' : 'from-green-50 to-green-100/50'} border-b border-gray-200 px-3 sm:px-6 py-3 sm:py-4`}>
+            <CardTitle className="flex items-center gap-2 text-[#168979] text-base sm:text-lg">
+              <FileText className="h-4 w-4 sm:h-5 sm:w-5" />
               {titulo}
             </CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="pt-4 sm:pt-6 px-3 sm:px-6 pb-4 sm:pb-6">
             <p className="text-gray-500">Nenhum documento encontrado</p>
           </CardContent>
         </Card>
@@ -1377,48 +1503,49 @@ export default function PropostasPage() {
     }
 
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle>
+      <Card className="border-2 border-gray-200 shadow-sm">
+        <CardHeader className={`bg-gradient-to-r ${isTitular ? 'from-blue-50 to-blue-100/50' : 'from-green-50 to-green-100/50'} border-b border-gray-200 px-3 sm:px-6 py-3 sm:py-4`}>
+          <CardTitle className="flex items-center gap-2 text-[#168979] text-base sm:text-lg">
+            <FileText className="h-4 w-4 sm:h-5 sm:w-5" />
             {titulo}
           </CardTitle>
         </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <CardContent className="pt-4 sm:pt-6 px-3 sm:px-6 pb-4 sm:pb-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
             {Object.entries(documentos as any).map(([tipo, url]: [any, any]) => {
               const nomeDoc = getNomeDocumento(tipo)
               const tipoArquivo = getTipoArquivo(url)
               const nomeArquivo = `${nomeDoc.replace(/[^a-zA-Z0-9]/g, "_")}.${url.split(".").pop()?.toLowerCase() || "pdf"}`
 
               return (
-                <div key={tipo} className="border border-gray-200 rounded-lg p-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex-1">
-                      <div className="font-medium text-sm text-gray-900">{nomeDoc}</div>
-                      <div className="text-xs text-gray-500 capitalize">{tipoArquivo}</div>
+                <div key={tipo} className="border-2 border-gray-200 rounded-lg p-3 sm:p-4 hover:shadow-md transition-shadow">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium text-xs sm:text-sm text-gray-900 truncate">{nomeDoc}</div>
+                      <div className="text-xs text-gray-500 capitalize mt-1">{tipoArquivo}</div>
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex gap-1 sm:gap-2 flex-shrink-0">
                       <Button
                         size="sm"
                         variant="outline"
                         onClick={() => window.open(url, "_blank")}
-                        className="h-8 w-8 p-0"
+                        className="h-8 w-8 sm:h-9 sm:w-9 p-0"
                         title="Visualizar"
                       >
-                        <Eye className="h-4 w-4" />
+                        <Eye className="h-3 w-3 sm:h-4 sm:w-4" />
                       </Button>
                       <Button
                         size="sm"
                         variant="outline"
                         onClick={() => baixarDocumentoIndividual(url, nomeArquivo)}
                         disabled={downloadingDoc === nomeArquivo}
-                        className="h-8 w-8 p-0"
+                        className="h-8 w-8 sm:h-9 sm:w-9 p-0"
                         title="Baixar"
                       >
                         {downloadingDoc === nomeArquivo ? (
                           <div className="loading-corporate-small"></div>
                         ) : (
-                          <Download className="h-4 w-4" />
+                          <Download className="h-3 w-3 sm:h-4 sm:w-4" />
                         )}
                       </Button>
                     </div>
@@ -1477,90 +1604,105 @@ export default function PropostasPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6 p-2 sm:p-0">
       {/* Header Section */}
-      <div className="bg-gradient-to-r from-gray-50 to-white rounded-lg border border-gray-200 shadow-sm p-4 md:p-6">
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+      <div className="bg-gradient-to-r from-gray-50 to-white rounded-lg border border-gray-200 shadow-sm p-3 sm:p-4 md:p-6">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900 tracking-tight font-sans">Propostas Recebidas</h1>
-            <p className="text-gray-600 mt-1 font-medium">Gerencie todas as propostas do sistema</p>
+            <h1 className="text-xl sm:text-2xl font-bold text-gray-900 tracking-tight font-sans">Propostas Recebidas</h1>
+            <p className="text-gray-600 mt-1 text-sm sm:text-base font-medium">Gerencie todas as propostas do sistema</p>
           </div>
         <button
           onClick={carregarPropostas}
-            className="bg-[#168979] hover:bg-[#13786a] text-white font-bold px-6 py-2 btn-corporate shadow-corporate flex items-center gap-2"
+            className="bg-[#168979] hover:bg-[#13786a] text-white font-bold px-4 sm:px-6 py-2 text-sm sm:text-base btn-corporate shadow-corporate flex items-center justify-center gap-2 w-full sm:w-auto"
         >
-          Atualizar Lista
+          <span>Atualizar Lista</span>
         </button>
         </div>
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-5 gap-2 sm:gap-4">
         <div className="bg-gradient-to-br from-white to-gray-50 border border-gray-200 shadow-sm hover:shadow-lg transition-all duration-300 rounded-lg">
-          <div className="flex flex-row items-center justify-between pb-3 pt-6 px-6">
-            <div>
-              <h3 className="text-sm font-bold text-gray-600 uppercase tracking-wider font-sans">Total</h3>
-              <div className="text-3xl font-bold text-[#168979] mt-2">{propostas.length}</div>
-        </div>
-          </div>
-          <div className="pb-6 px-6">
-            <p className="text-xs text-gray-500 font-medium">Total de propostas</p>
-        </div>
-          </div>
-        <div className="bg-gradient-to-br from-white to-gray-50 border border-gray-200 shadow-sm hover:shadow-lg transition-all duration-300 rounded-lg">
-          <div className="flex flex-row items-center justify-between pb-3 pt-6 px-6">
-            <div>
-              <h3 className="text-sm font-bold text-gray-600 uppercase tracking-wider font-sans">Aguardando</h3>
-              <div className="text-3xl font-bold text-[#168979] mt-2">{propostas.filter((p) => p.status === "parcial").length}</div>
-        </div>
-          </div>
-          <div className="pb-6 px-6">
-            <p className="text-xs text-gray-500 font-medium">Aguardando validação</p>
-        </div>
-          </div>
-        <div className="bg-gradient-to-br from-white to-gray-50 border border-gray-200 shadow-sm hover:shadow-lg transition-all duration-300 rounded-lg">
-          <div className="flex flex-row items-center justify-between pb-3 pt-6 px-6">
-            <div>
-              <h3 className="text-sm font-bold text-gray-600 uppercase tracking-wider font-sans">Análise</h3>
-              <div className="text-3xl font-bold text-[#168979] mt-2">{propostas.filter((p) => p.status === "pendente").length}</div>
+          <div className="flex flex-row items-center justify-between pb-3 pt-4 sm:pt-6 px-3 sm:px-6">
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-1">
+                <FileText className="h-3 w-3 sm:h-4 sm:w-4 text-gray-400 opacity-60" />
+                <h3 className="text-xs sm:text-sm font-bold text-gray-600 uppercase tracking-wider font-sans">Total</h3>
+              </div>
+              <div className="text-xl sm:text-3xl font-bold text-[#168979] mt-1 sm:mt-2">{propostas.length}</div>
             </div>
           </div>
-          <div className="pb-6 px-6">
-            <p className="text-xs text-gray-500 font-medium">Em análise</p>
+          <div className="pb-4 sm:pb-6 px-3 sm:px-6">
+            <p className="text-[10px] sm:text-xs text-gray-500 font-medium">Total de propostas</p>
           </div>
         </div>
         <div className="bg-gradient-to-br from-white to-gray-50 border border-gray-200 shadow-sm hover:shadow-lg transition-all duration-300 rounded-lg">
-          <div className="flex flex-row items-center justify-between pb-3 pt-6 px-6">
-            <div>
-              <h3 className="text-sm font-bold text-gray-600 uppercase tracking-wider font-sans">Diretos</h3>
-              <div className="text-3xl font-bold text-[#168979] mt-2">{propostas.filter((p) => p.origem === "propostas").length}</div>
+          <div className="flex flex-row items-center justify-between pb-3 pt-4 sm:pt-6 px-3 sm:px-6">
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-1">
+                <Clock className="h-3 w-3 sm:h-4 sm:w-4 text-gray-400 opacity-60" />
+                <h3 className="text-xs sm:text-sm font-bold text-gray-600 uppercase tracking-wider font-sans">Aguardando</h3>
+              </div>
+              <div className="text-xl sm:text-3xl font-bold text-[#168979] mt-1 sm:mt-2">{propostas.filter((p) => p.status === "parcial").length}</div>
             </div>
           </div>
-          <div className="pb-6 px-6">
-            <p className="text-xs text-gray-500 font-medium">Propostas diretas</p>
+          <div className="pb-4 sm:pb-6 px-3 sm:px-6">
+            <p className="text-[10px] sm:text-xs text-gray-500 font-medium">Aguardando validação</p>
           </div>
         </div>
         <div className="bg-gradient-to-br from-white to-gray-50 border border-gray-200 shadow-sm hover:shadow-lg transition-all duration-300 rounded-lg">
-          <div className="flex flex-row items-center justify-between pb-3 pt-6 px-6">
-            <div>
-              <h3 className="text-sm font-bold text-gray-600 uppercase tracking-wider font-sans">Corretores</h3>
-              <div className="text-3xl font-bold text-[#168979] mt-2">{propostas.filter((p) => p.origem === "propostas_corretores").length}</div>
+          <div className="flex flex-row items-center justify-between pb-3 pt-4 sm:pt-6 px-3 sm:px-6">
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-1">
+                <Search className="h-3 w-3 sm:h-4 sm:w-4 text-gray-400 opacity-60" />
+                <h3 className="text-xs sm:text-sm font-bold text-gray-600 uppercase tracking-wider font-sans">Análise</h3>
+              </div>
+              <div className="text-xl sm:text-3xl font-bold text-[#168979] mt-1 sm:mt-2">{propostas.filter((p) => p.status === "pendente").length}</div>
             </div>
           </div>
-          <div className="pb-6 px-6">
-            <p className="text-xs text-gray-500 font-medium">Propostas via corretores</p>
+          <div className="pb-4 sm:pb-6 px-3 sm:px-6">
+            <p className="text-[10px] sm:text-xs text-gray-500 font-medium">Em análise</p>
+          </div>
+        </div>
+        <div className="bg-gradient-to-br from-white to-gray-50 border border-gray-200 shadow-sm hover:shadow-lg transition-all duration-300 rounded-lg">
+          <div className="flex flex-row items-center justify-between pb-3 pt-4 sm:pt-6 px-3 sm:px-6">
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-1">
+                <User className="h-3 w-3 sm:h-4 sm:w-4 text-gray-400 opacity-60" />
+                <h3 className="text-xs sm:text-sm font-bold text-gray-600 uppercase tracking-wider font-sans">Diretos</h3>
+              </div>
+              <div className="text-xl sm:text-3xl font-bold text-[#168979] mt-1 sm:mt-2">{propostas.filter((p) => p.origem === "propostas").length}</div>
+            </div>
+          </div>
+          <div className="pb-4 sm:pb-6 px-3 sm:px-6">
+            <p className="text-[10px] sm:text-xs text-gray-500 font-medium">Propostas diretas</p>
+          </div>
+        </div>
+        <div className="bg-gradient-to-br from-white to-gray-50 border border-gray-200 shadow-sm hover:shadow-lg transition-all duration-300 rounded-lg">
+          <div className="flex flex-row items-center justify-between pb-3 pt-4 sm:pt-6 px-3 sm:px-6">
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-1">
+                <UserCheck className="h-3 w-3 sm:h-4 sm:w-4 text-gray-400 opacity-60" />
+                <h3 className="text-xs sm:text-sm font-bold text-gray-600 uppercase tracking-wider font-sans">Corretores</h3>
+              </div>
+              <div className="text-xl sm:text-3xl font-bold text-[#168979] mt-1 sm:mt-2">{propostas.filter((p) => p.origem === "propostas_corretores").length}</div>
+            </div>
+          </div>
+          <div className="pb-4 sm:pb-6 px-3 sm:px-6">
+            <p className="text-[10px] sm:text-xs text-gray-500 font-medium">Propostas via corretores</p>
           </div>
         </div>
       </div>
 
       {/* Filtros */}
       <div className="bg-gradient-to-br from-white to-gray-50 border border-gray-200 shadow-sm rounded-lg">
-        <div className="bg-gray-50 rounded-t-lg p-4 border-b border-gray-200">
-          <h3 className="text-lg font-bold text-gray-900 font-sans">Filtros de Busca</h3>
-          <p className="text-gray-600 text-sm font-medium mt-1">Refine sua pesquisa</p>
+        <div className="bg-gray-50 rounded-t-lg p-3 sm:p-4 border-b border-gray-200">
+          <h3 className="text-base sm:text-lg font-bold text-gray-900 font-sans">Filtros de Busca</h3>
+          <p className="text-gray-600 text-xs sm:text-sm font-medium mt-1">Refine sua pesquisa</p>
         </div>
-        <div className="p-6">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+        <div className="p-3 sm:p-4 md:p-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           <div>
             <label className="block text-xs font-medium text-gray-700 mb-1">Buscar</label>
             <input
@@ -1568,7 +1710,7 @@ export default function PropostasPage() {
               value={filtro}
               onChange={(e) => setFiltro(e.target.value)}
               placeholder="Nome ou email..."
-              className="w-full px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-gray-500 focus:border-gray-500"
+              className="w-full px-3 py-2 sm:px-2 sm:py-1 border-2 border-gray-300 rounded-lg text-sm sm:text-base focus:outline-none focus:ring-1 focus:ring-[#168979] focus:border-[#168979]"
             />
           </div>
           <div>
@@ -1576,7 +1718,7 @@ export default function PropostasPage() {
             <select
               value={statusFiltro}
               onChange={(e) => setStatusFiltro(e.target.value)}
-              className="w-full px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-gray-500 focus:border-gray-500"
+              className="w-full px-3 py-2 sm:px-2 sm:py-1 border-2 border-gray-300 rounded-lg text-sm sm:text-base focus:outline-none focus:ring-1 focus:ring-[#168979] focus:border-[#168979]"
             >
               <option value="todos">Todos</option>
               <option value="parcial">Aguardando Validação</option>
@@ -1587,12 +1729,12 @@ export default function PropostasPage() {
               <option value="cancelada">Cancelada</option>
             </select>
           </div>
-          <div>
+          <div className="sm:col-span-2 lg:col-span-1">
             <label className="block text-xs font-medium text-gray-700 mb-1">Corretor</label>
             <select
               value={corretorFiltro}
               onChange={(e) => setCorretorFiltro(e.target.value)}
-              className="w-full px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-gray-500 focus:border-gray-500"
+              className="w-full px-3 py-2 sm:px-2 sm:py-1 border-2 border-gray-300 rounded-lg text-sm sm:text-base focus:outline-none focus:ring-1 focus:ring-[#168979] focus:border-[#168979]"
             >
               <option value="todos">Todos os Corretores</option>
               <option value="direto">Clientes Diretos</option>
@@ -1609,16 +1751,17 @@ export default function PropostasPage() {
 
       {/* Lista de Propostas */}
       <div className="bg-white rounded-lg shadow border border-gray-200">
-        <div className="p-4 border-b border-gray-200">
-          <div className="flex justify-between items-center">
-            <h2 className="text-lg font-semibold text-gray-900">Lista de Propostas</h2>
-            <div className="text-sm text-gray-600">
+        <div className="p-3 sm:p-4 border-b border-gray-200">
+          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
+            <h2 className="text-base sm:text-lg font-semibold text-gray-900">Lista de Propostas</h2>
+            <div className="text-xs sm:text-sm text-gray-600">
               Mostrando {indiceInicio + 1}-{Math.min(indiceFim, totalItens)} de {totalItens} propostas
             </div>
           </div>
         </div>
 
-        <div className="overflow-x-auto">
+        {/* Desktop Table */}
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full divide-y divide-gray-200 text-sm">
             <thead className="bg-gray-50">
               <tr>
@@ -1724,6 +1867,100 @@ export default function PropostasPage() {
           </table>
         </div>
 
+        {/* Mobile Cards */}
+        <div className="md:hidden divide-y divide-gray-200">
+          {propostasExibidas.map((proposta) => {
+            const statusConfig = getStatusBadge(proposta.status)
+            return (
+              <div key={`${proposta.origem}-${proposta.id}`} className="p-4 hover:bg-gray-50">
+                <div className="space-y-3">
+                  {/* Cliente */}
+                  <div>
+                    <div className="text-sm font-semibold text-gray-900" title={obterNomeCliente(proposta)}>
+                      {obterNomeCliente(proposta)}
+                    </div>
+                    <div className="text-xs text-gray-500 mt-1">ID: {obterIdSeguro(proposta)}</div>
+                    {(proposta.produto_nome || proposta.produto) && (
+                      <div className="text-xs text-gray-600 mt-1">Produto: {proposta.produto_nome || proposta.produto}</div>
+                    )}
+                  </div>
+
+                  {/* Contato */}
+                  <div className="space-y-1">
+                    <div className="text-xs text-gray-600">Email:</div>
+                    <div className="text-xs text-gray-900" title={obterEmailCliente(proposta)}>
+                      {obterEmailCliente(proposta)}
+                    </div>
+                    <div className="text-xs text-gray-600 mt-1">Telefone:</div>
+                    <div className="text-xs text-gray-900" title={obterTelefoneCliente(proposta)}>
+                      {obterTelefoneCliente(proposta)}
+                    </div>
+                  </div>
+
+                  {/* Status e Origem */}
+                  <div className="space-y-1">
+                    <span
+                      className={`inline-flex items-center gap-1 px-2 py-1 text-xs font-semibold rounded ${statusConfig.color}`}
+                    >
+                      {(() => {
+                        const IconComponent = statusConfig.icon
+                        return <IconComponent className="w-3 h-3" />
+                      })()}
+                      {statusConfig.label}
+                    </span>
+                    <div className="text-xs text-gray-600 mt-1" title={proposta.corretor_nome ? `Corretor: ${proposta.corretor_nome}` : "Envio Direto"}>
+                      {proposta.corretor_nome ? (
+                        <span className="text-gray-900 font-normal">{proposta.corretor_nome}</span>
+                      ) : (
+                        <span className="text-gray-400">Envio Direto</span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Valor e Data */}
+                  <div className="space-y-1">
+                    <div className="text-xs text-gray-600">Valor:</div>
+                    <div className="text-sm font-semibold text-gray-900">
+                      R$ {calcularValorTotalMensal(proposta).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                    </div>
+                    <div className="text-xs text-gray-500 mt-1">{formatarDataSegura(proposta.created_at)}</div>
+                    <div className="text-xs text-gray-500">{formatarHoraSegura(proposta.created_at)}</div>
+                  </div>
+
+                  {/* Ações */}
+                  <div className="flex flex-wrap gap-2 pt-2 border-t border-gray-200">
+                    <button
+                      onClick={() => abrirModalDetalhes(proposta)}
+                      className="flex-1 text-gray-700 hover:text-gray-900 bg-gray-100 hover:bg-gray-200 px-3 py-2 rounded text-xs font-medium transition-colors"
+                    >
+                      Ver Detalhes
+                    </button>
+
+                    {proposta.status === "parcial" && (
+                      <button
+                        onClick={() => enviarEmailValidacao(proposta)}
+                        disabled={enviandoEmail === proposta.id}
+                        className="flex-1 text-blue-700 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 px-3 py-2 rounded disabled:opacity-50 transition-colors text-xs font-medium"
+                      >
+                        {enviandoEmail === proposta.id ? "Enviando..." : "Enviar Email"}
+                      </button>
+                    )}
+
+                    {proposta.status === "pendente" && (
+                      <button
+                        onClick={() => enviarParaAnalise(proposta.id)}
+                        className="flex-1 text-blue-700 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 px-3 py-2 rounded transition-colors text-xs font-medium"
+                      >
+                        Enviar para Análise
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+
         {propostasFiltradas.length === 0 && (
           <div className="text-center py-12">
             <div className="text-gray-500 text-lg">Nenhuma proposta encontrada</div>
@@ -1737,21 +1974,21 @@ export default function PropostasPage() {
 
         {/* Paginação */}
         {totalPaginas > 1 && (
-          <div className="px-4 py-3 border-t border-gray-200 bg-gray-50">
-            <div className="flex items-center justify-between">
-              <div className="text-sm text-gray-700">
+          <div className="px-3 sm:px-4 py-3 border-t border-gray-200 bg-gray-50">
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+              <div className="text-xs sm:text-sm text-gray-700">
                 Página {paginaAtual} de {totalPaginas}
               </div>
-              <div className="flex items-center space-x-2">
+              <div className="flex items-center space-x-1 sm:space-x-2 w-full sm:w-auto justify-center">
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={() => setPaginaAtual(Math.max(1, paginaAtual - 1))}
                   disabled={paginaAtual === 1}
-                  className="h-8"
+                  className="h-8 sm:h-9 text-xs sm:text-sm"
                 >
-                  <ChevronLeft className="h-4 w-4" />
-                  Anterior
+                  <ChevronLeft className="h-3 w-3 sm:h-4 sm:w-4" />
+                  <span className="hidden sm:inline">Anterior</span>
                 </Button>
 
                 <div className="flex space-x-1">
@@ -1773,7 +2010,7 @@ export default function PropostasPage() {
                         variant={paginaAtual === pageNum ? "default" : "outline"}
                         size="sm"
                         onClick={() => setPaginaAtual(pageNum)}
-                        className="h-8 w-8 p-0"
+                        className="h-8 sm:h-9 w-8 sm:w-9 p-0 text-xs sm:text-sm"
                       >
                         {pageNum}
                       </Button>
@@ -1786,10 +2023,10 @@ export default function PropostasPage() {
                   size="sm"
                   onClick={() => setPaginaAtual(Math.min(totalPaginas, paginaAtual + 1))}
                   disabled={paginaAtual === totalPaginas}
-                  className="h-8"
+                  className="h-8 sm:h-9 text-xs sm:text-sm"
                 >
-                  Próxima
-                  <ChevronRight className="h-4 w-4" />
+                  <span className="hidden sm:inline">Próxima</span>
+                  <ChevronRight className="h-3 w-3 sm:h-4 sm:w-4" />
                 </Button>
               </div>
             </div>
@@ -1799,26 +2036,37 @@ export default function PropostasPage() {
 
       {/* Modal de Detalhes */}
       {showModalDetalhes && propostaDetalhada && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg max-w-7xl w-full max-h-[95vh] overflow-y-auto border border-gray-300">
-            <div className="p-6">
-              <div className="flex justify-between items-center mb-6 border-b border-gray-200 pb-4">
-                <h2 className="text-2xl font-bold text-gray-900">
-                  Detalhes da Proposta
-                  {editMode && <span className="ml-2 text-sm text-orange-600 font-normal">(Modo de Edição)</span>}
-                </h2>
-                <div className="flex gap-3">
+        <div className="fixed inset-0 flex items-center justify-center z-[100] p-2 sm:p-4">
+          <div className="bg-white rounded-xl sm:rounded-2xl shadow-2xl max-w-7xl w-full max-h-[95vh] sm:max-h-[90vh] overflow-hidden flex flex-col">
+            {/* Header com Gradiente */}
+            <div className="bg-gradient-to-r from-[#168979] to-[#13786a] px-3 sm:px-6 py-3 sm:py-4">
+              <div className="flex items-center justify-between mb-3 sm:mb-4">
+                <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
+                  <div className="p-1.5 sm:p-2 bg-white/20 rounded-lg flex-shrink-0">
+                    <Eye className="h-4 w-4 sm:h-6 sm:w-6 text-white" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <h3 className="text-base sm:text-xl font-bold text-white truncate">
+                      Detalhes da Proposta
+                      {editMode && <span className="ml-2 text-xs sm:text-sm text-orange-300 font-normal">(Modo de Edição)</span>}
+                    </h3>
+                    <p className="text-white/80 text-xs sm:text-sm truncate">Cliente: <strong>{obterNomeCliente(propostaDetalhada)}</strong></p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0 ml-2 flex-wrap justify-end">
                   {editMode ? (
                     <>
                       <Button
                         onClick={(e) => salvarEdicao(e)}
-                        className="bg-green-700 hover:bg-green-800 text-white px-6 py-2 rounded font-medium transition-colors"
+                        className="bg-white/20 hover:bg-white/30 text-white border border-white/30 text-xs sm:text-sm px-2 sm:px-3 h-8 sm:h-9"
+                        size="sm"
                       >
                         Salvar
                       </Button>
                       <Button
                         onClick={cancelarEdicao}
-                        className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-6 py-2 rounded font-medium transition-colors border border-gray-300"
+                        className="bg-gray-500/80 hover:bg-gray-500 text-white border border-gray-400/50 text-xs sm:text-sm px-2 sm:px-3 h-8 sm:h-9"
+                        size="sm"
                       >
                         Cancelar
                       </Button>
@@ -1827,17 +2075,21 @@ export default function PropostasPage() {
                     <>
                       <Button
                         onClick={iniciarEdicao}
-                        className="bg-gray-700 hover:bg-gray-800 text-white px-6 py-2 rounded font-medium transition-colors"
+                        className="bg-white/20 hover:bg-white/30 text-white border border-white/30 text-xs sm:text-sm px-2 sm:px-3 h-8 sm:h-9"
+                        size="sm"
                       >
-                        Editar
+                        <span className="hidden sm:inline">Editar</span>
+                        <Edit className="sm:hidden h-4 w-4" />
                       </Button>
-                    <Button
-                    onClick={() => setShowModalPDF(true)}
-                      disabled={generatingPdf}
-                        className="bg-[#168979] hover:bg-[#0f6b5f] text-white px-6 py-2 rounded font-medium transition-colors disabled:opacity-50"
-                    >
-                    {generatingPdf ? "Gerando PDF..." : "Gerar PDF"}
-                  </Button>
+                      <Button
+                        onClick={() => setShowModalPDF(true)}
+                        disabled={generatingPdf}
+                        className="bg-white/20 hover:bg-white/30 text-white border border-white/30 text-xs sm:text-sm px-2 sm:px-3 h-8 sm:h-9 disabled:opacity-50"
+                        size="sm"
+                      >
+                        <span className="hidden sm:inline">{generatingPdf ? "Gerando PDF..." : "Gerar PDF"}</span>
+                        <FileText className="sm:hidden h-4 w-4" />
+                      </Button>
                     </>
                   )}
                   {pdfUrlGerado && (
@@ -1852,28 +2104,38 @@ export default function PropostasPage() {
                         link.click()
                         document.body.removeChild(link)
                       }}
-                      className="bg-green-700 hover:bg-green-800 text-white px-6 py-2 rounded font-medium transition-colors"
+                      className="bg-green-500/80 hover:bg-green-500 text-white border border-green-400/50 text-xs sm:text-sm px-2 sm:px-3 h-8 sm:h-9"
+                      size="sm"
                     >
-                      Baixar PDF
+                      <span className="hidden sm:inline">Baixar PDF</span>
+                      <Download className="sm:hidden h-4 w-4" />
                     </Button>
                   )}
                   <Button
                     onClick={handleCancelarProposta}
-                    className="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded font-medium transition-colors"
+                    className="bg-red-500/80 hover:bg-red-500 text-white border border-red-400/50 text-xs sm:text-sm px-2 sm:px-3 h-8 sm:h-9"
+                    size="sm"
                   >
-                    Cancelar Proposta
+                    <span className="hidden sm:inline">Cancelar Proposta</span>
+                    <span className="sm:hidden">Cancelar Prop.</span>
                   </Button>
-                  <Button 
+                  <Button
                     onClick={() => {
                       setShowModalDetalhes(false)
-                      setPdfUrlGerado(null) // Limpar PDF gerado ao fechar modal
-                    }} 
-                    className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-6 py-2 rounded font-medium transition-colors border border-gray-300"
+                      setPdfUrlGerado(null)
+                    }}
+                    variant="ghost"
+                    size="sm"
+                    className="text-white hover:bg-white/20 h-8 sm:h-9 w-8 sm:w-9 p-0"
                   >
-                    Fechar
+                    <XCircle className="h-4 w-4 sm:h-5 sm:w-5" />
                   </Button>
                 </div>
               </div>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto p-3 sm:p-6">
 
               {loadingDetalhes ? (
                 <div className="flex justify-center items-center h-64 bg-gradient-to-br from-white to-gray-50 rounded-lg border border-gray-200 shadow-sm">
@@ -1885,114 +2147,141 @@ export default function PropostasPage() {
                 </div>
               ) : (
                 <Tabs defaultValue="dados" className="w-full">
-                  <TabsList className="grid w-full grid-cols-4">
-                    <TabsTrigger value="dados">Dados Pessoais</TabsTrigger>
-                    <TabsTrigger value="documentos">Documentos</TabsTrigger>
-                    <TabsTrigger value="saude">Declaração de Saúde</TabsTrigger>
-                    <TabsTrigger value="dependentes">Dependentes</TabsTrigger>
-                  </TabsList>
+                  <div className="border-b border-gray-200 mb-4 sm:mb-6">
+                    <TabsList className="inline-flex h-auto w-full bg-transparent p-0 gap-0 sm:gap-1">
+                      <TabsTrigger 
+                        value="dados" 
+                        className="flex-1 data-[state=active]:bg-transparent data-[state=active]:text-[#168979] data-[state=active]:border-b-2 data-[state=active]:border-[#168979] data-[state=inactive]:text-gray-500 data-[state=inactive]:border-b-2 data-[state=inactive]:border-transparent hover:text-gray-700 hover:border-gray-300 text-xs sm:text-sm px-3 sm:px-4 py-2.5 sm:py-3 rounded-none transition-all font-medium border-b-2 border-transparent"
+                      >
+                        <span className="hidden sm:inline">Dados Pessoais</span>
+                        <span className="sm:hidden">Dados</span>
+                      </TabsTrigger>
+                      <TabsTrigger 
+                        value="documentos" 
+                        className="flex-1 data-[state=active]:bg-transparent data-[state=active]:text-[#168979] data-[state=active]:border-b-2 data-[state=active]:border-[#168979] data-[state=inactive]:text-gray-500 data-[state=inactive]:border-b-2 data-[state=inactive]:border-transparent hover:text-gray-700 hover:border-gray-300 text-xs sm:text-sm px-3 sm:px-4 py-2.5 sm:py-3 rounded-none transition-all font-medium border-b-2 border-transparent"
+                      >
+                        Documentos
+                      </TabsTrigger>
+                      <TabsTrigger 
+                        value="saude" 
+                        className="flex-1 data-[state=active]:bg-transparent data-[state=active]:text-[#168979] data-[state=active]:border-b-2 data-[state=active]:border-[#168979] data-[state=inactive]:text-gray-500 data-[state=inactive]:border-b-2 data-[state=inactive]:border-transparent hover:text-gray-700 hover:border-gray-300 text-xs sm:text-sm px-3 sm:px-4 py-2.5 sm:py-3 rounded-none transition-all font-medium border-b-2 border-transparent"
+                      >
+                        <span className="hidden sm:inline">Declaração de Saúde</span>
+                        <span className="sm:hidden">Saúde</span>
+                      </TabsTrigger>
+                      <TabsTrigger 
+                        value="dependentes" 
+                        className="flex-1 data-[state=active]:bg-transparent data-[state=active]:text-[#168979] data-[state=active]:border-b-2 data-[state=active]:border-[#168979] data-[state=inactive]:text-gray-500 data-[state=inactive]:border-b-2 data-[state=inactive]:border-transparent hover:text-gray-700 hover:border-gray-300 text-xs sm:text-sm px-3 sm:px-4 py-2.5 sm:py-3 rounded-none transition-all font-medium border-b-2 border-transparent"
+                      >
+                        Dependentes
+                      </TabsTrigger>
+                    </TabsList>
+                  </div>
 
-                  <TabsContent value="dados" className="space-y-6 mt-6">
+                  <TabsContent value="dados" className="space-y-4 sm:space-y-6 mt-0">
                     {/* Dados do Titular */}
-                    <Card>
-                      <CardHeader>
-                        <CardTitle>Dados do Titular</CardTitle>
+                    <Card className="border-2 border-gray-200 shadow-sm">
+                      <CardHeader className="bg-gradient-to-r from-blue-50 to-blue-100/50 border-b border-gray-200 px-3 sm:px-6 py-3 sm:py-4">
+                        <CardTitle className="flex items-center gap-2 text-[#168979] text-base sm:text-lg">
+                          <User className="h-4 w-4 sm:h-5 sm:w-5" />
+                          Dados do Titular
+                        </CardTitle>
                       </CardHeader>
-                      <CardContent>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <CardContent className="pt-4 sm:pt-6 px-3 sm:px-6 pb-4 sm:pb-6">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-6">
                           <div>
-                            <label className="block text-sm font-medium text-gray-600">Nome Completo</label>
+                            <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">Nome Completo</label>
                             {editMode ? (
                               <Input
                                 value={editData.nome || ""}
                                 onChange={(e) => setEditData({...editData, nome: e.target.value})}
-                                className="mt-1"
+                                className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base"
                               />
                             ) : (
                             <p className="text-gray-900 font-medium">{obterNomeCliente(propostaDetalhada)}</p>
                             )}
                           </div>
                           <div>
-                            <label className="block text-sm font-medium text-gray-600">Email</label>
+                            <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">Email</label>
                             {editMode ? (
                               <Input
                                 type="email"
                                 value={editData.email || ""}
                                 onChange={(e) => setEditData({...editData, email: e.target.value})}
-                                className="mt-1"
+                                className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base"
                               />
                             ) : (
                             <p className="text-gray-900">{obterEmailCliente(propostaDetalhada)}</p>
                             )}
                           </div>
                           <div>
-                            <label className="block text-sm font-medium text-gray-600">Telefone</label>
+                            <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">Telefone</label>
                             {editMode ? (
                               <Input
                                 value={editData.telefone || ""}
                                 onChange={(e) => setEditData({...editData, telefone: e.target.value})}
-                                className="mt-1"
+                                className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base"
                               />
                             ) : (
                             <p className="text-gray-900">{obterTelefoneCliente(propostaDetalhada)}</p>
                             )}
                           </div>
                           <div>
-                            <label className="block text-sm font-medium text-gray-600">CPF</label>
+                            <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">CPF</label>
                             {editMode ? (
                               <Input
                                 value={editData.cpf || ""}
                                 onChange={(e) => setEditData({...editData, cpf: e.target.value})}
-                                className="mt-1"
+                                className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base"
                               />
                             ) : (
                             <p className="text-gray-900">{propostaDetalhada.cpf || "Não informado"}</p>
                             )}
                           </div>
                           <div>
-                            <label className="block text-sm font-medium text-gray-600">RG</label>
+                            <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">RG</label>
                             {editMode ? (
                               <Input
                                 value={editData.rg || ""}
                                 onChange={(e) => setEditData({...editData, rg: e.target.value})}
-                                className="mt-1"
+                                className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base"
                               />
                             ) : (
                             <p className="text-gray-900">{propostaDetalhada.rg || "Não informado"}</p>
                             )}
                           </div>
                           <div>
-                            <label className="block text-sm font-medium text-gray-600">Órgão Emissor</label>
+                            <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">Órgão Emissor</label>
                             {editMode ? (
                               <Input
                                 value={editData.orgao_emissor || ""}
                                 onChange={(e) => setEditData({...editData, orgao_emissor: e.target.value})}
-                                className="mt-1"
+                                className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base"
                               />
                             ) : (
                             <p className="text-gray-900">{propostaDetalhada.orgao_emissor || propostaDetalhada.orgao_expedidor || "Não informado"}</p>
                             )}
                           </div>
                           <div>
-                            <label className="block text-sm font-medium text-gray-600">CNS</label>
+                            <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">CNS</label>
                             {editMode ? (
                               <Input
                                 value={editData.cns || ""}
                                 onChange={(e) => setEditData({...editData, cns: e.target.value})}
-                                className="mt-1"
+                                className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base"
                               />
                             ) : (
                             <p className="text-gray-900">{propostaDetalhada.cns || propostaDetalhada.cns_cliente || "Não informado"}</p>
                             )}
                           </div>
                           <div>
-                            <label className="block text-sm font-medium text-gray-600">Data de Nascimento</label>
+                            <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">Data de Nascimento</label>
                             {editMode ? (
                               <Input
                                 type="date"
                                 value={editData.data_nascimento || ""}
                                 onChange={(e) => setEditData({...editData, data_nascimento: e.target.value})}
-                                className="mt-1"
+                                className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base"
                               />
                             ) : (
                             <p className="text-gray-900">
@@ -2003,28 +2292,28 @@ export default function PropostasPage() {
                             )}
                           </div>
                           <div>
-                            <label className="block text-sm font-medium text-gray-600">Idade</label>
+                            <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">Idade</label>
                             <p className="text-gray-900">{calcularIdade(propostaDetalhada.data_nascimento)}</p>
                           </div>
                           <div>
-                            <label className="block text-sm font-medium text-gray-600">Sexo</label>
+                            <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">Sexo</label>
                             <p className="text-gray-900">{propostaDetalhada.sexo || propostaDetalhada.sexo_cliente || "Não informado"}</p>
                           </div>
                           <div>
-                            <label className="block text-sm font-medium text-gray-600">Estado Civil</label>
+                            <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">Estado Civil</label>
                             <p className="text-gray-900">{propostaDetalhada.estado_civil || propostaDetalhada.estado_civil_cliente || "Não informado"}</p>
                           </div>
                           <div>
-                            <label className="block text-sm font-medium text-gray-600">Naturalidade</label>
+                            <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">Naturalidade</label>
                             <p className="text-gray-900">{propostaDetalhada.naturalidade || "Não informado"}</p>
                           </div>
                           <div>
-                            <label className="block text-sm font-medium text-gray-600">UF de Nascimento</label>
+                            <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">UF de Nascimento</label>
                             {editMode ? (
                               <Input
                                 value={editData.uf_nascimento || ""}
                                 onChange={(e) => setEditData({...editData, uf_nascimento: e.target.value})}
-                                className="mt-1"
+                                className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base"
                                 placeholder="Ex: SP, RJ, MG..."
                               />
                             ) : (
@@ -2032,36 +2321,36 @@ export default function PropostasPage() {
                             )}
                           </div>
                           <div>
-                            <label className="block text-sm font-medium text-gray-600">Nome da Mãe</label>
+                            <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">Nome da Mãe</label>
                             {editMode ? (
                               <Input
                                 value={editData.nome_mae || ""}
                                 onChange={(e) => setEditData({...editData, nome_mae: e.target.value})}
-                                className="mt-1"
+                                className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base"
                               />
                             ) : (
                             <p className="text-gray-900">{propostaDetalhada.nome_mae || propostaDetalhada.nome_mae_cliente || "Não informado"}</p>
                             )}
                           </div>
                           <div>
-                            <label className="block text-sm font-medium text-gray-600">Nome do Pai</label>
+                            <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">Nome do Pai</label>
                             <p className="text-gray-900">{propostaDetalhada.nome_pai || "Não informado"}</p>
                           </div>
                           <div>
-                            <label className="block text-sm font-medium text-gray-600">Nacionalidade</label>
+                            <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">Nacionalidade</label>
                             <p className="text-gray-900">{propostaDetalhada.nacionalidade || "Não informado"}</p>
                           </div>
                           <div>
-                            <label className="block text-sm font-medium text-gray-600">Profissão</label>
+                            <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">Profissão</label>
                             <p className="text-gray-900">{propostaDetalhada.profissao || "Não informado"}</p>
                           </div>
                           <div>
-                            <label className="block text-sm font-medium text-gray-600">Assinatura</label>
+                            <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">Assinatura</label>
                             {propostaDetalhada.assinatura || propostaDetalhada.assinatura_imagem ? (
                               <img
                                 src={propostaDetalhada.assinatura || propostaDetalhada.assinatura_imagem}
                                 alt="Assinatura"
-                                style={{ maxWidth: 200, border: "1px solid #ccc", background: "#fff" }}
+                                className="max-w-full sm:max-w-[200px] border-2 border-gray-200 rounded-lg p-2 bg-white"
                               />
                             ) : (
                               <p className="text-gray-900">Não informado</p>
@@ -2072,39 +2361,42 @@ export default function PropostasPage() {
                     </Card>
 
                     {/* Endereço */}
-                    <Card>
-                      <CardHeader>
-                        <CardTitle>Endereço</CardTitle>
+                    <Card className="border-2 border-gray-200 shadow-sm">
+                      <CardHeader className="bg-gradient-to-r from-green-50 to-green-100/50 border-b border-gray-200 px-3 sm:px-6 py-3 sm:py-4">
+                        <CardTitle className="flex items-center gap-2 text-[#168979] text-base sm:text-lg">
+                          <Building className="h-4 w-4 sm:h-5 sm:w-5" />
+                          Endereço
+                        </CardTitle>
                       </CardHeader>
-                      <CardContent>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <CardContent className="pt-4 sm:pt-6 px-3 sm:px-6 pb-4 sm:pb-6">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-6">
                           <div className="md:col-span-2">
-                            <label className="block text-sm font-medium text-gray-600">Logradouro</label>
+                            <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">Logradouro</label>
                             <p className="text-gray-900">
                               {propostaDetalhada.endereco || "Não informado"}
                               {propostaDetalhada.numero && `, ${propostaDetalhada.numero}`}
                             </p>
                           </div>
                           <div>
-                            <label className="block text-sm font-medium text-gray-600">Complemento</label>
+                            <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">Complemento</label>
                             <p className="text-gray-900">{propostaDetalhada.complemento || "Não informado"}</p>
                           </div>
                           <div>
-                            <label className="block text-sm font-medium text-gray-600">Bairro</label>
+                            <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">Bairro</label>
                             <p className="text-gray-900">{propostaDetalhada.bairro || "Não informado"}</p>
                           </div>
                           <div>
-                            <label className="block text-sm font-medium text-gray-600">Cidade</label>
+                            <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">Cidade</label>
                             <p className="text-gray-900">{propostaDetalhada.cidade || "Não informado"}</p>
                           </div>
                           <div>
-                            <label className="block text-sm font-medium text-gray-600">Estado</label>
+                            <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">Estado</label>
                             <p className="text-gray-900">
                               {propostaDetalhada.estado || propostaDetalhada.uf || "Não informado"}
                             </p>
                           </div>
                           <div>
-                            <label className="block text-sm font-medium text-gray-600">CEP</label>
+                            <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">CEP</label>
                             <p className="text-gray-900">{propostaDetalhada.cep || "Não informado"}</p>
                           </div>
                         </div>
@@ -2112,34 +2404,37 @@ export default function PropostasPage() {
                     </Card>
 
                     {/* Informações do Plano */}
-                    <Card>
-                      <CardHeader>
-                        <CardTitle>Informações do Plano</CardTitle>
+                    <Card className="border-2 border-gray-200 shadow-sm">
+                      <CardHeader className="bg-gradient-to-r from-purple-50 to-purple-100/50 border-b border-gray-200 px-3 sm:px-6 py-3 sm:py-4">
+                        <CardTitle className="flex items-center gap-2 text-[#168979] text-base sm:text-lg">
+                          <FileText className="h-4 w-4 sm:h-5 sm:w-5" />
+                          Informações do Plano
+                        </CardTitle>
                       </CardHeader>
-                      <CardContent>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <CardContent className="pt-4 sm:pt-6 px-3 sm:px-6 pb-4 sm:pb-6">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
                           <div>
-                            <label className="block text-sm font-medium text-gray-600">Produto</label>
+                            <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">Produto</label>
                             <p className="text-gray-900 font-medium">
                               {propostaDetalhada.produto_nome || propostaDetalhada.produto || "Não informado"}
                             </p>
                           </div>
                           <div>
-                            <label className="block text-sm font-medium text-gray-600">Plano</label>
+                            <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">Plano</label>
                             <p className="text-gray-900">
                               {propostaDetalhada.plano_nome || propostaDetalhada.sigla_plano || "Não informado"}
                             </p>
                           </div>
                           <div>
-                            <label className="block text-sm font-medium text-gray-600">Cobertura</label>
+                            <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">Cobertura</label>
                             <p className="text-gray-900">{propostaDetalhada.cobertura || "Não informado"}</p>
                           </div>
                           <div>
-                            <label className="block text-sm font-medium text-gray-600">Acomodação</label>
+                            <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">Acomodação</label>
                             <p className="text-gray-900">{propostaDetalhada.acomodacao || "Não informado"}</p>
                           </div>
                           <div>
-                            <label className="block text-sm font-medium text-gray-600">Valor Mensal</label>
+                            <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">Valor Mensal</label>
                             <p className="text-2xl font-bold text-green-600">
                               R$ {calcularValorTotalMensal(propostaDetalhada).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
                             </p>
@@ -2167,7 +2462,7 @@ export default function PropostasPage() {
                             })()}
                           </div>
                           <div>
-                            <label className="block text-sm font-medium text-gray-600">Status</label>
+                            <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">Status</label>
                             <Badge className={`${getStatusBadge(propostaDetalhada.status).color} inline-flex items-center gap-1`}>
                               {(() => {
                                 const statusInfo = getStatusBadge(propostaDetalhada.status)
@@ -2182,7 +2477,7 @@ export default function PropostasPage() {
                     </Card>
                   </TabsContent>
 
-                  <TabsContent value="documentos" className="space-y-6 mt-6">
+                  <TabsContent value="documentos" className="space-y-4 sm:space-y-6 mt-0">
                     {/* Documentos do Titular */}
                     {renderDocumentos(
                       obterDocumentosInteligente(propostaDetalhada, "titular"),
@@ -2204,38 +2499,45 @@ export default function PropostasPage() {
                     })}
                   </TabsContent>
 
-                  <TabsContent value="saude" className="space-y-6 mt-6">
+                  <TabsContent value="saude" className="space-y-4 sm:space-y-6 mt-0">
                     {renderDeclaracaoSaudeUnificada()}
                   </TabsContent>
 
-                  <TabsContent value="dependentes" className="space-y-6 mt-6">
+                  <TabsContent value="dependentes" className="space-y-4 sm:space-y-6 mt-0">
                     {dependentes.length === 0 ? (
-                      <Card>
-                        <CardContent className="text-center py-8">
+                      <Card className="border-2 border-gray-200 shadow-sm">
+                        <CardHeader className="bg-gradient-to-r from-purple-50 to-purple-100/50 border-b border-gray-200 px-3 sm:px-6 py-3 sm:py-4">
+                          <CardTitle className="flex items-center gap-2 text-[#168979] text-base sm:text-lg">
+                            <User className="h-4 w-4 sm:h-5 sm:w-5" />
+                            Dependentes
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent className="pt-4 sm:pt-6 px-3 sm:px-6 pb-4 sm:pb-6 text-center">
                           <p className="text-gray-500">Nenhum dependente cadastrado</p>
                         </CardContent>
                       </Card>
                     ) : (
                       <div className="space-y-4">
                         {dependentes.map((dependente: any, index: any) => (
-                          <Card key={dependente.id || index}>
-                            <CardHeader>
-                              <CardTitle className="text-lg">
-                                {dependente.nome} - {getParentescoAmigavel(dependente.parentesco)}
+                          <Card key={dependente.id || index} className="border-2 border-gray-200 shadow-sm">
+                            <CardHeader className="bg-gradient-to-r from-purple-50 to-purple-100/50 border-b border-gray-200 px-3 sm:px-6 py-3 sm:py-4">
+                              <CardTitle className="flex items-center gap-2 text-[#168979] text-base sm:text-lg">
+                                <User className="h-4 w-4 sm:h-5 sm:w-5" />
+                                <span className="truncate">{dependente.nome} - {getParentescoAmigavel(dependente.parentesco)}</span>
                               </CardTitle>
                             </CardHeader>
-                            <CardContent>
-                              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <CardContent className="pt-4 sm:pt-6 px-3 sm:px-6 pb-4 sm:pb-6">
+                              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-6">
                                 <div>
-                                  <label className="block text-sm font-medium text-gray-600">Nome Completo</label>
+                                  <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">Nome Completo</label>
                                   <p className="text-gray-900">{dependente.nome || "Não informado"}</p>
                                 </div>
                                 <div>
-                                  <label className="block text-sm font-medium text-gray-600">CPF</label>
+                                  <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">CPF</label>
                                   <p className="text-gray-900">{dependente.cpf || "Não informado"}</p>
                                 </div>
                                 <div>
-                                  <label className="block text-sm font-medium text-gray-600">Data de Nascimento</label>
+                                  <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">Data de Nascimento</label>
                                   <p className="text-gray-900">
                                     {dependente.data_nascimento
                                       ? formatarDataSegura(dependente.data_nascimento)
@@ -2243,15 +2545,15 @@ export default function PropostasPage() {
                                   </p>
                                 </div>
                                 <div>
-                                  <label className="block text-sm font-medium text-gray-600">Idade</label>
+                                  <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">Idade</label>
                                   <p className="text-gray-900">{calcularIdade(dependente.data_nascimento)}</p>
                                 </div>
                                 <div>
-                                  <label className="block text-sm font-medium text-gray-600">Sexo</label>
+                                  <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">Sexo</label>
                                   <p className="text-gray-900">{dependente.sexo || "Não informado"}</p>
                                 </div>
                                 <div>
-                                  <label className="block text-sm font-medium text-gray-600">Parentesco</label>
+                                  <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">Parentesco</label>
                                   <p className="text-gray-900">{getParentescoAmigavel(dependente.parentesco)}</p>
                                 </div>
                               </div>
@@ -2269,92 +2571,103 @@ export default function PropostasPage() {
       )}
 
       {/* Modal de Rejeição */}
-      {showModalRejeicao && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded-lg max-w-md w-full mx-4 border border-gray-300">
-            <h3 className="text-lg font-semibold mb-4 text-gray-900">Rejeitar Proposta</h3>
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">Motivo da rejeição:</label>
-              <textarea
-                value={motivoRejeicao}
-                onChange={(e) => setMotivoRejeicao(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-gray-500 focus:border-gray-500"
-                rows={4}
-                placeholder="Descreva o motivo da rejeição..."
-              />
-            </div>
-            <div className="flex justify-end space-x-3">
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setShowModalRejeicao(false)
-                  setMotivoRejeicao("")
-                }}
-              >
-                Cancelar
-              </Button>
-              <Button
-                onClick={rejeitarProposta}
-                disabled={!motivoRejeicao.trim()}
-                className="bg-red-600 hover:bg-red-700 text-white"
-              >
-                Confirmar Rejeição
-              </Button>
+      {showModalRejeicao && propostaDetalhada && (
+        <div className="fixed inset-0 flex items-center justify-center z-[100] p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full">
+            <div className="bg-gradient-to-r from-red-100 to-pink-100 border-b border-red-200 px-4 sm:px-6 py-4">
+              <div className="flex items-center gap-2">
+                <Heart className="h-4 w-4 sm:h-5 sm:w-5 text-red-500" />
+                <h3 className="text-lg font-semibold mb-4 text-gray-900">Rejeitar Proposta</h3>
+              </div>
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">Motivo da rejeição:</label>
+                <textarea
+                  value={motivoRejeicao}
+                  onChange={(e) => setMotivoRejeicao(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-gray-500 focus:border-gray-500"
+                  rows={4}
+                  placeholder="Descreva o motivo da rejeição..."
+                />
+              </div>
+              <div className="flex justify-end space-x-3">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setShowModalRejeicao(false)
+                    setMotivoRejeicao("")
+                  }}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  onClick={rejeitarProposta}
+                  disabled={!motivoRejeicao.trim()}
+                  className="bg-red-600 hover:bg-red-700 text-white"
+                >
+                  Confirmar Rejeição
+                </Button>
+              </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* Modal de Seleção de Modelo PDF */}
-      {showModalPDF && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg max-w-md w-full p-6">
-            <h3 className="text-lg font-semibold mb-4">Selecionar Modelo de Proposta</h3>
-            <p className="text-gray-600 mb-4">
-              Escolha o modelo que será usado para gerar o PDF da proposta
-            </p>
-            
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Modelo <span className="text-red-500">*</span>
-              </label>
-              <Select value={modeloSelecionado} onValueChange={setModeloSelecionado}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione um modelo" />
-                </SelectTrigger>
-                <SelectContent>
-                  {modelosProposta.map((modelo) => (
-                    <SelectItem key={modelo.id} value={modelo.id}>
-                      {modelo.titulo}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            
-            <div className="flex justify-end space-x-3">
-              <button
-                onClick={() => setShowModalPDF(false)}
-                className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={gerarPDFComModelo}
-                disabled={generatingPdf || !modeloSelecionado}
-                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
-              >
-                {generatingPdf ? (
-                  <>
-                    <div className="loading-corporate-small mr-2"></div>
-                    Gerando...
-                  </>
-                ) : (
-                  <>
-                    Gerar PDF
-                  </>
-                )}
-              </button>
+      {/* Modal PDF */}
+      {showModalPDF && propostaDetalhada && (
+        <div className="fixed inset-0 flex items-center justify-center z-[100] p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-5xl w-full max-h-[95vh] overflow-hidden flex flex-col">
+            {/* Header com Gradiente */}
+            <div className="bg-gradient-to-r from-[#168979] to-[#13786a] px-4 sm:px-6 py-3 sm:py-4">
+              <div className="flex items-center gap-2">
+                <Heart className="h-4 w-4 sm:h-5 sm:w-5 text-red-500" />
+                <h3 className="text-lg font-semibold mb-4 text-gray-900">Gerar PDF</h3>
+              </div>
+              <p className="text-gray-600 mb-4">
+                Escolha o modelo que será usado para gerar o PDF da proposta
+              </p>
+              
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Modelo <span className="text-red-500">*</span>
+                </label>
+                <Select value={modeloSelecionado} onValueChange={setModeloSelecionado}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione um modelo" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {modelosProposta.map((modelo) => (
+                      <SelectItem key={modelo.id} value={modelo.id}>
+                        {modelo.titulo}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              <div className="flex justify-end space-x-3">
+                <button
+                  onClick={() => setShowModalPDF(false)}
+                  className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={gerarPDFComModelo}
+                  disabled={generatingPdf || !modeloSelecionado}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+                >
+                  {generatingPdf ? (
+                    <>
+                      <div className="loading-corporate-small mr-2"></div>
+                      Gerando...
+                    </>
+                  ) : (
+                    <>
+                      Gerar PDF
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
           </div>
         </div>

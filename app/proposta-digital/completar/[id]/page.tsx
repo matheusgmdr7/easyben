@@ -19,10 +19,12 @@ import {
   ArrowLeft,
   PenTool,
   User,
+  Camera,
 } from "lucide-react"
 import { toast } from "sonner"
 import { supabase } from "@/lib/supabase"
 import Step5HealthQuestionnaire from "@/components/proposta-digital/steps/step5-health-questionnaire"
+import Step6Photos from "@/components/proposta-digital/steps/step6-photos"
 import Step7Signature from "@/components/proposta-digital/steps/step7-signature"
 import { useForm, FormProvider } from "react-hook-form"
 import { salvarQuestionarioSaude } from "@/services/questionario-service"
@@ -63,6 +65,8 @@ interface Proposta {
   valor_mensal?: string
   corretor_id?: string
   produto_id?: string
+  foto_rosto?: string
+  foto_corpo_inteiro?: string
 }
 
 const ETAPAS = [
@@ -70,7 +74,8 @@ const ETAPAS = [
   { id: 2, nome: "Dependentes", descricao: "Dados dos dependentes", icon: Users },
   { id: 3, nome: "Informações do Plano", descricao: "Detalhes do plano escolhido", icon: FileText },
   { id: 4, nome: "Questionário de Saúde", descricao: "Declaração de saúde", icon: Heart },
-  { id: 5, nome: "Assinatura Digital", descricao: "Finalização da proposta", icon: PenTool },
+  { id: 5, nome: "Captura de Fotos", descricao: "Foto de rosto e corpo inteiro", icon: Camera },
+  { id: 6, nome: "Assinatura Digital", descricao: "Finalização da proposta", icon: PenTool },
 ]
 
 export default function CompletarPropostaPage() {
@@ -166,7 +171,9 @@ export default function CompletarPropostaPage() {
           acomodacao,
           valor_mensal,
           corretor_id,
-          produto_id
+          produto_id,
+          foto_rosto,
+          foto_corpo_inteiro
         `)
         .eq("id", propostaId)
         .single()
@@ -227,9 +234,11 @@ export default function CompletarPropostaPage() {
 
       // Determinar etapa inicial baseado no progresso
       if (data.status_assinatura === "assinada") {
-        setEtapaAtual(5) // Já finalizada
+        setEtapaAtual(6) // Já finalizada
+      } else if (data.foto_rosto && data.foto_corpo_inteiro) {
+        setEtapaAtual(6) // Ir para assinatura
       } else if (data.questionario_completo) {
-        setEtapaAtual(5) // Ir para assinatura
+        setEtapaAtual(5) // Ir para captura de fotos
       } else {
         setEtapaAtual(1) // Começar do início
       }
@@ -346,6 +355,9 @@ export default function CompletarPropostaPage() {
       
       toast.success("✅ Declaração de Saúde salva com sucesso!")
     }
+
+    // Nota: A etapa 5 (captura de fotos) tem sua própria validação no componente Step6Photos
+    // que garante que ambas as fotos sejam capturadas antes de chamar onNext()
 
     if (etapaAtual < ETAPAS.length) {
       setEtapaAtual(etapaAtual + 1)
@@ -668,8 +680,25 @@ export default function CompletarPropostaPage() {
           {/* Etapa 4: Questionário de Saúde */}
           {etapaAtual === 4 && <Step5HealthQuestionnaire onNext={proximaEtapa} onBack={etapaAnterior} />}
 
-          {/* Etapa 5: Assinatura Digital */}
-          {etapaAtual === 5 && (
+          {/* Etapa 5: Captura de Fotos */}
+          {etapaAtual === 5 && proposta && (
+            <Step6Photos
+              onNext={proximaEtapa}
+              onBack={etapaAnterior}
+              propostaId={proposta.id}
+              onPhotosSaved={(fotoRosto, fotoCorpoInteiro) => {
+                // Atualizar proposta com as URLs das fotos
+                setProposta(prev => prev ? {
+                  ...prev,
+                  foto_rosto: fotoRosto,
+                  foto_corpo_inteiro: fotoCorpoInteiro
+                } : null)
+              }}
+            />
+          )}
+
+          {/* Etapa 6: Assinatura Digital */}
+          {etapaAtual === 6 && (
             <Step7Signature 
               onNext={proximaEtapa}
               onPrev={etapaAnterior}

@@ -4,12 +4,6 @@
  * @returns String formatada como moeda brasileira
  */
 export function formatarMoeda(valor: number): string {
-  console.log(`🔍 DEBUG formatarMoeda - Entrada:`, {
-    valor,
-    tipo: typeof valor,
-    isNaN: isNaN(valor)
-  })
-
   // Garantir que o valor seja um número válido
   if (typeof valor !== 'number' || isNaN(valor)) {
     console.warn("⚠️ Valor inválido para formatação de moeda:", valor)
@@ -17,19 +11,12 @@ export function formatarMoeda(valor: number): string {
   }
 
   // Usar toLocaleString com configurações específicas para garantir precisão
-  const resultado = valor.toLocaleString("pt-BR", {
+  return valor.toLocaleString("pt-BR", {
     style: "currency",
     currency: "BRL",
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })
-
-  console.log(`✅ DEBUG formatarMoeda - Resultado:`, {
-    entrada: valor,
-    saida: resultado
-  })
-
-  return resultado
 }
 
 /**

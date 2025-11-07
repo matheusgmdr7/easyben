@@ -1,5 +1,4 @@
 import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
 import { ArrowRight, Users, Clock, Shield, Heart } from "lucide-react"
 import Link from "next/link"
 import Header from "@/components/header"
@@ -148,59 +147,6 @@ export default function SobrePage() {
                   <p className="text-4xl font-bold text-[#168979] mb-2">97%</p>
                   <p className="text-gray-600">Clientes satisfeitos</p>
                 </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* Depoimentos Section */}
-        <section className="py-16 bg-gray-50">
-          <div className="container px-4 md:px-6">
-            <div className="max-w-4xl mx-auto">
-              <h2 className="text-3xl font-bold text-center mb-12 text-[#168979]">O que nossos clientes dizem</h2>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                <Card className="bg-white border-0 shadow-sm hover:shadow-md transition-shadow">
-                  <CardContent className="p-6">
-                    <p className="italic text-gray-600 mb-6">
-                      "A Contratandoplanos me ajudou a encontrar o plano perfeito para minha família. O atendimento foi
-                      excelente, com profissionais que realmente se preocupam em entender nossas necessidades. Recomendo
-                      a todos!"
-                    </p>
-                    <div className="flex items-center">
-                      <img
-                        src="https://i.ibb.co/0yZVy85Z/camila.png"
-                        alt="Maria Silva"
-                        className="w-12 h-12 rounded-full object-cover mr-4"
-                      />
-                      <div>
-                        <p className="font-semibold">Maria Silva</p>
-                        <p className="text-sm text-gray-500">Cliente desde 2022</p>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card className="bg-white border-0 shadow-sm hover:shadow-md transition-shadow">
-                  <CardContent className="p-6">
-                    <p className="italic text-gray-600 mb-6">
-                      "Como empresário, estava procurando um plano de saúde para meus funcionários que oferecesse boa
-                      cobertura sem pesar no orçamento. A Contratandoplanos me apresentou diversas opções e me ajudou a
-                      escolher a melhor. Minha equipe está muito satisfeita!"
-                    </p>
-                    <div className="flex items-center">
-                      <img
-                        src="https://i.ibb.co/ZRcNmwJD/robert.png"
-                        alt="Carlos Oliveira"
-                        className="w-12 h-12 rounded-full object-cover mr-4"
-                      />
-                      <div>
-                        <p className="font-semibold">Carlos Oliveira</p>
-                        <p className="text-sm text-gray-500">Cliente empresarial desde 2023</p>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
               </div>
             </div>
           </div>

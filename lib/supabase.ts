@@ -1,5 +1,4 @@
 import { createClient } from "@supabase/supabase-js"
-import * as XLSX from "xlsx"
 
 // Valores padrão para desenvolvimento (substitua pelos seus valores reais em produção)
 const defaultUrl = "https://jtzbuxoslaotpnwsphqv.supabase.co"
@@ -326,6 +325,13 @@ export async function downloadFile(url: string, fileName: string) {
 
 export async function exportToExcel(propostas: any[]) {
   try {
+    // Importar XLSX dinamicamente apenas no cliente
+    if (typeof window === "undefined") {
+      throw new Error("exportToExcel só pode ser usado no cliente")
+    }
+    
+    const XLSX = await import("xlsx")
+    
     // Preparar os dados para o Excel
     const data = propostas.map((proposta) => {
       const dependentes = proposta.dependentes?.map((dep: any) => `${dep.nome} (${dep.parentesco})`).join(", ") || ""

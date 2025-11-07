@@ -1,379 +1,837 @@
 import { supabase } from "@/lib/supabase"
-import { supabase as supabaseAuth } from "@/lib/supabase-auth"
-import bcrypt from "bcryptjs"
+// Import condicional de supabaseAdmin apenas quando necessário (servidor)
+// No cliente, usamos APIs para operações que requerem service role
+
+// Tipos de permissões disponíveis
+export type Permissao =
+  | "dashboard"
+  | "propostas"
+  | "cadastrados"
+  | "em_analise"
+  | "contratos"
+  | "tabelas"
+  | "produtos"
+  | "clientes"
+  | "clientes_ativos"
+  | "corretores"
+  | "leads"
+  | "vendas"
+  | "modelos_propostas"
+  | "administradoras"
+  | "financeiro"
+  | "usuarios"
+  | "configuracoes"
 
 export interface UsuarioAdmin {
   id: string
   nome: string
   email: string
-  senha_hash?: string // agora opcional
+  senha_hash?: string
+  perfil: "super_admin" | "admin" | "financeiro" | "vendas" | "atendimento" | "readonly" | "master" | "assistente"
+  status: "ativo" | "inativo" | "bloqueado" | "pendente"
+  permissoes: Permissao[] | any
+  criado_em?: string
+  atualizado_em?: string
+  ultimo_acesso?: string
+  criado_por?: string
   ativo: boolean
-  perfil: string
-  permissoes: any
-  ultimo_login?: string
-  created_at: string
-  updated_at: string
-  auth_user_id?: string // novo campo para vincular com Supabase Auth
+  auth_user_id?: string
 }
 
 export interface CriarUsuarioData {
   nome: string
   email: string
   senha: string
-  perfil?: string
-  permissoes?: any
+  perfil: UsuarioAdmin["perfil"]
+  permissoes?: Permissao[]
+  status?: UsuarioAdmin["status"]
 }
 
-export interface LoginData {
-  email: string
-  senha: string
+export interface AtualizarUsuarioData {
+  nome?: string
+  email?: string
+  senha?: string
+  perfil?: UsuarioAdmin["perfil"]
+  permissoes?: Permissao[]
+  status?: UsuarioAdmin["status"]
+  ativo?: boolean
 }
+
+// Perfis pré-definidos com suas permissões
+export const PERFIS_PERMISSOES: Record<UsuarioAdmin["perfil"], Permissao[]> = {
+  master: [
+    "dashboard",
+    "propostas",
+    "cadastrados",
+    "em_analise",
+    "contratos",
+    "tabelas",
+    "produtos",
+    "clientes",
+    "clientes_ativos",
+    "corretores",
+    "leads",
+    "vendas",
+    "modelos_propostas",
+    "administradoras",
+    "financeiro",
+    "usuarios",
+    "configuracoes",
+  ],
+  super_admin: [
+    "dashboard",
+    "propostas",
+    "cadastrados",
+    "em_analise",
+    "contratos",
+    "tabelas",
+    "produtos",
+    "clientes",
+    "clientes_ativos",
+    "corretores",
+    "leads",
+    "vendas",
+    "modelos_propostas",
+    "administradoras",
+    "financeiro",
+    "usuarios",
+    "configuracoes",
+  ],
+  admin: [
+    "dashboard",
+    "propostas",
+    "cadastrados",
+    "em_analise",
+    "contratos",
+    "tabelas",
+    "produtos",
+    "clientes",
+    "clientes_ativos",
+    "corretores",
+    "leads",
+    "vendas",
+    "modelos_propostas",
+    "administradoras",
+    "financeiro",
+  ],
+  assistente: [
+    "dashboard",
+    "propostas",
+    "cadastrados",
+    "em_analise",
+    "clientes",
+    "clientes_ativos",
+  ],
+  financeiro: [
+    "dashboard",
+    "cadastrados",
+    "clientes",
+    "clientes_ativos",
+    "administradoras",
+    "financeiro",
+  ],
+  vendas: [
+    "dashboard",
+    "propostas",
+    "em_analise",
+    "contratos",
+    "clientes",
+    "leads",
+    "vendas",
+  ],
+  atendimento: [
+    "dashboard",
+    "propostas",
+    "cadastrados",
+    "em_analise",
+    "clientes",
+    "clientes_ativos",
+  ],
+  readonly: ["dashboard"],
+}
+
+// Labels para exibição
+export const PERMISSOES_LABELS: Record<Permissao, string> = {
+  dashboard: "Dashboard",
+  propostas: "Propostas",
+  cadastrados: "Cadastrados",
+  em_analise: "Em Análise",
+  contratos: "Contratos",
+  tabelas: "Tabelas",
+  produtos: "Produtos",
+  clientes: "Clientes",
+  clientes_ativos: "Clientes Ativos",
+  corretores: "Corretores",
+  leads: "Leads",
+  vendas: "Vendas",
+  modelos_propostas: "Modelos de Propostas",
+  administradoras: "Administradoras",
+  financeiro: "Financeiro",
+  usuarios: "Usuários",
+  configuracoes: "Configurações",
+}
+
+export const PERFIS_LABELS: Record<UsuarioAdmin["perfil"], string> = {
+  master: "Master",
+  super_admin: "Super Admin",
+  admin: "Administrador",
+  assistente: "Assistente",
+  financeiro: "Financeiro",
+  vendas: "Vendas",
+  atendimento: "Atendimento",
+  readonly: "Somente Leitura",
+}
+
+class UsuariosAdminService {
+  /**
+   * Obtém as permissões padrão de um perfil
+   */
+  obterPermissoesPadrao(perfil: UsuarioAdmin["perfil"]): Permissao[] {
+    return PERFIS_PERMISSOES[perfil] || []
+  }
+
+  /**
+   * Lista todos os usuários admin
+   */
+  async listar(): Promise<UsuarioAdmin[]> {
+    const { data, error } = await supabase
+        .from("usuarios_admin")
+      .select("*")
+      .order("criado_em", { ascending: false })
+
+    if (error) throw error
+    return data || []
+  }
 
 /**
- * Serviço para gerenciar usuários administrativos (Integrado com Supabase Auth)
- */
-export class UsuariosAdminService {
-  /**
-   * Criar um novo usuário admin (Integrado)
+   * Busca um usuário por ID
    */
-  static async criarUsuario(
-    dados: CriarUsuarioData,
-  ): Promise<{ success: boolean; message: string; usuario?: UsuarioAdmin }> {
-    try {
-      console.log("🔐 Criando novo usuário admin integrado:", dados.email)
-
-      // 1. Verificar se o email já existe na tabela usuarios_admin
-      const { data: usuarioExistente, error: errorVerificacao } = await supabase
+  async buscarPorId(id: string): Promise<UsuarioAdmin | null> {
+    const { data, error } = await supabase
         .from("usuarios_admin")
-        .select("email")
-        .eq("email", dados.email.toLowerCase())
+        .select("*")
+      .eq("id", id)
         .single()
 
-      if (usuarioExistente) {
-        return {
-          success: false,
-          message: "Email já está em uso na tabela de permissões",
-        }
-      }
+    if (error) {
+      if (error.code === "PGRST116") return null
+      throw error
+    }
+    return data
+  }
 
-      // 2. Criar usuário no Supabase Auth (usando signUp em vez de admin)
-      console.log("📋 Criando usuário no Supabase Auth...")
-      const { data: authData, error: authError } = await supabaseAuth.auth.signUp({
-        email: dados.email.toLowerCase(),
-        password: dados.senha,
-        options: {
-          data: {
+/**
+   * Busca um usuário por email
+   */
+  async buscarPorEmail(email: string): Promise<UsuarioAdmin | null> {
+    const { data, error } = await supabase
+        .from("usuarios_admin")
+      .select("*")
+      .eq("email", email)
+      .single()
+
+      if (error) {
+      if (error.code === "PGRST116") return null
+      throw error
+    }
+    return data
+  }
+
+/**
+   * Cria um novo usuário admin
+   */
+  async criar(dados: CriarUsuarioData): Promise<UsuarioAdmin> {
+    try {
+      let authUserId: string
+
+      // Se estiver no cliente, usar API route
+      if (typeof window !== "undefined") {
+        const response = await fetch("/api/admin/usuarios/auth/create", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email: dados.email,
+            password: dados.senha,
+            nome: dados.nome,
+            perfil: dados.perfil,
+          }),
+        })
+
+        if (!response.ok) {
+          const errorData = await response.json()
+          throw new Error(errorData.error || "Erro ao criar usuário no Auth")
+        }
+
+        const result = await response.json()
+        authUserId = result.user.id
+      } else {
+        // Se estiver no servidor, usar supabaseAdmin diretamente
+        const { supabaseAdmin } = await import("@/lib/supabase-admin")
+        const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+          email: dados.email,
+          password: dados.senha,
+          email_confirm: true,
+          user_metadata: {
             role: "admin",
             nome: dados.nome,
-            perfil: dados.perfil || "assistente",
-          }
+            perfil: dados.perfil,
+          },
+        })
+
+        if (authError) {
+          throw new Error(`Erro ao criar usuário no Supabase Auth: ${authError.message}`)
         }
+
+        if (!authData.user) {
+          throw new Error("Falha ao criar usuário no Supabase Auth")
+        }
+
+        authUserId = authData.user.id
+      }
+
+      // 2. Hash da senha para nossa tabela
+      const senhaHash = await this.hashSenha(dados.senha)
+
+      // 3. Definir permissões baseadas no perfil se não fornecidas
+      // Garantir que sempre seja um array
+      let permissoes: string[] = []
+      if (dados.permissoes && Array.isArray(dados.permissoes) && dados.permissoes.length > 0) {
+        permissoes = dados.permissoes
+      } else {
+        permissoes = PERFIS_PERMISSOES[dados.perfil] || []
+      }
+      
+      console.log("💾 Salvando usuário com permissões:", {
+        email: dados.email,
+        perfil: dados.perfil,
+        permissoesRecebidas: dados.permissoes,
+        permissoesFinais: permissoes,
       })
 
-      if (authError) {
-        console.error("❌ Erro ao criar usuário no Auth:", authError)
-        return {
-          success: false,
-          message: "Erro ao criar usuário no sistema de autenticação: " + authError.message,
-        }
-      }
-
-      if (!authData.user) {
-        return {
-          success: false,
-          message: "Erro: Usuário não foi criado no Auth",
-        }
-      }
-
-      // 3. Criar registro na tabela usuarios_admin
-      console.log("📋 Criando registro na tabela de permissões...")
-      const { data: novoUsuario, error } = await supabase
+      // 4. Criar usuário na nossa tabela usuarios_admin
+      const { data, error } = await supabase
         .from("usuarios_admin")
-        .insert([
-          {
-            id: authData.user.id, // Usar o mesmo ID do Auth
+        .insert({
             nome: dados.nome,
-            email: dados.email.toLowerCase(),
+          email: dados.email,
+          senha_hash: senhaHash,
+          perfil: dados.perfil,
+          permissoes: permissoes,
+          status: dados.status || "ativo",
             ativo: true,
-            perfil: dados.perfil || "assistente",
-            permissoes: dados.permissoes || {},
-            auth_user_id: authData.user.id, // Vincular com Auth
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          },
-        ])
+          auth_user_id: authUserId, // Link com Supabase Auth
+        })
         .select()
         .single()
 
       if (error) {
-        console.error("❌ Erro ao criar usuário na tabela:", error)
-        // Não podemos deletar do Auth sem permissões admin, mas podemos marcar como inativo
-        return {
-          success: false,
-          message: "Erro ao criar usuário na tabela de permissões: " + error.message,
+        // Se falhar na nossa tabela, remover do Supabase Auth
+        if (typeof window !== "undefined") {
+          // Cliente: usar API
+          await fetch("/api/admin/usuarios/auth/delete", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ userId: authUserId }),
+          })
+        } else {
+          // Servidor: usar diretamente
+          const { supabaseAdmin } = await import("@/lib/supabase-admin")
+          await supabaseAdmin.auth.admin.deleteUser(authUserId)
         }
+        throw new Error(`Erro ao criar usuário na tabela admin: ${error.message}`)
       }
 
-      console.log("✅ Usuário criado com sucesso (Auth + Permissões):", novoUsuario.email)
-      return {
-        success: true,
-        message: "Usuário criado com sucesso no sistema integrado. Verifique seu email para confirmar a conta.",
-        usuario: novoUsuario,
-      }
-    } catch (error: any) {
-      console.error("❌ Erro inesperado ao criar usuário:", error)
-      return {
-        success: false,
-        message: "Erro inesperado: " + error.message,
-      }
+      // 5. Remover senha_hash do retorno
+      const { senha_hash, ...usuarioSemSenha } = data
+      return usuarioSemSenha as UsuarioAdmin
+
+    } catch (error) {
+      console.error("Erro ao criar usuário admin:", error)
+      throw error
     }
   }
 
-  /**
-   * Fazer login de usuário admin (Agora usa Supabase Auth)
+/**
+   * Atualiza um usuário
    */
-  static async login(dados: LoginData): Promise<{ success: boolean; message: string; usuario?: UsuarioAdmin }> {
+  async atualizar(id: string, dados: AtualizarUsuarioData): Promise<UsuarioAdmin> {
     try {
-      console.log("🔐 Tentativa de login integrado:", dados.email)
-
-      // 1. Fazer login no Supabase Auth
-      const { data: authData, error: authError } = await supabaseAuth.auth.signInWithPassword({
-        email: dados.email.toLowerCase(),
-        password: dados.senha,
-      })
-
-      if (authError) {
-        console.log("❌ Erro no login do Auth:", authError.message)
-        return {
-          success: false,
-          message: "Email ou senha incorretos",
-        }
-      }
-
-      // 2. Buscar dados do usuário na tabela usuarios_admin
-      const { data: usuario, error: userError } = await supabase
+      // 1. Buscar usuário atual para obter auth_user_id
+      const { data: usuarioAtual, error: buscaError } = await supabase
         .from("usuarios_admin")
-        .select("*")
-        .eq("email", dados.email.toLowerCase())
-        .eq("ativo", true)
+        .select("auth_user_id, email")
+        .eq("id", id)
         .single()
 
-      if (userError || !usuario) {
-        console.log("❌ Usuário não encontrado na tabela de permissões")
-        // Fazer logout do Auth se não encontrar na tabela
-        await supabaseAuth.auth.signOut()
-        return {
-          success: false,
-          message: "Usuário não tem permissões configuradas",
+      if (buscaError || !usuarioAtual) {
+        throw new Error("Usuário não encontrado")
+      }
+
+      // 2. Se tem auth_user_id, atualizar no Supabase Auth também
+      if (usuarioAtual.auth_user_id) {
+        const authUpdateData: any = {
+          user_metadata: {
+            nome: dados.nome,
+            perfil: dados.perfil,
+          },
+        }
+
+        // Se mudou email, atualizar no Supabase Auth
+        if (dados.email && dados.email !== usuarioAtual.email) {
+          authUpdateData.email = dados.email
+        }
+
+        // Se forneceu nova senha, atualizar no Supabase Auth
+        if (dados.senha) {
+          authUpdateData.password = dados.senha
+        }
+
+        // Se estiver no cliente, usar API route
+        if (typeof window !== "undefined") {
+          const response = await fetch("/api/admin/usuarios/auth/update", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              userId: usuarioAtual.auth_user_id,
+              email: authUpdateData.email,
+              password: authUpdateData.password,
+              nome: dados.nome,
+              perfil: dados.perfil,
+            }),
+          })
+
+          if (!response.ok) {
+            const errorData = await response.json()
+            throw new Error(errorData.error || "Erro ao atualizar usuário no Auth")
+          }
+        } else {
+          // Se estiver no servidor, usar supabaseAdmin diretamente
+          const { supabaseAdmin } = await import("@/lib/supabase-admin")
+          const { error: authError } = await supabaseAdmin.auth.admin.updateUserById(
+            usuarioAtual.auth_user_id,
+            authUpdateData
+          )
+
+          if (authError) {
+            throw new Error(`Erro ao atualizar usuário no Supabase Auth: ${authError.message}`)
+          }
         }
       }
 
-      // 3. Atualizar último login
-      await supabase
-        .from("usuarios_admin")
-        .update({
-          ultimo_login: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", usuario.id)
+      // 3. Atualizar na nossa tabela
+      const updateData: any = {
+        nome: dados.nome,
+        email: dados.email,
+        atualizado_em: new Date().toISOString(),
+      }
 
-      console.log("✅ Login realizado com sucesso:", usuario.email)
-      return {
-        success: true,
-        message: "Login realizado com sucesso",
-        usuario: {
-          ...usuario,
-          senha_hash: undefined, // Não retornar o hash da senha
+      // Se forneceu novo perfil, atualizar
+      if (dados.perfil) {
+        updateData.perfil = dados.perfil
+      }
+
+      // Se forneceu novo status, atualizar
+      if (dados.status !== undefined) {
+        updateData.status = dados.status
+      }
+
+      // Se forneceu novo ativo, atualizar
+      if (dados.ativo !== undefined) {
+        updateData.ativo = dados.ativo
+      }
+
+      // Se forneceu nova senha, fazer hash
+      if (dados.senha) {
+        updateData.senha_hash = await this.hashSenha(dados.senha)
+      }
+
+      // Tratar permissões
+      // IMPORTANTE: Se permissões foram explicitamente fornecidas (mesmo que array vazio), usar elas
+      // Só usar permissões do perfil se permissões NÃO foram fornecidas
+      if (dados.permissoes !== undefined) {
+        // Sempre salvar as permissões fornecidas (mesmo que seja array vazio)
+        if (Array.isArray(dados.permissoes)) {
+          updateData.permissoes = dados.permissoes
+          console.log("💾 Atualizando com permissões fornecidas:", dados.permissoes)
+        }
+      } else if (dados.perfil) {
+        // Se mudou apenas o perfil SEM especificar permissões, usar permissões padrão do perfil
+        updateData.permissoes = PERFIS_PERMISSOES[dados.perfil] || []
+        console.log("💾 Atualizando com permissões padrão do perfil:", updateData.permissoes)
+      }
+
+      console.log("💾 Dados para atualizar:", {
+        id,
+        updateData: {
+          ...updateData,
+          senha_hash: updateData.senha_hash ? "[HASH]" : undefined,
         },
-      }
-    } catch (error: any) {
-      console.error("❌ Erro inesperado no login:", error)
-      return {
-        success: false,
-        message: "Erro inesperado: " + error.message,
-      }
-    }
-  }
+      })
 
-  /**
-   * Listar todos os usuários admin (Integrado)
-   */
-  static async listarUsuarios(): Promise<{ success: boolean; usuarios: UsuarioAdmin[]; message?: string }> {
-    try {
-      console.log("📋 Listando usuários admin integrados...")
-
-      const { data: usuarios, error } = await supabase
+      const { data, error } = await supabase
         .from("usuarios_admin")
-        .select("id, nome, email, ativo, ultimo_login, created_at, updated_at, perfil, permissoes, auth_user_id")
-        .order("created_at", { ascending: false })
+        .update(updateData)
+        .eq("id", id)
+        .select()
+        .single()
 
-      if (error) {
-        console.error("❌ Erro ao listar usuários:", error)
-        return {
-          success: false,
-          usuarios: [],
-          message: "Erro ao listar usuários: " + error.message,
-        }
-      }
+      if (error) throw error
 
-      console.log(`✅ ${usuarios?.length || 0} usuários encontrados`)
-      return {
-        success: true,
-        usuarios: (usuarios || []).map(u => ({
-          ...u,
-          perfil: u.perfil || "assistente",
-          permissoes: u.permissoes || {},
-        })),
-      }
-    } catch (error: any) {
-      console.error("❌ Erro inesperado ao listar usuários:", error)
-      return {
-        success: false,
-        usuarios: [],
-        message: "Erro inesperado: " + error.message,
-      }
+      // 4. Remover senha_hash do retorno
+      const { senha_hash, ...usuarioSemSenha } = data
+      return usuarioSemSenha as UsuarioAdmin
+
+    } catch (error) {
+      console.error("Erro ao atualizar usuário admin:", error)
+      throw error
     }
   }
 
-  /**
-   * Alterar status do usuário (Integrado)
+/**
+   * Atualiza permissões de um usuário
    */
-  static async alterarStatusUsuario(id: string, ativo: boolean): Promise<{ success: boolean; message: string }> {
-    try {
-      console.log(`🔄 Alterando status do usuário ${id} para: ${ativo ? "ativo" : "inativo"}`)
-
-      const { error } = await supabase
+  async atualizarPermissoes(id: string, permissoes: Permissao[]): Promise<UsuarioAdmin> {
+    const { data, error } = await supabase
         .from("usuarios_admin")
         .update({
-          ativo,
-          updated_at: new Date().toISOString(),
+        permissoes: permissoes,
+        atualizado_em: new Date().toISOString(),
         })
         .eq("id", id)
+      .select()
+        .single()
 
-      if (error) {
-        console.error("❌ Erro ao alterar status:", error)
-        return {
-          success: false,
-          message: "Erro ao alterar status: " + error.message,
-        }
-      }
-
-      console.log("✅ Status alterado com sucesso")
-      return {
-        success: true,
-        message: `Usuário ${ativo ? "ativado" : "desativado"} com sucesso`,
-      }
-    } catch (error: any) {
-      console.error("❌ Erro inesperado ao alterar status:", error)
-      return {
-        success: false,
-        message: "Erro inesperado: " + error.message,
-      }
-    }
+    if (error) throw error
+    return data
   }
 
-  /**
-   * Alterar senha do usuário (Integrado)
+/**
+   * Ativa/desativa um usuário
    */
-  static async alterarSenha(id: string, novaSenha: string): Promise<{ success: boolean; message: string }> {
+  async toggleAtivo(id: string, ativo: boolean): Promise<UsuarioAdmin> {
     try {
-      console.log(`🔐 Alterando senha do usuário ${id}`)
-
-      // Buscar auth_user_id
-      const { data: usuario, error: userError } = await supabase
+      // 1. Buscar usuário para obter auth_user_id
+      const { data: usuarioAtual, error: buscaError } = await supabase
         .from("usuarios_admin")
         .select("auth_user_id")
         .eq("id", id)
         .single()
 
-      if (userError || !usuario?.auth_user_id) {
-        return {
-          success: false,
-          message: "Usuário não encontrado ou não vinculado ao Auth",
+      if (buscaError) {
+        throw new Error("Usuário não encontrado")
+      }
+
+      // 2. Atualizar na nossa tabela
+      const { data, error } = await supabase
+        .from("usuarios_admin")
+        .update({
+          ativo: ativo,
+          status: ativo ? "ativo" : "inativo",
+          atualizado_em: new Date().toISOString(),
+        })
+        .eq("id", id)
+        .select()
+        .single()
+
+      if (error) throw error
+
+      // 3. Sincronizar com Supabase Auth se tem auth_user_id
+      if (usuarioAtual?.auth_user_id) {
+        const statusAuth = ativo ? "ativo" : "bloqueado"
+        
+        // Se estiver no cliente, usar API route
+        if (typeof window !== "undefined") {
+          const response = await fetch("/api/admin/usuarios/auth/update", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              userId: usuarioAtual.auth_user_id,
+              status: statusAuth,
+            }),
+          })
+
+          if (!response.ok) {
+            console.warn("Aviso: Erro ao sincronizar com Supabase Auth, mas usuário foi atualizado na tabela")
+          }
+        } else {
+          // Se estiver no servidor, usar supabaseAdmin diretamente
+          const { supabaseAdmin } = await import("@/lib/supabase-admin")
+          if (ativo) {
+            await supabaseAdmin.auth.admin.updateUserById(usuarioAtual.auth_user_id, {
+              ban_duration: "none",
+            })
+          } else {
+            await supabaseAdmin.auth.admin.updateUserById(usuarioAtual.auth_user_id, {
+              ban_duration: "876000h", // ~100 anos
+            })
+          }
         }
       }
 
-      // Alterar senha no Supabase Auth (usando updateUser)
-      const { error: authError } = await supabaseAuth.auth.updateUser({
-        password: novaSenha
-      })
+      return data
 
-      if (authError) {
-        return {
-          success: false,
-          message: "Erro ao alterar senha: " + authError.message,
-        }
-      }
-
-      console.log("✅ Senha alterada com sucesso")
-      return {
-        success: true,
-        message: "Senha alterada com sucesso",
-      }
-    } catch (error: any) {
-      console.error("❌ Erro inesperado ao alterar senha:", error)
-      return {
-        success: false,
-        message: "Erro inesperado: " + error.message,
-      }
+    } catch (error) {
+      console.error("Erro ao ativar/desativar usuário admin:", error)
+      throw error
     }
   }
 
-  /**
-   * Excluir usuário (Integrado)
+/**
+   * Desativa um usuário (soft delete)
    */
-  static async excluirUsuario(id: string): Promise<{ success: boolean; message: string }> {
+  async desativar(id: string): Promise<void> {
     try {
-      console.log(`🗑️ Excluindo usuário ${id}`)
-
-      // Buscar usuário na tabela
-      const { data: usuario, error: userError } = await supabase
+      // 1. Buscar usuário para obter auth_user_id
+      const { data: usuario, error: buscaError } = await supabase
         .from("usuarios_admin")
-        .select("id")
+        .select("auth_user_id")
         .eq("id", id)
         .single()
 
-      if (userError || !usuario) {
-        return {
-          success: false,
-          message: "Usuário não encontrado",
+      if (buscaError) {
+        throw new Error("Usuário não encontrado")
+      }
+
+      // 2. Desativar na nossa tabela
+      const { error } = await supabase
+        .from("usuarios_admin")
+        .update({
+          ativo: false,
+          status: "inativo",
+          atualizado_em: new Date().toISOString(),
+        })
+        .eq("id", id)
+
+      if (error) throw error
+
+      // 3. Se tem auth_user_id, também desativar no Supabase Auth
+      if (usuario?.auth_user_id) {
+        if (typeof window !== "undefined") {
+          // Cliente: usar API
+          await fetch("/api/admin/usuarios/auth/update", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              userId: usuario.auth_user_id,
+              status: "bloqueado",
+            }),
+          })
+        } else {
+          // Servidor: usar diretamente
+          const { supabaseAdmin } = await import("@/lib/supabase-admin")
+          await supabaseAdmin.auth.admin.updateUserById(usuario.auth_user_id, {
+            ban_duration: "876000h", // ~100 anos (efetivamente permanente)
+          })
         }
       }
 
-      // Excluir da tabela usuarios_admin
-      const { error: dbError } = await supabase
+    } catch (error) {
+      console.error("Erro ao desativar usuário admin:", error)
+      throw error
+    }
+  }
+
+/**
+   * Exclui permanentemente um usuário (hard delete)
+   */
+  async excluir(id: string): Promise<void> {
+    try {
+      // 1. Buscar usuário para obter auth_user_id
+      const { data: usuario, error: buscaError } = await supabase
+        .from("usuarios_admin")
+        .select("auth_user_id, nome, email")
+        .eq("id", id)
+        .single()
+
+      if (buscaError) {
+        throw new Error("Usuário não encontrado")
+      }
+
+      // 2. Excluir da nossa tabela
+      const { error: deleteError } = await supabase
         .from("usuarios_admin")
         .delete()
         .eq("id", id)
 
-      if (dbError) {
-        return {
-          success: false,
-          message: "Erro ao excluir usuário da tabela: " + dbError.message,
+      if (deleteError) {
+        throw new Error(`Erro ao excluir usuário da tabela: ${deleteError.message}`)
+      }
+
+      // 3. Se tem auth_user_id, também excluir do Supabase Auth
+      if (usuario?.auth_user_id) {
+        try {
+          if (typeof window !== "undefined") {
+            // Cliente: usar API
+            const response = await fetch("/api/admin/usuarios/auth/delete", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ userId: usuario.auth_user_id }),
+            })
+            if (!response.ok) {
+              throw new Error("Erro ao excluir do Auth")
+            }
+          } else {
+            // Servidor: usar diretamente
+            const { supabaseAdmin } = await import("@/lib/supabase-admin")
+            await supabaseAdmin.auth.admin.deleteUser(usuario.auth_user_id)
+          }
+        } catch (authError: any) {
+          console.warn(`Aviso: Erro ao excluir do Supabase Auth: ${authError?.message}`)
+          // Não falha a operação se não conseguir excluir do Supabase Auth
         }
       }
 
-      // Não podemos excluir do Auth sem permissões admin, mas podemos marcar como inativo
-      console.log("⚠️ Usuário removido da tabela. Para remover do Auth, use o Dashboard do Supabase.")
-      
-      console.log("✅ Usuário excluído com sucesso")
-      return {
-        success: true,
-        message: "Usuário excluído da tabela de permissões. Para remover do Auth, use o Dashboard do Supabase.",
-      }
-    } catch (error: any) {
-      console.error("❌ Erro inesperado ao excluir usuário:", error)
-      return {
-        success: false,
-        message: "Erro inesperado: " + error.message,
-      }
+      console.log(`Usuário ${usuario.nome} (${usuario.email}) excluído permanentemente`)
+
+    } catch (error) {
+      console.error("Erro ao excluir usuário admin:", error)
+      throw error
     }
   }
 
-  /**
-   * Vincular usuário existente do Supabase Auth
+/**
+   * Deleta um usuário (alias para desativar - mantém compatibilidade)
    */
-  static async vincularUsuarioExistente(
+  async deletar(id: string): Promise<void> {
+    return this.desativar(id)
+  }
+
+/**
+   * Verifica se um usuário tem uma permissão específica
+   */
+  async temPermissao(userId: string, permissao: Permissao): Promise<boolean> {
+    const usuario = await this.buscarPorId(userId)
+    if (!usuario) return false
+
+    // Super admin tem todas as permissões
+    if (usuario.perfil === "super_admin") return true
+
+    // Verificar se tem a permissão específica
+    return usuario.permissoes?.includes(permissao) || false
+  }
+
+/**
+   * Lista permissões de um usuário
+   */
+  async listarPermissoes(userId: string): Promise<Permissao[]> {
+    const usuario = await this.buscarPorId(userId)
+    if (!usuario) return []
+
+    return usuario.permissoes || []
+  }
+
+/**
+   * Registra último acesso do usuário
+   */
+  async registrarAcesso(userId: string): Promise<void> {
+    await supabase
+        .from("usuarios_admin")
+      .update({
+        ultimo_acesso: new Date().toISOString(),
+      })
+      .eq("id", userId)
+  }
+
+/**
+   * Hash de senha (simplificado - usar bcrypt em produção)
+   */
+  private async hashSenha(senha: string): Promise<string> {
+    // Em produção, usar bcrypt ou similar
+    // Por enquanto, apenas um hash simples
+    const encoder = new TextEncoder()
+    const data = encoder.encode(senha)
+    const hashBuffer = await crypto.subtle.digest("SHA-256", data)
+    const hashArray = Array.from(new Uint8Array(hashBuffer))
+    return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("")
+  }
+
+/**
+   * Valida email e senha de um usuário admin
+   */
+  async validarSenha(email: string, senha: string): Promise<UsuarioAdmin | null> {
+    try {
+      // Buscar usuário por email
+      const { data: usuario, error } = await supabase
+        .from("usuarios_admin")
+        .select("*")
+        .eq("email", email)
+        .eq("ativo", true)
+        .single()
+
+      if (error || !usuario) {
+        return null
+      }
+
+      // Hash da senha fornecida
+      const senhaHash = await this.hashSenha(senha)
+
+      // Comparar com o hash armazenado
+      if (usuario.senha_hash === senhaHash) {
+        // Atualizar último acesso
+        await this.atualizarUltimoAcesso(usuario.id)
+        
+        // Remover senha_hash do retorno
+        const { senha_hash, ...usuarioSemSenha } = usuario
+        return usuarioSemSenha as UsuarioAdmin
+      }
+
+      return null
+    } catch (error) {
+      console.error("Erro ao validar senha:", error)
+      return null
+    }
+  }
+
+/**
+   * Atualiza o último acesso do usuário
+   */
+  private async atualizarUltimoAcesso(userId: string): Promise<void> {
+    try {
+      await supabase
+        .from("usuarios_admin")
+        .update({
+          ultimo_acesso: new Date().toISOString(),
+          atualizado_em: new Date().toISOString()
+        })
+        .eq("id", userId)
+    } catch (error) {
+      console.error("Erro ao atualizar último acesso:", error)
+    }
+  }
+
+/**
+   * Estatísticas de usuários
+   */
+  async estatisticas(): Promise<{
+    total: number
+    ativos: number
+    inativos: number
+    por_perfil: Record<string, number>
+  }> {
+    const usuarios = await this.listar()
+
+    const stats = {
+      total: usuarios.length,
+      ativos: usuarios.filter((u) => u.ativo).length,
+      inativos: usuarios.filter((u) => !u.ativo).length,
+      por_perfil: {} as Record<string, number>,
+    }
+
+    // Contar por perfil
+    usuarios.forEach((u) => {
+      stats.por_perfil[u.perfil] = (stats.por_perfil[u.perfil] || 0) + 1
+    })
+
+    return stats
+  }
+}
+
+export default new UsuariosAdminService()
+
+/**
+ * Vincular usuário existente do Supabase Auth
+ */
+export async function vincularUsuarioExistente(
     email: string,
     dados: {
       nome: string
@@ -431,10 +889,10 @@ export class UsuariosAdminService {
     }
   }
 
-  /**
-   * Buscar usuário por ID
-   */
-  static async buscarUsuarioPorId(id: string): Promise<{ success: boolean; usuario?: UsuarioAdmin; message?: string }> {
+/**
+ * Buscar usuário por ID
+ */
+export async function buscarUsuarioPorId(id: string): Promise<{ success: boolean; usuario?: UsuarioAdmin; message?: string }> {
     try {
       console.log("🔍 Buscando usuário por ID:", id)
 
@@ -470,10 +928,10 @@ export class UsuariosAdminService {
     }
   }
 
-  /**
+/**
    * Verificar se existe pelo menos um usuário admin
    */
-  static async verificarUsuariosExistentes(): Promise<{ success: boolean; existem: boolean; total: number }> {
+export async function verificarUsuariosExistentes(): Promise<{ success: boolean; existem: boolean; total: number }> {
     try {
       console.log("🔍 Verificando usuários existentes...")
 
@@ -506,10 +964,10 @@ export class UsuariosAdminService {
     }
   }
 
-  /**
+/**
    * Criar usuário admin padrão (para setup inicial)
    */
-  static async criarUsuarioPadrao(): Promise<{ success: boolean; message: string; usuario?: UsuarioAdmin }> {
+export async function criarUsuarioPadrao(): Promise<{ success: boolean; message: string; usuario?: UsuarioAdmin }> {
     try {
       console.log("🔧 Criando usuário admin padrão...")
 
@@ -538,10 +996,10 @@ export class UsuariosAdminService {
     }
   }
 
-  /**
+/**
    * Validar token de sessão (simulado - em produção usar JWT)
    */
-  static async validarSessao(token: string): Promise<{ success: boolean; usuario?: UsuarioAdmin }> {
+export async function validarSessao(token: string): Promise<{ success: boolean; usuario?: UsuarioAdmin }> {
     try {
       // Em produção, implementar validação JWT real
       // Por enquanto, usar uma validação simples baseada no email
@@ -572,18 +1030,18 @@ export class UsuariosAdminService {
     }
   }
 
-  /**
+/**
    * Gerar token de sessão (simulado - em produção usar JWT)
    */
-  static gerarToken(email: string): string {
+export function gerarToken(email: string): string {
     // Em produção, usar JWT com expiração e assinatura
     return Buffer.from(email).toString("base64")
   }
 
-  /**
+/**
    * Atualizar dados do usuário admin (nome, perfil, permissoes)
    */
-  static async atualizarUsuario(id: string, dados: Partial<UsuarioAdmin>): Promise<{ error?: any }> {
+export async function atualizarUsuario(id: string, dados: Partial<UsuarioAdmin>): Promise<{ error?: any }> {
     try {
       const { error } = await supabase
         .from("usuarios_admin")
@@ -596,7 +1054,6 @@ export class UsuariosAdminService {
     } catch (error: any) {
       return { error }
     }
-  }
 }
 
 // Exportar instância padrão
@@ -641,8 +1098,50 @@ export async function atualizarUsuarioAdmin(id: string, dados: Partial<UsuarioAd
   return true
 }
 
-export async function excluirUsuarioAdmin() {
-  throw new Error("Função de exclusão de usuário não implementada")
+export async function excluirUsuarioAdmin(id: string): Promise<{ success: boolean; message: string }> {
+  try {
+    // Buscar usuário na tabela
+    const { data: usuario, error: userError } = await supabase
+      .from("usuarios_admin")
+      .select("id")
+      .eq("id", id)
+      .single()
+
+    if (userError || !usuario) {
+      return {
+        success: false,
+        message: "Usuário não encontrado",
+      }
+    }
+
+    // Excluir da tabela usuarios_admin
+    const { error: dbError } = await supabase
+      .from("usuarios_admin")
+      .delete()
+      .eq("id", id)
+
+    if (dbError) {
+      return {
+        success: false,
+        message: "Erro ao excluir usuário da tabela: " + dbError.message,
+      }
+    }
+
+    // Não podemos excluir do Auth sem permissões admin, mas podemos marcar como inativo
+    console.log("⚠️ Usuário removido da tabela. Para remover do Auth, use o Dashboard do Supabase.")
+    
+    console.log("✅ Usuário excluído com sucesso")
+    return {
+      success: true,
+      message: "Usuário excluído da tabela de permissões. Para remover do Auth, use o Dashboard do Supabase.",
+    }
+  } catch (error: any) {
+    console.error("❌ Erro inesperado ao excluir usuário:", error)
+    return {
+      success: false,
+      message: "Erro inesperado: " + error.message,
+    }
+  }
 }
 
 export async function alterarStatusUsuarioAdmin(id: string, ativo: boolean) {
@@ -688,11 +1187,28 @@ export async function validarSenhaUsuarioAdmin(email: string, senha: string): Pr
       .eq("id", usuario.id)
 
     console.log("✅ Login realizado com sucesso:", usuario.email)
+    
+    // Garantir que permissões seja sempre um array
+    let permissoesArray: string[] = []
+    if (Array.isArray(usuario.permissoes)) {
+      permissoesArray = usuario.permissoes
+    } else if (usuario.permissoes && typeof usuario.permissoes === "object") {
+      // Se for objeto, converter para array das chaves
+      permissoesArray = Object.keys(usuario.permissoes)
+    }
+    
+    console.log("🔐 Permissões do usuário:", {
+      email: usuario.email,
+      perfil: usuario.perfil,
+      permissoesOriginais: usuario.permissoes,
+      permissoesArray,
+    })
+    
     return {
       ...usuario,
       senha_hash: undefined, // Não retornar o hash da senha
       perfil: usuario.perfil || "assistente",
-      permissoes: usuario.permissoes || {},
+      permissoes: permissoesArray,
     }
   } catch (error: any) {
     console.error("❌ Erro inesperado na validação:", error)

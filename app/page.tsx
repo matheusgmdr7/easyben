@@ -44,56 +44,6 @@ export default function Home() {
           </div>
         </section>
 
-        {/* Corretoras Parceiras Section */}
-        <section className="py-10 md:py-16 bg-gray-50">
-          <div className="container px-4 md:px-6">
-            <div className="text-center max-w-3xl mx-auto mb-8 md:mb-12">
-              <h2 className="text-2xl md:text-3xl font-bold mb-3 md:mb-4 text-gray-900">Corretoras parceiras</h2>
-              <p className="text-gray-600 text-base md:text-lg mb-6 md:mb-10">
-                Trabalhamos com as melhores corretoras para garantir um atendimento personalizado e de qualidade.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 md:gap-8 items-center justify-items-center max-w-3xl mx-auto">
-              {/* Card da ALFA CORRETORA com imagem */}
-              <div className="bg-white rounded-xl shadow-sm hover:shadow-md transition-shadow w-full h-20 md:h-24 overflow-hidden">
-                <div className="w-full h-full">
-                  <img
-                    src="https://i.ibb.co/Zzm354my/Design-sem-nome-2.png"
-                    alt="ALFA CORRETORA"
-                    className="w-full h-full object-cover"
-                    style={{ objectPosition: "center" }}
-                  />
-                </div>
-              </div>
-
-              {/* Card da PR PLANOS DE SAÚDE com imagem */}
-              <div className="bg-white rounded-xl shadow-sm hover:shadow-md transition-shadow w-full h-20 md:h-24 overflow-hidden">
-                <div className="w-full h-full">
-                  <img
-                    src="https://i.ibb.co/dwdJ0Kpm/Design-sem-nome-10.png"
-                    alt="PR PLANOS DE SAÚDE"
-                    className="w-full h-full object-cover"
-                    style={{ objectPosition: "center" }}
-                  />
-                </div>
-              </div>
-
-              {/* Card da CONTRATAR com imagem */}
-              <div className="bg-white rounded-xl shadow-sm hover:shadow-md transition-shadow w-full h-20 md:h-24 overflow-hidden">
-                <div className="w-full h-full">
-                  <img
-                    src="https://i.ibb.co/20r7hSmP/Design-sem-nome-11.png"
-                    alt="CONTRATAR"
-                    className="w-full h-full object-cover"
-                    style={{ objectPosition: "center" }}
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
         {/* Os melhores planos de saúde Section */}
         <section className="py-10 md:py-16 bg-white">
           <div className="container px-4 md:px-6">
@@ -105,34 +55,13 @@ export default function Home() {
               você.
             </p>
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 md:gap-8 items-center justify-items-center max-w-5xl mx-auto">
-              <div className="bg-gray-50 rounded-xl shadow-sm hover:shadow-md transition-shadow w-full h-16 md:h-24 overflow-hidden">
-                <div className="w-full h-full flex items-center justify-center">
-                  <img
-                    src="https://i.ibb.co/fzhQW0FM/Unimed2.png"
-                    alt="Operadora 1"
-                    className="w-full h-full object-cover"
-                    style={{ objectPosition: "center" }}
-                  />
-                </div>
-              </div>
-
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 md:gap-8 items-center justify-items-center max-w-5xl mx-auto">
               <div className="bg-white rounded-xl shadow-sm hover:shadow-md transition-shadow w-full h-16 md:h-24 overflow-hidden">
                 <div className="w-full h-full flex items-center justify-center p-4">
                   <img
                     src="https://i.ibb.co/Jjm3N0rk/Design-sem-nome-4.png"
                     alt="SulAmérica"
                     className="max-h-full max-w-full object-contain"
-                  />
-                </div>
-              </div>
-
-              <div className="bg-gray-50 rounded-xl shadow-sm hover:shadow-md transition-shadow w-full h-16 md:h-24 overflow-hidden">
-                <div className="w-full h-full">
-                  <img
-                    src="https://i.ibb.co/Hf35SSwv/Seguros-Unimed.png"
-                    alt="Seguros Unimed"
-                    className="w-full h-full object-cover"
                   />
                 </div>
               </div>

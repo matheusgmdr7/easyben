@@ -15,21 +15,50 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const checkAuth = async () => {
       try {
-        console.log("Verificando autenticação")
+        console.log("🔐 AuthGuard: Verificando autenticação...")
         
         const {
           data: { session },
+          error
         } = await supabase.auth.getSession()
         
+        if (error) {
+          console.error("❌ AuthGuard: Erro ao obter sessão:", error)
+          router.push("/admin/login")
+          return
+        }
+        
         if (session) {
-          console.log("Usuário autenticado com sucesso")
+          console.log("✅ AuthGuard: Usuário autenticado com sucesso")
+          
+          // Verificar se o usuário já está salvo no localStorage
+          const usuarioSalvo = localStorage.getItem("admin_usuario")
+          if (!usuarioSalvo && session.user?.email) {
+            console.log("🔍 AuthGuard: Usuário não encontrado no localStorage, buscando do banco...")
+            try {
+              // Buscar dados completos do usuário
+              // Nota: Isso requer a senha, então vamos buscar por email apenas
+              // Por enquanto, vamos apenas verificar se existe no localStorage
+              // Se não existir, o usuário precisará fazer login novamente
+              console.log("⚠️ AuthGuard: Usuário não encontrado no localStorage. Faça login novamente.")
+            } catch (err) {
+              console.error("❌ AuthGuard: Erro ao buscar usuário:", err)
+            }
+          }
+          
           setIsAuthenticated(true)
         } else {
-          console.log("Redirecionando para login - sem sessão")
+          console.log("⚠️ AuthGuard: Sem sessão - redirecionando para login")
+          // Limpar localStorage se não há sessão
+          localStorage.removeItem("admin_usuario")
           router.push("/admin/login")
         }
-      } catch (error) {
-        console.error("Erro ao verificar autenticação:", error)
+      } catch (error: any) {
+        console.error("❌ AuthGuard: Erro ao verificar autenticação:", error)
+        console.error("Erro detalhado:", {
+          message: error?.message,
+          stack: error?.stack
+        })
         router.push("/admin/login")
       } finally {
         setIsLoading(false)

@@ -52,6 +52,12 @@ export async function signOutAdmin() {
   if (error) {
     throw new Error(error.message)
   }
+  
+  // Limpar dados do usuário do localStorage
+  if (typeof window !== "undefined") {
+    localStorage.removeItem("admin_usuario")
+    console.log("🧹 localStorage limpo após logout")
+  }
 }
 
 export async function getSession() {

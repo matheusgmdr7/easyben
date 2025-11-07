@@ -7,7 +7,7 @@ import { Search, Download, Eye, Mail, Phone, ChevronLeft, ChevronRight, Users, C
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { buscarLeads, atualizarLead } from "@/services/leads-service"
 import type { Lead } from "@/services/leads-service"
-import * as XLSX from "xlsx"
+// XLSX será importado dinamicamente quando necessário
 
 export default function LeadsPage() {
   const [leads, setLeads] = useState<Lead[]>([])
@@ -111,7 +111,7 @@ export default function LeadsPage() {
     setPaginaAtual(1)
   }, [searchTerm, filtroStatus, filtroData, filtroEstado, filtroFaixaEtaria, filtroOperadora])
 
-  const exportarParaExcel = () => {
+  const exportarParaExcel = async () => {
     // Preparar dados para exportação
     const dadosParaExportar = leads.map((lead) => ({
       Nome: lead.nome,
@@ -126,6 +126,9 @@ export default function LeadsPage() {
       Observações: lead.observacoes || "",
     }))
 
+    // Importar XLSX dinamicamente
+    const XLSX = await import("xlsx")
+    
     // Criar planilha
     const ws = XLSX.utils.json_to_sheet(dadosParaExportar)
     const wb = XLSX.utils.book_new()
@@ -166,62 +169,62 @@ export default function LeadsPage() {
       {/* Stats Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         <div className="bg-gradient-to-br from-white to-gray-50 border border-gray-200 shadow-sm hover:shadow-lg transition-all duration-300 rounded-lg">
-          <div className="flex flex-row items-center justify-between pb-3 pt-6 px-6">
-            <div>
-              <h3 className="text-sm font-bold text-gray-600 uppercase tracking-wider font-sans">Total de Leads</h3>
-              <div className="text-3xl font-bold text-[#168979] mt-2">{leads.length}</div>
-            </div>
-            <div className="w-14 h-14 bg-gray-100 rounded-lg flex items-center justify-center">
-              <Users className="h-6 w-6 text-gray-700" />
-            </div>
-          </div>
-          <div className="pb-6 px-6">
-            <p className="text-xs text-gray-500 font-medium">Total acumulado</p>
-          </div>
-        </div>
-        
-        <div className="bg-gradient-to-br from-white to-gray-50 border border-gray-200 shadow-sm hover:shadow-lg transition-all duration-300 rounded-lg">
-          <div className="flex flex-row items-center justify-between pb-3 pt-6 px-6">
-            <div>
-              <h3 className="text-sm font-bold text-gray-600 uppercase tracking-wider font-sans">Novos</h3>
-              <div className="text-3xl font-bold text-[#168979] mt-2">{leads.filter((l) => l.status === "Novo").length}</div>
-            </div>
-            <div className="w-14 h-14 bg-gray-100 rounded-lg flex items-center justify-center">
-              <Mail className="h-6 w-6 text-gray-700" />
+          <div className="flex flex-row items-center justify-between pb-3 pt-4 sm:pt-6 px-3 sm:px-6">
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-1">
+                <Users className="h-3 w-3 sm:h-4 sm:w-4 text-gray-400 opacity-60" />
+                <h3 className="text-xs sm:text-sm font-bold text-gray-600 uppercase tracking-wider font-sans">Total de Leads</h3>
+              </div>
+              <div className="text-xl sm:text-3xl font-bold text-[#168979] mt-1 sm:mt-2">{leads.length}</div>
             </div>
           </div>
-          <div className="pb-6 px-6">
-            <p className="text-xs text-gray-500 font-medium">Aguardando contato</p>
+          <div className="pb-4 sm:pb-6 px-3 sm:px-6">
+            <p className="text-[10px] sm:text-xs text-gray-500 font-medium">Total acumulado</p>
           </div>
         </div>
         
         <div className="bg-gradient-to-br from-white to-gray-50 border border-gray-200 shadow-sm hover:shadow-lg transition-all duration-300 rounded-lg">
-          <div className="flex flex-row items-center justify-between pb-3 pt-6 px-6">
-            <div>
-              <h3 className="text-sm font-bold text-gray-600 uppercase tracking-wider font-sans">Em Contato</h3>
-              <div className="text-3xl font-bold text-[#168979] mt-2">{leads.filter((l) => l.status === "Em contato").length}</div>
-            </div>
-            <div className="w-14 h-14 bg-gray-100 rounded-lg flex items-center justify-center">
-              <Phone className="h-6 w-6 text-gray-700" />
+          <div className="flex flex-row items-center justify-between pb-3 pt-4 sm:pt-6 px-3 sm:px-6">
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-1">
+                <Mail className="h-3 w-3 sm:h-4 sm:w-4 text-gray-400 opacity-60" />
+                <h3 className="text-xs sm:text-sm font-bold text-gray-600 uppercase tracking-wider font-sans">Novos</h3>
+              </div>
+              <div className="text-xl sm:text-3xl font-bold text-[#168979] mt-1 sm:mt-2">{leads.filter((l) => l.status === "Novo").length}</div>
             </div>
           </div>
-          <div className="pb-6 px-6">
-            <p className="text-xs text-gray-500 font-medium">Em negociação</p>
+          <div className="pb-4 sm:pb-6 px-3 sm:px-6">
+            <p className="text-[10px] sm:text-xs text-gray-500 font-medium">Aguardando contato</p>
           </div>
         </div>
         
         <div className="bg-gradient-to-br from-white to-gray-50 border border-gray-200 shadow-sm hover:shadow-lg transition-all duration-300 rounded-lg">
-          <div className="flex flex-row items-center justify-between pb-3 pt-6 px-6">
-            <div>
-              <h3 className="text-sm font-bold text-gray-600 uppercase tracking-wider font-sans">Convertidos</h3>
-              <div className="text-3xl font-bold text-[#168979] mt-2">{leads.filter((l) => l.status === "Convertido").length}</div>
-            </div>
-            <div className="w-14 h-14 bg-gray-100 rounded-lg flex items-center justify-center">
-              <CheckCircle className="h-6 w-6 text-gray-700" />
+          <div className="flex flex-row items-center justify-between pb-3 pt-4 sm:pt-6 px-3 sm:px-6">
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-1">
+                <Phone className="h-3 w-3 sm:h-4 sm:w-4 text-gray-400 opacity-60" />
+                <h3 className="text-xs sm:text-sm font-bold text-gray-600 uppercase tracking-wider font-sans">Em Contato</h3>
+              </div>
+              <div className="text-xl sm:text-3xl font-bold text-[#168979] mt-1 sm:mt-2">{leads.filter((l) => l.status === "Em contato").length}</div>
             </div>
           </div>
-          <div className="pb-6 px-6">
-            <p className="text-xs text-gray-500 font-medium">Vendas efetivadas</p>
+          <div className="pb-4 sm:pb-6 px-3 sm:px-6">
+            <p className="text-[10px] sm:text-xs text-gray-500 font-medium">Em negociação</p>
+          </div>
+        </div>
+        
+        <div className="bg-gradient-to-br from-white to-gray-50 border border-gray-200 shadow-sm hover:shadow-lg transition-all duration-300 rounded-lg">
+          <div className="flex flex-row items-center justify-between pb-3 pt-4 sm:pt-6 px-3 sm:px-6">
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-1">
+                <CheckCircle className="h-3 w-3 sm:h-4 sm:w-4 text-gray-400 opacity-60" />
+                <h3 className="text-xs sm:text-sm font-bold text-gray-600 uppercase tracking-wider font-sans">Convertidos</h3>
+              </div>
+              <div className="text-xl sm:text-3xl font-bold text-[#168979] mt-1 sm:mt-2">{leads.filter((l) => l.status === "Convertido").length}</div>
+            </div>
+          </div>
+          <div className="pb-4 sm:pb-6 px-3 sm:px-6">
+            <p className="text-[10px] sm:text-xs text-gray-500 font-medium">Vendas efetivadas</p>
           </div>
         </div>
       </div>

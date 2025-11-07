@@ -4,6 +4,13 @@ import type React from "react"
 
 import { useEffect } from "react"
 
+// Declaração de tipo para window.fbq
+declare global {
+  interface Window {
+    fbq?: (...args: any[]) => void
+  }
+}
+
 interface MetaPixelProps {
   pixelId: string
 }

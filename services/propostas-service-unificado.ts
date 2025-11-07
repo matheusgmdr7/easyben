@@ -157,15 +157,70 @@ export async function buscarPropostaCompleta(id: string): Promise<PropostaUnific
   try {
     console.log(`🔍 Buscando proposta completa - ID: ${id}`)
 
-    const { data: proposta, error } = await supabase.from("propostas").select("*").eq("id", id).single()
+    // Tentar buscar com retry em caso de erro de rede
+    let proposta = null
+    let error = null
+    const maxTentativas = 3
+    let tentativa = 0
+
+    while (tentativa < maxTentativas && !proposta) {
+      tentativa++
+      console.log(`   Tentativa ${tentativa}/${maxTentativas}...`)
+      
+      try {
+        const resultado = await supabase.from("propostas").select("*").eq("id", id).single()
+        proposta = resultado.data
+        error = resultado.error
+
+        if (error) {
+          console.error(`   ❌ Erro na tentativa ${tentativa}:`, error)
+          
+          // Se for erro de rede, tentar novamente
+          if (error.message?.includes('fetch') || error.message?.includes('network') || error.message?.includes('ECONNREFUSED')) {
+            if (tentativa < maxTentativas) {
+              const delay = tentativa * 1000 // 1s, 2s, 3s
+              console.log(`   ⏳ Aguardando ${delay}ms antes de tentar novamente...`)
+              await new Promise(resolve => setTimeout(resolve, delay))
+              continue
+            }
+          } else {
+            // Se não for erro de rede, não tentar novamente
+            break
+          }
+        }
+
+        if (proposta) {
+          break
+        }
+      } catch (err: any) {
+        console.error(`   ❌ Exceção na tentativa ${tentativa}:`, err)
+        error = err
+        
+        // Se for erro de rede, tentar novamente
+        if (err.message?.includes('fetch') || err.message?.includes('network') || err.message?.includes('ECONNREFUSED')) {
+          if (tentativa < maxTentativas) {
+            const delay = tentativa * 1000
+            console.log(`   ⏳ Aguardando ${delay}ms antes de tentar novamente...`)
+            await new Promise(resolve => setTimeout(resolve, delay))
+            continue
+          }
+        } else {
+          break
+        }
+      }
+    }
 
     if (error) {
-      console.error("❌ Erro ao buscar proposta:", error)
+      console.error("❌ Erro ao buscar proposta após todas as tentativas:", error)
+      console.error("   Código:", error.code)
+      console.error("   Mensagem:", error.message)
+      console.error("   Detalhes:", error.details)
       return null
     }
 
     if (!proposta) {
-      console.log("❌ Proposta não encontrada")
+      console.log("❌ Proposta não encontrada após todas as tentativas")
+      console.log("   ID buscado:", id)
       return null
     }
 

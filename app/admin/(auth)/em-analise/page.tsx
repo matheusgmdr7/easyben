@@ -16,9 +16,10 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Eye, CheckCircle, XCircle, Search, Filter, RefreshCw, Heart, Clock } from "lucide-react"
+import { Eye, CheckCircle, XCircle, Search, Filter, RefreshCw, Heart, Clock, User, UserCheck, FileText, Camera, Building } from "lucide-react"
 import { formatarMoeda } from "@/utils/formatters"
 import { supabase } from "@/lib/supabase"
+import { useModalOverlay } from "@/hooks/use-modal-overlay"
 
 // Função para obter o texto da pergunta por ID
 function obterTextoPergunta(perguntaId: number): string {
@@ -197,63 +198,177 @@ export default function EmAnalisePage() {
   }
 
   function renderDeclaracaoSaudeUnificada() {
+    // Mostrar fotos do titular se existirem
+    const temFotos = propostaDetalhada?.foto_rosto || propostaDetalhada?.foto_corpo_inteiro
+    const titularQuestionario = questionariosSaude?.find((q: any) => q.pessoa_tipo === "titular")
+    
     if (!questionariosSaude || questionariosSaude.length === 0) {
       return (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Heart className="h-5 w-5 text-red-500" />
-              Declaração de Saúde
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-gray-500">Nenhuma resposta encontrada</p>
-          </CardContent>
-        </Card>
+        <div className="space-y-4 sm:space-y-6">
+          {/* Fotos do Cliente - Mostrar mesmo se não houver questionário */}
+          {temFotos && (
+            <Card className="border-2 border-gray-200 shadow-sm">
+              <CardHeader className="bg-gradient-to-r from-blue-50 to-blue-100/50 border-b border-gray-200 px-3 sm:px-6 py-3 sm:py-4">
+                <CardTitle className="flex items-center gap-2 text-[#168979] text-base sm:text-lg">
+                  <Camera className="h-4 w-4 sm:h-5 sm:w-5" />
+                  Fotos do Titular
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pt-4 sm:pt-6 px-3 sm:px-6 pb-4 sm:pb-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
+                  {propostaDetalhada?.foto_rosto && (
+                    <div className="space-y-2">
+                      <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide">
+                        Foto de Rosto
+                      </label>
+                      <div className="relative group">
+                        <img
+                          src={propostaDetalhada.foto_rosto}
+                          alt="Foto de rosto"
+                          className="w-full rounded-lg border-2 border-gray-200 shadow-sm cursor-pointer hover:shadow-md transition-shadow"
+                          onClick={() => window.open(propostaDetalhada.foto_rosto, '_blank')}
+                        />
+                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors rounded-lg flex items-center justify-center opacity-0 group-hover:opacity-100">
+                          <span className="text-white text-sm font-medium bg-black/50 px-3 py-1 rounded">Clique para ampliar</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  {propostaDetalhada?.foto_corpo_inteiro && (
+                    <div className="space-y-2">
+                      <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide">
+                        Foto de Corpo Inteiro
+                      </label>
+                      <div className="relative group">
+                        <img
+                          src={propostaDetalhada.foto_corpo_inteiro}
+                          alt="Foto de corpo inteiro"
+                          className="w-full rounded-lg border-2 border-gray-200 shadow-sm cursor-pointer hover:shadow-md transition-shadow"
+                          onClick={() => window.open(propostaDetalhada.foto_corpo_inteiro, '_blank')}
+                        />
+                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors rounded-lg flex items-center justify-center opacity-0 group-hover:opacity-100">
+                          <span className="text-white text-sm font-medium bg-black/50 px-3 py-1 rounded">Clique para ampliar</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+          
+          <Card className="border-2 border-gray-200 shadow-sm">
+            <CardHeader className="bg-gradient-to-r from-red-50 to-red-100/50 border-b border-gray-200 px-3 sm:px-6 py-3 sm:py-4">
+              <CardTitle className="flex items-center gap-2 text-[#168979] text-base sm:text-lg">
+                <Heart className="h-4 w-4 sm:h-5 sm:w-5 text-red-500" />
+                Declaração de Saúde
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="pt-4 sm:pt-6 px-3 sm:px-6 pb-4 sm:pb-6">
+              <p className="text-gray-500">Nenhuma resposta encontrada</p>
+            </CardContent>
+          </Card>
+        </div>
       )
     }
     return (
-      <div className="space-y-6">
-        {questionariosSaude.map((q, idx) => (
-          <Card key={q.id || idx}>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Heart className="h-5 w-5 text-red-500" />
-                {q.pessoa_tipo === "titular"
-                  ? "Declaração de Saúde - Titular"
-                  : `Declaração de Saúde - ${q.pessoa_nome}`}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="mb-2 text-sm text-gray-700">
-                <span className="mr-4">Peso: <b>{q.peso || "-"} kg</b></span>
-                <span>Altura: <b>{q.altura || "-"} cm</b></span>
-              </div>
-              {q.respostas_questionario && q.respostas_questionario.length > 0 ? (
-                // Remover duplicatas baseado em pergunta_id
-                Array.from(new Map(q.respostas_questionario.map((r: any) => [r.pergunta_id, r])).values())
-                  .map((resposta: any, i: any) => (
-                    <div key={`${q.id}-${resposta.pergunta_id}-${i}`} className="border-l-4 border-blue-200 pl-4 py-2 mb-2">
-                      <div className="font-medium text-gray-900 mb-1">Pergunta {resposta.pergunta_id}</div>
-                      <div className="text-sm text-gray-600 mb-2">
-                        {resposta.pergunta_texto || resposta.pergunta || obterTextoPergunta(resposta.pergunta_id)}
-                      </div>
-                      <div className={`inline-flex px-2 py-1 rounded-full text-xs font-medium ${resposta.resposta === "sim" || resposta.resposta === true ? "bg-red-100 text-red-800" : "bg-green-100 text-green-800"}`}>
-                        {resposta.resposta === "sim" || resposta.resposta === true ? "SIM" : "NÃO"}
-                      </div>
-                      {resposta.observacao && (
-                        <div className="mt-2 text-sm text-gray-700 bg-gray-50 p-2 rounded">
-                          <strong>Observações:</strong> {resposta.observacao}
+      <div className="space-y-4 sm:space-y-6">
+        {questionariosSaude.map((q, idx) => {
+          const isTitular = q.pessoa_tipo === "titular"
+          const mostrarFotos = isTitular && temFotos
+          
+          return (
+            <Card key={q.id || idx} className="border-2 border-gray-200 shadow-sm">
+              <CardHeader className="bg-gradient-to-r from-red-50 to-red-100/50 border-b border-gray-200 px-3 sm:px-6 py-3 sm:py-4">
+                <CardTitle className="flex items-center gap-2 text-[#168979] text-base sm:text-lg">
+                  <Heart className="h-4 w-4 sm:h-5 sm:w-5 text-red-500" />
+                  <span className="truncate">{isTitular
+                      ? "Declaração de Saúde - Titular"
+                      : `Declaração de Saúde - ${q.pessoa_nome}`}</span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pt-4 sm:pt-6 px-3 sm:px-6 pb-4 sm:pb-6 space-y-6">
+                {/* Fotos do Titular - Mostrar apenas para o titular */}
+                {mostrarFotos && (
+                  <div className="border-b border-gray-200 pb-6">
+                    <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-4 flex items-center gap-2">
+                      <Camera className="h-4 w-4" />
+                      Fotos do Titular
+                    </h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
+                      {propostaDetalhada?.foto_rosto && (
+                        <div className="space-y-2">
+                          <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide">
+                            Foto de Rosto
+                          </label>
+                          <div className="relative group">
+                            <img
+                              src={propostaDetalhada.foto_rosto}
+                              alt="Foto de rosto"
+                              className="w-full rounded-lg border-2 border-gray-200 shadow-sm cursor-pointer hover:shadow-md transition-shadow"
+                              onClick={() => window.open(propostaDetalhada.foto_rosto, '_blank')}
+                            />
+                            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors rounded-lg flex items-center justify-center opacity-0 group-hover:opacity-100">
+                              <span className="text-white text-sm font-medium bg-black/50 px-3 py-1 rounded">Clique para ampliar</span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                      {propostaDetalhada?.foto_corpo_inteiro && (
+                        <div className="space-y-2">
+                          <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide">
+                            Foto de Corpo Inteiro
+                          </label>
+                          <div className="relative group">
+                            <img
+                              src={propostaDetalhada.foto_corpo_inteiro}
+                              alt="Foto de corpo inteiro"
+                              className="w-full rounded-lg border-2 border-gray-200 shadow-sm cursor-pointer hover:shadow-md transition-shadow"
+                              onClick={() => window.open(propostaDetalhada.foto_corpo_inteiro, '_blank')}
+                            />
+                            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors rounded-lg flex items-center justify-center opacity-0 group-hover:opacity-100">
+                              <span className="text-white text-sm font-medium bg-black/50 px-3 py-1 rounded">Clique para ampliar</span>
+                            </div>
+                          </div>
                         </div>
                       )}
                     </div>
-                  ))
-              ) : (
-                <div className="text-gray-500">Nenhuma resposta encontrada</div>
-              )}
-            </CardContent>
-          </Card>
-        ))}
+                  </div>
+                )}
+                
+                {/* Dados Físicos e Questionário */}
+                <div>
+                  <div className="mb-4 text-sm text-gray-700">
+                    <span className="mr-4">Peso: <b>{q.peso || "-"} kg</b></span>
+                    <span>Altura: <b>{q.altura || "-"} cm</b></span>
+                  </div>
+                  {q.respostas_questionario && q.respostas_questionario.length > 0 ? (
+                    // Remover duplicatas baseado em pergunta_id
+                    Array.from(new Map(q.respostas_questionario.map((r: any) => [r.pergunta_id, r])).values())
+                      .map((resposta: any, i: any) => (
+                        <div key={`${q.id}-${resposta.pergunta_id}-${i}`} className="border-l-4 border-blue-200 pl-4 py-2 mb-2">
+                          <div className="font-medium text-gray-900 mb-1">Pergunta {resposta.pergunta_id}</div>
+                          <div className="text-sm text-gray-600 mb-2">
+                            {resposta.pergunta_texto || resposta.pergunta || obterTextoPergunta(resposta.pergunta_id)}
+                          </div>
+                          <div className={`inline-flex px-2 py-1 rounded-full text-xs font-medium ${resposta.resposta === "sim" || resposta.resposta === true ? "bg-red-100 text-red-800" : "bg-green-100 text-green-800"}`}>
+                            {resposta.resposta === "sim" || resposta.resposta === true ? "SIM" : "NÃO"}
+                          </div>
+                          {resposta.observacao && (
+                            <div className="mt-2 text-sm text-gray-700 bg-gray-50 p-2 rounded">
+                              <strong>Observações:</strong> {resposta.observacao}
+                            </div>
+                          )}
+                        </div>
+                      ))
+                  ) : (
+                    <div className="text-gray-500">Nenhuma resposta encontrada</div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          )
+        })}
       </div>
     )
   }
@@ -460,21 +575,51 @@ export default function EmAnalisePage() {
 
       {/* Estatísticas Rápidas */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-        <div className="bg-white p-4 rounded-lg shadow border border-gray-200">
-          <div className="text-xl font-bold text-gray-900">{propostas.length}</div>
-          <div className="text-xs text-gray-600">Total em Análise</div>
-        </div>
-        <div className="bg-white p-4 rounded-lg shadow border border-gray-200">
-          <div className="text-xl font-bold text-gray-700">
-            {propostas.filter((p) => p.origem === "propostas").length}
+        <div className="bg-gradient-to-br from-white to-gray-50 border border-gray-200 shadow-sm hover:shadow-lg transition-all duration-300 rounded-lg">
+          <div className="flex flex-row items-center justify-between pb-3 pt-4 sm:pt-6 px-3 sm:px-6">
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-1">
+                <Search className="h-3 w-3 sm:h-4 sm:w-4 text-gray-400 opacity-60" />
+                <h3 className="text-xs sm:text-sm font-bold text-gray-600 uppercase tracking-wider font-sans">Total em Análise</h3>
+              </div>
+              <div className="text-xl sm:text-3xl font-bold text-[#168979] mt-1 sm:mt-2">{propostas.length}</div>
+            </div>
           </div>
-          <div className="text-xs text-gray-600">Clientes Diretos</div>
-        </div>
-        <div className="bg-white p-4 rounded-lg shadow border border-gray-200">
-          <div className="text-xl font-bold text-gray-700">
-            {propostas.filter((p) => p.origem === "propostas_corretores").length}
+          <div className="pb-4 sm:pb-6 px-3 sm:px-6">
+            <p className="text-[10px] sm:text-xs text-gray-500 font-medium">Total de propostas em análise</p>
           </div>
-          <div className="text-xs text-gray-600">Via Corretores</div>
+        </div>
+        <div className="bg-gradient-to-br from-white to-gray-50 border border-gray-200 shadow-sm hover:shadow-lg transition-all duration-300 rounded-lg">
+          <div className="flex flex-row items-center justify-between pb-3 pt-4 sm:pt-6 px-3 sm:px-6">
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-1">
+                <User className="h-3 w-3 sm:h-4 sm:w-4 text-gray-400 opacity-60" />
+                <h3 className="text-xs sm:text-sm font-bold text-gray-600 uppercase tracking-wider font-sans">Clientes Diretos</h3>
+              </div>
+              <div className="text-xl sm:text-3xl font-bold text-[#168979] mt-1 sm:mt-2">
+                {propostas.filter((p) => p.origem === "propostas").length}
+              </div>
+            </div>
+          </div>
+          <div className="pb-4 sm:pb-6 px-3 sm:px-6">
+            <p className="text-[10px] sm:text-xs text-gray-500 font-medium">Propostas diretas</p>
+          </div>
+        </div>
+        <div className="bg-gradient-to-br from-white to-gray-50 border border-gray-200 shadow-sm hover:shadow-lg transition-all duration-300 rounded-lg">
+          <div className="flex flex-row items-center justify-between pb-3 pt-4 sm:pt-6 px-3 sm:px-6">
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-1">
+                <UserCheck className="h-3 w-3 sm:h-4 sm:w-4 text-gray-400 opacity-60" />
+                <h3 className="text-xs sm:text-sm font-bold text-gray-600 uppercase tracking-wider font-sans">Via Corretores</h3>
+              </div>
+              <div className="text-xl sm:text-3xl font-bold text-[#168979] mt-1 sm:mt-2">
+                {propostas.filter((p) => p.origem === "propostas_corretores").length}
+              </div>
+            </div>
+          </div>
+          <div className="pb-4 sm:pb-6 px-3 sm:px-6">
+            <p className="text-[10px] sm:text-xs text-gray-500 font-medium">Propostas via corretores</p>
+          </div>
         </div>
       </div>
 
@@ -642,55 +787,87 @@ export default function EmAnalisePage() {
 
       {/* Modal de Rejeição */}
       {showModalRejeicao && propostaDetalhada && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg max-w-md w-full p-6">
-            <h3 className="text-lg font-semibold mb-4">Rejeitar Proposta</h3>
-            <p className="text-gray-600 mb-4">
-              Tem certeza que deseja rejeitar a proposta de <strong>{obterNomeCliente(propostaDetalhada)}</strong>?
-            </p>
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">Motivo da Rejeição</label>
-              <textarea
-                value={motivoRejeicao}
-                onChange={(e) => setMotivoRejeicao(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500"
-                rows={3}
-                placeholder="Informe o motivo da rejeição..."
-              />
+        <>
+        <div className="fixed inset-0 z-[95] bg-black/60 backdrop-blur-md" />
+        <div className="fixed inset-0 flex items-center justify-center z-[100] p-2 sm:p-4">
+          <div className="bg-white rounded-xl sm:rounded-2xl shadow-2xl max-w-md w-full">
+            <div className="bg-gradient-to-r from-red-50 to-red-100/50 border-b border-gray-200 px-3 sm:px-6 py-3 sm:py-4">
+              <div className="flex items-center gap-2 sm:gap-3">
+                <XCircle className="h-5 w-5 sm:h-6 sm:w-6 text-red-500" />
+                <h3 className="text-base sm:text-lg font-bold text-gray-900">Rejeitar Proposta</h3>
+              </div>
             </div>
-            <div className="flex justify-end space-x-3">
-              <button
-                onClick={() => setShowModalRejeicao(false)}
-                className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={rejeitarProposta}
-                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors"
-              >
-                Rejeitar
-              </button>
+            <div className="p-3 sm:p-6">
+              <p className="text-sm sm:text-base text-gray-700 mb-4">
+                Tem certeza que deseja rejeitar a proposta de <strong className="text-gray-900">{obterNomeCliente(propostaDetalhada)}</strong>?
+              </p>
+              <div className="mb-4">
+                <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">Motivo da Rejeição</label>
+                <textarea
+                  value={motivoRejeicao}
+                  onChange={(e) => setMotivoRejeicao(e.target.value)}
+                  className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:border-[#168979] focus:ring-1 focus:ring-[#168979] text-sm sm:text-base"
+                  rows={3}
+                  placeholder="Informe o motivo da rejeição..."
+                />
+              </div>
+              <div className="flex flex-col sm:flex-row justify-end gap-2 sm:gap-3">
+                <Button
+                  onClick={() => setShowModalRejeicao(false)}
+                  variant="outline"
+                  className="w-full sm:w-auto"
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  onClick={rejeitarProposta}
+                  className="bg-red-600 hover:bg-red-700 text-white w-full sm:w-auto"
+                >
+                  <XCircle className="h-4 w-4 mr-2" />
+                  Rejeitar
+                </Button>
+              </div>
             </div>
           </div>
         </div>
+        </>
       )}
 
       {/* Modal de Detalhes */}
       {showModalDetalhes && propostaDetalhada && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg max-w-4xl w-full max-h-[95vh] overflow-y-auto">
-            <div className="p-6">
-              <div className="flex justify-between items-center mb-6 border-b border-gray-200 pb-4">
-                <h2 className="text-2xl font-bold text-gray-900">Detalhes da Proposta</h2>
-                <button
-                  onClick={() => setShowModalDetalhes(false)}
-                  className="text-gray-500 hover:text-gray-700"
-                >
-                  ✕
-                </button>
+        <>
+        <div className="fixed inset-0 z-[95] bg-black/60 backdrop-blur-md" />
+        <div className="fixed inset-0 flex items-center justify-center z-[100] p-2 sm:p-4">
+          <div className="bg-white rounded-xl sm:rounded-2xl shadow-2xl max-w-7xl w-full max-h-[95vh] sm:max-h-[90vh] overflow-hidden flex flex-col">
+            {/* Header com Gradiente */}
+            <div className="bg-gradient-to-r from-[#168979] to-[#13786a] px-3 sm:px-6 py-3 sm:py-4">
+              <div className="flex items-center justify-between mb-3 sm:mb-4">
+                <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
+                  <div className="p-1.5 sm:p-2 bg-white/20 rounded-lg flex-shrink-0">
+                    <Eye className="h-4 w-4 sm:h-6 sm:w-6 text-white" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <h3 className="text-base sm:text-xl font-bold text-white truncate">
+                      Detalhes da Proposta
+                    </h3>
+                    <p className="text-white/80 text-xs sm:text-sm truncate">Cliente: <strong>{obterNomeCliente(propostaDetalhada)}</strong></p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0 ml-2">
+                  <Button
+                    onClick={() => setShowModalDetalhes(false)}
+                    className="bg-white/20 hover:bg-white/30 text-white border border-white/30 text-xs sm:text-sm px-2 sm:px-3 h-8 sm:h-9"
+                    size="sm"
+                  >
+                    <span className="hidden sm:inline">Fechar</span>
+                    <XCircle className="sm:hidden h-4 w-4" />
+                  </Button>
+                </div>
               </div>
+            </div>
 
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto p-3 sm:p-6">
               {loadingDetalhes ? (
                 <div className="flex justify-center items-center h-32 bg-gradient-to-br from-white to-gray-50 rounded-lg border border-gray-200 shadow-sm">
                   <div className="text-center">
@@ -700,36 +877,53 @@ export default function EmAnalisePage() {
                 </div>
               ) : (
                 <Tabs defaultValue="dados" className="w-full">
-                  <TabsList className="grid w-full grid-cols-2">
-                    <TabsTrigger value="dados">Dados Pessoais</TabsTrigger>
-                    <TabsTrigger value="saude">Declaração de Saúde</TabsTrigger>
-                  </TabsList>
+                  <div className="border-b border-gray-200 mb-4 sm:mb-6">
+                    <TabsList className="inline-flex h-auto w-full bg-transparent p-0 gap-0 sm:gap-1">
+                      <TabsTrigger 
+                        value="dados" 
+                        className="flex-1 data-[state=active]:bg-transparent data-[state=active]:text-[#168979] data-[state=active]:border-b-2 data-[state=active]:border-[#168979] data-[state=inactive]:text-gray-500 data-[state=inactive]:border-b-2 data-[state=inactive]:border-transparent hover:text-gray-700 hover:border-gray-300 text-xs sm:text-sm px-3 sm:px-4 py-2.5 sm:py-3 rounded-none transition-all font-medium border-b-2 border-transparent"
+                      >
+                        <span className="hidden sm:inline">Dados Pessoais</span>
+                        <span className="sm:hidden">Dados</span>
+                      </TabsTrigger>
+                      <TabsTrigger 
+                        value="saude" 
+                        className="flex-1 data-[state=active]:bg-transparent data-[state=active]:text-[#168979] data-[state=active]:border-b-2 data-[state=active]:border-[#168979] data-[state=inactive]:text-gray-500 data-[state=inactive]:border-b-2 data-[state=inactive]:border-transparent hover:text-gray-700 hover:border-gray-300 text-xs sm:text-sm px-3 sm:px-4 py-2.5 sm:py-3 rounded-none transition-all font-medium border-b-2 border-transparent"
+                      >
+                        <span className="hidden sm:inline">Declaração de Saúde</span>
+                        <span className="sm:hidden">Saúde</span>
+                      </TabsTrigger>
+                    </TabsList>
+                  </div>
 
-                  <TabsContent value="dados" className="space-y-6 mt-6">
+                  <TabsContent value="dados" className="space-y-4 sm:space-y-6 mt-0">
                     {/* Dados do Cliente */}
-                    <Card>
-                      <CardHeader>
-                        <CardTitle>Dados do Cliente</CardTitle>
+                    <Card className="border-2 border-gray-200 shadow-sm">
+                      <CardHeader className="bg-gradient-to-r from-blue-50 to-blue-100/50 border-b border-gray-200 px-3 sm:px-6 py-3 sm:py-4">
+                        <CardTitle className="flex items-center gap-2 text-[#168979] text-base sm:text-lg">
+                          <User className="h-4 w-4 sm:h-5 sm:w-5" />
+                          Dados do Cliente
+                        </CardTitle>
                       </CardHeader>
-                      <CardContent>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <CardContent className="pt-4 sm:pt-6 px-3 sm:px-6 pb-4 sm:pb-6">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-6">
                           <div>
-                            <label className="text-sm font-medium text-gray-700">Nome</label>
-                            <p className="text-gray-900">{obterNomeCliente(propostaDetalhada)}</p>
+                            <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">Nome</label>
+                            <p className="text-sm sm:text-base text-gray-700">{obterNomeCliente(propostaDetalhada)}</p>
                           </div>
                           <div>
-                            <label className="text-sm font-medium text-gray-700">Email</label>
-                            <p className="text-gray-900">{obterEmailCliente(propostaDetalhada)}</p>
+                            <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">Email</label>
+                            <p className="text-sm sm:text-base text-gray-700">{obterEmailCliente(propostaDetalhada)}</p>
                           </div>
                           <div>
-                            <label className="text-sm font-medium text-gray-700">Telefone</label>
-                            <p className="text-gray-900">
+                            <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">Telefone</label>
+                            <p className="text-sm sm:text-base text-gray-700">
                               {propostaDetalhada.telefone || propostaDetalhada.celular || "Não informado"}
                             </p>
                           </div>
                           <div>
-                            <label className="text-sm font-medium text-gray-700">Valor</label>
-                            <p className="text-gray-900">
+                            <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">Valor</label>
+                            <p className="text-sm sm:text-base font-bold text-[#168979]">
                               {propostaDetalhada.valor ? formatarMoeda(propostaDetalhada.valor) : "Não informado"}
                             </p>
                           </div>
@@ -738,28 +932,29 @@ export default function EmAnalisePage() {
                     </Card>
 
                     {/* Ações */}
-                    <div className="flex justify-end space-x-3">
-                      <button
+                    <div className="flex flex-col sm:flex-row justify-end gap-2 sm:gap-3 pt-4 border-t border-gray-200">
+                      <Button
                         onClick={() => aprovarProposta(propostaDetalhada.id)}
-                        className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors flex items-center"
+                        className="bg-green-600 hover:bg-green-700 text-white w-full sm:w-auto"
                       >
                         <CheckCircle className="h-4 w-4 mr-2" />
                         Aprovar
-                      </button>
-                      <button
+                      </Button>
+                      <Button
                         onClick={() => {
                           setShowModalDetalhes(false)
                           abrirModalRejeicao(propostaDetalhada)
                         }}
-                        className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors flex items-center"
+                        variant="destructive"
+                        className="w-full sm:w-auto"
                       >
                         <XCircle className="h-4 w-4 mr-2" />
                         Reprovar
-                      </button>
+                      </Button>
                     </div>
                   </TabsContent>
 
-                  <TabsContent value="saude" className="space-y-6 mt-6">
+                  <TabsContent value="saude" className="space-y-4 sm:space-y-6 mt-0">
                     {renderDeclaracaoSaudeUnificada()}
                   </TabsContent>
                 </Tabs>
@@ -767,6 +962,7 @@ export default function EmAnalisePage() {
             </div>
           </div>
         </div>
+        </>
       )}
     </div>
   )
