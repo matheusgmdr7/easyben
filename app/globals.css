@@ -24,7 +24,7 @@ body.modal-open::before {
   background: rgba(0, 0, 0, 0.6);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
-  z-index: 90;
+  z-index: 30;
   pointer-events: none;
 }
 
