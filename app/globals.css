@@ -24,13 +24,30 @@ body.modal-open::before {
   background: rgba(0, 0, 0, 0.6);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
-  z-index: 30;
+  z-index: 90;
   pointer-events: none;
 }
 
 body.modal-open .admin-header {
   z-index: 85 !important;
   pointer-events: none;
+}
+
+body.modal-open .admin-sidebar {
+  position: relative;
+  z-index: 80 !important;
+  pointer-events: none;
+}
+
+body.modal-open .admin-sidebar::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  pointer-events: none;
+  z-index: 2;
 }
 
 /* Custom Scrollbar para Sidebar Admin */
