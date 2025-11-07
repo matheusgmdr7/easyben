@@ -788,7 +788,7 @@ export default function EmAnalisePage() {
       {/* Modal de Rejeição */}
       {showModalRejeicao && propostaDetalhada && (
         <>
-        <div className="fixed inset-0 z-40 bg-black/60 backdrop-blur-md" />
+        <div className="fixed inset-0 z-40 bg-black/60 backdrop-blur-md pointer-events-none" />
         <div className="fixed inset-0 flex items-center justify-center z-[100] p-2 sm:p-4">
           <div className="bg-white rounded-xl sm:rounded-2xl shadow-2xl max-w-md w-full">
             <div className="bg-gradient-to-r from-red-50 to-red-100/50 border-b border-gray-200 px-3 sm:px-6 py-3 sm:py-4">
@@ -836,7 +836,7 @@ export default function EmAnalisePage() {
       {/* Modal de Detalhes */}
       {showModalDetalhes && propostaDetalhada && (
         <>
-        <div className="fixed inset-0 z-40 bg-black/60 backdrop-blur-md" />
+        <div className="fixed inset-0 z-40 bg-black/60 backdrop-blur-md pointer-events-none" />
         <div className="fixed inset-0 flex items-center justify-center z-[100] p-2 sm:p-4">
           <div className="bg-white rounded-xl sm:rounded-2xl shadow-2xl max-w-7xl w-full max-h-[95vh] sm:max-h-[90vh] overflow-hidden flex flex-col">
             {/* Header com Gradiente */}
