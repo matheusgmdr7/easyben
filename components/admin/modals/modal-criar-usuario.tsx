@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -51,15 +51,21 @@ export default function ModalCriarUsuario({
   limparFormulario
 }: ModalCriarUsuarioProps) {
  
+  const [permissoesSelecionadas, setPermissoesSelecionadas] = useState<string[]>(
+    formData.permissoes?.length ? formData.permissoes : []
+  )
+
   useModalOverlay(isOpen)
+
+  useEffect(() => {
+    if (isOpen) {
+      setPermissoesSelecionadas(formData.permissoes?.length ? formData.permissoes : [])
+    }
+  }, [isOpen, formData.permissoes])
 
   if (!isOpen) {
     return null
   }
-
-  const [permissoesSelecionadas, setPermissoesSelecionadas] = useState<string[]>(
-    formData.permissoes?.length ? formData.permissoes : []
-  )
 
   const handleSave = async () => {
     await onSave(formData)
