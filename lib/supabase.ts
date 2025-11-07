@@ -1,4 +1,4 @@
-import { createClient, type SupabaseClient } from "@supabase/supabase-js"
+import { createClient } from "@supabase/supabase-js"
 
 // Valores padrão para desenvolvimento (substitua pelos seus valores reais em produção)
 const defaultUrl = "https://jtzbuxoslaotpnwsphqv.supabase.co"
@@ -9,26 +9,14 @@ const defaultAnonKey =
 export const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || defaultUrl
 export const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || defaultAnonKey
 
-type GlobalWithSupabase = typeof globalThis & {
-  __supabaseClient?: SupabaseClient
-}
-
-const globalForSupabase = globalThis as GlobalWithSupabase
-
-// Criar cliente Supabase (singleton)
-export const supabase: SupabaseClient =
-  globalForSupabase.__supabaseClient ??
-  createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-    auth: {
-      persistSession: true,
-      autoRefreshToken: true,
-      detectSessionInUrl: true,
-    },
-  })
-
-if (!globalForSupabase.__supabaseClient) {
-  globalForSupabase.__supabaseClient = supabase
-}
+// Criar cliente Supabase único por bundle
+export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true,
+  },
+})
 
 // Exportar também como default
 export default supabase
