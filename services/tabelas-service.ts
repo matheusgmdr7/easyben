@@ -41,6 +41,8 @@ export async function buscarTabelasPrecos(): Promise<TabelaPreco[]> {
   }
 }
 
+export const obterTabelasPrecos = buscarTabelasPrecos
+
 /**
  * Busca uma tabela específica com suas faixas etárias
  * Usa as tabelas 'tabelas_precos' + 'tabelas_precos_faixas'

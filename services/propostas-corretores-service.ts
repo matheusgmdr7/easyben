@@ -287,6 +287,26 @@ export async function buscarPropostasCorretores(): Promise<any[]> {
   }
 }
 
+export async function buscarVendas(): Promise<any[]> {
+  console.warn("⚠️ buscarVendas ainda não implementada. Retornando lista vazia.")
+  return []
+}
+
+export async function buscarResumoVendas(): Promise<{ total: number; aprovadas: number; pendentes: number; rejeitadas: number }> {
+  console.warn("⚠️ buscarResumoVendas ainda não implementada. Retornando valores padrão.")
+  return {
+    total: 0,
+    aprovadas: 0,
+    pendentes: 0,
+    rejeitadas: 0,
+  }
+}
+
+export async function buscarCorretoras(): Promise<any[]> {
+  console.warn("⚠️ buscarCorretoras ainda não implementada. Retornando lista vazia.")
+  return []
+}
+
 /**
  * Atualiza o status de uma proposta de corretor
  * @param propostaId ID da proposta

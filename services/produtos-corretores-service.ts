@@ -21,6 +21,16 @@ export async function obterProdutosCorretores() {
   }
 }
 
+export async function buscarProdutosCorretoresAtivos() {
+  try {
+    const produtos = await obterProdutosCorretores()
+    return (produtos || []).filter((produto: any) => produto.disponivel !== false)
+  } catch (error) {
+    console.error("Erro ao buscar produtos corretores ativos:", error)
+    return []
+  }
+}
+
 export async function obterValorProdutoPorIdade(produtoId: string, idade: number) {
   try {
     console.log(`🔍 Buscando valor para produto ${produtoId}, idade ${idade}`)

@@ -1,27 +1,75 @@
-// Since the existing code was omitted for brevity and the updates indicate undeclared variables,
-// I will assume the variables are used within a function or component scope.
-// I will declare them at the top of the component/function scope to resolve the errors.
-// Without the original code, this is the best I can do to address the issue.
+"use client"
 
-// Assuming this is a React component:
+import { useState } from "react"
+import { Button } from "@/components/ui/button"
+import { Textarea } from "@/components/ui/textarea"
+import { toast } from "sonner"
 
-const AprovarReprovarProposta = () => {
-  // Declare the missing variables here.  The actual types and initial values
-  // would depend on how they are used in the original code.  These are just
-  // placeholders to satisfy the "undeclared variable" errors.
-  const brevity = null
-  const it = null
-  const is = null
-  const correct = null
-  const and = null
+interface AprovarReprovarPropostaProps {
+  propostaId: string
+  onAprovar?: (id: string) => Promise<void> | void
+  onRejeitar?: (id: string, motivo: string) => Promise<void> | void
+}
 
-  // Rest of the component logic here, using the declared variables.
-  // ...
+function AprovarReprovarProposta({ propostaId, onAprovar, onRejeitar }: AprovarReprovarPropostaProps) {
+  const [motivo, setMotivo] = useState("")
+  const [loading, setLoading] = useState<"aprovar" | "rejeitar" | null>(null)
 
-  return <div>{/* Component content */}</div>
+  const aprovar = async () => {
+    try {
+      setLoading("aprovar")
+      if (onAprovar) {
+        await onAprovar(propostaId)
+      }
+      toast.success("Proposta aprovada")
+    } catch (error) {
+      console.error(error)
+      toast.error("Não foi possível aprovar a proposta")
+    } finally {
+      setLoading(null)
+    }
+  }
+
+  const rejeitar = async () => {
+    if (!motivo.trim()) {
+      toast.error("Informe o motivo da rejeição")
+      return
+    }
+
+    try {
+      setLoading("rejeitar")
+      if (onRejeitar) {
+        await onRejeitar(propostaId, motivo)
+      }
+      toast.success("Proposta rejeitada")
+      setMotivo("")
+    } catch (error) {
+      console.error(error)
+      toast.error("Não foi possível rejeitar a proposta")
+    } finally {
+      setLoading(null)
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      <Textarea
+        placeholder="Informe o motivo da rejeição (obrigatório para reprovar)"
+        value={motivo}
+        onChange={(event) => setMotivo(event.target.value)}
+        className="min-h-[100px]"
+      />
+      <div className="flex flex-wrap gap-2">
+        <Button variant="success" onClick={aprovar} disabled={loading === "aprovar"}>
+          {loading === "aprovar" ? "Aprovando..." : "Aprovar"}
+        </Button>
+        <Button variant="destructive" onClick={rejeitar} disabled={loading === "rejeitar"}>
+          {loading === "rejeitar" ? "Rejeitando..." : "Rejeitar"}
+        </Button>
+      </div>
+    </div>
+  )
 }
 
 export default AprovarReprovarProposta
-
-// If it's not a React component, adjust accordingly.  The key is to declare
-// the variables in the appropriate scope before they are used.
+export { AprovarReprovarProposta }

@@ -56,6 +56,8 @@ export async function listarModelosPropostasAtivos(): Promise<ModeloProposta[]> 
   }
 }
 
+export const buscarModelosPropostasAtivos = listarModelosPropostasAtivos
+
 // Função para obter um modelo de proposta por ID
 export async function obterModeloProposta(id: string): Promise<ModeloProposta | null> {
   try {

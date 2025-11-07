@@ -253,6 +253,20 @@ export function obterUrlPublica(bucket: string, path: string): string {
   }
 }
 
+export function obterUrlDocumento(
+  propostaId: string,
+  nomeArquivo: string,
+  bucket: string = BUCKET_DOCUMENTOS,
+): string {
+  if (!propostaId || !nomeArquivo) {
+    console.warn("⚠️ obterUrlDocumento chamado sem propostaId ou nomeArquivo")
+    return ""
+  }
+
+  const path = `${propostaId}/${nomeArquivo}`
+  return obterUrlPublica(bucket, path)
+}
+
 /**
  * Obtém URL do avatar do corretor
  */
@@ -392,6 +406,9 @@ export { BUCKET_DOCUMENTOS, BUCKET_AVATARES }
 export async function getPublicUrl(bucket: string, path: string) {
   return obterUrlPublica(bucket, path)
 }
+
+// compatibilidade com código antigo
+export { obterUrlDocumento as getDocumentoUrl }
 
 export async function fileExists(bucket: string, path: string) {
   try {

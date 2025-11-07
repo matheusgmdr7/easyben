@@ -173,3 +173,5 @@ export default function VisualizadorDocumentos({ propostaId, documentos }: Visua
     </div>
   )
 }
+
+export { VisualizadorDocumentos as VisualizarDocumentos }
