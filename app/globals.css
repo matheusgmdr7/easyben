@@ -25,6 +25,7 @@ body.modal-open::before {
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   z-index: 90;
+  pointer-events: none;
 }
 
 body.modal-open .admin-header {
