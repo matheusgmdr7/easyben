@@ -1,50 +1,18 @@
-import { createClient } from "@supabase/supabase-js"
-
-// Valores padrão para desenvolvimento (substitua pelos seus valores reais em produção)
-const defaultUrl = "https://jtzbuxoslaotpnwsphqv.supabase.co"
-const defaultAnonKey =
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp0emJ1eG9zbGFvdHBud3NwaHF2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDI1MDU5MDEsImV4cCI6MjA1ODA4MTkwMX0.jmI-h8pKW00TN5uNpo3Q16GaZzOpFAnPUVO0yyNq54U"
-
-// Usar valores do ambiente se disponíveis, caso contrário usar os padrões
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || defaultUrl
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || defaultAnonKey
-
-// Criar um cliente Supabase singleton para evitar múltiplas instâncias
-let supabaseInstance: any = null
+import supabase, { SUPABASE_ANON_KEY, SUPABASE_URL } from "@/lib/supabase"
 
 export function getSupabaseClient() {
-  if (supabaseInstance) {
-    return supabaseInstance
-  }
-
-  console.log("🔧 Inicializando cliente Supabase com:", {
-    url: supabaseUrl,
-    keyLength: supabaseAnonKey.length,
-    keyPrefix: supabaseAnonKey.substring(0, 20) + "...",
-    usingDefaults: !process.env.NEXT_PUBLIC_SUPABASE_URL,
-  })
-
-  // Criar o cliente com configurações otimizadas
-  supabaseInstance = createClient(supabaseUrl, supabaseAnonKey, {
-    auth: {
-      persistSession: true,
-      autoRefreshToken: true,
-      detectSessionInUrl: true,
-    },
-  })
-
-  return supabaseInstance
+  return supabase
 }
 
 // Exportar o cliente Supabase
-export const supabaseClient = getSupabaseClient()
+export const supabaseClient = supabase
 
 // Função para testar a conexão
 export async function testarConexaoSupabase() {
   try {
     console.log("🔍 Testando conexão com Supabase...")
-    console.log("URL:", supabaseUrl)
-    console.log("Key (primeiros 10 caracteres):", supabaseAnonKey.substring(0, 10) + "...")
+    console.log("URL:", SUPABASE_URL)
+    console.log("Key (primeiros 10 caracteres):", SUPABASE_ANON_KEY.substring(0, 10) + "...")
 
     // Teste simples de conexão
     const { data, error } = await supabaseClient.from("produtos_corretores").select("id").limit(1)
@@ -80,7 +48,7 @@ export async function verificarChavesAPI() {
     console.log("🔍 Verificando chaves de API...")
 
     // Verificar se as chaves estão definidas
-    if (!supabaseUrl || supabaseUrl.trim() === "") {
+    if (!SUPABASE_URL || SUPABASE_URL.trim() === "") {
       console.error("❌ URL do Supabase não definida")
       return {
         success: false,
@@ -89,7 +57,7 @@ export async function verificarChavesAPI() {
       }
     }
 
-    if (!supabaseAnonKey || supabaseAnonKey.trim() === "") {
+    if (!SUPABASE_ANON_KEY || SUPABASE_ANON_KEY.trim() === "") {
       console.error("❌ Chave anônima do Supabase não definida")
       return {
         success: false,

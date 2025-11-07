@@ -31,19 +31,24 @@ function isDevEnvironment(): boolean {
  */
 export async function autenticarCorretor(loginData: LoginData): Promise<AuthResult> {
   try {
+    const emailNormalizado = loginData.email.trim().toLowerCase()
     console.log("Tentando autenticar corretor com email:", loginData.email)
+    console.log("Email normalizado para busca:", emailNormalizado)
 
-    // 1. Buscar corretor pelo email
+    // 1. Buscar corretor pelo email (case-insensitive)
     const { data: corretor, error } = await supabase
       .from("corretores")
       .select("*")
-      .eq("email", loginData.email)
-      .single()
+      .ilike("email", emailNormalizado)
+      .maybeSingle()
 
     // 2. Verificar se o corretor existe
     if (error || !corretor) {
-      console.error("Erro ao buscar corretor:", error)
-      console.log("Corretor não encontrado para o email:", loginData.email)
+      if (error) {
+        console.error("Erro ao buscar corretor:", error)
+      } else {
+        console.log("Corretor não encontrado para o email:", loginData.email)
+      }
 
       // MODO DE DESENVOLVIMENTO: Permitir login com qualquer email
       // Esta exceção só funciona em ambiente de desenvolvimento
@@ -54,7 +59,8 @@ export async function autenticarCorretor(loginData: LoginData): Promise<AuthResu
         const corretorFicticio = {
           id: "dev-123",
           nome: "Corretor Desenvolvimento",
-          email: loginData.email,
+          email: emailNormalizado,
+          email: emailNormalizado,
           status: "aprovado",
           telefone: "11999999999",
           cpf: "12345678900",
