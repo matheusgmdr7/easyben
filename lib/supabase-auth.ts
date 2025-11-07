@@ -1,7 +1,9 @@
-import supabase from "@/lib/supabase"
+import supabaseClient from "@/lib/supabase"
+
+export const supabase = supabaseClient
 
 export async function signInAdmin(email: string, password: string) {
-  const { data, error } = await supabase.auth.signInWithPassword({
+  const { data, error } = await supabaseClient.auth.signInWithPassword({
     email,
     password,
   })
@@ -16,7 +18,7 @@ export async function signInAdmin(email: string, password: string) {
 
   if (!isAdmin) {
     // Se o usuário não for administrador, faça logout e lance um erro
-    await supabase.auth.signOut()
+    await supabaseClient.auth.signOut()
     throw new Error("Usuário não tem permissão de administrador")
   }
 
@@ -24,7 +26,7 @@ export async function signInAdmin(email: string, password: string) {
 }
 
 export async function signOutAdmin() {
-  const { error } = await supabase.auth.signOut()
+  const { error } = await supabaseClient.auth.signOut()
   if (error) {
     throw new Error(error.message)
   }
@@ -40,7 +42,7 @@ export async function getSession() {
   const {
     data: { session },
     error,
-  } = await supabase.auth.getSession()
+  } = await supabaseClient.auth.getSession()
 
   if (error) {
     throw new Error(error.message)
@@ -53,7 +55,7 @@ export async function getSession() {
 export async function isCurrentUserAdmin() {
   const {
     data: { user },
-  } = await supabase.auth.getUser()
+  } = await supabaseClient.auth.getUser()
   return user?.user_metadata?.role === "admin"
 }
 
@@ -66,7 +68,7 @@ export async function setUserAsAdmin(userId: string) {
   }
 
   // Atualizar os metadados do usuário
-  const { data, error } = await supabase.auth.admin.updateUserById(userId, { user_metadata: { role: "admin" } })
+  const { data, error } = await supabaseClient.auth.admin.updateUserById(userId, { user_metadata: { role: "admin" } })
 
   if (error) {
     throw new Error(`Erro ao atribuir função de administrador: ${error.message}`)
@@ -77,7 +79,7 @@ export async function setUserAsAdmin(userId: string) {
 
 export async function createAdminUser(email: string, password: string) {
   try {
-    const { data, error } = await supabase.auth.signUp({
+    const { data, error } = await supabaseClient.auth.signUp({
       email: email,
       password: password,
       options: {

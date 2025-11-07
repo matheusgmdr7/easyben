@@ -9,12 +9,12 @@ const defaultAnonKey =
 export const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || defaultUrl
 export const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || defaultAnonKey
 
-// Criar cliente Supabase único por bundle
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: true,
+    storageKey: "contratando_admin",
   },
 })
 
