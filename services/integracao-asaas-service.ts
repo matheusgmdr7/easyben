@@ -297,84 +297,116 @@ export class IntegracaoAsaasService {
 
   /**
    * Buscar configuração do Asaas para a administradora
+   * Usa API route para contornar RLS (mesma estratégia do AdministradorasService)
    */
   private static async buscarConfiguracaoAsaas(administradora_id: string) {
     try {
       console.log("🔍 [ASAAS CONFIG] Buscando configuração para administradora:", administradora_id)
-      console.log("🔍 [ASAAS CONFIG] Tipo do administradora_id:", typeof administradora_id)
-      console.log("🔍 [ASAAS CONFIG] Tamanho do administradora_id:", administradora_id.length)
-      console.log("🔍 [ASAAS CONFIG] Supabase client inicializado:", !!supabase)
       
-      // Primeiro, vamos verificar se existe algum registro para esta administradora
-      console.log("🔍 [ASAAS CONFIG] Verificando se existe algum registro...")
-      const { data: countData, error: countError, count } = await supabase
-        .from("administradoras_config_financeira")
-        .select("administradora_id, status_integracao, ambiente", { count: 'exact' })
-        .eq("administradora_id", administradora_id)
+      // Verificar se estamos no servidor (API route) ou no cliente
+      const isServer = typeof window === 'undefined'
       
-      console.log("📊 [ASAAS CONFIG] Verificação de existência:", { countData, countError, count })
-      console.log("📊 [ASAAS CONFIG] Count retornado:", count)
-      if (countData && countData.length > 0) {
-        console.log("📊 [ASAAS CONFIG] Primeiro registro encontrado:", countData[0])
-      }
-      
-      // Primeiro, vamos tentar a query exata
-      console.log("🔍 [ASAAS CONFIG] Executando query com filtro status_integracao = 'ativa'")
-      const { data, error } = await supabase
-        .from("administradoras_config_financeira")
-        .select("api_key, ambiente, status_integracao")
-        .eq("administradora_id", administradora_id)
-        .eq("status_integracao", "ativa")
-        .maybeSingle()
-
-      console.log("📊 [ASAAS CONFIG] Resultado da busca:", { data, error })
-      console.log("📊 [ASAAS CONFIG] Data existe:", !!data)
-      console.log("📊 [ASAAS CONFIG] Error existe:", !!error)
-
-      if (error) {
-        console.error("❌ [ASAAS CONFIG] Erro na query:", error)
-        console.error("❌ [ASAAS CONFIG] Erro code:", error?.code)
-        console.error("❌ [ASAAS CONFIG] Erro message:", error?.message)
-        console.error("❌ [ASAAS CONFIG] Erro details:", error?.details)
+      if (isServer) {
+        // Se estiver no servidor, usar supabaseAdmin diretamente
+        const { supabaseAdmin } = await import("@/lib/supabase-admin")
         
-        // Se der erro ou não encontrou, vamos tentar sem o filtro de status
-        console.log("🔍 [ASAAS CONFIG] Tentando query alternativa sem filtro de status...")
-        const { data: dataAlt, error: errorAlt } = await supabase
+        console.log("🔍 [ASAAS CONFIG] Usando supabaseAdmin (servidor)")
+        
+        // Buscar configuração (primeiro tenta com status 'ativa', depois sem filtro)
+        let { data, error } = await supabaseAdmin
           .from("administradoras_config_financeira")
-          .select("api_key, ambiente, status_integracao")
+          .select("api_key, ambiente, status_integracao, instituicao_financeira")
           .eq("administradora_id", administradora_id)
+          .eq("status_integracao", "ativa")
           .maybeSingle()
+
+        // Se não encontrou com status 'ativa', tenta sem filtro
+        if (!data || error) {
+          console.log("🔍 [ASAAS CONFIG] Tentando sem filtro de status...")
+          const result = await supabaseAdmin
+            .from("administradoras_config_financeira")
+            .select("api_key, ambiente, status_integracao, instituicao_financeira")
+            .eq("administradora_id", administradora_id)
+            .maybeSingle()
           
-        console.log("📊 [ASAAS CONFIG] Resultado query alternativa:", { dataAlt, errorAlt })
-        
-        if (dataAlt && dataAlt.api_key) {
-          console.log("✅ [ASAAS CONFIG] Configuração encontrada na query alternativa!")
-          console.log("✅ [ASAAS CONFIG] Status atual:", dataAlt.status_integracao)
-          console.log("✅ [ASAAS CONFIG] API Key length:", dataAlt.api_key?.length)
-          console.log("✅ [ASAAS CONFIG] Ambiente:", dataAlt.ambiente)
-          
-          return {
-            api_key: dataAlt.api_key,
-            ambiente: dataAlt.ambiente || "producao"
-          }
+          data = result.data
+          error = result.error
         }
+
+        if (error) {
+          console.error("❌ [ASAAS CONFIG] Erro na query:", error)
+          return null
+        }
+
+        if (!data || !data.api_key) {
+          console.error("❌ [ASAAS CONFIG] Configuração não encontrada ou sem API key")
+          return null
+        }
+
+        // Verificar se é Asaas
+        if (data.instituicao_financeira && data.instituicao_financeira.toLowerCase() !== 'asaas') {
+          console.log("⚠️ [ASAAS CONFIG] Instituição financeira não é Asaas:", data.instituicao_financeira)
+          return null
+        }
+
+        console.log("✅ [ASAAS CONFIG] Configuração encontrada!")
+        console.log("✅ [ASAAS CONFIG] API Key length:", data.api_key?.length || 0)
+        console.log("✅ [ASAAS CONFIG] Ambiente:", data.ambiente)
+        console.log("✅ [ASAAS CONFIG] Status:", data.status_integracao)
+
+        return {
+          api_key: data.api_key,
+          ambiente: data.ambiente || "producao"
+        }
+      } else {
+        // Se estiver no cliente, usar API route
+        console.log("🔍 [ASAAS CONFIG] Usando API route (cliente)")
         
-        return null
-      }
+        const response = await fetch(
+          `/api/administradora/config-financeira?administradora_id=${administradora_id}`,
+          {
+            method: "GET",
+            headers: {
+              "Content-Type": "application/json",
+            },
+          }
+        )
 
-      if (!data) {
-        console.error("❌ [ASAAS CONFIG] Nenhum dado retornado")
-        return null
-      }
+        if (!response.ok) {
+          const errorData = await response.json()
+          console.error("❌ [ASAAS CONFIG] Erro na API route:", errorData)
+          return null
+        }
 
-      console.log("✅ [ASAAS CONFIG] Configuração encontrada!")
-      console.log("✅ [ASAAS CONFIG] API Key length:", data.api_key?.length || 0)
-      console.log("✅ [ASAAS CONFIG] Ambiente:", data.ambiente)
-      console.log("✅ [ASAAS CONFIG] Status:", data.status_integracao)
+        const result = await response.json()
+        const config = result.config
 
-      return {
-        api_key: data.api_key,
-        ambiente: data.ambiente || "producao"
+        if (!config || !config.api_key) {
+          console.error("❌ [ASAAS CONFIG] Configuração não encontrada ou sem API key")
+          return null
+        }
+
+        // Verificar se é Asaas
+        if (config.instituicao_financeira && config.instituicao_financeira.toLowerCase() !== 'asaas') {
+          console.log("⚠️ [ASAAS CONFIG] Instituição financeira não é Asaas:", config.instituicao_financeira)
+          return null
+        }
+
+        // Verificar se status é 'ativa' (mas não bloquear se não for, apenas avisar)
+        if (config.status_integracao !== 'ativa') {
+          console.log("⚠️ [ASAAS CONFIG] Status da integração não é 'ativa':", config.status_integracao)
+          // Continuar mesmo assim, pois pode ser que o status esteja incorreto mas a API key funcione
+        }
+
+        console.log("✅ [ASAAS CONFIG] Configuração encontrada via API route!")
+        console.log("✅ [ASAAS CONFIG] API Key length:", config.api_key?.length || 0)
+        console.log("✅ [ASAAS CONFIG] Ambiente:", config.ambiente)
+        console.log("✅ [ASAAS CONFIG] Status:", config.status_integracao)
+
+        return {
+          api_key: config.api_key,
+          ambiente: config.ambiente || "producao"
+        }
       }
     } catch (error) {
       console.error("❌ [ASAAS CONFIG] Erro ao buscar configuração Asaas:", error)
