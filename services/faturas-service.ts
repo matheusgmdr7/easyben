@@ -224,6 +224,7 @@ export class FaturasService {
       status?: string
       data_inicio?: string
       data_fim?: string
+      cliente_nome?: string
       page?: number
       limit?: number
     }
@@ -278,6 +279,10 @@ export class FaturasService {
       if (filtros?.data_fim) {
         countQuery = countQuery.lte("vencimento", filtros.data_fim)
         dataQuery = dataQuery.lte("vencimento", filtros.data_fim)
+      }
+      if (filtros?.cliente_nome) {
+        countQuery = countQuery.ilike("cliente_nome", `%${filtros.cliente_nome}%`)
+        dataQuery = dataQuery.ilike("cliente_nome", `%${filtros.cliente_nome}%`)
       }
 
       // Executar queries

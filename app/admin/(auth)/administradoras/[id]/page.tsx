@@ -72,6 +72,7 @@ export default function AdministradoraDetalhesPage() {
   const [statusFiltroFaturas, setStatusFiltroFaturas] = useState("todos")
   const [dataInicioFiltroFaturas, setDataInicioFiltroFaturas] = useState<string>("")
   const [dataFimFiltroFaturas, setDataFimFiltroFaturas] = useState<string>("")
+  const [filtroNomeFaturas, setFiltroNomeFaturas] = useState<string>("")
 
   useEffect(() => {
     if (administradoraId) {
@@ -83,7 +84,7 @@ export default function AdministradoraDetalhesPage() {
     if (administradoraId) {
       carregarFaturas()
     }
-  }, [administradoraId, currentPageFaturas, statusFiltroFaturas, dataInicioFiltroFaturas, dataFimFiltroFaturas])
+  }, [administradoraId, currentPageFaturas, statusFiltroFaturas, dataInicioFiltroFaturas, dataFimFiltroFaturas, filtroNomeFaturas])
 
   async function carregarDados() {
     try {
@@ -341,6 +342,10 @@ export default function AdministradoraDetalhesPage() {
       }
       if (dataFimFiltroFaturas) {
         filtros.data_fim = dataFimFiltroFaturas
+      }
+
+      if (filtroNomeFaturas.trim()) {
+        filtros.cliente_nome = filtroNomeFaturas.trim()
       }
 
       const resultado = await FaturasService.buscarPorAdministradora(
@@ -816,70 +821,87 @@ export default function AdministradoraDetalhesPage() {
           {/* Filtros de Faturas */}
           <Card className="border-gray-200 shadow-sm">
             <CardContent className="p-3 sm:p-4">
-              <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 items-end">
-                <div className="w-full sm:w-48">
-                  <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">
-                    Status
-                  </label>
-                  <Select 
-                    value={statusFiltroFaturas} 
-                    onValueChange={(value) => {
-                      setStatusFiltroFaturas(value)
+              <div className="space-y-4">
+                <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 items-end">
+                  <div className="flex-1 w-full sm:w-auto">
+                    <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">
+                      Nome do Cliente
+                    </label>
+                    <Input
+                      placeholder="Digite o nome do cliente..."
+                      value={filtroNomeFaturas}
+                      onChange={(e) => {
+                        setFiltroNomeFaturas(e.target.value)
+                        setCurrentPageFaturas(1)
+                      }}
+                      className="border-gray-300 focus:border-gray-500 focus:ring-gray-500 text-sm h-10"
+                    />
+                  </div>
+                  <div className="w-full sm:w-48">
+                    <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">
+                      Status
+                    </label>
+                    <Select 
+                      value={statusFiltroFaturas} 
+                      onValueChange={(value) => {
+                        setStatusFiltroFaturas(value)
+                        setCurrentPageFaturas(1)
+                      }}
+                    >
+                      <SelectTrigger className="border-gray-300 focus:border-gray-500 text-sm h-10">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="todos">Todos</SelectItem>
+                        <SelectItem value="pendente">Pendente</SelectItem>
+                        <SelectItem value="paga">Paga</SelectItem>
+                        <SelectItem value="atrasada">Atrasada</SelectItem>
+                        <SelectItem value="cancelada">Cancelada</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="w-full sm:w-48">
+                    <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">
+                      Data Início
+                    </label>
+                    <Input
+                      type="date"
+                      value={dataInicioFiltroFaturas}
+                      onChange={(e) => {
+                        setDataInicioFiltroFaturas(e.target.value)
+                        setCurrentPageFaturas(1)
+                      }}
+                      className="border-gray-300 focus:border-gray-500 focus:ring-gray-500 text-sm h-10"
+                    />
+                  </div>
+                  <div className="w-full sm:w-48">
+                    <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">
+                      Data Fim
+                    </label>
+                    <Input
+                      type="date"
+                      value={dataFimFiltroFaturas}
+                      onChange={(e) => {
+                        setDataFimFiltroFaturas(e.target.value)
+                        setCurrentPageFaturas(1)
+                      }}
+                      className="border-gray-300 focus:border-gray-500 focus:ring-gray-500 text-sm h-10"
+                    />
+                  </div>
+                  <Button 
+                    variant="outline" 
+                    onClick={() => {
+                      setStatusFiltroFaturas("todos")
+                      setDataInicioFiltroFaturas("")
+                      setDataFimFiltroFaturas("")
+                      setFiltroNomeFaturas("")
                       setCurrentPageFaturas(1)
-                    }}
+                    }} 
+                    className="px-4 border-gray-300 hover:border-gray-400 h-10 text-sm"
                   >
-                    <SelectTrigger className="border-gray-300 focus:border-gray-500 text-sm h-10">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="todos">Todos</SelectItem>
-                      <SelectItem value="pendente">Pendente</SelectItem>
-                      <SelectItem value="paga">Paga</SelectItem>
-                      <SelectItem value="atrasada">Atrasada</SelectItem>
-                      <SelectItem value="cancelada">Cancelada</SelectItem>
-                    </SelectContent>
-                  </Select>
+                    Limpar
+                  </Button>
                 </div>
-                <div className="w-full sm:w-48">
-                  <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">
-                    Data Início
-                  </label>
-                  <Input
-                    type="date"
-                    value={dataInicioFiltroFaturas}
-                    onChange={(e) => {
-                      setDataInicioFiltroFaturas(e.target.value)
-                      setCurrentPageFaturas(1)
-                    }}
-                    className="border-gray-300 focus:border-gray-500 focus:ring-gray-500 text-sm h-10"
-                  />
-                </div>
-                <div className="w-full sm:w-48">
-                  <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">
-                    Data Fim
-                  </label>
-                  <Input
-                    type="date"
-                    value={dataFimFiltroFaturas}
-                    onChange={(e) => {
-                      setDataFimFiltroFaturas(e.target.value)
-                      setCurrentPageFaturas(1)
-                    }}
-                    className="border-gray-300 focus:border-gray-500 focus:ring-gray-500 text-sm h-10"
-                  />
-                </div>
-                <Button 
-                  variant="outline" 
-                  onClick={() => {
-                    setStatusFiltroFaturas("todos")
-                    setDataInicioFiltroFaturas("")
-                    setDataFimFiltroFaturas("")
-                    setCurrentPageFaturas(1)
-                  }} 
-                  className="px-4 border-gray-300 hover:border-gray-400 h-10 text-sm"
-                >
-                  Limpar
-                </Button>
               </div>
             </CardContent>
           </Card>
@@ -956,6 +978,26 @@ export default function AdministradoraDetalhesPage() {
                                   {formatarValor((fatura as any).pagamento_valor || fatura.valor_pago || 0)}
                                 </p>
                               </div>
+                            </div>
+
+                            {/* Botões de Ação */}
+                            <div className="mt-4 pt-4 border-t border-gray-200 flex flex-wrap gap-2">
+                              {(fatura.asaas_boleto_url || fatura.boleto_url || fatura.asaas_invoice_url || fatura.asaas_payment_link) && (
+                                <Button
+                                  onClick={() => {
+                                    const url = fatura.asaas_boleto_url || fatura.boleto_url || fatura.asaas_invoice_url || fatura.asaas_payment_link
+                                    if (url) {
+                                      window.open(url, "_blank")
+                                    }
+                                  }}
+                                  size="sm"
+                                  variant="outline"
+                                  className="border-gray-300 hover:border-[#0F172A] hover:text-[#0F172A]"
+                                >
+                                  <Download className="h-4 w-4 mr-1" />
+                                  {fatura.asaas_boleto_url || fatura.boleto_url ? "Baixar Boleto" : "Ver Fatura"}
+                                </Button>
+                              )}
                             </div>
                           </div>
                         </div>
