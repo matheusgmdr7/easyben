@@ -507,10 +507,10 @@ async function importarTodasCobrancas(administradora_id: string) {
         dadosParaInserir.push({
           cliente_administradora_id: clienteMatch?.id || null,
           administradora_id: administradora_id,
-          cliente_id: proposta?.cpf || null,
-          cliente_nome: proposta?.nome || null,
-          cliente_email: proposta?.email || null,
-          cliente_telefone: proposta?.telefone || null,
+          cliente_id: proposta?.cpf || charge.customer || `ASAAS-${charge.id?.slice(0, 8)}`, // Usar customer ID do Asaas se não tiver CPF
+          cliente_nome: proposta?.nome || charge.description || `Cliente Asaas ${charge.customer}` || 'Cliente não identificado',
+          cliente_email: proposta?.email || '',
+          cliente_telefone: proposta?.telefone || '',
           numero_fatura: charge.invoiceNumber || charge.id || `ASAAS-${charge.id?.slice(0, 8)}`,
           valor: charge.value || 0,
           vencimento: charge.dueDate ? charge.dueDate.split('T')[0] : null,
