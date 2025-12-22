@@ -19,7 +19,15 @@ interface ResultadoImportacao {
  */
 export async function POST(request: NextRequest) {
   try {
-    const { administradora_id } = await request.json()
+    const body = await request.json()
+    const { administradora_id, importar_todas_cobrancas } = body
+
+    console.log('📥 Parâmetros recebidos:', { 
+      administradora_id, 
+      importar_todas_cobrancas, 
+      tipo: typeof importar_todas_cobrancas,
+      body_completo: JSON.stringify(body)
+    })
 
     if (!administradora_id) {
       return NextResponse.json(
@@ -27,6 +35,24 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       )
     }
+
+    // Se importar_todas_cobrancas for true, importar TODAS as cobranças sem filtro
+    const deveImportarTodas = importar_todas_cobrancas === true || 
+                              importar_todas_cobrancas === 'true' || 
+                              String(importar_todas_cobrancas).toLowerCase() === 'true'
+    
+    console.log('🔍 Verificação importar_todas_cobrancas:', {
+      valor: importar_todas_cobrancas,
+      tipo: typeof importar_todas_cobrancas,
+      deveImportarTodas
+    })
+
+    if (deveImportarTodas) {
+      console.log('🚀 Chamando importarTodasCobrancas...')
+      return await importarTodasCobrancas(administradora_id)
+    }
+
+    console.log('⚠️ Continuando com função antiga (importar por cliente)')
 
     const resultado: ResultadoImportacao = {
       clientes_importados: 0,
@@ -321,5 +347,201 @@ async function importarCobrancasCliente(
     }
   } catch (error: any) {
     console.error('Erro ao importar cobranças:', error)
+  }
+}
+
+/**
+ * Importa TODAS as cobranças do Asaas sem filtro de cliente
+ */
+async function importarTodasCobrancas(administradora_id: string) {
+  console.log('🚀 importarTodasCobrancas chamada para:', administradora_id)
+  
+  const resultado: ResultadoImportacao = {
+    clientes_importados: 0,
+    clientes_nao_encontrados: 0,
+    faturas_importadas: 0,
+    erros: []
+  }
+
+  try {
+    // 1. Buscar configuração do Asaas
+    const { data: config, error: configError } = await supabase
+      .from('administradoras_config_financeira')
+      .select('api_key, ambiente')
+      .eq('administradora_id', administradora_id)
+      .eq('instituicao_financeira', 'asaas')
+      .eq('status_integracao', 'ativa')
+      .single()
+
+    if (configError || !config) {
+      return NextResponse.json(
+        { 
+          error: 'Configuração do Asaas não encontrada',
+          debug: { administradora_id, error: configError?.message }
+        },
+        { status: 404 }
+      )
+    }
+
+    const API_KEY = config.api_key
+    const BASE_URL = config.ambiente === 'sandbox' 
+      ? 'https://sandbox.asaas.com/api/v3'
+      : 'https://api.asaas.com/v3'
+
+    // 2. Buscar TODAS as cobranças (paginado)
+    console.log('📥 Buscando TODAS as cobranças do Asaas...')
+    let offset = 0
+    const limit = 100
+    let hasMore = true
+    const todasCobrancas: any[] = []
+
+    while (hasMore) {
+      try {
+        const url = `${BASE_URL}/payments?offset=${offset}&limit=${limit}`
+        console.log(`   Buscando página ${Math.floor(offset / limit) + 1} (offset: ${offset})...`)
+        
+        const response = await fetch(url, {
+          headers: {
+            'access_token': API_KEY,
+            'Content-Type': 'application/json'
+          }
+        })
+
+        if (!response.ok) {
+          const errorText = await response.text()
+          console.error(`❌ Erro ${response.status} ao buscar cobranças: ${errorText}`)
+          resultado.erros.push(`Erro ${response.status}: ${errorText}`)
+          break
+        }
+
+        const data = await response.json()
+        const cobrancas = data.data || []
+        todasCobrancas.push(...cobrancas)
+        
+        console.log(`   ✅ ${cobrancas.length} cobranças encontradas nesta página`)
+        console.log(`   📊 Total acumulado: ${todasCobrancas.length}`)
+        
+        hasMore = data.hasMore || false
+        offset += limit
+
+        if (offset >= 10000) {
+          console.log('⚠️ Limite de 10.000 cobranças atingido')
+          break
+        }
+        await new Promise(resolve => setTimeout(resolve, 200))
+      } catch (error: any) {
+        console.error('❌ Erro ao buscar cobranças:', error)
+        resultado.erros.push(`Erro ao buscar cobranças: ${error.message}`)
+        break
+      }
+    }
+
+    console.log(`✅ Total de cobranças encontradas no Asaas: ${todasCobrancas.length}`)
+
+    // 3. Buscar clientes para match
+    const { data: clientesBanco } = await supabase
+      .from('clientes_administradoras')
+      .select('id, asaas_customer_id, proposta:propostas(nome, cpf, email, telefone)')
+      .eq('administradora_id', administradora_id)
+
+    const mapaCustomerId: Record<string, any> = {}
+    if (clientesBanco) {
+      for (const cliente of clientesBanco) {
+        if (cliente.asaas_customer_id) {
+          mapaCustomerId[cliente.asaas_customer_id] = cliente
+        }
+      }
+    }
+
+    // 4. Importar cada cobrança
+    const statusMap: Record<string, string> = {
+      'PENDING': 'pendente',
+      'RECEIVED': 'paga',
+      'CONFIRMED': 'paga',
+      'OVERDUE': 'atrasada',
+      'REFUNDED': 'cancelada',
+      'RECEIVED_IN_CASH': 'paga',
+      'REFUND_REQUESTED': 'cancelada',
+      'CHARGEBACK_REQUESTED': 'cancelada',
+      'CHARGEBACK_DISPUTE': 'cancelada',
+      'AWAITING_CHARGEBACK_REVERSAL': 'cancelada',
+      'DUNNING_REQUESTED': 'atrasada',
+      'DUNNING_RECEIVED': 'paga',
+      'AWAITING_RISK_ANALYSIS': 'pendente'
+    }
+
+    for (const charge of todasCobrancas) {
+      try {
+        // Verificar se já existe
+        const { data: existe } = await supabase
+          .from('faturas')
+          .select('id')
+          .eq('asaas_charge_id', charge.id)
+          .single()
+
+        if (existe) continue
+
+        // Fazer match com cliente
+        const clienteMatch = mapaCustomerId[charge.customer]
+        const proposta = clienteMatch?.proposta 
+          ? (Array.isArray(clienteMatch.proposta) ? clienteMatch.proposta[0] : clienteMatch.proposta)
+          : null
+
+        const statusFatura = statusMap[charge.status?.toUpperCase() || ''] || 'pendente'
+
+        const { error: insertError } = await supabase
+          .from('faturas')
+          .insert({
+            cliente_administradora_id: clienteMatch?.id || null,
+            administradora_id: administradora_id,
+            cliente_id: proposta?.cpf || null,
+            cliente_nome: proposta?.nome || null,
+            cliente_email: proposta?.email || null,
+            cliente_telefone: proposta?.telefone || null,
+            numero_fatura: charge.invoiceNumber || charge.id || `ASAAS-${charge.id?.slice(0, 8)}`,
+            valor: charge.value || 0,
+            vencimento: charge.dueDate ? charge.dueDate.split('T')[0] : null,
+            status: statusFatura,
+            asaas_charge_id: charge.id,
+            asaas_boleto_url: charge.bankSlipUrl || null,
+            asaas_invoice_url: charge.invoiceUrl || null,
+            asaas_payment_link: charge.paymentLink || null,
+            pagamento_data: charge.paymentDate ? charge.paymentDate.split('T')[0] : null,
+            pagamento_valor: (charge.status === 'RECEIVED' || charge.status === 'CONFIRMED') ? charge.value : null,
+            created_at: charge.dateCreated || new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          })
+
+        if (insertError) {
+          resultado.erros.push(`Erro ao inserir fatura ${charge.id}: ${insertError.message}`)
+        } else {
+          resultado.faturas_importadas++
+        }
+      } catch (error: any) {
+        resultado.erros.push(`Erro ao processar cobrança ${charge.id}: ${error.message}`)
+      }
+    }
+
+    console.log('✅ Importação concluída!')
+    console.log('📊 Resumo:', {
+      total_cobrancas_encontradas: todasCobrancas.length,
+      faturas_importadas: resultado.faturas_importadas,
+      erros: resultado.erros.length
+    })
+
+    return NextResponse.json({
+      sucesso: true,
+      total_cobrancas_encontradas: todasCobrancas.length,
+      faturas_importadas: resultado.faturas_importadas,
+      faturas_atualizadas: 0,
+      faturas_ja_existentes: 0,
+      faturas_sem_cliente: todasCobrancas.length - resultado.faturas_importadas,
+      erros: resultado.erros
+    })
+  } catch (error: any) {
+    return NextResponse.json(
+      { sucesso: false, error: error.message },
+      { status: 500 }
+    )
   }
 }
