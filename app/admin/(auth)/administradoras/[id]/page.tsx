@@ -4,6 +4,7 @@ import { useState, useEffect } from "react"
 import { useParams, useRouter } from "next/navigation"
 import { AdministradorasService, type Administradora } from "@/services/administradoras-service"
 import { ClientesAdministradorasService, type ClienteAdministradoraCompleto, type FiltrosClientes, type PaginacaoClientes, type ResultadoClientes } from "@/services/clientes-administradoras-service"
+import { FaturasService, type Fatura } from "@/services/faturas-service"
 import { toast } from "sonner"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -61,11 +62,28 @@ export default function AdministradoraDetalhesPage() {
   const [filtroProduto, setFiltroProduto] = useState("")
   const [filtroStatusImplantacao, setFiltroStatusImplantacao] = useState<"todos" | "implantado" | "aguardando">("todos")
 
+  // Estados para faturas
+  const [faturas, setFaturas] = useState<Fatura[]>([])
+  const [loadingFaturas, setLoadingFaturas] = useState(false)
+  const [currentPageFaturas, setCurrentPageFaturas] = useState(1)
+  const [totalPagesFaturas, setTotalPagesFaturas] = useState(0)
+  const [totalFaturas, setTotalFaturas] = useState(0)
+  const [itemsPerPageFaturas] = useState(10)
+  const [statusFiltroFaturas, setStatusFiltroFaturas] = useState("todos")
+  const [dataInicioFiltroFaturas, setDataInicioFiltroFaturas] = useState<string>("")
+  const [dataFimFiltroFaturas, setDataFimFiltroFaturas] = useState<string>("")
+
   useEffect(() => {
     if (administradoraId) {
       carregarDados()
     }
   }, [administradoraId, filtros, paginacao])
+
+  useEffect(() => {
+    if (administradoraId) {
+      carregarFaturas()
+    }
+  }, [administradoraId, currentPageFaturas, statusFiltroFaturas, dataInicioFiltroFaturas, dataFimFiltroFaturas])
 
   async function carregarDados() {
     try {
@@ -259,7 +277,7 @@ export default function AdministradoraDetalhesPage() {
     // Priorizar status de implantação sobre status geral
     if (cliente.implantado === true) {
       return (
-        <Badge className="bg-green-50 text-green-700 border border-green-200 flex items-center gap-1">
+        <Badge className="bg-[#7BD9F6] bg-opacity-20 text-[#0F172A] border border-[#7BD9F6] border-opacity-30 flex items-center gap-1">
           <CheckCircle className="h-3 w-3" />
           Implantado
         </Badge>
@@ -275,7 +293,7 @@ export default function AdministradoraDetalhesPage() {
     
     // Fallback para status tradicionais se implantado não estiver definido
     const badges = {
-      ativo: { bg: "bg-green-50 text-green-700 border border-green-200", icon: CheckCircle, label: "Ativo" },
+      ativo: { bg: "bg-[#7BD9F6] bg-opacity-20 text-[#0F172A] border border-[#7BD9F6] border-opacity-30", icon: CheckCircle, label: "Ativo" },
       suspenso: { bg: "bg-yellow-50 text-yellow-700 border border-yellow-200", icon: AlertCircle, label: "Suspenso" },
       cancelado: { bg: "bg-red-50 text-red-700 border border-red-200", icon: XCircle, label: "Cancelado" },
       inadimplente: { bg: "bg-orange-50 text-orange-700 border border-orange-200", icon: Clock, label: "Inadimplente" },
@@ -302,6 +320,63 @@ export default function AdministradoraDetalhesPage() {
       style: 'currency',
       currency: 'BRL'
     }).format(valor)
+  }
+
+  async function carregarFaturas() {
+    if (!administradoraId) return
+
+    try {
+      setLoadingFaturas(true)
+      const filtros: any = {
+        page: currentPageFaturas,
+        limit: itemsPerPageFaturas
+      }
+      
+      if (statusFiltroFaturas !== "todos") {
+        filtros.status = statusFiltroFaturas
+      }
+
+      if (dataInicioFiltroFaturas) {
+        filtros.data_inicio = dataInicioFiltroFaturas
+      }
+      if (dataFimFiltroFaturas) {
+        filtros.data_fim = dataFimFiltroFaturas
+      }
+
+      const resultado = await FaturasService.buscarPorAdministradora(
+        administradoraId,
+        filtros
+      )
+      
+      setFaturas(resultado.faturas)
+      setTotalPagesFaturas(resultado.totalPages)
+      setTotalFaturas(resultado.total)
+    } catch (error: any) {
+      console.error("❌ Erro ao carregar faturas:", error)
+      toast.error("Erro ao carregar faturas")
+    } finally {
+      setLoadingFaturas(false)
+    }
+  }
+
+  const getStatusBadgeFatura = (status: string) => {
+    const badges = {
+      pendente: { bg: "bg-yellow-50 text-yellow-700 border border-yellow-200", icon: Clock, label: "Pendente" },
+      paga: { bg: "bg-[#7BD9F6] bg-opacity-20 text-[#0F172A] border border-[#7BD9F6] border-opacity-30", icon: CheckCircle, label: "Paga" },
+      atrasada: { bg: "bg-red-50 text-red-700 border border-red-200", icon: AlertCircle, label: "Atrasada" },
+      cancelada: { bg: "bg-gray-50 text-gray-700 border border-gray-200", icon: XCircle, label: "Cancelada" },
+      parcialmente_paga: { bg: "bg-blue-50 text-blue-700 border border-blue-200", icon: Clock, label: "Parcialmente Paga" }
+    }
+    
+    const badge = badges[status as keyof typeof badges] || badges.pendente
+    const Icon = badge.icon
+    
+    return (
+      <Badge className={`${badge.bg} flex items-center gap-1`}>
+        <Icon className="h-3 w-3" />
+        {badge.label}
+      </Badge>
+    )
   }
 
   if (loading) {
@@ -349,7 +424,7 @@ export default function AdministradoraDetalhesPage() {
           </div>
           <Button
             onClick={() => router.push(`/admin/administradoras/${administradoraId}/configuracoes`)}
-            className="bg-[#168979] hover:bg-[#13786a] text-white border-0 w-full sm:w-auto"
+            className="bg-[#0F172A] hover:bg-[#1E293B] text-white border-0 w-full sm:w-auto"
           >
             <Settings className="h-4 w-4 sm:mr-2" />
             <span className="ml-2 sm:ml-0">Configurações</span>
@@ -363,8 +438,8 @@ export default function AdministradoraDetalhesPage() {
         <Card>
           <CardContent className="p-3 sm:p-4">
             <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
-              <div className="p-2 bg-green-100 rounded-lg flex-shrink-0">
-                <Building className="h-5 w-5 sm:h-6 sm:w-6 text-green-600" />
+              <div className="p-2 bg-[#7BD9F6] bg-opacity-30 rounded-lg flex-shrink-0">
+                <Building className="h-5 w-5 sm:h-6 sm:w-6 text-[#0F172A]" />
               </div>
               <div className="flex-1 min-w-0">
                 <h2 className="text-base sm:text-lg font-semibold text-gray-900 mb-1.5 sm:mb-2">
@@ -387,30 +462,30 @@ export default function AdministradoraDetalhesPage() {
         </Card>
 
         {/* Dashboard Card - Apenas Clientes Ativos */}
-        <Card className="bg-gradient-to-br from-green-50 to-green-100 border-green-200 shadow-lg hover:shadow-xl transition-all duration-300">
+        <Card className="bg-gradient-to-br from-green-50 to-green-100 border-[#7BD9F6] border-opacity-30 shadow-lg hover:shadow-xl transition-all duration-300">
           <CardContent className="p-3 sm:p-4">
             <div className="flex items-center justify-between mb-2 sm:mb-3">
               <div className="flex items-center gap-2 sm:gap-3">
                 <div className="p-2 bg-white rounded-lg shadow-md">
-                  <Users className="h-5 w-5 sm:h-6 sm:w-6 text-green-600" />
+                  <Users className="h-5 w-5 sm:h-6 sm:w-6 text-[#0F172A]" />
                 </div>
                 <div>
-                  <p className="text-xs sm:text-sm font-semibold text-green-800 uppercase tracking-wide">
+                  <p className="text-xs sm:text-sm font-semibold text-[#0F172A] uppercase tracking-wide">
                     CLIENTES ATIVOS
                   </p>
-                  <p className="text-[10px] sm:text-xs text-green-600 mt-0.5">
+                  <p className="text-[10px] sm:text-xs text-[#0F172A] mt-0.5">
                     Clientes vinculados à administradora
                   </p>
                 </div>
               </div>
               <div className="text-right">
-                <p className="text-2xl sm:text-3xl font-bold text-green-700">
+                <p className="text-2xl sm:text-3xl font-bold text-[#0F172A]">
                   {resultadoClientes?.total || 0}
                 </p>
               </div>
             </div>
             
-            <div className="flex items-center gap-2 text-xs sm:text-sm text-green-600 bg-white rounded-lg p-2 sm:p-2.5">
+            <div className="flex items-center gap-2 text-xs sm:text-sm text-[#0F172A] bg-white rounded-lg p-2 sm:p-2.5">
               <CheckCircle className="h-3 w-3 sm:h-4 sm:w-4" />
               <span>Total de clientes cadastrados e ativos</span>
             </div>
@@ -422,6 +497,7 @@ export default function AdministradoraDetalhesPage() {
       <Tabs defaultValue="clientes" className="space-y-6">
         <TabsList>
           <TabsTrigger value="clientes">Clientes</TabsTrigger>
+          <TabsTrigger value="faturas">Faturas</TabsTrigger>
           <TabsTrigger value="informacoes">Informações</TabsTrigger>
         </TabsList>
 
@@ -456,7 +532,7 @@ export default function AdministradoraDetalhesPage() {
                   <div className="flex gap-2 w-full sm:w-auto">
                     <Button 
                       onClick={aplicarFiltros} 
-                      className="bg-[#168979] hover:bg-[#13786a] text-white px-4 h-10 text-sm flex-1 sm:flex-none"
+                      className="bg-[#0F172A] hover:bg-[#1E293B] text-white px-4 h-10 text-sm flex-1 sm:flex-none"
                     >
                       <Search className="h-4 w-4 mr-2" />
                       Buscar
@@ -506,7 +582,7 @@ export default function AdministradoraDetalhesPage() {
                     <div className="w-full sm:w-auto">
                       <Button 
                         onClick={exportarRelatorioExcel}
-                        className="bg-[#168979] hover:bg-[#13786a] text-white px-4 h-10 text-sm w-full sm:w-auto flex items-center justify-center gap-2"
+                        className="bg-[#0F172A] hover:bg-[#1E293B] text-white px-4 h-10 text-sm w-full sm:w-auto flex items-center justify-center gap-2"
                       >
                         <Download className="h-4 w-4" />
                         Baixar Relatório Excel
@@ -593,7 +669,7 @@ export default function AdministradoraDetalhesPage() {
                             </div>
                             <div className="flex items-center gap-1.5">
                               <DollarSign className="h-3 w-3 text-gray-400 flex-shrink-0" />
-                              <span className="font-semibold text-green-600">{formatarValor(cliente.valor_mensal)}</span>
+                              <span className="font-semibold text-[#0F172A]">{formatarValor(cliente.valor_mensal)}</span>
                             </div>
                             <div className="flex items-center gap-1.5">
                               <Calendar className="h-3 w-3 text-gray-400 flex-shrink-0" />
@@ -605,7 +681,7 @@ export default function AdministradoraDetalhesPage() {
                           variant="outline"
                           size="sm"
                           onClick={() => verCliente(cliente.id)}
-                          className="border-gray-300 hover:border-green-500 hover:text-green-600 w-full sm:w-auto text-xs h-8 sm:h-9"
+                          className="border-gray-300 hover:border-[#0F172A] hover:text-[#0F172A] w-full sm:w-auto text-xs h-8 sm:h-9"
                         >
                           <Eye className="h-3 w-3 sm:h-4 sm:w-4 mr-1.5" />
                           Ver Detalhes
@@ -708,7 +784,7 @@ export default function AdministradoraDetalhesPage() {
                               onClick={() => alterarPagina(pageNum)}
                               className={`w-7 h-7 sm:w-8 sm:h-8 p-0 text-xs sm:text-sm ${
                                 isActive 
-                                  ? 'bg-[#168979] hover:bg-[#13786a] text-white' 
+                                  ? 'bg-[#0F172A] hover:bg-[#1E293B] text-white' 
                                   : 'border-gray-300 hover:border-gray-500 hover:text-gray-700'
                               }`}
                             >
@@ -732,6 +808,236 @@ export default function AdministradoraDetalhesPage() {
                   </div>
                 )
               })()}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="faturas" className="space-y-6">
+          {/* Filtros de Faturas */}
+          <Card className="border-gray-200 shadow-sm">
+            <CardContent className="p-3 sm:p-4">
+              <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 items-end">
+                <div className="w-full sm:w-48">
+                  <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">
+                    Status
+                  </label>
+                  <Select 
+                    value={statusFiltroFaturas} 
+                    onValueChange={(value) => {
+                      setStatusFiltroFaturas(value)
+                      setCurrentPageFaturas(1)
+                    }}
+                  >
+                    <SelectTrigger className="border-gray-300 focus:border-gray-500 text-sm h-10">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="todos">Todos</SelectItem>
+                      <SelectItem value="pendente">Pendente</SelectItem>
+                      <SelectItem value="paga">Paga</SelectItem>
+                      <SelectItem value="atrasada">Atrasada</SelectItem>
+                      <SelectItem value="cancelada">Cancelada</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="w-full sm:w-48">
+                  <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">
+                    Data Início
+                  </label>
+                  <Input
+                    type="date"
+                    value={dataInicioFiltroFaturas}
+                    onChange={(e) => {
+                      setDataInicioFiltroFaturas(e.target.value)
+                      setCurrentPageFaturas(1)
+                    }}
+                    className="border-gray-300 focus:border-gray-500 focus:ring-gray-500 text-sm h-10"
+                  />
+                </div>
+                <div className="w-full sm:w-48">
+                  <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">
+                    Data Fim
+                  </label>
+                  <Input
+                    type="date"
+                    value={dataFimFiltroFaturas}
+                    onChange={(e) => {
+                      setDataFimFiltroFaturas(e.target.value)
+                      setCurrentPageFaturas(1)
+                    }}
+                    className="border-gray-300 focus:border-gray-500 focus:ring-gray-500 text-sm h-10"
+                  />
+                </div>
+                <Button 
+                  variant="outline" 
+                  onClick={() => {
+                    setStatusFiltroFaturas("todos")
+                    setDataInicioFiltroFaturas("")
+                    setDataFimFiltroFaturas("")
+                    setCurrentPageFaturas(1)
+                  }} 
+                  className="px-4 border-gray-300 hover:border-gray-400 h-10 text-sm"
+                >
+                  Limpar
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Lista de Faturas */}
+          <Card className="border-gray-200 shadow-sm">
+            <CardHeader className="bg-gray-50 border-b border-gray-200 p-3 sm:p-4">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-3">
+                <div className="flex-1">
+                  <CardTitle className="text-base sm:text-lg font-bold text-gray-900">
+                    Faturas
+                  </CardTitle>
+                  <p className="text-xs sm:text-sm text-gray-600 mt-0.5">
+                    Total de <span className="font-semibold text-gray-800">{totalFaturas}</span> fatura(s) encontrada(s)
+                  </p>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-4">
+              {loadingFaturas ? (
+                <div className="text-center py-12">
+                  <div className="loading-corporate mx-auto"></div>
+                  <span className="block mt-4 loading-text-corporate">Carregando faturas...</span>
+                </div>
+              ) : faturas.length === 0 ? (
+                <div className="text-center py-12">
+                  <FileText className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                  <p className="text-gray-600">Nenhuma fatura encontrada</p>
+                  <p className="text-sm text-gray-500">Tente ajustar os filtros de busca</p>
+                </div>
+              ) : (
+                <>
+                  <div className="space-y-3">
+                    {faturas.map((fatura) => (
+                      <div key={fatura.id} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <div className="flex flex-col gap-2 mb-3">
+                              <div className="flex items-center gap-3 flex-wrap">
+                                <span className="font-semibold text-gray-900 text-base">
+                                  {fatura.numero_fatura || `Fatura ${(fatura as any).cliente_nome?.split(' ')[0] || 'Cliente'} - ${new Date(fatura.vencimento + 'T00:00:00').toLocaleDateString('pt-BR', { month: '2-digit', year: 'numeric' })}`}
+                                </span>
+                                {getStatusBadgeFatura(fatura.status)}
+                              </div>
+                              {(fatura as any).cliente_nome && (
+                                <p className="text-sm text-gray-600 font-medium">
+                                  Cliente: {(fatura as any).cliente_nome}
+                                </p>
+                              )}
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 text-sm">
+                              <div>
+                                <p className="text-gray-600">Valor Total</p>
+                                <p className="font-semibold text-lg text-gray-900">
+                                  {formatarValor((fatura as any).valor || fatura.valor_total || 0)}
+                                </p>
+                              </div>
+                              <div>
+                                <p className="text-gray-600">Vencimento</p>
+                                <p className="font-medium">
+                                  {formatarData(fatura.vencimento)}
+                                </p>
+                              </div>
+                              <div>
+                                <p className="text-gray-600">Emissão</p>
+                                <p className="font-medium">
+                                  {formatarData((fatura as any).created_at || fatura.data_emissao)}
+                                </p>
+                              </div>
+                              <div>
+                                <p className="text-gray-600">Valor Pago</p>
+                                <p className="font-medium text-[#0F172A]">
+                                  {formatarValor((fatura as any).pagamento_valor || fatura.valor_pago || 0)}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Paginação */}
+                  {totalPagesFaturas > 1 && (
+                    <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mt-6 sm:mt-8 pt-4 sm:pt-6 border-t border-gray-200">
+                      <div className="text-xs sm:text-sm text-gray-600 text-center sm:text-left">
+                        Mostrando <span className="font-semibold text-gray-800">
+                          {((currentPageFaturas - 1) * itemsPerPageFaturas) + 1}
+                        </span>
+                        {' '}a{' '}
+                        <span className="font-semibold text-gray-800">
+                          {Math.min(currentPageFaturas * itemsPerPageFaturas, totalFaturas)}
+                        </span>
+                        {' '}de{' '}
+                        <span className="font-semibold text-gray-800">
+                          {totalFaturas}
+                        </span>
+                        {' '}registros
+                      </div>
+                      <div className="flex items-center gap-1 sm:gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setCurrentPageFaturas(prev => Math.max(1, prev - 1))}
+                          disabled={currentPageFaturas === 1}
+                          className="border-gray-300 hover:border-gray-500 hover:text-gray-700 disabled:opacity-50 text-xs sm:text-sm"
+                        >
+                          <ChevronLeft className="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
+                          <span className="hidden sm:inline">Anterior</span>
+                        </Button>
+                        
+                        <div className="flex items-center gap-1">
+                          {Array.from({ length: Math.min(5, totalPagesFaturas) }, (_, i) => {
+                            let pageNum
+                            if (totalPagesFaturas <= 5) {
+                              pageNum = i + 1
+                            } else if (currentPageFaturas <= 3) {
+                              pageNum = i + 1
+                            } else if (currentPageFaturas >= totalPagesFaturas - 2) {
+                              pageNum = totalPagesFaturas - 4 + i
+                            } else {
+                              pageNum = currentPageFaturas - 2 + i
+                            }
+
+                            return (
+                              <Button
+                                key={pageNum}
+                                variant={currentPageFaturas === pageNum ? "default" : "outline"}
+                                size="sm"
+                                onClick={() => setCurrentPageFaturas(pageNum)}
+                                className={`w-7 h-7 sm:w-8 sm:h-8 p-0 text-xs sm:text-sm ${
+                                  currentPageFaturas === pageNum 
+                                    ? 'bg-[#0F172A] hover:bg-[#1E293B] text-white' 
+                                    : 'border-gray-300 hover:border-gray-500 hover:text-gray-700'
+                                }`}
+                              >
+                                {pageNum}
+                              </Button>
+                            )
+                          })}
+                        </div>
+
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setCurrentPageFaturas(prev => Math.min(totalPagesFaturas, prev + 1))}
+                          disabled={currentPageFaturas === totalPagesFaturas}
+                          className="border-gray-300 hover:border-gray-500 hover:text-gray-700 disabled:opacity-50 text-xs sm:text-sm"
+                        >
+                          <span className="hidden sm:inline">Próxima</span>
+                          <ChevronRight className="h-3 w-3 sm:h-4 sm:w-4 ml-1" />
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
