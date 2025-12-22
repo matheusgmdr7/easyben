@@ -367,7 +367,26 @@ async function importarTodasCobrancas(administradora_id: string) {
   }
 
   try {
-    // 1. Buscar configuração do Asaas
+    // 1. Buscar tenant_id da administradora
+    const { data: administradora, error: adminError } = await supabase
+      .from('administradoras')
+      .select('tenant_id')
+      .eq('id', administradora_id)
+      .single()
+
+    if (adminError || !administradora) {
+      return NextResponse.json(
+        { 
+          error: 'Administradora não encontrada',
+          debug: { administradora_id, error: adminError?.message }
+        },
+        { status: 404 }
+      )
+    }
+
+    const tenantId = administradora.tenant_id
+
+    // 2. Buscar configuração do Asaas
     const { data: config, error: configError } = await supabase
       .from('administradoras_config_financeira')
       .select('api_key, ambiente')
@@ -507,6 +526,7 @@ async function importarTodasCobrancas(administradora_id: string) {
         dadosParaInserir.push({
           cliente_administradora_id: clienteMatch?.id || null,
           administradora_id: administradora_id,
+          tenant_id: tenantId,
           cliente_id: proposta?.cpf || charge.customer || `ASAAS-${charge.id?.slice(0, 8)}`, // Usar customer ID do Asaas se não tiver CPF
           cliente_nome: proposta?.nome || charge.description || `Cliente Asaas ${charge.customer}` || 'Cliente não identificado',
           cliente_email: proposta?.email || '',
