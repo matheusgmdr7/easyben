@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase"
+import { getCurrentTenantId } from "@/lib/tenant-query-helper"
 
 export interface Fatura {
   id: string
@@ -76,14 +77,16 @@ export class FaturasService {
    * Gerar número de fatura único
    */
   private static async gerarNumeroFatura(administradoraId: string): Promise<string> {
+    const tenantId = await getCurrentTenantId()
     const ano = new Date().getFullYear()
     const mes = String(new Date().getMonth() + 1).padStart(2, "0")
 
-    // Buscar última fatura da administradora
+    // Buscar última fatura da administradora, filtrando por tenant
     const { data, error } = await supabase
       .from("faturas")
       .select("numero_fatura")
       .eq("administradora_id", administradoraId)
+      .eq("tenant_id", tenantId)
       .like("numero_fatura", `FAT-${ano}${mes}-%`)
       .order("created_at", { ascending: false })
       .limit(1)
@@ -139,6 +142,8 @@ export class FaturasService {
     try {
       const { data: userData } = await supabase.auth.getUser()
 
+      const tenantId = await getCurrentTenantId()
+      
       // Gerar número da fatura
       const numeroFatura = await this.gerarNumeroFatura(dados.administradora_id)
 
@@ -164,6 +169,7 @@ export class FaturasService {
             notificacao_enviada: false,
             tentativas_notificacao: 0,
             created_by: userData?.user?.id,
+            tenant_id: tenantId, // Adicionar tenant_id automaticamente
           },
         ])
         .select()
@@ -188,10 +194,13 @@ export class FaturasService {
     clienteAdministradoraId: string
   ): Promise<Fatura[]> {
     try {
+      const tenantId = await getCurrentTenantId()
+      
       const { data, error } = await supabase
         .from("faturas")
         .select("*")
         .eq("cliente_administradora_id", clienteAdministradoraId)
+        .eq("tenant_id", tenantId)
         .order("vencimento", { ascending: false })
 
       if (error) {
@@ -225,6 +234,18 @@ export class FaturasService {
     currentPage: number
   }> {
     try {
+      // Buscar tenant_id da administradora para garantir que usamos o mesmo tenant_id usado na importação
+      const { data: administradora, error: adminError } = await supabase
+        .from("administradoras")
+        .select("tenant_id")
+        .eq("id", administradoraId)
+        .single()
+
+      if (adminError || !administradora) {
+        throw new Error("Administradora não encontrada")
+      }
+
+      const tenantId = administradora.tenant_id
       const page = filtros?.page || 1
       const limit = filtros?.limit || 10
       const offset = (page - 1) * limit
@@ -234,12 +255,14 @@ export class FaturasService {
         .from("faturas")
         .select("*", { count: 'exact', head: true })
         .eq("administradora_id", administradoraId)
+        .eq("tenant_id", tenantId)
 
       // Query para buscar dados
       let dataQuery = supabase
         .from("faturas")
         .select("*")
         .eq("administradora_id", administradoraId)
+        .eq("tenant_id", tenantId)
         .order("vencimento", { ascending: false })
         .range(offset, offset + limit - 1)
 
@@ -285,10 +308,13 @@ export class FaturasService {
    */
   static async buscarPorId(id: string): Promise<Fatura | null> {
     try {
+      const tenantId = await getCurrentTenantId()
+      
       const { data, error } = await supabase
         .from("faturas")
         .select("*")
         .eq("id", id)
+        .eq("tenant_id", tenantId)
         .single()
 
       if (error && error.code !== "PGRST116") {
@@ -311,10 +337,16 @@ export class FaturasService {
     dados: Partial<Fatura>
   ): Promise<Fatura> {
     try {
+      const tenantId = await getCurrentTenantId()
+      
+      // Remover tenant_id dos dados de atualização (não deve ser alterado)
+      const { tenant_id, ...dadosSemTenant } = dados
+      
       const { data, error } = await supabase
         .from("faturas")
-        .update(dados)
+        .update(dadosSemTenant)
         .eq("id", id)
+        .eq("tenant_id", tenantId) // Garantir que só atualiza do tenant correto
         .select()
         .single()
 
@@ -335,12 +367,14 @@ export class FaturasService {
    */
   static async atualizarFaturasVencidas(): Promise<number> {
     try {
+      const tenantId = await getCurrentTenantId()
       const hoje = new Date().toISOString().split("T")[0]
 
       const { data, error } = await supabase
         .from("faturas")
         .update({ status: "atrasada" })
         .eq("status", "pendente")
+        .eq("tenant_id", tenantId)
         .lt("vencimento", hoje)
         .select()
 
@@ -378,6 +412,8 @@ export class FaturasService {
         throw new Error("Fatura não encontrada")
       }
 
+      const tenantId = await getCurrentTenantId()
+      
       // Criar registro de pagamento
       const { data: pagamentoData, error: pagamentoError } = await supabase
         .from("pagamentos")
@@ -388,6 +424,7 @@ export class FaturasService {
             data_pagamento: new Date().toISOString(),
             status: "confirmado",
             created_by: userData?.user?.id,
+            tenant_id: tenantId, // Adicionar tenant_id automaticamente
           },
         ])
         .select()
@@ -418,6 +455,7 @@ export class FaturasService {
           .from("clientes_administradoras")
           .update({ status: "ativo" })
           .eq("id", fatura.cliente_administradora_id)
+          .eq("tenant_id", tenantId) // Garantir que só atualiza do tenant correto
 
         if (updateError) {
           console.error("❌ Erro ao atualizar status do cliente:", updateError)
@@ -454,12 +492,15 @@ export class FaturasService {
     referencia: string // Ex: "01/2025"
   ): Promise<{ sucesso: number; erros: number; detalhes: any[] }> {
     try {
+      const tenantId = await getCurrentTenantId()
+      
       // Buscar clientes ativos
       const { data: clientes, error: clientesError } = await supabase
         .from("clientes_administradoras")
         .select("*")
         .eq("administradora_id", administradoraId)
         .eq("status", "ativo")
+        .eq("tenant_id", tenantId)
 
       if (clientesError) {
         throw clientesError
@@ -484,6 +525,7 @@ export class FaturasService {
             .select("id")
             .eq("cliente_administradora_id", cliente.id)
             .eq("referencia", referencia)
+            .eq("tenant_id", tenantId)
             .single()
 
           if (faturaExistente) {
@@ -543,10 +585,13 @@ export class FaturasService {
    */
   static async buscarPagamentos(faturaId: string): Promise<Pagamento[]> {
     try {
+      const tenantId = await getCurrentTenantId()
+      
       const { data, error } = await supabase
         .from("pagamentos")
         .select("*")
         .eq("fatura_id", faturaId)
+        .eq("tenant_id", tenantId)
         .order("data_pagamento", { ascending: false })
 
       if (error) {
@@ -579,13 +624,16 @@ export class FaturasService {
     valor_atrasado: number
     valor_recebido: number
     valor_em_aberto: number
-  }> {
+    }> {
     try {
+      const tenantId = await getCurrentTenantId()
+      
       // Query base
       let query = supabase
         .from("faturas")
         .select("status, valor, vencimento, pagamento_data, pagamento_valor")
         .eq("administradora_id", administradoraId)
+        .eq("tenant_id", tenantId)
 
       // Aplicar filtros de data se fornecidos
       if (filtros?.data_inicio) {
