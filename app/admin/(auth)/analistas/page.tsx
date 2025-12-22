@@ -55,7 +55,7 @@ export default function AnalistasPage() {
 
   async function rejeitarAnalista(id: string) {
     try {
-      await UsuariosAdminService.atualizar(id, { status: "bloqueado" })
+      await usuariosAdminService.atualizar(id, { status: "bloqueado" })
       toast.success("Analista bloqueado com sucesso")
       carregarAnalistas()
     } catch (error) {
