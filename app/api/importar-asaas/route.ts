@@ -16,7 +16,10 @@ interface ResultadoImportacao {
 /**
  * API Route para importar clientes e faturas do Asaas
  * Roda no servidor para evitar problemas de CORS
+ * 
+ * Configuração de timeout: 60 segundos (para processar muitas cobranças)
  */
+export const maxDuration = 60 // 60 segundos
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
@@ -453,7 +456,7 @@ async function importarTodasCobrancas(administradora_id: string) {
       }
     }
 
-    // 4. Importar cada cobrança
+    // 4. Importar cada cobrança em lotes para evitar timeout
     const statusMap: Record<string, string> = {
       'PENDING': 'pendente',
       'RECEIVED': 'paga',
@@ -470,16 +473,28 @@ async function importarTodasCobrancas(administradora_id: string) {
       'AWAITING_RISK_ANALYSIS': 'pendente'
     }
 
-    for (const charge of todasCobrancas) {
-      try {
-        // Verificar se já existe
-        const { data: existe } = await supabase
-          .from('faturas')
-          .select('id')
-          .eq('asaas_charge_id', charge.id)
-          .single()
+    // Processar em lotes de 50 para otimizar performance
+    const BATCH_SIZE = 50
+    let faturasJaExistentes = 0
 
-        if (existe) continue
+    for (let i = 0; i < todasCobrancas.length; i += BATCH_SIZE) {
+      const batch = todasCobrancas.slice(i, i + BATCH_SIZE)
+      
+      // Verificar quais já existem em lote
+      const chargeIds = batch.map(c => c.id)
+      const { data: faturasExistentes } = await supabase
+        .from('faturas')
+        .select('asaas_charge_id')
+        .in('asaas_charge_id', chargeIds)
+
+      const idsExistentes = new Set(faturasExistentes?.map(f => f.asaas_charge_id) || [])
+      faturasJaExistentes += idsExistentes.size
+
+      // Preparar dados para inserção em lote
+      const dadosParaInserir: any[] = []
+
+      for (const charge of batch) {
+        if (idsExistentes.has(charge.id)) continue
 
         // Fazer match com cliente
         const clienteMatch = mapaCustomerId[charge.customer]
@@ -489,36 +504,44 @@ async function importarTodasCobrancas(administradora_id: string) {
 
         const statusFatura = statusMap[charge.status?.toUpperCase() || ''] || 'pendente'
 
+        dadosParaInserir.push({
+          cliente_administradora_id: clienteMatch?.id || null,
+          administradora_id: administradora_id,
+          cliente_id: proposta?.cpf || null,
+          cliente_nome: proposta?.nome || null,
+          cliente_email: proposta?.email || null,
+          cliente_telefone: proposta?.telefone || null,
+          numero_fatura: charge.invoiceNumber || charge.id || `ASAAS-${charge.id?.slice(0, 8)}`,
+          valor: charge.value || 0,
+          vencimento: charge.dueDate ? charge.dueDate.split('T')[0] : null,
+          status: statusFatura,
+          asaas_charge_id: charge.id,
+          asaas_boleto_url: charge.bankSlipUrl || null,
+          asaas_invoice_url: charge.invoiceUrl || null,
+          asaas_payment_link: charge.paymentLink || null,
+          pagamento_data: charge.paymentDate ? charge.paymentDate.split('T')[0] : null,
+          pagamento_valor: (charge.status === 'RECEIVED' || charge.status === 'CONFIRMED') ? charge.value : null,
+          created_at: charge.dateCreated || new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+      }
+
+      // Inserir lote
+      if (dadosParaInserir.length > 0) {
         const { error: insertError } = await supabase
           .from('faturas')
-          .insert({
-            cliente_administradora_id: clienteMatch?.id || null,
-            administradora_id: administradora_id,
-            cliente_id: proposta?.cpf || null,
-            cliente_nome: proposta?.nome || null,
-            cliente_email: proposta?.email || null,
-            cliente_telefone: proposta?.telefone || null,
-            numero_fatura: charge.invoiceNumber || charge.id || `ASAAS-${charge.id?.slice(0, 8)}`,
-            valor: charge.value || 0,
-            vencimento: charge.dueDate ? charge.dueDate.split('T')[0] : null,
-            status: statusFatura,
-            asaas_charge_id: charge.id,
-            asaas_boleto_url: charge.bankSlipUrl || null,
-            asaas_invoice_url: charge.invoiceUrl || null,
-            asaas_payment_link: charge.paymentLink || null,
-            pagamento_data: charge.paymentDate ? charge.paymentDate.split('T')[0] : null,
-            pagamento_valor: (charge.status === 'RECEIVED' || charge.status === 'CONFIRMED') ? charge.value : null,
-            created_at: charge.dateCreated || new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          })
+          .insert(dadosParaInserir)
 
         if (insertError) {
-          resultado.erros.push(`Erro ao inserir fatura ${charge.id}: ${insertError.message}`)
+          resultado.erros.push(`Erro ao inserir lote ${i}-${i + batch.length}: ${insertError.message}`)
         } else {
-          resultado.faturas_importadas++
+          resultado.faturas_importadas += dadosParaInserir.length
         }
-      } catch (error: any) {
-        resultado.erros.push(`Erro ao processar cobrança ${charge.id}: ${error.message}`)
+      }
+
+      // Log de progresso
+      if ((i + BATCH_SIZE) % 100 === 0 || i + BATCH_SIZE >= todasCobrancas.length) {
+        console.log(`   📊 Progresso: ${Math.min(i + BATCH_SIZE, todasCobrancas.length)}/${todasCobrancas.length} (${Math.round(Math.min(i + BATCH_SIZE, todasCobrancas.length) / todasCobrancas.length * 100)}%)`)
       }
     }
 
@@ -529,13 +552,15 @@ async function importarTodasCobrancas(administradora_id: string) {
       erros: resultado.erros.length
     })
 
+    const faturasSemCliente = todasCobrancas.length - resultado.faturas_importadas - faturasJaExistentes
+
     return NextResponse.json({
       sucesso: true,
       total_cobrancas_encontradas: todasCobrancas.length,
       faturas_importadas: resultado.faturas_importadas,
       faturas_atualizadas: 0,
-      faturas_ja_existentes: 0,
-      faturas_sem_cliente: todasCobrancas.length - resultado.faturas_importadas,
+      faturas_ja_existentes: faturasJaExistentes,
+      faturas_sem_cliente: faturasSemCliente,
       erros: resultado.erros
     })
   } catch (error: any) {
