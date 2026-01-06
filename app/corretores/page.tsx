@@ -108,7 +108,28 @@ export default function CorretoresPage() {
     try {
       console.log("Iniciando cadastro para:", formData.email)
 
-      // 1. Criar usuário no Supabase Auth
+      // 1. Verificar se o email já está cadastrado na tabela corretores
+      const { data: corretorExistente, error: checkError } = await supabase
+        .from("corretores")
+        .select("*")
+        .eq("email", formData.email)
+        .maybeSingle()
+
+      if (checkError && checkError.code !== 'PGRST116') {
+        console.error("Erro ao verificar email:", checkError)
+        setErro("Erro ao verificar email. Tente novamente.")
+        setCarregando(false)
+        return
+      }
+
+      if (corretorExistente) {
+        console.log("⚠️ Email já cadastrado na tabela corretores:", formData.email)
+        setErro("Este email já está cadastrado. Tente fazer login ou recuperar sua senha.")
+        setCarregando(false)
+        return
+      }
+
+      // 2. Criar usuário no Supabase Auth
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: formData.email,
         password: formData.senha,
@@ -122,14 +143,22 @@ export default function CorretoresPage() {
 
       if (authError) {
         console.error("Erro ao criar usuário no Auth:", authError)
-        setErro(`Erro ao criar conta: ${authError.message}`)
+        
+        // Tratar erro específico de usuário já cadastrado
+        if (authError.message.includes("already registered") || 
+            authError.message.includes("User already registered") ||
+            authError.message.includes("already exists")) {
+          setErro("Este email já está cadastrado no sistema. Tente fazer login ou recuperar sua senha.")
+        } else {
+          setErro(`Erro ao criar conta: ${authError.message}`)
+        }
         setCarregando(false)
         return
       }
 
-      console.log("Usuário criado no Auth com sucesso")
+      console.log("✅ Usuário criado no Auth com sucesso")
 
-      // 2. Criar registro na tabela corretores
+      // 3. Criar registro na tabela corretores
       const corretor = await criarCorretor({
         nome: formData.nome,
         email: formData.email,
@@ -142,7 +171,7 @@ export default function CorretoresPage() {
         ativo: true,
       })
 
-      console.log("Corretor criado com sucesso:", corretor)
+      console.log("✅ Corretor criado com sucesso:", corretor)
 
       // Aqui você implementaria a lógica para fazer upload da foto
       // e salvar os dados do corretor no banco de dados
@@ -230,7 +259,7 @@ export default function CorretoresPage() {
               transition={{ duration: 0.5 }}
               className="text-center mb-10"
             >
-              <h1 className="text-3xl md:text-4xl font-bold mb-4 text-[#168979]">Corretor Digital</h1>
+              <h1 className="text-3xl md:text-4xl font-bold mb-4 text-[#0F172A]">Corretor Digital</h1>
               <p className="text-lg md:text-xl text-gray-600 max-w-3xl mx-auto">
                 Junte-se à nossa rede de corretores parceiros e tenha acesso a ferramentas exclusivas para impulsionar
                 suas vendas
@@ -245,9 +274,9 @@ export default function CorretoresPage() {
                 className="lg:w-2/5"
               >
                 <Card className="border-0 shadow-lg overflow-hidden bg-white">
-                  <div className="bg-gradient-to-r from-[#168979] to-[#13786a] h-3"></div>
+                  <div className="bg-gradient-to-r from-[#0F172A] to-[#1E293B] h-3"></div>
                   <CardHeader className="pb-4">
-                    <CardTitle className="text-2xl font-bold text-[#168979]">
+                    <CardTitle className="text-2xl font-bold text-[#0F172A]">
                       {sucesso ? "Cadastro Realizado!" : "Cadastre-se"}
                     </CardTitle>
                     <CardDescription>
@@ -264,12 +293,12 @@ export default function CorretoresPage() {
                         className="text-center py-6"
                       >
                         <div className="flex justify-center mb-6">
-                          <CheckCircle2 className="h-16 w-16 text-green-500" />
+                          <CheckCircle2 className="h-16 w-16 text-[#0F172A]" />
                         </div>
                         <h3 className="text-xl font-semibold mb-2">Cadastro concluído!</h3>
                         <p className="text-gray-600 mb-6">
                           Seu cadastro foi realizado com sucesso.<br />
-                          <span className="font-semibold text-[#168979]">Assim que for aprovado, você poderá acessar a plataforma normalmente e aproveitar todos os recursos do Corretor Digital.</span>
+                          <span className="font-semibold text-[#0F172A]">Assim que for aprovado, você poderá acessar a plataforma normalmente e aproveitar todos os recursos do Corretor Digital.</span>
                         </p>
                         <motion.div
                           initial={{ scale: 1 }}
@@ -283,7 +312,7 @@ export default function CorretoresPage() {
                         >
                           <Button
                             asChild
-                            className="w-full bg-gradient-to-r from-[#168979] to-[#0d5c52] hover:from-[#13786a] hover:to-[#0a4a42] text-white py-6 rounded-lg text-lg font-medium shadow-lg transition-all duration-300 hover:shadow-xl hover:-translate-y-1 flex items-center justify-center gap-2"
+                            className="w-full bg-gradient-to-r from-[#0F172A] to-[#0d5c52] hover:from-[#1E293B] hover:to-[#0a4a42] text-white py-6 rounded-lg text-lg font-medium shadow-lg transition-all duration-300 hover:shadow-xl hover:-translate-y-1 flex items-center justify-center gap-2"
                           >
                             <Link href="/corretor/login">
                               <span className="flex items-center gap-2">
@@ -293,7 +322,7 @@ export default function CorretoresPage() {
                             </Link>
                           </Button>
                         </motion.div>
-                        <p className="text-center text-sm text-[#168979] mt-3 font-medium">
+                        <p className="text-center text-sm text-[#0F172A] mt-3 font-medium">
                           Você receberá um e-mail assim que seu cadastro for aprovado.
                         </p>
                       </motion.div>
@@ -312,20 +341,20 @@ export default function CorretoresPage() {
                         <div className="mb-6">
                           <div className="flex justify-between mb-4">
                             <div
-                              className={`flex items-center ${step === 1 ? "text-[#168979] font-medium" : "text-gray-400"}`}
+                              className={`flex items-center ${step === 1 ? "text-[#0F172A] font-medium" : "text-gray-400"}`}
                             >
                               <div
-                                className={`w-8 h-8 rounded-full flex items-center justify-center mr-2 ${step === 1 ? "bg-[#168979] text-white" : "bg-gray-200"}`}
+                                className={`w-8 h-8 rounded-full flex items-center justify-center mr-2 ${step === 1 ? "bg-[#0F172A] text-white" : "bg-gray-200"}`}
                               >
                                 1
                               </div>
                               <span>Informações Pessoais</span>
                             </div>
                             <div
-                              className={`flex items-center ${step === 2 ? "text-[#168979] font-medium" : "text-gray-400"}`}
+                              className={`flex items-center ${step === 2 ? "text-[#0F172A] font-medium" : "text-gray-400"}`}
                             >
                               <div
-                                className={`w-8 h-8 rounded-full flex items-center justify-center mr-2 ${step === 2 ? "bg-[#168979] text-white" : "bg-gray-200"}`}
+                                className={`w-8 h-8 rounded-full flex items-center justify-center mr-2 ${step === 2 ? "bg-[#0F172A] text-white" : "bg-gray-200"}`}
                               >
                                 2
                               </div>
@@ -334,7 +363,7 @@ export default function CorretoresPage() {
                           </div>
                           <div className="w-full bg-gray-200 h-1 rounded-full">
                             <div
-                              className="bg-[#168979] h-1 rounded-full transition-all duration-300"
+                              className="bg-[#0F172A] h-1 rounded-full transition-all duration-300"
                               style={{ width: step === 1 ? "50%" : "100%" }}
                             ></div>
                           </div>
@@ -357,7 +386,7 @@ export default function CorretoresPage() {
                                 onChange={(e) => setFormData({ ...formData, nome: e.target.value })}
                                 placeholder="Digite seu nome completo"
                                 required
-                                className="h-12 rounded-lg border-gray-300 focus:border-[#168979] focus:ring-[#168979]"
+                                className="h-12 rounded-lg border-gray-300 focus:border-[#0F172A] focus:ring-[#0F172A]"
                               />
                             </div>
 
@@ -372,7 +401,7 @@ export default function CorretoresPage() {
                                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                                 placeholder="Digite seu e-mail"
                                 required
-                                className="h-12 rounded-lg border-gray-300 focus:border-[#168979] focus:ring-[#168979]"
+                                className="h-12 rounded-lg border-gray-300 focus:border-[#0F172A] focus:ring-[#0F172A]"
                               />
                             </div>
 
@@ -386,7 +415,7 @@ export default function CorretoresPage() {
                                 onChange={handleWhatsappChange}
                                 placeholder="(00) 00000-0000"
                                 required
-                                className="h-12 rounded-lg border-gray-300 focus:border-[#168979] focus:ring-[#168979]"
+                                className="h-12 rounded-lg border-gray-300 focus:border-[#0F172A] focus:ring-[#0F172A]"
                               />
                             </div>
 
@@ -401,7 +430,7 @@ export default function CorretoresPage() {
                                   onChange={(e) => setFormData({ ...formData, cidade: e.target.value })}
                                   placeholder="Digite sua cidade"
                                   required
-                                  className="h-12 rounded-lg border-gray-300 focus:border-[#168979] focus:ring-[#168979]"
+                                  className="h-12 rounded-lg border-gray-300 focus:border-[#0F172A] focus:ring-[#0F172A]"
                                 />
                               </div>
 
@@ -440,7 +469,7 @@ export default function CorretoresPage() {
                                   required
                                   maxLength={14}
                                   pattern="\d{3}\.\d{3}\.\d{3}-\d{2}"
-                                  className="h-12 rounded-lg border-gray-300 focus:border-[#168979] focus:ring-[#168979]"
+                                  className="h-12 rounded-lg border-gray-300 focus:border-[#0F172A] focus:ring-[#0F172A]"
                                 />
                                 {erroCpf && <span className="text-xs text-red-600">{erroCpf}</span>}
                               </div>
@@ -454,7 +483,7 @@ export default function CorretoresPage() {
                                   value={formData.data_nascimento}
                                   onChange={(e) => setFormData({ ...formData, data_nascimento: e.target.value })}
                                   required
-                                  className="h-12 rounded-lg border-gray-300 focus:border-[#168979] focus:ring-[#168979]"
+                                  className="h-12 rounded-lg border-gray-300 focus:border-[#0F172A] focus:ring-[#0F172A]"
                                 />
                               </div>
                             </div>
@@ -463,7 +492,7 @@ export default function CorretoresPage() {
                               <Button
                                 type="button"
                                 onClick={nextStep}
-                                className="w-full bg-[#168979] hover:bg-[#13786a] text-white py-6 rounded-lg text-lg shadow-md"
+                                className="w-full bg-[#0F172A] hover:bg-[#1E293B] text-white py-6 rounded-lg text-lg shadow-md"
                               >
                                 Continuar
                                 <ChevronRight className="ml-2 h-5 w-5" />
@@ -491,7 +520,7 @@ export default function CorretoresPage() {
                                   onChange={(e) => setFormData({ ...formData, senha: e.target.value })}
                                   placeholder="Digite sua senha"
                                   required
-                                  className="h-12 rounded-lg border-gray-300 focus:border-[#168979] focus:ring-[#168979] pr-10"
+                                  className="h-12 rounded-lg border-gray-300 focus:border-[#0F172A] focus:ring-[#0F172A] pr-10"
                                 />
                                 <button
                                   type="button"
@@ -519,7 +548,7 @@ export default function CorretoresPage() {
                                   onChange={(e) => setFormData({ ...formData, confirmarSenha: e.target.value })}
                                   placeholder="Confirme sua senha"
                                   required
-                                  className="h-12 rounded-lg border-gray-300 focus:border-[#168979] focus:ring-[#168979] pr-10"
+                                  className="h-12 rounded-lg border-gray-300 focus:border-[#0F172A] focus:ring-[#0F172A] pr-10"
                                 />
                                 <button
                                   type="button"
@@ -537,13 +566,13 @@ export default function CorretoresPage() {
                                 type="button"
                                 onClick={prevStep}
                                 variant="outline"
-                                className="flex-1 py-6 rounded-lg text-lg border-[#168979] text-[#168979]"
+                                className="flex-1 py-6 rounded-lg text-lg border-[#0F172A] text-[#0F172A]"
                               >
                                 Voltar
                               </Button>
                               <Button
                                 type="submit"
-                                className="flex-1 bg-[#168979] hover:bg-[#13786a] text-white py-6 rounded-lg text-lg shadow-md"
+                                className="flex-1 bg-[#0F172A] hover:bg-[#1E293B] text-white py-6 rounded-lg text-lg shadow-md"
                                 disabled={carregando}
                               >
                                 {carregando ? "Processando..." : "Finalizar Cadastro"}
@@ -554,7 +583,7 @@ export default function CorretoresPage() {
 
                         <div className="text-center mt-6 text-sm text-gray-500">
                           Já tem uma conta?{" "}
-                          <Link href="/corretor/login" className="text-[#168979] hover:underline font-medium">
+                          <Link href="/corretor/login" className="text-[#0F172A] hover:underline font-medium">
                             Faça login
                           </Link>
                         </div>
@@ -570,7 +599,7 @@ export default function CorretoresPage() {
                 transition={{ duration: 0.5, delay: 0.4 }}
                 className="lg:w-3/5"
               >
-                <div className="bg-gradient-to-br from-[#168979] to-[#13786a] rounded-2xl p-8 text-white shadow-xl h-full">
+                <div className="bg-gradient-to-br from-[#0F172A] to-[#1E293B] rounded-2xl p-8 text-white shadow-xl h-full">
                   <h2 className="text-2xl md:text-3xl font-bold mb-6">
                     Potencialize suas vendas com o Corretor Digital
                   </h2>
