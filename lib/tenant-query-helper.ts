@@ -52,11 +52,15 @@ export async function getCurrentTenantId(): Promise<string> {
     
     // Buscar ID do tenant pelo slug
     const { supabaseAdmin } = await import('./supabase-admin')
-    const { data } = await supabaseAdmin
+    const { data, error } = await supabaseAdmin
       .from('tenants')
       .select('id')
       .eq('slug', slug)
-      .single()
+      .maybeSingle()
+    
+    if (error && error.code !== 'PGRST116') {
+      console.error('Erro ao buscar tenant_id:', error)
+    }
     
     return data?.id || '00000000-0000-0000-0000-000000000001' // Fallback para tenant padrão
   }
@@ -65,12 +69,16 @@ export async function getCurrentTenantId(): Promise<string> {
   const slug = getTenantSlugClient()
   
   // Buscar ID do tenant pelo slug
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('tenants')
     .select('id')
     .eq('slug', slug)
     .eq('status', 'ativo')
-    .single()
+    .maybeSingle()
+  
+  if (error && error.code !== 'PGRST116') {
+    console.error('Erro ao buscar tenant_id:', error)
+  }
   
   return data?.id || '00000000-0000-0000-0000-000000000001' // Fallback para tenant padrão
 }

@@ -129,7 +129,7 @@ export default function Step2PlanInfo({ onNext, onBack }: Step2PlanInfoProps) {
                     id="valor_plano"
                     placeholder="0,00"
                     {...register("valor_plano")}
-                    className={`pl-8 ${errors.valor_plano ? "border-red-500" : ""} ${valorCalculadoAutomaticamente ? "bg-green-50 border-green-300" : ""}`}
+                    className={`pl-8 ${errors.valor_plano ? "border-red-500" : ""} ${valorCalculadoAutomaticamente ? "bg-[#7BD9F6] bg-opacity-20 border-green-300" : ""}`}
                     onChange={(e) => {
                       // Remover formatação ao editar manualmente
                       setValorCalculadoAutomaticamente(false)
@@ -142,7 +142,7 @@ export default function Step2PlanInfo({ onNext, onBack }: Step2PlanInfoProps) {
                 </div>
                 {errors.valor_plano && <p className="text-sm text-red-500">{errors.valor_plano.message as string}</p>}
                 {valorCalculadoAutomaticamente && (
-                  <p className="text-xs text-green-600">Valor calculado automaticamente pela tabela</p>
+                  <p className="text-xs text-[#0F172A]">Valor calculado automaticamente pela tabela</p>
                 )}
                 {produtoSelecionado && !produtoTemTabela() && (
                   <p className="text-xs text-amber-600">Este produto não possui tabela de preços vinculada</p>

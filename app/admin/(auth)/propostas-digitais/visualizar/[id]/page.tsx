@@ -113,7 +113,7 @@ export default function VisualizarPropostaPage() {
       case "pendente":
         return "bg-yellow-100 text-yellow-800"
       case "aprovada":
-        return "bg-green-100 text-green-800"
+        return "bg-[#7BD9F6] bg-opacity-30 text-[#0F172A]"
       case "rejeitada":
         return "bg-red-100 text-red-800"
       default:
@@ -267,14 +267,14 @@ export default function VisualizarPropostaPage() {
               <>
                 <Button
                   onClick={() => window.open(proposta.pdf_url, "_blank")}
-                  className="bg-[#168979] hover:bg-[#13786a]"
+                  className="bg-[#0F172A] hover:bg-[#1E293B]"
                 >
                   <FileText className="h-4 w-4 mr-2" />
                   Visualizar PDF
                 </Button>
                 <Button
                   onClick={baixarTodosDocumentos}
-                  className="bg-green-600 hover:bg-green-700"
+                  className="bg-[#0F172A] hover:bg-[#0F172A]"
                   disabled={downloadLoading}
                 >
                   <Archive className="h-4 w-4 mr-2" />
@@ -481,7 +481,7 @@ export default function VisualizarPropostaPage() {
                         <div key={i} className="border-l-4 border-blue-200 pl-4 py-2 mb-2">
                           <div className="font-medium text-gray-900 mb-1">Pergunta {resposta.pergunta_id}</div>
                           <div className="text-sm text-gray-600 mb-2">{resposta.pergunta_texto || resposta.pergunta || "Pergunta não disponível"}</div>
-                          <div className={`inline-flex px-2 py-1 rounded-full text-xs font-medium ${resposta.resposta === "sim" || resposta.resposta === true ? "bg-red-100 text-red-800" : "bg-green-100 text-green-800"}`}>
+                          <div className={`inline-flex px-2 py-1 rounded-full text-xs font-medium ${resposta.resposta === "sim" || resposta.resposta === true ? "bg-red-100 text-red-800" : "bg-[#7BD9F6] bg-opacity-30 text-[#0F172A]"}`}>
                             {resposta.resposta === "sim" || resposta.resposta === true ? "SIM" : "NÃO"}
             </div>
                           {resposta.observacao && (

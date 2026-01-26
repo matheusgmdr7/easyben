@@ -21,7 +21,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Eye, CheckCircle, Calendar, Building, Search, Filter, RefreshCw, UserCheck, ChevronLeft, ChevronRight, Mail, DollarSign, Heart, FileText, Download, X, XCircle, User, Loader2, Clock, Plus, Trash2 } from "lucide-react"
+import { Eye, CheckCircle, Calendar, Building, Search, Filter, RefreshCw, UserCheck, ChevronLeft, ChevronRight, Mail, DollarSign, Heart, FileText, Download, X, XCircle, User, Loader2, Clock, Plus, Trash2, Camera, Upload } from "lucide-react"
 import { formatarMoeda } from "@/utils/formatters"
 import { UploadService } from "@/services/upload-service"
 import { buscarCorretores } from "@/services/corretores-service"
@@ -66,6 +66,7 @@ export default function CadastradoPage() {
   const [loading, setLoading] = useState(true)
   const [filtro, setFiltro] = useState("")
   const [produtoFiltro, setProdutoFiltro] = useState("todos")
+  const [filtroTempo, setFiltroTempo] = useState("todos")
   const [propostaDetalhada, setPropostaDetalhada] = useState<any>(null)
   const [showModalDetalhes, setShowModalDetalhes] = useState(false)
   const [loadingDetalhes, setLoadingDetalhes] = useState(false)
@@ -88,56 +89,6 @@ export default function CadastradoPage() {
   // Lista de administradoras disponíveis
   const [administradoras, setAdministradoras] = useState<Administradora[]>([])
 
-  // Estado para modal de cadastro manual
-  const [showModalCadastroManual, setShowModalCadastroManual] = useState(false)
-  const [corretoresDisponiveis, setCorretoresDisponiveis] = useState<any[]>([])
-  const [formManual, setFormManual] = useState({
-    nome: "",
-    email: "",
-    telefone: "",
-    cpf: "",
-    data_nascimento: "",
-    cns: "",
-    rg: "",
-    orgao_emissor: "",
-    nome_mae: "",
-    sexo: "Masculino",
-    uf_nascimento: "SP",
-    cep: "",
-    endereco: "",
-    numero: "",
-    complemento: "",
-    bairro: "",
-    cidade: "",
-    estado: "",
-    produto_id: "",
-    tabela_id: "",
-    cobertura: "Nacional",
-    acomodacao: "Enfermaria",
-    sigla_plano: "",
-    valor: "",
-    tem_dependentes: false,
-    dependentes: [] as any[],
-    anexos: {
-      rg_frente: null as File | null,
-      rg_verso: null as File | null,
-      cpf: null as File | null,
-      comprovante_residencia: null as File | null,
-      cns: null as File | null,
-    },
-    anexosDependentes: [] as any[],
-    observacoes: "",
-    corretor_id: "",
-    administradora: "",
-    produto: "",
-    data_vigencia: "",
-    data_vencimento: "",
-    data_cadastro: "",
-    status: "cadastrado",
-    documentos: {},
-  })
-  const [uploading, setUploading] = useState(false)
-
   // Paginação
   const [paginaAtual, setPaginaAtual] = useState(1)
   const [itensPorPagina] = useState(25)
@@ -147,20 +98,17 @@ export default function CadastradoPage() {
     carregarAdministradoras()
   }, [])
 
-  useEffect(() => {
-    if (showModalCadastroManual) {
-      buscarCorretores().then(setCorretoresDisponiveis)
-    }
-  }, [showModalCadastroManual])
-
   async function carregarPropostas() {
     try {
       setLoading(true)
       console.log("🔄 Carregando propostas aprovadas e cadastradas...")
       const data = await buscarPropostas()
-      // Filtrar propostas com status "aprovada" ou "cadastrado"
+      // Filtrar propostas com status "aprovada", "transmitida", "cadastrada" ou "cadastrado"
       const propostasParaCadastro = data.filter((p: any) => 
-        p.status === "aprovada" || p.status === "cadastrado" || p.status === "cadastrada"
+        p.status === "aprovada" || 
+        p.status === "transmitida" || 
+        p.status === "cadastrada" || 
+        p.status === "cadastrado"
       )
       console.log("📊 Propostas para cadastro:", propostasParaCadastro.length)
       console.log("📋 Status encontrados:", [...new Set(data.map((p: any) => p.status))])
@@ -189,7 +137,7 @@ export default function CadastradoPage() {
     }
   }
 
-  async function finalizarCadastro() {
+  async function transmitirProposta() {
     if (!propostaCadastro || !administradora || !dataVencimento || !dataVigencia) {
       toast.error("Preencha todos os campos obrigatórios")
       return
@@ -217,7 +165,10 @@ export default function CadastradoPage() {
         criar_assinatura: criarAssinatura,
       })
 
-      toast.success("Cliente vinculado à administradora com sucesso!")
+      // Atualizar status da proposta para "transmitida"
+      await atualizarStatusProposta(propostaCadastro.id, "transmitida")
+
+      toast.success("Proposta transmitida com sucesso!")
       setShowModalCadastro(false)
       setPropostaCadastro(null)
       setAdministradora("")
@@ -234,156 +185,6 @@ export default function CadastradoPage() {
     }
   }
 
-  async function handleCadastroManual(e: any) {
-    e.preventDefault()
-    setUploading(true)
-    try {
-      // Upload dos anexos do titular
-      let anexosUrls = {}
-      if (formManual.anexos && (
-        formManual.anexos.rg_frente || 
-        formManual.anexos.rg_verso || 
-        formManual.anexos.cpf || 
-        formManual.anexos.comprovante_residencia || 
-        formManual.anexos.cns
-      )) {
-        const uploadTitular = await UploadService.uploadDocumentos(
-          "manual_titular", // id temporário
-          formManual.anexos,
-          [],
-        )
-        anexosUrls = uploadTitular.documentosUrls
-      }
-
-      // Upload dos anexos dos dependentes
-      let anexosDependentesUrls = []
-      if (formManual.anexosDependentes && formManual.anexosDependentes.length > 0) {
-        for (let i = 0; i < formManual.anexosDependentes.length; i++) {
-          const anexosDependente = formManual.anexosDependentes[i]
-          if (anexosDependente && Object.keys(anexosDependente).some(key => anexosDependente[key])) {
-            const uploadDependente = await UploadService.uploadDocumentos(
-              `manual_dependente_${i}`,
-              anexosDependente,
-              [],
-            )
-            anexosDependentesUrls.push(uploadDependente.documentosUrls)
-          } else {
-            anexosDependentesUrls.push({})
-          }
-        }
-      }
-
-      // Criar proposta manualmente com todos os dados
-      const propostaId = await criarProposta({
-        // Dados do titular
-        nome: formManual.nome,
-        cpf: formManual.cpf,
-        data_nascimento: formManual.data_nascimento,
-        email: formManual.email,
-        telefone: formManual.telefone,
-        cns: formManual.cns,
-        rg: formManual.rg,
-        orgao_emissor: formManual.orgao_emissor,
-        nome_mae: formManual.nome_mae,
-        sexo: formManual.sexo,
-        uf_nascimento: formManual.uf_nascimento,
-        
-        // Endereço
-        cep: formManual.cep,
-        endereco: formManual.endereco,
-        numero: formManual.numero,
-        complemento: formManual.complemento,
-        bairro: formManual.bairro,
-        cidade: formManual.cidade,
-        estado: formManual.estado,
-        
-        // Dados do plano
-        produto_id: formManual.produto_id,
-        tabela_id: formManual.tabela_id,
-        cobertura: formManual.cobertura,
-        acomodacao: formManual.acomodacao,
-        sigla_plano: formManual.sigla_plano,
-        valor: formManual.valor,
-        
-        // Dados de cadastro
-        corretor_id: formManual.corretor_id,
-        administradora: formManual.administradora,
-        data_vigencia: formManual.data_vigencia,
-        data_vencimento: formManual.data_vencimento,
-        data_cadastro: formManual.data_cadastro,
-        status: formManual.status,
-        
-        // Dependentes
-        dependentes: formManual.dependentes,
-        
-        // Anexos
-        anexos: anexosUrls,
-        anexosDependentes: anexosDependentesUrls,
-        
-        // Outros
-        observacoes: formManual.observacoes,
-        origem: "manual",
-      })
-
-      if (propostaId) {
-        toast.success("Cliente cadastrado manualmente com sucesso!")
-        setShowModalCadastroManual(false)
-        setFormManual({
-          nome: "",
-          email: "",
-          telefone: "",
-          cpf: "",
-          data_nascimento: "",
-          cns: "",
-          rg: "",
-          orgao_emissor: "",
-          nome_mae: "",
-          sexo: "Masculino",
-          uf_nascimento: "SP",
-          cep: "",
-          endereco: "",
-          numero: "",
-          complemento: "",
-          bairro: "",
-          cidade: "",
-          estado: "",
-          produto_id: "",
-          tabela_id: "",
-          cobertura: "Nacional",
-          acomodacao: "Enfermaria",
-          sigla_plano: "",
-          valor: "",
-          tem_dependentes: false,
-          dependentes: [],
-          anexos: {
-            rg_frente: null,
-            rg_verso: null,
-            cpf: null,
-            comprovante_residencia: null,
-            cns: null,
-          },
-          anexosDependentes: [],
-          observacoes: "",
-          corretor_id: "",
-          administradora: "",
-          produto: "",
-          data_vigencia: "",
-          data_vencimento: "",
-          data_cadastro: "",
-          status: "cadastrado",
-          documentos: {},
-        })
-        carregarPropostas()
-      } else {
-        toast.error("Erro ao cadastrar cliente manualmente")
-      }
-    } catch (error) {
-      console.error("Erro ao cadastrar cliente manualmente:", error)
-      toast.error("Erro ao cadastrar cliente manualmente")
-    } finally {
-      setUploading(false)
-    }
-  }
 
   function abrirModalCadastro(proposta: any) {
     setPropostaCadastro(proposta)
@@ -530,29 +331,35 @@ export default function CadastradoPage() {
   }
 
   function obterStatusProposta(proposta: any) {
-    if (proposta.status === "cadastrado" || proposta.status === "cadastrada") {
+    if (proposta.status === "transmitida") {
+      return {
+        label: "TRANSMITIDA",
+        color: "bg-gray-100 text-[#0F172A]"
+      }
+    } else if (proposta.status === "cadastrada" || proposta.status === "cadastrado") {
       return {
         label: "CADASTRADO",
-        color: "bg-gray-100 text-green-600",
-        icon: CheckCircle
+        color: "bg-gray-100 text-[#0F172A]"
       }
     } else if (proposta.status === "aprovada") {
       return {
         label: "APROVADO",
-        color: "bg-gray-100 text-blue-600", 
-        icon: CheckCircle
+        color: "bg-gray-100 text-[#0F172A]"
       }
     } else if (proposta.status === "cancelada") {
       return {
         label: "CANCELADA",
-        color: "bg-gray-100 text-orange-600",
-        icon: X
+        color: "bg-gray-50 text-gray-500"
+      }
+    } else if (proposta.status === "devolvida") {
+      return {
+        label: "DEVOLVIDA",
+        color: "bg-gray-50 text-gray-500"
       }
     } else {
       return {
         label: proposta.status || "INDEFINIDO",
-        color: "bg-gray-100 text-gray-600",
-        icon: CheckCircle
+        color: "bg-gray-50 text-gray-500"
       }
     }
   }
@@ -753,7 +560,31 @@ export default function CadastradoPage() {
     const nomeProduto = proposta.produto_nome || proposta.produto || proposta.sigla_plano || proposta.plano_nome || ""
     const matchesProduto = produtoFiltro === "todos" || nomeProduto === produtoFiltro
 
-    return matchesFiltro && matchesProduto
+    // Filtro por tempo
+    let matchesTempo = true
+    if (filtroTempo !== "todos") {
+      const hoje = new Date()
+      const dataProposta = new Date(proposta.created_at || proposta.data_cadastro || proposta.data || hoje)
+      const diffTime = Math.abs(hoje.getTime() - dataProposta.getTime())
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+
+      switch (filtroTempo) {
+        case "hoje":
+          matchesTempo = diffDays === 0
+          break
+        case "esta-semana":
+          matchesTempo = diffDays <= 7
+          break
+        case "este-mes":
+          matchesTempo = diffDays <= 30
+          break
+        case "este-ano":
+          matchesTempo = diffDays <= 365
+          break
+      }
+    }
+
+    return matchesFiltro && matchesProduto && matchesTempo
   })
 
   // Cálculos de paginação
@@ -766,11 +597,10 @@ export default function CadastradoPage() {
   // Reset da página quando filtros mudam
   useEffect(() => {
     setPaginaAtual(1)
-  }, [filtro, produtoFiltro])
+  }, [filtro, produtoFiltro, filtroTempo])
 
   useModalOverlay(showModalCadastro)
   useModalOverlay(showModalDetalhes)
-  useModalOverlay(showModalCadastroManual)
 
   if (loading) {
     return (
@@ -790,23 +620,29 @@ export default function CadastradoPage() {
       <div className="bg-gradient-to-r from-gray-50 to-white rounded-lg border border-gray-200 shadow-sm p-4 md:p-6">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900 tracking-tight font-sans">Clientes para Cadastro</h1>
-            <p className="text-gray-600 mt-1 font-medium">Gerencie clientes aprovados e finalize cadastros</p>
+            <h1 className="text-2xl font-bold text-gray-900 tracking-tight font-sans">Propostas para Transmissão</h1>
+            <p className="text-gray-600 mt-1 font-medium">Gerencie propostas aprovadas e transmita para administradoras</p>
           </div>
-          <div className="flex flex-col sm:flex-row gap-2">
-          <button
-            onClick={carregarPropostas}
-              className="bg-gray-700 hover:bg-gray-800 text-white font-bold px-4 py-2 btn-corporate shadow-corporate flex items-center gap-2"
-          >
-            <RefreshCw className="h-4 w-4" />
-            Atualizar Lista
-          </button>
-          <button
-            onClick={() => setShowModalCadastroManual(true)}
-              className="bg-[#168979] hover:bg-[#13786a] text-white font-bold px-4 py-2 btn-corporate shadow-corporate flex items-center gap-2"
-          >
-            + Adicionar Cliente Manualmente
-          </button>
+          <div className="flex flex-col sm:flex-row gap-2 items-center">
+            <Select value={filtroTempo} onValueChange={setFiltroTempo}>
+              <SelectTrigger className="w-full sm:w-[180px] h-10 border-2 border-gray-300 focus:border-[#0F172A] rounded-lg">
+                <SelectValue placeholder="Período" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="todos">Todos os períodos</SelectItem>
+                <SelectItem value="hoje">Hoje</SelectItem>
+                <SelectItem value="esta-semana">Esta semana</SelectItem>
+                <SelectItem value="este-mes">Este mês</SelectItem>
+                <SelectItem value="este-ano">Este ano</SelectItem>
+              </SelectContent>
+            </Select>
+            <button
+              onClick={carregarPropostas}
+              className="bg-gray-700 hover:bg-gray-800 text-white font-bold px-4 py-2 btn-corporate shadow-corporate flex items-center gap-2 h-10"
+            >
+              <RefreshCw className="h-4 w-4" />
+              Atualizar
+            </button>
           </div>
         </div>
       </div>
@@ -820,7 +656,7 @@ export default function CadastradoPage() {
                 <User className="h-3 w-3 sm:h-4 sm:w-4 text-gray-400 opacity-60" />
                 <h3 className="text-sm font-bold text-gray-600 uppercase tracking-wider font-sans">Total</h3>
               </div>
-              <div className="text-3xl font-bold text-[#168979] mt-2">{propostas.length}</div>
+              <div className="text-3xl font-bold text-[#0F172A] mt-2">{propostasFiltradas.length}</div>
             </div>
           </div>
           <div className="pb-6 px-6">
@@ -835,7 +671,7 @@ export default function CadastradoPage() {
                 <CheckCircle className="h-3 w-3 sm:h-4 sm:w-4 text-gray-400 opacity-60" />
                 <h3 className="text-sm font-bold text-gray-600 uppercase tracking-wider font-sans">Completos</h3>
               </div>
-              <div className="text-3xl font-bold text-[#168979] mt-2">{propostas.filter((p) => verificarCadastroCompleto(p)).length}</div>
+              <div className="text-3xl font-bold text-[#0F172A] mt-2">{propostasFiltradas.filter((p) => verificarCadastroCompleto(p)).length}</div>
             </div>
           </div>
           <div className="pb-6 px-6">
@@ -850,7 +686,7 @@ export default function CadastradoPage() {
                 <Clock className="h-3 w-3 sm:h-4 sm:w-4 text-gray-400 opacity-60" />
                 <h3 className="text-sm font-bold text-gray-600 uppercase tracking-wider font-sans">Pendentes</h3>
               </div>
-              <div className="text-3xl font-bold text-[#168979] mt-2">{propostas.filter((p) => !verificarCadastroCompleto(p)).length}</div>
+              <div className="text-3xl font-bold text-[#0F172A] mt-2">{propostasFiltradas.filter((p) => !verificarCadastroCompleto(p)).length}</div>
             </div>
           </div>
           <div className="pb-6 px-6">
@@ -865,7 +701,7 @@ export default function CadastradoPage() {
                 <UserCheck className="h-3 w-3 sm:h-4 sm:w-4 text-gray-400 opacity-60" />
                 <h3 className="text-sm font-bold text-gray-600 uppercase tracking-wider font-sans">Corretores</h3>
               </div>
-              <div className="text-3xl font-bold text-[#168979] mt-2">{propostas.filter((p) => p.origem === "propostas_corretores").length}</div>
+              <div className="text-3xl font-bold text-[#0F172A] mt-2">{propostasFiltradas.filter((p) => p.origem === "propostas_corretores").length}</div>
             </div>
           </div>
           <div className="pb-6 px-6">
@@ -907,28 +743,13 @@ export default function CadastradoPage() {
             </Select>
           </div>
         </div>
-        
-        {/* Botão de Download do Relatório */}
-        <div className="mt-4 flex justify-end">
-          <Button
-            onClick={gerarRelatorioExcel}
-            className="bg-[#168979] hover:bg-[#0f6b5f] text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
-            disabled={propostasFiltradas.length === 0}
-          >
-            <Download className="h-4 w-4" />
-            Baixar Relatório Excel
-            <span className="ml-1 text-xs bg-white/20 px-2 py-1 rounded">
-              ({propostasFiltradas.length} registros)
-            </span>
-          </Button>
-        </div>
       </div>
 
       {/* Lista de Propostas */}
       <div className="bg-white rounded-lg shadow border border-gray-200">
         <div className="p-4 border-b border-gray-200">
           <div className="flex justify-between items-center">
-            <h2 className="text-lg font-semibold text-gray-900">Lista de Clientes (Aprovados e Cadastrados)</h2>
+            <h2 className="text-lg font-semibold text-gray-900">Lista de Propostas (Aprovadas e Transmitidas)</h2>
             <div className="text-sm text-gray-600">
               Mostrando {indiceInicio + 1}-{Math.min(indiceFim, totalItens)} de {totalItens} clientes
             </div>
@@ -964,11 +785,13 @@ export default function CadastradoPage() {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {propostasExibidas.map((proposta) => (
-                <tr key={proposta.id} className="hover:bg-gray-50">
+              {propostasExibidas.map((proposta, index) => {
+                const bgColor = index % 2 === 0 ? "bg-white" : "bg-gray-50"
+                return (
+                <tr key={proposta.id} className={`${bgColor} hover:bg-gray-100`}>
                   <td className="px-4 py-4">
                     <div className="flex flex-col">
-                      <div className="text-sm font-medium text-gray-900">
+                      <div className="text-sm font-bold text-gray-900">
                         {obterNomeCliente(proposta)}
                       </div>
                       <div className="text-sm text-gray-500">
@@ -983,7 +806,7 @@ export default function CadastradoPage() {
                     </div>
                   </td>
                   <td className="px-4 py-4">
-                    <div className="text-sm text-gray-900 font-semibold">
+                    <div className="text-sm font-medium text-gray-900">
                       {(() => {
                         // Sempre usar o valor total (incluindo dependentes)
                         const valorTotal = calcularValorTotalMensal(proposta)
@@ -1017,10 +840,8 @@ export default function CadastradoPage() {
                   <td className="px-4 py-4">
                     {(() => {
                       const status = obterStatusProposta(proposta)
-                      const Icon = status.icon
                       return (
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${status.color}`}>
-                          <Icon className="h-3 w-3 mr-1" />
+                        <span className={`inline-flex items-center px-2 py-1 text-xs font-semibold rounded ${status.color}`}>
                           {status.label}
                         </span>
                       )
@@ -1028,47 +849,53 @@ export default function CadastradoPage() {
                   </td>
                   <td className="px-4 py-4">
                     {verificarCadastroCompleto(proposta) ? (
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                        <CheckCircle className="h-3 w-3 mr-1" />
+                      <span className="inline-flex items-center px-2 py-1 text-xs font-semibold rounded bg-[#7BD9F6] bg-opacity-30 text-[#0F172A]">
                         Completo
                       </span>
                     ) : (
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
-                        <Calendar className="h-3 w-3 mr-1" />
+                      <span className="inline-flex items-center px-2 py-1 text-xs font-semibold rounded bg-gray-50 text-gray-500">
                         Pendente
                       </span>
                     )}
                   </td>
                   <td className="px-4 py-4">
-                    <div className="flex flex-col space-y-1">
-                      <button
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
                         onClick={() => abrirModalDetalhes(proposta)}
-                        className="text-gray-700 hover:text-gray-900 bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded text-xs transition-colors"
+                        className="hover:bg-[#0F172A]/10"
+                        title="Ver detalhes"
                       >
-                        <Eye className="h-3 w-3 inline mr-1" />
-                        Ver
-                      </button>
+                        <Eye className="h-4 w-4" />
+                      </Button>
 
                       {!verificarCadastroCompleto(proposta) && (
-                        <button
+                        <Button
+                          variant="ghost"
+                          size="sm"
                           onClick={() => abrirModalCadastro(proposta)}
-                          className="text-blue-700 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 px-2 py-1 rounded transition-colors text-xs"
+                          className="hover:bg-[#0F172A]/10"
+                          title="Transmitir proposta"
                         >
-                          Completar Cadastro
-                        </button>
+                          <Upload className="h-4 w-4" />
+                        </Button>
                       )}
                     </div>
                   </td>
                 </tr>
-              ))}
+              )
+              })}
             </tbody>
           </table>
         </div>
 
         {/* Mobile Cards */}
         <div className="lg:hidden space-y-4">
-          {propostasExibidas.map((proposta) => (
-            <div key={proposta.id} className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow">
+          {propostasExibidas.map((proposta, index) => {
+            const bgColor = index % 2 === 0 ? "bg-white" : "bg-gray-50"
+            return (
+            <div key={proposta.id} className={`${bgColor} border border-gray-200 rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow`}>
               {/* Header do Card */}
               <div className="flex items-start justify-between mb-3">
                 <div className="flex-1">
@@ -1082,10 +909,8 @@ export default function CadastradoPage() {
                 <div className="flex flex-col items-end gap-1">
                   {(() => {
                     const status = obterStatusProposta(proposta)
-                    const Icon = status.icon
                     return (
-                      <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${status.color}`}>
-                        <Icon className="h-3 w-3 mr-1" />
+                      <span className={`inline-flex items-center px-2 py-1 text-xs font-semibold rounded ${status.color}`}>
                         {status.label}
                       </span>
                     )
@@ -1110,7 +935,7 @@ export default function CadastradoPage() {
                 <div className="flex items-center gap-2">
                   <DollarSign className="h-4 w-4 text-gray-400" />
                   <div>
-                    <div className="text-gray-900 font-semibold">
+                    <div className="text-gray-900 font-medium">
                       {(() => {
                         // Sempre usar o valor total (incluindo dependentes)
                         const valorTotal = calcularValorTotalMensal(proposta)
@@ -1156,12 +981,12 @@ export default function CadastradoPage() {
                     <span className="text-gray-700">Status do Cadastro:</span>
                   </div>
                   {verificarCadastroCompleto(proposta) ? (
-                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-[#7BD9F6] bg-opacity-30 text-[#0F172A]">
                       <CheckCircle className="h-3 w-3 mr-1" />
                       Completo
                     </span>
                   ) : (
-                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
+                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-50 text-gray-500">
                       <Calendar className="h-3 w-3 mr-1" />
                       Pendente
                     </span>
@@ -1170,26 +995,32 @@ export default function CadastradoPage() {
               </div>
 
               {/* Ações */}
-              <div className="flex flex-col gap-2 mt-4 pt-3 border-t border-gray-200">
-                <button
+              <div className="flex items-center gap-1 mt-4 pt-3 border-t border-gray-200">
+                <Button
+                  variant="ghost"
+                  size="sm"
                   onClick={() => abrirModalDetalhes(proposta)}
-                  className="text-gray-700 hover:text-gray-900 bg-gray-100 hover:bg-gray-200 px-3 py-2 rounded btn-corporate-sm transition-colors text-sm flex items-center justify-center gap-2"
+                  className="hover:bg-[#0F172A]/10"
+                  title="Ver detalhes"
                 >
                   <Eye className="h-4 w-4" />
-                  Ver Detalhes
-                </button>
+                </Button>
 
                 {!verificarCadastroCompleto(proposta) && (
-                  <button
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     onClick={() => abrirModalCadastro(proposta)}
-                    className="text-white bg-[#168979] hover:bg-[#13786a] px-3 py-2 rounded btn-corporate-sm transition-colors text-sm flex items-center justify-center gap-2"
+                    className="hover:bg-[#0F172A]/10"
+                    title="Transmitir proposta"
                   >
-                    Completar Cadastro
-                  </button>
+                    <Upload className="h-4 w-4" />
+                  </Button>
                 )}
               </div>
             </div>
-          ))}
+          )
+          })}
         </div>
 
         {propostasFiltradas.length === 0 && (
@@ -1205,24 +1036,21 @@ export default function CadastradoPage() {
 
         {/* Paginação */}
         {totalPaginas > 1 && (
-          <div className="px-4 py-3 border-t border-gray-200 bg-gray-50">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-              <div className="text-sm text-gray-700 text-center sm:text-left">
-                Página {paginaAtual} de {totalPaginas} • Total: {totalItens} clientes
-                <span className="ml-2 px-2 py-1 bg-[#168979] bg-opacity-10 text-[#168979] rounded text-xs font-medium">
-                  📄 {totalPaginas} páginas disponíveis
-                </span>
+          <div className="px-3 sm:px-4 py-3 border-t border-gray-200 bg-gray-50">
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+              <div className="text-xs sm:text-sm text-gray-700">
+                Página {paginaAtual} de {totalPaginas}
               </div>
-              <div className="flex items-center justify-center space-x-2">
+              <div className="flex items-center space-x-1 sm:space-x-2 w-full sm:w-auto justify-center">
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={() => setPaginaAtual(Math.max(1, paginaAtual - 1))}
                   disabled={paginaAtual === 1}
-                  className="h-8 btn-corporate-sm"
+                  className="h-8 sm:h-9 text-xs sm:text-sm rounded-none"
                 >
-                  <ChevronLeft className="h-4 w-4" />
-                  <span className="hidden sm:inline ml-1">Anterior</span>
+                  <ChevronLeft className="h-3 w-3 sm:h-4 sm:w-4" />
+                  <span className="ml-1">Anterior</span>
                 </Button>
 
                 <div className="flex space-x-1">
@@ -1244,11 +1072,7 @@ export default function CadastradoPage() {
                         variant={paginaAtual === pageNum ? "default" : "outline"}
                         size="sm"
                         onClick={() => setPaginaAtual(pageNum)}
-                        className={`h-8 w-8 p-0 btn-corporate-sm ${
-                          paginaAtual === pageNum 
-                            ? 'bg-[#168979] hover:bg-[#13786a] text-white border-[#168979]' 
-                            : ''
-                        }`}
+                        className="h-8 sm:h-9 w-8 sm:w-9 p-0 text-xs sm:text-sm rounded-none"
                       >
                         {pageNum}
                       </Button>
@@ -1261,10 +1085,10 @@ export default function CadastradoPage() {
                   size="sm"
                   onClick={() => setPaginaAtual(Math.min(totalPaginas, paginaAtual + 1))}
                   disabled={paginaAtual === totalPaginas}
-                  className="h-8 btn-corporate-sm"
+                  className="h-8 sm:h-9 text-xs sm:text-sm rounded-none"
                 >
-                  <span className="hidden sm:inline mr-1">Próxima</span>
-                  <ChevronRight className="h-4 w-4" />
+                  <span className="mr-1">Próxima</span>
+                  <ChevronRight className="h-3 w-3 sm:h-4 sm:w-4" />
                 </Button>
               </div>
             </div>
@@ -1294,7 +1118,7 @@ export default function CadastradoPage() {
         >
           <div className="bg-white rounded-xl sm:rounded-2xl shadow-2xl max-w-4xl w-full max-h-[95vh] sm:max-h-[90vh] overflow-hidden flex flex-col">
             {/* Header com Gradiente */}
-            <div className="bg-gradient-to-r from-[#168979] to-[#13786a] px-3 sm:px-6 py-3 sm:py-4">
+            <div className="bg-gradient-to-r from-[#0F172A] to-[#1E293B] px-3 sm:px-6 py-3 sm:py-4">
               <div className="flex items-center justify-between mb-3 sm:mb-4">
                 <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
                   <div className="p-1.5 sm:p-2 bg-white/20 rounded-lg flex-shrink-0">
@@ -1315,8 +1139,8 @@ export default function CadastradoPage() {
                       className="bg-white/20 hover:bg-white/30 text-white border border-white/30 text-xs sm:text-sm px-2 sm:px-3 h-8 sm:h-9"
                       size="sm"
                     >
-                      <span className="hidden sm:inline">Completar Cadastro</span>
-                      <span className="sm:hidden">Completar</span>
+                      <span className="hidden sm:inline">Transmitir Proposta</span>
+                      <span className="sm:hidden">Transmitir</span>
                     </Button>
                   )}
                   <Button
@@ -1355,27 +1179,27 @@ export default function CadastradoPage() {
                     <TabsList className="inline-flex h-auto w-full bg-transparent p-0 gap-0 sm:gap-1">
                       <TabsTrigger 
                         value="dados" 
-                        className="flex-1 data-[state=active]:bg-transparent data-[state=active]:text-[#168979] data-[state=active]:border-b-2 data-[state=active]:border-[#168979] data-[state=inactive]:text-gray-500 data-[state=inactive]:border-b-2 data-[state=inactive]:border-transparent hover:text-gray-700 hover:border-gray-300 text-xs sm:text-sm px-3 sm:px-4 py-2.5 sm:py-3 rounded-none transition-all font-medium border-b-2 border-transparent"
+                        className="flex-1 data-[state=active]:bg-transparent data-[state=active]:text-[#0F172A] data-[state=active]:border-b-2 data-[state=active]:border-[#0F172A] data-[state=inactive]:text-gray-500 data-[state=inactive]:border-b-2 data-[state=inactive]:border-transparent hover:text-gray-700 hover:border-gray-300 text-xs sm:text-sm px-3 sm:px-4 py-2.5 sm:py-3 rounded-none transition-all font-medium border-b-2 border-transparent"
                       >
                         <span className="hidden sm:inline">Dados Pessoais</span>
                         <span className="sm:hidden">Dados</span>
                       </TabsTrigger>
                       <TabsTrigger 
                         value="documentos" 
-                        className="flex-1 data-[state=active]:bg-transparent data-[state=active]:text-[#168979] data-[state=active]:border-b-2 data-[state=active]:border-[#168979] data-[state=inactive]:text-gray-500 data-[state=inactive]:border-b-2 data-[state=inactive]:border-transparent hover:text-gray-700 hover:border-gray-300 text-xs sm:text-sm px-3 sm:px-4 py-2.5 sm:py-3 rounded-none transition-all font-medium border-b-2 border-transparent"
+                        className="flex-1 data-[state=active]:bg-transparent data-[state=active]:text-[#0F172A] data-[state=active]:border-b-2 data-[state=active]:border-[#0F172A] data-[state=inactive]:text-gray-500 data-[state=inactive]:border-b-2 data-[state=inactive]:border-transparent hover:text-gray-700 hover:border-gray-300 text-xs sm:text-sm px-3 sm:px-4 py-2.5 sm:py-3 rounded-none transition-all font-medium border-b-2 border-transparent"
                       >
                         Documentos
                       </TabsTrigger>
                       <TabsTrigger 
                         value="saude" 
-                        className="flex-1 data-[state=active]:bg-transparent data-[state=active]:text-[#168979] data-[state=active]:border-b-2 data-[state=active]:border-[#168979] data-[state=inactive]:text-gray-500 data-[state=inactive]:border-b-2 data-[state=inactive]:border-transparent hover:text-gray-700 hover:border-gray-300 text-xs sm:text-sm px-3 sm:px-4 py-2.5 sm:py-3 rounded-none transition-all font-medium border-b-2 border-transparent"
+                        className="flex-1 data-[state=active]:bg-transparent data-[state=active]:text-[#0F172A] data-[state=active]:border-b-2 data-[state=active]:border-[#0F172A] data-[state=inactive]:text-gray-500 data-[state=inactive]:border-b-2 data-[state=inactive]:border-transparent hover:text-gray-700 hover:border-gray-300 text-xs sm:text-sm px-3 sm:px-4 py-2.5 sm:py-3 rounded-none transition-all font-medium border-b-2 border-transparent"
                       >
                         <span className="hidden sm:inline">Declaração de Saúde</span>
                         <span className="sm:hidden">Saúde</span>
                       </TabsTrigger>
                       <TabsTrigger 
                         value="dependentes" 
-                        className="flex-1 data-[state=active]:bg-transparent data-[state=active]:text-[#168979] data-[state=active]:border-b-2 data-[state=active]:border-[#168979] data-[state=inactive]:text-gray-500 data-[state=inactive]:border-b-2 data-[state=inactive]:border-transparent hover:text-gray-700 hover:border-gray-300 text-xs sm:text-sm px-3 sm:px-4 py-2.5 sm:py-3 rounded-none transition-all font-medium border-b-2 border-transparent"
+                        className="flex-1 data-[state=active]:bg-transparent data-[state=active]:text-[#0F172A] data-[state=active]:border-b-2 data-[state=active]:border-[#0F172A] data-[state=inactive]:text-gray-500 data-[state=inactive]:border-b-2 data-[state=inactive]:border-transparent hover:text-gray-700 hover:border-gray-300 text-xs sm:text-sm px-3 sm:px-4 py-2.5 sm:py-3 rounded-none transition-all font-medium border-b-2 border-transparent"
                       >
                         Dependentes
                       </TabsTrigger>
@@ -1386,7 +1210,7 @@ export default function CadastradoPage() {
                     {/* Dados do Titular */}
                   <Card className="border-2 border-gray-200 shadow-sm">
                     <CardHeader className="bg-gradient-to-r from-blue-50 to-blue-100/50 border-b border-gray-200 px-3 sm:px-6 py-3 sm:py-4">
-                        <CardTitle className="flex items-center gap-2 text-[#168979] text-base sm:text-lg">
+                        <CardTitle className="flex items-center gap-2 text-[#0F172A] text-base sm:text-lg">
                           <User className="h-4 w-4 sm:h-5 sm:w-5" />
                           Dados do Titular
                         </CardTitle>
@@ -1468,7 +1292,7 @@ export default function CadastradoPage() {
                     {/* Endereço */}
                     <Card className="border-2 border-gray-200 shadow-sm">
                       <CardHeader className="bg-gradient-to-r from-green-50 to-green-100/50 border-b border-gray-200 px-3 sm:px-6 py-3 sm:py-4">
-                        <CardTitle className="flex items-center gap-2 text-[#168979] text-base sm:text-lg">
+                        <CardTitle className="flex items-center gap-2 text-[#0F172A] text-base sm:text-lg">
                           <Building className="h-4 w-4 sm:h-5 sm:w-5" />
                           Endereço
                         </CardTitle>
@@ -1511,7 +1335,7 @@ export default function CadastradoPage() {
                     {/* Informações do Plano */}
                     <Card className="border-2 border-gray-200 shadow-sm">
                       <CardHeader className="bg-gradient-to-r from-purple-50 to-purple-100/50 border-b border-gray-200 px-3 sm:px-6 py-3 sm:py-4">
-                        <CardTitle className="flex items-center gap-2 text-[#168979] text-base sm:text-lg">
+                        <CardTitle className="flex items-center gap-2 text-[#0F172A] text-base sm:text-lg">
                           <FileText className="h-4 w-4 sm:h-5 sm:w-5" />
                           Informações do Plano
                         </CardTitle>
@@ -1551,7 +1375,7 @@ export default function CadastradoPage() {
                           )}
                           <div>
                             <label className="block text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">Valor Mensal Total</label>
-                            <p className="text-2xl font-bold text-green-600">
+                            <p className="text-2xl font-bold text-[#0F172A]">
                               R$ {calcularValorTotalMensal(propostaDetalhada).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
                             </p>
                             {/* Detalhamento dos valores se houver dependentes */}
@@ -1605,7 +1429,7 @@ export default function CadastradoPage() {
                   {verificarCadastroCompleto(propostaDetalhada) && (
                     <Card className="border-2 border-gray-200 shadow-sm">
                       <CardHeader className="bg-gradient-to-r from-amber-50 to-amber-100/50 border-b border-gray-200 px-3 sm:px-6 py-3 sm:py-4">
-                        <CardTitle className="flex items-center gap-2 text-[#168979] text-base sm:text-lg">
+                        <CardTitle className="flex items-center gap-2 text-[#0F172A] text-base sm:text-lg">
                           <CheckCircle className="h-4 w-4 sm:h-5 sm:w-5" />
                           Dados de Cadastro
                         </CardTitle>
@@ -1643,7 +1467,7 @@ export default function CadastradoPage() {
                     {/* Documentos do Titular */}
                     <Card className="border-2 border-gray-200 shadow-sm">
                       <CardHeader className="bg-gradient-to-r from-blue-50 to-blue-100/50 border-b border-gray-200 px-3 sm:px-6 py-3 sm:py-4">
-                        <CardTitle className="flex items-center gap-2 text-[#168979] text-base sm:text-lg">
+                        <CardTitle className="flex items-center gap-2 text-[#0F172A] text-base sm:text-lg">
                           <FileText className="h-4 w-4 sm:h-5 sm:w-5" />
                           Documentos do Titular
                         </CardTitle>
@@ -1686,7 +1510,7 @@ export default function CadastradoPage() {
                     {dependentes && dependentes.length > 0 && (
                       <Card className="border-2 border-gray-200 shadow-sm">
                         <CardHeader className="bg-gradient-to-r from-green-50 to-green-100/50 border-b border-gray-200 px-3 sm:px-6 py-3 sm:py-4">
-                          <CardTitle className="flex items-center gap-2 text-[#168979] text-base sm:text-lg">
+                          <CardTitle className="flex items-center gap-2 text-[#0F172A] text-base sm:text-lg">
                             <FileText className="h-4 w-4 sm:h-5 sm:w-5" />
                             Documentos dos Dependentes
                           </CardTitle>
@@ -1740,7 +1564,7 @@ export default function CadastradoPage() {
                     {(propostaDetalhada?.foto_rosto || propostaDetalhada?.foto_corpo_inteiro) && (
                       <Card className="border-2 border-gray-200 shadow-sm">
                         <CardHeader className="bg-gradient-to-r from-blue-50 to-blue-100/50 border-b border-gray-200 px-3 sm:px-6 py-3 sm:py-4">
-                          <CardTitle className="flex items-center gap-2 text-[#168979] text-base sm:text-lg">
+                          <CardTitle className="flex items-center gap-2 text-[#0F172A] text-base sm:text-lg">
                             <Camera className="h-4 w-4 sm:h-5 sm:w-5" />
                             Fotos do Cliente
                           </CardTitle>
@@ -1792,7 +1616,7 @@ export default function CadastradoPage() {
                       questionariosSaude.map((q, idx) => (
                         <Card key={q.id || idx} className="border-2 border-gray-200 shadow-sm">
                           <CardHeader className="bg-gradient-to-r from-red-50 to-red-100/50 border-b border-gray-200 px-3 sm:px-6 py-3 sm:py-4">
-                            <CardTitle className="flex items-center gap-2 text-[#168979] text-base sm:text-lg">
+                            <CardTitle className="flex items-center gap-2 text-[#0F172A] text-base sm:text-lg">
                               <Heart className="h-4 w-4 sm:h-5 sm:w-5 text-red-500" />
                               <span className="truncate">{q.pessoa_tipo === "titular"
                                 ? "Declaração de Saúde - Titular"
@@ -1813,7 +1637,7 @@ export default function CadastradoPage() {
                                   <div className="text-sm text-gray-600 mb-2">
                                     {resposta.pergunta_texto || resposta.pergunta || obterTextoPergunta(resposta.pergunta_id)}
           </div>
-                                  <div className={`inline-flex px-2 py-1 rounded-full text-xs font-medium ${resposta.resposta === "sim" || resposta.resposta === true ? "bg-red-100 text-red-800" : "bg-green-100 text-green-800"}`}>
+                                  <div className={`inline-flex px-2 py-1 rounded-full text-xs font-medium ${resposta.resposta === "sim" || resposta.resposta === true ? "bg-red-100 text-red-800" : "bg-[#7BD9F6] bg-opacity-30 text-[#0F172A]"}`}>
                                     {resposta.resposta === "sim" || resposta.resposta === true ? "SIM" : "NÃO"}
           </div>
                                   {resposta.observacao && (
@@ -1832,7 +1656,7 @@ export default function CadastradoPage() {
                     ) : (
                       <Card className="border-2 border-gray-200 shadow-sm">
                         <CardHeader className="bg-gradient-to-r from-red-50 to-red-100/50 border-b border-gray-200 px-3 sm:px-6 py-3 sm:py-4">
-                          <CardTitle className="flex items-center gap-2 text-[#168979] text-base sm:text-lg">
+                          <CardTitle className="flex items-center gap-2 text-[#0F172A] text-base sm:text-lg">
                             <Heart className="h-4 w-4 sm:h-5 sm:w-5 text-red-500" />
                             Declaração de Saúde
                           </CardTitle>
@@ -1850,7 +1674,7 @@ export default function CadastradoPage() {
                       dependentes.map((dependente, idx) => (
                         <Card key={dependente.id || idx} className="border-2 border-gray-200 shadow-sm">
                           <CardHeader className="bg-gradient-to-r from-purple-50 to-purple-100/50 border-b border-gray-200 px-3 sm:px-6 py-3 sm:py-4">
-                            <CardTitle className="flex items-center gap-2 text-[#168979] text-base sm:text-lg">
+                            <CardTitle className="flex items-center gap-2 text-[#0F172A] text-base sm:text-lg">
                               <User className="h-4 w-4 sm:h-5 sm:w-5" />
                               <span className="truncate">Dependente {idx + 1}: {dependente.nome || "Nome não informado"}</span>
                             </CardTitle>
@@ -1912,7 +1736,7 @@ export default function CadastradoPage() {
                     ) : (
                       <Card className="border-2 border-gray-200 shadow-sm">
                         <CardHeader className="bg-gradient-to-r from-purple-50 to-purple-100/50 border-b border-gray-200 px-3 sm:px-6 py-3 sm:py-4">
-                          <CardTitle className="flex items-center gap-2 text-[#168979] text-base sm:text-lg">
+                          <CardTitle className="flex items-center gap-2 text-[#0F172A] text-base sm:text-lg">
                             <User className="h-4 w-4 sm:h-5 sm:w-5" />
                             Dependentes
                           </CardTitle>
@@ -1930,14 +1754,14 @@ export default function CadastradoPage() {
         </div>
       )}
 
-      {/* Modal de cadastro manual */}
-      {showModalCadastroManual && (
+      {/* Modal de cadastro manual - REMOVIDO */}
+      {false && (
         <div 
           className="fixed inset-0 flex items-center justify-center z-[100] p-2 sm:p-4"
         >
           <div className="bg-white rounded-xl sm:rounded-2xl shadow-2xl max-w-4xl w-full max-h-[95vh] sm:max-h-[90vh] overflow-hidden flex flex-col">
             {/* Header */}
-            <div className="bg-gradient-to-r from-[#168979] to-[#13786a] px-3 sm:px-6 py-3 sm:py-4">
+            <div className="bg-gradient-to-r from-[#0F172A] to-[#1E293B] px-3 sm:px-6 py-3 sm:py-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
                   <div className="p-1.5 sm:p-2 bg-white/20 rounded-lg flex-shrink-0">
@@ -1966,7 +1790,7 @@ export default function CadastradoPage() {
               {/* Dados do Titular */}
               <Card className="border-2 border-gray-200 shadow-sm">
                 <CardHeader className="bg-gradient-to-r from-blue-50 to-blue-100/50 border-b border-gray-200 px-3 sm:px-6 py-3 sm:py-4">
-                  <CardTitle className="flex items-center gap-2 text-[#168979] text-base sm:text-lg">
+                  <CardTitle className="flex items-center gap-2 text-[#0F172A] text-base sm:text-lg">
                     <User className="h-4 w-4 sm:h-5 sm:w-5" />
                     Dados do Titular
                   </CardTitle>
@@ -1975,44 +1799,44 @@ export default function CadastradoPage() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
                     <div>
                       <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">Nome <span className="text-red-500">*</span></label>
-                      <Input value={formManual.nome} onChange={e => setFormManual({ ...formManual, nome: e.target.value })} required className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base" />
+                      <Input value={formManual.nome} onChange={e => setFormManual({ ...formManual, nome: e.target.value })} required className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base" />
                     </div>
                     <div>
                       <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">CPF <span className="text-red-500">*</span></label>
-                      <Input value={formManual.cpf} onChange={e => setFormManual({ ...formManual, cpf: e.target.value })} required className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base" />
+                      <Input value={formManual.cpf} onChange={e => setFormManual({ ...formManual, cpf: e.target.value })} required className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base" />
                     </div>
                     <div>
                       <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">Data de Nascimento <span className="text-red-500">*</span></label>
-                      <Input type="date" value={formManual.data_nascimento} onChange={e => setFormManual({ ...formManual, data_nascimento: e.target.value })} required className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base" />
+                      <Input type="date" value={formManual.data_nascimento} onChange={e => setFormManual({ ...formManual, data_nascimento: e.target.value })} required className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base" />
                     </div>
                     <div>
                       <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">E-mail <span className="text-red-500">*</span></label>
-                      <Input type="email" value={formManual.email} onChange={e => setFormManual({ ...formManual, email: e.target.value })} required className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base" />
+                      <Input type="email" value={formManual.email} onChange={e => setFormManual({ ...formManual, email: e.target.value })} required className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base" />
                     </div>
                     <div>
                       <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">Telefone <span className="text-red-500">*</span></label>
-                      <Input value={formManual.telefone} onChange={e => setFormManual({ ...formManual, telefone: e.target.value })} required className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base" />
+                      <Input value={formManual.telefone} onChange={e => setFormManual({ ...formManual, telefone: e.target.value })} required className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base" />
                     </div>
                     <div>
                       <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">CNS <span className="text-red-500">*</span></label>
-                      <Input value={formManual.cns} onChange={e => setFormManual({ ...formManual, cns: e.target.value })} required className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base" />
+                      <Input value={formManual.cns} onChange={e => setFormManual({ ...formManual, cns: e.target.value })} required className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base" />
                     </div>
                     <div>
                       <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">RG <span className="text-red-500">*</span></label>
-                      <Input value={formManual.rg} onChange={e => setFormManual({ ...formManual, rg: e.target.value })} required className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base" />
+                      <Input value={formManual.rg} onChange={e => setFormManual({ ...formManual, rg: e.target.value })} required className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base" />
                     </div>
                     <div>
                       <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">Órgão Emissor <span className="text-red-500">*</span></label>
-                      <Input value={formManual.orgao_emissor} onChange={e => setFormManual({ ...formManual, orgao_emissor: e.target.value })} required className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base" />
+                      <Input value={formManual.orgao_emissor} onChange={e => setFormManual({ ...formManual, orgao_emissor: e.target.value })} required className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base" />
                     </div>
                     <div>
                       <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">Nome da Mãe <span className="text-red-500">*</span></label>
-                      <Input value={formManual.nome_mae} onChange={e => setFormManual({ ...formManual, nome_mae: e.target.value })} required className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base" />
+                      <Input value={formManual.nome_mae} onChange={e => setFormManual({ ...formManual, nome_mae: e.target.value })} required className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base" />
                     </div>
                     <div>
                       <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">Sexo <span className="text-red-500">*</span></label>
                       <Select value={formManual.sexo} onValueChange={v => setFormManual({ ...formManual, sexo: v })} required>
-                        <SelectTrigger className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base">
+                        <SelectTrigger className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base">
                           <SelectValue placeholder="Selecione" />
                         </SelectTrigger>
                         <SelectContent>
@@ -2024,7 +1848,7 @@ export default function CadastradoPage() {
                     </div>
                     <div>
                       <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">UF de Nascimento <span className="text-red-500">*</span></label>
-                      <Input value={formManual.uf_nascimento} onChange={e => setFormManual({ ...formManual, uf_nascimento: e.target.value })} required className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base" />
+                      <Input value={formManual.uf_nascimento} onChange={e => setFormManual({ ...formManual, uf_nascimento: e.target.value })} required className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base" />
                     </div>
                   </div>
                 </CardContent>
@@ -2033,7 +1857,7 @@ export default function CadastradoPage() {
               {/* Endereço */}
               <Card className="border-2 border-gray-200 shadow-sm">
                 <CardHeader className="bg-gradient-to-r from-green-50 to-green-100/50 border-b border-gray-200 px-3 sm:px-6 py-3 sm:py-4">
-                  <CardTitle className="flex items-center gap-2 text-[#168979] text-base sm:text-lg">
+                  <CardTitle className="flex items-center gap-2 text-[#0F172A] text-base sm:text-lg">
                     <Building className="h-4 w-4 sm:h-5 sm:w-5" />
                     Endereço
                   </CardTitle>
@@ -2042,31 +1866,31 @@ export default function CadastradoPage() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
                     <div>
                       <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">CEP <span className="text-red-500">*</span></label>
-                      <Input value={formManual.cep} onChange={e => setFormManual({ ...formManual, cep: e.target.value })} required className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base" />
+                      <Input value={formManual.cep} onChange={e => setFormManual({ ...formManual, cep: e.target.value })} required className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base" />
                     </div>
                     <div className="sm:col-span-2">
                       <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">Endereço <span className="text-red-500">*</span></label>
-                      <Input value={formManual.endereco} onChange={e => setFormManual({ ...formManual, endereco: e.target.value })} required className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base" />
+                      <Input value={formManual.endereco} onChange={e => setFormManual({ ...formManual, endereco: e.target.value })} required className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base" />
                     </div>
                     <div>
                       <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">Número <span className="text-red-500">*</span></label>
-                      <Input value={formManual.numero} onChange={e => setFormManual({ ...formManual, numero: e.target.value })} required className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base" />
+                      <Input value={formManual.numero} onChange={e => setFormManual({ ...formManual, numero: e.target.value })} required className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base" />
                     </div>
                     <div>
                       <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">Complemento</label>
-                      <Input value={formManual.complemento} onChange={e => setFormManual({ ...formManual, complemento: e.target.value })} className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base" />
+                      <Input value={formManual.complemento} onChange={e => setFormManual({ ...formManual, complemento: e.target.value })} className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base" />
                     </div>
                     <div>
                       <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">Bairro <span className="text-red-500">*</span></label>
-                      <Input value={formManual.bairro} onChange={e => setFormManual({ ...formManual, bairro: e.target.value })} required className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base" />
+                      <Input value={formManual.bairro} onChange={e => setFormManual({ ...formManual, bairro: e.target.value })} required className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base" />
                     </div>
                     <div>
                       <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">Cidade <span className="text-red-500">*</span></label>
-                      <Input value={formManual.cidade} onChange={e => setFormManual({ ...formManual, cidade: e.target.value })} required className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base" />
+                      <Input value={formManual.cidade} onChange={e => setFormManual({ ...formManual, cidade: e.target.value })} required className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base" />
                     </div>
                     <div>
                       <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">Estado <span className="text-red-500">*</span></label>
-                      <Input value={formManual.estado} onChange={e => setFormManual({ ...formManual, estado: e.target.value })} required className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base" />
+                      <Input value={formManual.estado} onChange={e => setFormManual({ ...formManual, estado: e.target.value })} required className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base" />
                     </div>
                   </div>
                 </CardContent>
@@ -2075,7 +1899,7 @@ export default function CadastradoPage() {
               {/* Dados do Plano */}
               <Card className="border-2 border-gray-200 shadow-sm">
                 <CardHeader className="bg-gradient-to-r from-purple-50 to-purple-100/50 border-b border-gray-200 px-3 sm:px-6 py-3 sm:py-4">
-                  <CardTitle className="flex items-center gap-2 text-[#168979] text-base sm:text-lg">
+                  <CardTitle className="flex items-center gap-2 text-[#0F172A] text-base sm:text-lg">
                     <FileText className="h-4 w-4 sm:h-5 sm:w-5" />
                     Dados do Plano
                   </CardTitle>
@@ -2084,16 +1908,16 @@ export default function CadastradoPage() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
                     <div>
                       <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">Produto <span className="text-red-500">*</span></label>
-                      <Input value={formManual.produto_id} onChange={e => setFormManual({ ...formManual, produto_id: e.target.value })} required className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base" />
+                      <Input value={formManual.produto_id} onChange={e => setFormManual({ ...formManual, produto_id: e.target.value })} required className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base" />
                     </div>
                     <div>
                       <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">Tabela de Preços</label>
-                      <Input value={formManual.tabela_id} onChange={e => setFormManual({ ...formManual, tabela_id: e.target.value })} className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base" />
+                      <Input value={formManual.tabela_id} onChange={e => setFormManual({ ...formManual, tabela_id: e.target.value })} className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base" />
                     </div>
                     <div>
                       <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">Cobertura <span className="text-red-500">*</span></label>
                       <Select value={formManual.cobertura} onValueChange={v => setFormManual({ ...formManual, cobertura: v })} required>
-                        <SelectTrigger className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base">
+                        <SelectTrigger className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base">
                           <SelectValue placeholder="Selecione" />
                         </SelectTrigger>
                         <SelectContent>
@@ -2106,7 +1930,7 @@ export default function CadastradoPage() {
                     <div>
                       <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">Acomodação <span className="text-red-500">*</span></label>
                       <Select value={formManual.acomodacao} onValueChange={v => setFormManual({ ...formManual, acomodacao: v })} required>
-                        <SelectTrigger className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base">
+                        <SelectTrigger className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base">
                           <SelectValue placeholder="Selecione" />
                         </SelectTrigger>
                         <SelectContent>
@@ -2117,11 +1941,11 @@ export default function CadastradoPage() {
                     </div>
                     <div>
                       <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">Código do Plano <span className="text-red-500">*</span></label>
-                      <Input value={formManual.sigla_plano} onChange={e => setFormManual({ ...formManual, sigla_plano: e.target.value })} required className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base" />
+                      <Input value={formManual.sigla_plano} onChange={e => setFormManual({ ...formManual, sigla_plano: e.target.value })} required className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base" />
                     </div>
                     <div>
                       <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">Valor <span className="text-red-500">*</span></label>
-                      <Input value={formManual.valor} onChange={e => setFormManual({ ...formManual, valor: e.target.value })} required className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base" />
+                      <Input value={formManual.valor} onChange={e => setFormManual({ ...formManual, valor: e.target.value })} required className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base" />
                     </div>
                   </div>
                 </CardContent>
@@ -2130,7 +1954,7 @@ export default function CadastradoPage() {
               {/* Anexos do Titular */}
               <Card className="border-2 border-gray-200 shadow-sm">
                 <CardHeader className="bg-gradient-to-r from-blue-50 to-blue-100/50 border-b border-gray-200 px-3 sm:px-6 py-3 sm:py-4">
-                  <CardTitle className="flex items-center gap-2 text-[#168979] text-base sm:text-lg">
+                  <CardTitle className="flex items-center gap-2 text-[#0F172A] text-base sm:text-lg">
                     <FileText className="h-4 w-4 sm:h-5 sm:w-5" />
                     Anexos do Titular
                   </CardTitle>
@@ -2146,7 +1970,7 @@ export default function CadastradoPage() {
                             anexos: { ...formManual.anexos, rg_frente: e.target.files[0] }
                           })
                         }
-                      }} className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-[#168979]/10 file:text-[#168979] hover:file:bg-[#168979]/20" />
+                      }} className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-[#0F172A]/10 file:text-[#0F172A] hover:file:bg-[#0F172A]/20" />
                     </div>
                     <div>
                       <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">RG - Verso</label>
@@ -2157,7 +1981,7 @@ export default function CadastradoPage() {
                             anexos: { ...formManual.anexos, rg_verso: e.target.files[0] }
                           })
                         }
-                      }} className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-[#168979]/10 file:text-[#168979] hover:file:bg-[#168979]/20" />
+                      }} className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-[#0F172A]/10 file:text-[#0F172A] hover:file:bg-[#0F172A]/20" />
                     </div>
                     <div>
                       <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">CPF</label>
@@ -2168,7 +1992,7 @@ export default function CadastradoPage() {
                             anexos: { ...formManual.anexos, cpf: e.target.files[0] }
                           })
                         }
-                      }} className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-[#168979]/10 file:text-[#168979] hover:file:bg-[#168979]/20" />
+                      }} className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-[#0F172A]/10 file:text-[#0F172A] hover:file:bg-[#0F172A]/20" />
                     </div>
                     <div>
                       <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">Comprovante de Residência</label>
@@ -2179,7 +2003,7 @@ export default function CadastradoPage() {
                             anexos: { ...formManual.anexos, comprovante_residencia: e.target.files[0] }
                           })
                         }
-                      }} className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-[#168979]/10 file:text-[#168979] hover:file:bg-[#168979]/20" />
+                      }} className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-[#0F172A]/10 file:text-[#0F172A] hover:file:bg-[#0F172A]/20" />
                     </div>
                     <div>
                       <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">CNS</label>
@@ -2190,7 +2014,7 @@ export default function CadastradoPage() {
                             anexos: { ...formManual.anexos, cns: e.target.files[0] }
                           })
                         }
-                      }} className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-[#168979]/10 file:text-[#168979] hover:file:bg-[#168979]/20" />
+                      }} className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-[#0F172A]/10 file:text-[#0F172A] hover:file:bg-[#0F172A]/20" />
                     </div>
                   </div>
                 </CardContent>
@@ -2200,7 +2024,7 @@ export default function CadastradoPage() {
               <Card className="border-2 border-gray-200 shadow-sm">
                 <CardHeader className="bg-gradient-to-r from-purple-50 to-purple-100/50 border-b border-gray-200 px-3 sm:px-6 py-3 sm:py-4">
                   <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
-                    <CardTitle className="flex items-center gap-2 text-[#168979] text-base sm:text-lg">
+                    <CardTitle className="flex items-center gap-2 text-[#0F172A] text-base sm:text-lg">
                       <User className="h-4 w-4 sm:h-5 sm:w-5" />
                       Dependentes
                     </CardTitle>
@@ -2230,7 +2054,7 @@ export default function CadastradoPage() {
                           anexosDependentes: [...formManual.anexosDependentes, {}]
                         })
                       }}
-                      className="bg-gradient-to-r from-[#168979] to-[#13786a] hover:from-[#13786a] hover:to-[#0f6b5c] text-white font-medium text-xs sm:text-sm px-3 sm:px-4 h-9 sm:h-10"
+                      className="bg-gradient-to-r from-[#0F172A] to-[#1E293B] hover:from-[#1E293B] hover:to-[#0f6b5c] text-white font-medium text-xs sm:text-sm px-3 sm:px-4 h-9 sm:h-10"
                     >
                       + Adicionar Dependente
                     </Button>
@@ -2265,7 +2089,7 @@ export default function CadastradoPage() {
                               const novosDependentes = [...formManual.dependentes]
                               novosDependentes[index].nome = e.target.value
                               setFormManual({ ...formManual, dependentes: novosDependentes })
-                            }} required className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base" />
+                            }} required className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base" />
                           </div>
                           <div>
                             <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">CPF <span className="text-red-500">*</span></label>
@@ -2273,7 +2097,7 @@ export default function CadastradoPage() {
                               const novosDependentes = [...formManual.dependentes]
                               novosDependentes[index].cpf = e.target.value
                               setFormManual({ ...formManual, dependentes: novosDependentes })
-                            }} required className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base" />
+                            }} required className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base" />
                           </div>
                           <div>
                             <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">RG <span className="text-red-500">*</span></label>
@@ -2281,7 +2105,7 @@ export default function CadastradoPage() {
                               const novosDependentes = [...formManual.dependentes]
                               novosDependentes[index].rg = e.target.value
                               setFormManual({ ...formManual, dependentes: novosDependentes })
-                            }} required className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base" />
+                            }} required className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base" />
                           </div>
                           <div>
                             <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">Data de Nascimento <span className="text-red-500">*</span></label>
@@ -2289,7 +2113,7 @@ export default function CadastradoPage() {
                               const novosDependentes = [...formManual.dependentes]
                               novosDependentes[index].data_nascimento = e.target.value
                               setFormManual({ ...formManual, dependentes: novosDependentes })
-                            }} required className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base" />
+                            }} required className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base" />
                           </div>
                           <div>
                             <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">CNS <span className="text-red-500">*</span></label>
@@ -2297,7 +2121,7 @@ export default function CadastradoPage() {
                               const novosDependentes = [...formManual.dependentes]
                               novosDependentes[index].cns = e.target.value
                               setFormManual({ ...formManual, dependentes: novosDependentes })
-                            }} required className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base" />
+                            }} required className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base" />
                           </div>
                           <div>
                             <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">Parentesco <span className="text-red-500">*</span></label>
@@ -2305,7 +2129,7 @@ export default function CadastradoPage() {
                               const novosDependentes = [...formManual.dependentes]
                               novosDependentes[index].parentesco = e.target.value
                               setFormManual({ ...formManual, dependentes: novosDependentes })
-                            }} required className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base" />
+                            }} required className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base" />
                           </div>
                           <div>
                             <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">Nome da Mãe <span className="text-red-500">*</span></label>
@@ -2313,7 +2137,7 @@ export default function CadastradoPage() {
                               const novosDependentes = [...formManual.dependentes]
                               novosDependentes[index].nome_mae = e.target.value
                               setFormManual({ ...formManual, dependentes: novosDependentes })
-                            }} required className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base" />
+                            }} required className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base" />
                           </div>
                           <div>
                             <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">Sexo <span className="text-red-500">*</span></label>
@@ -2322,7 +2146,7 @@ export default function CadastradoPage() {
                               novosDependentes[index].sexo = v
                               setFormManual({ ...formManual, dependentes: novosDependentes })
                             }} required>
-                              <SelectTrigger className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base">
+                              <SelectTrigger className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base">
                                 <SelectValue placeholder="Selecione" />
                               </SelectTrigger>
                               <SelectContent>
@@ -2338,7 +2162,7 @@ export default function CadastradoPage() {
                               const novosDependentes = [...formManual.dependentes]
                               novosDependentes[index].uf_nascimento = e.target.value
                               setFormManual({ ...formManual, dependentes: novosDependentes })
-                            }} required className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base" />
+                            }} required className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base" />
                           </div>
                           <div>
                             <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">Órgão Emissor <span className="text-red-500">*</span></label>
@@ -2346,7 +2170,7 @@ export default function CadastradoPage() {
                               const novosDependentes = [...formManual.dependentes]
                               novosDependentes[index].orgao_emissor = e.target.value
                               setFormManual({ ...formManual, dependentes: novosDependentes })
-                            }} required className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base" />
+                            }} required className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base" />
                           </div>
                         </div>
                         {/* Anexos do Dependente */}
@@ -2362,7 +2186,7 @@ export default function CadastradoPage() {
                                   novosAnexos[index].rg_frente = e.target.files[0]
                                   setFormManual({ ...formManual, anexosDependentes: novosAnexos })
                                 }
-                              }} className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-[#168979]/10 file:text-[#168979] hover:file:bg-[#168979]/20" />
+                              }} className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-[#0F172A]/10 file:text-[#0F172A] hover:file:bg-[#0F172A]/20" />
                             </div>
                             <div>
                               <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">RG - Verso</label>
@@ -2373,7 +2197,7 @@ export default function CadastradoPage() {
                                   novosAnexos[index].rg_verso = e.target.files[0]
                                   setFormManual({ ...formManual, anexosDependentes: novosAnexos })
                                 }
-                              }} className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-[#168979]/10 file:text-[#168979] hover:file:bg-[#168979]/20" />
+                              }} className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-[#0F172A]/10 file:text-[#0F172A] hover:file:bg-[#0F172A]/20" />
                             </div>
                             <div>
                               <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">Comprovante de Residência</label>
@@ -2384,7 +2208,7 @@ export default function CadastradoPage() {
                                   novosAnexos[index].comprovante_residencia = e.target.files[0]
                                   setFormManual({ ...formManual, anexosDependentes: novosAnexos })
                                 }
-                              }} className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-[#168979]/10 file:text-[#168979] hover:file:bg-[#168979]/20" />
+                              }} className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-[#0F172A]/10 file:text-[#0F172A] hover:file:bg-[#0F172A]/20" />
                             </div>
                           </div>
                         </div>
@@ -2402,7 +2226,7 @@ export default function CadastradoPage() {
               {/* Dados de Cadastro */}
               <Card className="border-2 border-gray-200 shadow-sm">
                 <CardHeader className="bg-gradient-to-r from-amber-50 to-amber-100/50 border-b border-gray-200 px-3 sm:px-6 py-3 sm:py-4">
-                  <CardTitle className="flex items-center gap-2 text-[#168979] text-base sm:text-lg">
+                  <CardTitle className="flex items-center gap-2 text-[#0F172A] text-base sm:text-lg">
                     <CheckCircle className="h-4 w-4 sm:h-5 sm:w-5" />
                     Dados de Cadastro
                   </CardTitle>
@@ -2412,7 +2236,7 @@ export default function CadastradoPage() {
                     <div>
                       <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">Corretor Responsável <span className="text-red-500">*</span></label>
                       <Select value={formManual.corretor_id} onValueChange={v => setFormManual({ ...formManual, corretor_id: v })} required>
-                        <SelectTrigger className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base">
+                        <SelectTrigger className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base">
                           <SelectValue placeholder="Selecione o corretor" />
                         </SelectTrigger>
                         <SelectContent>
@@ -2424,24 +2248,24 @@ export default function CadastradoPage() {
                     </div>
                     <div>
                       <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">Administradora <span className="text-red-500">*</span></label>
-                      <Input value={formManual.administradora} onChange={e => setFormManual({ ...formManual, administradora: e.target.value })} required className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base" />
+                      <Input value={formManual.administradora} onChange={e => setFormManual({ ...formManual, administradora: e.target.value })} required className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base" />
                     </div>
                     <div>
                       <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">Data de Vigência <span className="text-red-500">*</span></label>
-                      <Input type="date" value={formManual.data_vigencia} onChange={e => setFormManual({ ...formManual, data_vigencia: e.target.value })} required className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base" />
+                      <Input type="date" value={formManual.data_vigencia} onChange={e => setFormManual({ ...formManual, data_vigencia: e.target.value })} required className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base" />
                     </div>
                     <div>
                       <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">Data de Vencimento <span className="text-red-500">*</span></label>
-                      <Input type="date" value={formManual.data_vencimento} onChange={e => setFormManual({ ...formManual, data_vencimento: e.target.value })} required className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base" />
+                      <Input type="date" value={formManual.data_vencimento} onChange={e => setFormManual({ ...formManual, data_vencimento: e.target.value })} required className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base" />
                     </div>
                     <div>
                       <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">Data de Cadastro <span className="text-red-500">*</span></label>
-                      <Input type="date" value={formManual.data_cadastro} onChange={e => setFormManual({ ...formManual, data_cadastro: e.target.value })} required className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base" />
+                      <Input type="date" value={formManual.data_cadastro} onChange={e => setFormManual({ ...formManual, data_cadastro: e.target.value })} required className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base" />
                     </div>
                     <div>
                       <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">Status <span className="text-red-500">*</span></label>
                       <Select value={formManual.status} onValueChange={v => setFormManual({ ...formManual, status: v })} required>
-                        <SelectTrigger className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base">
+                        <SelectTrigger className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base">
                           <SelectValue placeholder="Selecione o status" />
                         </SelectTrigger>
                         <SelectContent>
@@ -2458,7 +2282,7 @@ export default function CadastradoPage() {
               {/* Observações */}
               <Card className="border-2 border-gray-200 shadow-sm">
                 <CardHeader className="bg-gradient-to-r from-gray-50 to-gray-100/50 border-b border-gray-200 px-3 sm:px-6 py-3 sm:py-4">
-                  <CardTitle className="flex items-center gap-2 text-[#168979] text-base sm:text-lg">
+                  <CardTitle className="flex items-center gap-2 text-[#0F172A] text-base sm:text-lg">
                     <FileText className="h-4 w-4 sm:h-5 sm:w-5" />
                     Observações
                   </CardTitle>
@@ -2469,7 +2293,7 @@ export default function CadastradoPage() {
                     onChange={e => setFormManual({ ...formManual, observacoes: e.target.value })}
                     placeholder="Digite observações adicionais..."
                     rows={4}
-                    className="border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base resize-none"
+                    className="border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base resize-none"
                   />
                 </CardContent>
               </Card>
@@ -2491,7 +2315,7 @@ export default function CadastradoPage() {
                 <Button 
                   type="submit"
                   disabled={uploading}
-                  className="w-full sm:w-auto h-11 sm:h-12 px-6 sm:px-8 bg-gradient-to-r from-[#168979] to-[#13786a] hover:from-[#13786a] hover:to-[#0f6b5c] text-white font-bold shadow-lg text-sm sm:text-base"
+                  className="w-full sm:w-auto h-11 sm:h-12 px-6 sm:px-8 bg-gradient-to-r from-[#0F172A] to-[#1E293B] hover:from-[#1E293B] hover:to-[#0f6b5c] text-white font-bold shadow-lg text-sm sm:text-base"
                 >
                   {uploading ? (
                     <>
@@ -2512,4 +2336,4 @@ export default function CadastradoPage() {
       )}
     </div>
   )
-} 
+}

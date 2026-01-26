@@ -18,13 +18,13 @@ const CustomButton = React.forwardRef<HTMLButtonElement, CustomButtonProps>(
 
     // Definir classes para variantes
     const variantStyles = {
-      default: "bg-[#168979] text-white hover:bg-[#13786a]",
-      primary: "bg-[#168979] text-white hover:bg-[#13786a]",
+      default: "bg-[#0F172A] text-white hover:bg-[#1E293B]",
+      primary: "bg-[#0F172A] text-white hover:bg-[#1E293B]",
       secondary: "bg-gray-200 text-gray-800 hover:bg-gray-300",
-      outline: "border border-[#168979] text-[#168979] bg-transparent hover:bg-[#168979] hover:text-white",
+      outline: "border border-[#0F172A] text-[#0F172A] bg-transparent hover:bg-[#0F172A] hover:text-white",
       destructive: "bg-red-500 text-white hover:bg-red-600",
       ghost: "bg-transparent hover:bg-gray-100",
-      link: "text-[#168979] underline-offset-4 hover:underline bg-transparent",
+      link: "text-[#0F172A] underline-offset-4 hover:underline bg-transparent",
     }
 
     // Definir classes para tamanhos

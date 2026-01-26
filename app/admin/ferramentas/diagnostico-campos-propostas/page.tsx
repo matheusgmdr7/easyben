@@ -346,7 +346,7 @@ const dadosProposta = {
                         <div
                           key={campo.nome}
                           className={`p-3 border rounded-lg ${
-                            campo.status === "vazio" ? "border-red-200 bg-red-50" : "border-green-200 bg-green-50"
+                            campo.status === "vazio" ? "border-red-200 bg-red-50" : "border-[#7BD9F6] border-opacity-30 bg-[#7BD9F6] bg-opacity-20"
                           }`}
                         >
                           <div className="flex items-center justify-between mb-1">
@@ -354,7 +354,7 @@ const dadosProposta = {
                             {campo.status === "vazio" ? (
                               <AlertCircle className="h-4 w-4 text-red-500" />
                             ) : (
-                              <CheckCircle className="h-4 w-4 text-green-500" />
+                              <CheckCircle className="h-4 w-4 text-[#0F172A]" />
                             )}
                           </div>
                           <div className="text-xs text-muted-foreground">

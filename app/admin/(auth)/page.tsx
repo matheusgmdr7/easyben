@@ -80,12 +80,12 @@ export default function AdminDashboard() {
         {
           label: 'Propostas Recebidas',
           data: dadosPropostas,
-          backgroundColor: 'rgba(34, 197, 94, 0.1)',
-          borderColor: 'rgba(34, 197, 94, 1)',
+          backgroundColor: 'rgba(123, 217, 246, 0.1)',
+          borderColor: 'rgba(60, 74, 87, 1)',
           borderWidth: 3,
           tension: 0.4,
           fill: false,
-          pointBackgroundColor: 'rgba(34, 197, 94, 1)',
+          pointBackgroundColor: 'rgba(60, 74, 87, 1)',
           pointBorderColor: '#fff',
           pointBorderWidth: 2,
           pointRadius: 5,
@@ -93,12 +93,12 @@ export default function AdminDashboard() {
         {
           label: 'Propostas Aprovadas',
           data: dadosAprovadas,
-          backgroundColor: 'rgba(16, 185, 129, 0.1)',
-          borderColor: 'rgba(16, 185, 129, 1)',
+          backgroundColor: 'rgba(123, 217, 246, 0.15)',
+          borderColor: 'rgba(123, 217, 246, 1)',
           borderWidth: 3,
           tension: 0.4,
           fill: false,
-          pointBackgroundColor: 'rgba(16, 185, 129, 1)',
+          pointBackgroundColor: 'rgba(123, 217, 246, 1)',
           pointBorderColor: '#fff',
           pointBorderWidth: 2,
           pointRadius: 5,
@@ -166,10 +166,10 @@ export default function AdminDashboard() {
       <div className="bg-gradient-to-r from-gray-50 to-white rounded-lg border border-gray-200 shadow-sm p-4 md:p-6 mb-6">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900 tracking-tight font-sans">Dashboard Administrativo</h1>
+            <h1 className="text-2xl font-bold text-gray-900 tracking-tight" style={{ fontFamily: "'Roboto', sans-serif" }}>Dashboard Administrativo</h1>
             <p className="text-gray-600 mt-1 font-medium">Visão geral das operações e métricas da plataforma</p>
           </div>
-          <button className="bg-[#168979] hover:bg-[#13786a] text-white font-bold px-6 py-2 btn-corporate shadow-corporate">
+          <button className="bg-[#0F172A] hover:bg-[#1E293B] text-white font-bold px-6 py-2 btn-corporate shadow-corporate">
             Gerar Relatório
           </button>
         </div>
@@ -180,8 +180,8 @@ export default function AdminDashboard() {
         <div className="bg-gradient-to-br from-white to-gray-50 border border-gray-200 shadow-sm hover:shadow-lg transition-all duration-300 rounded-lg">
           <div className="flex flex-row items-center justify-between pb-3 pt-6 px-6">
             <div>
-              <h3 className="text-sm font-bold text-gray-600 uppercase tracking-wider font-sans">Leads Recebidos</h3>
-              <div className="text-3xl font-bold text-[#168979] mt-2">{leadsRecebidos}</div>
+              <h3 className="text-sm font-bold text-gray-600 uppercase tracking-wider" style={{ fontFamily: "'Roboto', sans-serif" }}>Leads Recebidos</h3>
+              <div className="text-3xl font-bold text-[#0F172A] mt-2">{leadsRecebidos}</div>
             </div>
             <div className="w-14 h-14 bg-gray-100 rounded-lg flex items-center justify-center">
               <Users className="h-6 w-6 text-gray-700" />
@@ -195,8 +195,8 @@ export default function AdminDashboard() {
         <div className="bg-gradient-to-br from-white to-gray-50 border border-gray-200 shadow-sm hover:shadow-lg transition-all duration-300 rounded-lg">
           <div className="flex flex-row items-center justify-between pb-3 pt-6 px-6">
             <div>
-              <h3 className="text-sm font-bold text-gray-600 uppercase tracking-wider font-sans">Propostas Recebidas</h3>
-              <div className="text-3xl font-bold text-[#168979] mt-2">{propostasRecebidas}</div>
+              <h3 className="text-sm font-bold text-gray-600 uppercase tracking-wider" style={{ fontFamily: "'Roboto', sans-serif" }}>Propostas Recebidas</h3>
+              <div className="text-3xl font-bold text-[#0F172A] mt-2">{propostasRecebidas}</div>
             </div>
             <div className="w-14 h-14 bg-gray-100 rounded-lg flex items-center justify-center">
               <Send className="h-6 w-6 text-gray-700" />
@@ -210,8 +210,8 @@ export default function AdminDashboard() {
         <div className="bg-gradient-to-br from-white to-gray-50 border border-gray-200 shadow-sm hover:shadow-lg transition-all duration-300 rounded-lg">
           <div className="flex flex-row items-center justify-between pb-3 pt-6 px-6">
             <div>
-              <h3 className="text-sm font-bold text-gray-600 uppercase tracking-wider font-sans">Propostas Aprovadas</h3>
-              <div className="text-3xl font-bold text-[#168979] mt-2">{propostasAprovadas}</div>
+              <h3 className="text-sm font-bold text-gray-600 uppercase tracking-wider" style={{ fontFamily: "'Roboto', sans-serif" }}>Propostas Aprovadas</h3>
+              <div className="text-3xl font-bold text-[#0F172A] mt-2">{propostasAprovadas}</div>
             </div>
             <div className="w-14 h-14 bg-gray-100 rounded-lg flex items-center justify-center">
               <Target className="h-6 w-6 text-gray-700" />
@@ -225,8 +225,8 @@ export default function AdminDashboard() {
         <div className="bg-gradient-to-br from-white to-gray-50 border border-gray-200 shadow-sm hover:shadow-lg transition-all duration-300 rounded-lg">
           <div className="flex flex-row items-center justify-between pb-3 pt-6 px-6">
             <div>
-              <h3 className="text-sm font-bold text-gray-600 uppercase tracking-wider font-sans">Corretores Ativos</h3>
-              <div className="text-3xl font-bold text-[#168979] mt-2">{corretoresAtivos}</div>
+              <h3 className="text-sm font-bold text-gray-600 uppercase tracking-wider" style={{ fontFamily: "'Roboto', sans-serif" }}>Corretores Ativos</h3>
+              <div className="text-3xl font-bold text-[#0F172A] mt-2">{corretoresAtivos}</div>
             </div>
             <div className="w-14 h-14 bg-gray-100 rounded-lg flex items-center justify-center">
               <UserCheck className="h-6 w-6 text-gray-700" />
@@ -242,10 +242,10 @@ export default function AdminDashboard() {
         <div className="xl:col-span-2 bg-gradient-to-br from-white to-gray-50 rounded-lg shadow-sm border border-gray-200 p-6">
           <div className="flex justify-between items-center mb-6 pb-3 border-b border-gray-100">
             <div>
-              <h3 className="text-lg font-bold text-gray-900 font-sans">Desempenho dos Últimos 6 Meses</h3>
+              <h3 className="text-lg font-bold text-gray-900" style={{ fontFamily: "'Roboto', sans-serif" }}>Desempenho dos Últimos 6 Meses</h3>
               <p className="text-gray-600 text-sm font-medium mt-1">Evolução de leads e propostas</p>
             </div>
-            <Link href="/admin/propostas" className="text-sm text-[#168979] hover:text-[#13786a] font-semibold btn-corporate px-3 py-1 border border-gray-200 rounded-lg">
+            <Link href="/admin/propostas" className="text-sm text-[#0F172A] hover:text-[#1E293B] font-semibold btn-corporate px-3 py-1 border border-gray-200 rounded-lg">
               Ver todas →
             </Link>
           </div>
@@ -288,10 +288,10 @@ export default function AdminDashboard() {
         <div className="bg-gradient-to-br from-white to-gray-50 rounded-lg shadow-sm border border-gray-200 p-6">
           <div className="flex justify-between items-center mb-6 pb-3 border-b border-gray-100">
             <div>
-              <h3 className="text-lg font-bold text-gray-900 font-sans">Corretores Recentes</h3>
+              <h3 className="text-lg font-bold text-gray-900" style={{ fontFamily: "'Roboto', sans-serif" }}>Corretores Recentes</h3>
               <p className="text-gray-600 text-sm font-medium mt-1">Últimos cadastros</p>
             </div>
-            <Link href="/admin/corretores" className="text-sm text-[#168979] hover:text-[#13786a] font-semibold btn-corporate px-3 py-1 border border-gray-200 rounded-lg">
+            <Link href="/admin/corretores" className="text-sm text-[#0F172A] hover:text-[#1E293B] font-semibold btn-corporate px-3 py-1 border border-gray-200 rounded-lg">
               Ver todos →
             </Link>
           </div>
@@ -305,14 +305,14 @@ export default function AdminDashboard() {
                   <UserCheck className="h-5 w-5 text-gray-700" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-bold text-gray-900 truncate font-sans">{corretor.nome}</p>
+                  <p className="text-sm font-bold text-gray-900 truncate" style={{ fontFamily: "'Roboto', sans-serif" }}>{corretor.nome}</p>
                   <p className="text-xs text-gray-600 truncate font-medium">{corretor.email}</p>
                 </div>
                 <div className="flex-shrink-0">
                   <span
                     className={`inline-flex items-center px-2.5 py-1 corporate-rounded text-xs font-semibold ${
                       corretor.status === "aprovado"
-                        ? "bg-green-100 text-green-800"
+                        ? "bg-[#7BD9F6] bg-opacity-20 text-[#0F172A]"
                         : corretor.status === "rejeitado"
                           ? "bg-red-100 text-red-800"
                           : "bg-yellow-100 text-yellow-800"
@@ -342,20 +342,20 @@ export default function AdminDashboard() {
 
       {/* Performance Indicators */}
       <div className="bg-gradient-to-r from-gray-50 to-white rounded-lg border border-gray-200 shadow-sm p-6 mb-6">
-        <h3 className="text-lg font-bold text-gray-900 mb-6 font-sans">Indicadores de Performance</h3>
+        <h3 className="text-lg font-bold text-gray-900 mb-6" style={{ fontFamily: "'Roboto', sans-serif" }}>Indicadores de Performance</h3>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="text-center bg-white rounded-lg p-4 border border-gray-100">
-            <div className="text-3xl font-bold text-[#168979] mb-2">
+            <div className="text-3xl font-bold text-[#0F172A] mb-2">
               {propostasRecebidas > 0 ? Math.round((propostasAprovadas / propostasRecebidas) * 100) : 0}%
             </div>
             <p className="text-sm text-gray-600 font-semibold">Taxa de Conversão</p>
           </div>
           <div className="text-center bg-white rounded-lg p-4 border border-gray-100">
-            <div className="text-3xl font-bold text-[#168979] mb-2">2.5h</div>
+            <div className="text-3xl font-bold text-[#0F172A] mb-2">2.5h</div>
             <p className="text-sm text-gray-600 font-semibold">Tempo Médio</p>
           </div>
           <div className="text-center bg-white rounded-lg p-4 border border-gray-100">
-            <div className="text-3xl font-bold text-[#168979] mb-2">R$ 0</div>
+            <div className="text-3xl font-bold text-[#0F172A] mb-2">R$ 0</div>
             <p className="text-sm text-gray-600 font-semibold">Volume Total</p>
           </div>
         </div>

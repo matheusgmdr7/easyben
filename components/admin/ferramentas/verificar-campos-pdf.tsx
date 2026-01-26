@@ -91,12 +91,12 @@ export function VerificarCamposPDF() {
                 </div>
               ) : resultado.temCampos ? (
                 <div className="space-y-4">
-                  <div className="bg-green-50 border border-green-200 rounded-md p-4">
+                  <div className="bg-[#7BD9F6] bg-opacity-20 border border-[#7BD9F6] border-opacity-30 rounded-md p-4">
                     <div className="flex">
-                      <CheckCircle className="h-5 w-5 text-green-500 mr-2 flex-shrink-0 mt-0.5" />
+                      <CheckCircle className="h-5 w-5 text-[#0F172A] mr-2 flex-shrink-0 mt-0.5" />
                       <div>
-                        <h4 className="text-sm font-medium text-green-800">PDF tem campos de formulário</h4>
-                        <p className="text-sm text-green-700 mt-1">
+                        <h4 className="text-sm font-medium text-[#0F172A]">PDF tem campos de formulário</h4>
+                        <p className="text-sm text-[#0F172A] mt-1">
                           Este PDF contém {resultado.totalCampos} campos de formulário que podem ser preenchidos.
                         </p>
                       </div>

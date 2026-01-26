@@ -139,9 +139,9 @@ export default function TestarUsuariosPage() {
 
       {/* Status do usuário logado */}
       {usuarioLogado && (
-        <Card className="border-green-200 bg-green-50">
+        <Card className="border-[#7BD9F6] border-opacity-30 bg-[#7BD9F6] bg-opacity-20">
           <CardHeader>
-            <CardTitle className="text-green-800">Usuário Logado</CardTitle>
+            <CardTitle className="text-[#0F172A]">Usuário Logado</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="flex items-center justify-between">

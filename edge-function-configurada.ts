@@ -75,9 +75,9 @@ serve(async (req) => {
             <style>
                 body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; }
                 .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-                .header { background: #168979; color: white; padding: 30px; text-align: center; border-radius: 8px 8px 0 0; }
+                .header { background: #0F172A; color: white; padding: 30px; text-align: center; border-radius: 8px 8px 0 0; }
                 .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 8px 8px; }
-                .highlight { background: #e8f5e8; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 5px solid #168979; }
+                .highlight { background: #e8f5e8; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 5px solid #0F172A; }
                 .info-box { background: white; padding: 15px; border-radius: 5px; margin: 15px 0; border: 1px solid #ddd; }
                 .footer { text-align: center; margin-top: 30px; color: #666; font-size: 12px; }
             </style>
@@ -127,11 +127,11 @@ serve(async (req) => {
             <style>
                 body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; }
                 .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-                .header { background: linear-gradient(135deg, #168979 0%, #13786a 100%); color: white; padding: 40px; text-align: center; border-radius: 8px 8px 0 0; }
+                .header { background: linear-gradient(135deg, #0F172A 0%, #1E293B 100%); color: white; padding: 40px; text-align: center; border-radius: 8px 8px 0 0; }
                 .content { background: #f9f9f9; padding: 40px; border-radius: 0 0 8px 8px; }
-                .button { display: inline-block; background: #168979; color: white; padding: 18px 35px; text-decoration: none; border-radius: 8px; margin: 25px 0; font-weight: bold; text-align: center; font-size: 16px; }
-                .button:hover { background: #13786a; }
-                .highlight { background: #e3f2fd; padding: 25px; border-radius: 8px; margin: 20px 0; border-left: 5px solid #168979; }
+                .button { display: inline-block; background: #0F172A; color: white; padding: 18px 35px; text-decoration: none; border-radius: 8px; margin: 25px 0; font-weight: bold; text-align: center; font-size: 16px; }
+                .button:hover { background: #1E293B; }
+                .highlight { background: #e3f2fd; padding: 25px; border-radius: 8px; margin: 20px 0; border-left: 5px solid #0F172A; }
                 .link-box { background: #f5f5f5; padding: 20px; border-radius: 8px; word-break: break-all; margin: 20px 0; border: 1px solid #ddd; }
                 .steps { background: white; padding: 20px; border-radius: 8px; margin: 20px 0; }
                 .footer { text-align: center; margin-top: 30px; color: #666; font-size: 12px; }
@@ -166,7 +166,7 @@ serve(async (req) => {
                     
                     <p><strong>🔗 Ou copie e cole este link no seu navegador:</strong></p>
                     <div class="link-box">
-                        <a href="${link}" style="color: #168979; text-decoration: none;">${link}</a>
+                        <a href="${link}" style="color: #0F172A; text-decoration: none;">${link}</a>
                     </div>
                     
                     <div style="background: #fff3cd; padding: 15px; border-radius: 5px; border-left: 4px solid #ffc107; margin: 20px 0;">

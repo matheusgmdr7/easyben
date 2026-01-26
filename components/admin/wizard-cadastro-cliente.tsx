@@ -346,14 +346,14 @@ export function WizardCadastroCliente({
     <div className="fixed inset-0 flex items-center justify-center z-[100] p-2 sm:p-4">
       <div className="bg-white rounded-xl sm:rounded-2xl shadow-2xl max-w-4xl w-full max-h-[95vh] sm:max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header com Gradiente */}
-        <div className="bg-gradient-to-r from-[#168979] to-[#13786a] px-3 sm:px-6 py-3 sm:py-4">
+        <div className="bg-gradient-to-r from-[#0F172A] to-[#1E293B] px-3 sm:px-6 py-3 sm:py-4">
           <div className="flex items-center justify-between mb-3 sm:mb-4">
             <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
               <div className="p-1.5 sm:p-2 bg-white/20 rounded-lg flex-shrink-0">
                 <User className="h-4 w-4 sm:h-6 sm:w-6 text-white" />
               </div>
               <div className="min-w-0 flex-1">
-                <h3 className="text-base sm:text-xl font-bold text-white truncate">Completar Cadastro</h3>
+                <h3 className="text-base sm:text-xl font-bold text-white truncate">Transmitir Proposta</h3>
                 <p className="text-white/80 text-xs sm:text-sm truncate">Cliente: <strong>{proposta.nome}</strong></p>
               </div>
             </div>
@@ -376,9 +376,9 @@ export function WizardCadastroCliente({
                   <div
                     className={`w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center font-bold transition-all shadow-lg text-xs sm:text-sm ${
                       etapaAtual === etapa.numero
-                        ? "bg-white text-[#168979] scale-110 ring-2 sm:ring-4 ring-white/30"
+                        ? "bg-white text-[#0F172A] scale-110 ring-2 sm:ring-4 ring-white/30"
                         : etapaAtual > etapa.numero
-                        ? "bg-white/90 text-[#168979]"
+                        ? "bg-white/90 text-[#0F172A]"
                         : "bg-white/30 text-white/70"
                     }`}
                   >
@@ -415,9 +415,9 @@ export function WizardCadastroCliente({
             {salvando && !sucesso && (
               <div className="flex flex-col items-center justify-center space-y-6 py-12">
                 <div className="relative">
-                  <Loader2 className="h-16 w-16 text-[#168979] animate-spin" />
+                  <Loader2 className="h-16 w-16 text-[#0F172A] animate-spin" />
                   <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="h-12 w-12 bg-[#168979]/20 rounded-full animate-ping opacity-75" />
+                    <div className="h-12 w-12 bg-[#0F172A]/20 rounded-full animate-ping opacity-75" />
                   </div>
                 </div>
                 <div className="text-center">
@@ -428,9 +428,9 @@ export function WizardCadastroCliente({
                     Aguarde enquanto finalizamos o cadastro do cliente.
                   </p>
                   <div className="mt-4 flex items-center justify-center space-x-2">
-                    <div className="h-2 w-2 bg-[#168979] rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                    <div className="h-2 w-2 bg-[#168979] rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                    <div className="h-2 w-2 bg-[#168979] rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                    <div className="h-2 w-2 bg-[#0F172A] rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                    <div className="h-2 w-2 bg-[#0F172A] rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                    <div className="h-2 w-2 bg-[#0F172A] rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
                   </div>
                 </div>
               </div>
@@ -440,12 +440,12 @@ export function WizardCadastroCliente({
             {sucesso && clienteId && administradoraId && (
               <div className="flex flex-col items-center justify-center space-y-6 py-12">
                 <div className="relative">
-                  <div className="h-20 w-20 bg-[#168979]/10 rounded-full flex items-center justify-center">
-                    <CheckCircle className="h-12 w-12 text-[#168979]" />
+                  <div className="h-20 w-20 bg-[#0F172A]/10 rounded-full flex items-center justify-center">
+                    <CheckCircle className="h-12 w-12 text-[#0F172A]" />
                   </div>
                   <div className="absolute -top-1 -right-1">
-                    <div className="h-6 w-6 bg-[#168979] rounded-full flex items-center justify-center animate-ping">
-                      <div className="h-4 w-4 bg-[#168979] rounded-full" />
+                    <div className="h-6 w-6 bg-[#0F172A] rounded-full flex items-center justify-center animate-ping">
+                      <div className="h-4 w-4 bg-[#0F172A] rounded-full" />
                     </div>
                   </div>
                 </div>
@@ -454,14 +454,14 @@ export function WizardCadastroCliente({
                     Cadastro realizado com sucesso!
                   </h3>
                   <p className="text-gray-600 mb-1">
-                    O cliente <strong>{proposta.nome}</strong> foi cadastrado com sucesso.
+                    A proposta de <strong>{proposta.nome}</strong> foi transmitida com sucesso.
                   </p>
                   {dados.integrarAsaas && (
                     <p className="text-sm text-gray-500 mt-2">
                       {dados.tipoFaturamento === "unica" && "Fatura única gerada no Asaas."}
                       {dados.tipoFaturamento === "recorrente" && "Assinatura recorrente criada no Asaas."}
-                      {dados.tipoFaturamento === "depois" && dados.integrarAsaas && "Cliente cadastrado no Asaas. Fatura será gerada posteriormente."}
-                      {dados.tipoFaturamento === "depois" && !dados.integrarAsaas && "Cliente cadastrado. Fatura será gerada posteriormente."}
+                      {dados.tipoFaturamento === "depois" && dados.integrarAsaas && "Proposta transmitida. Cliente cadastrado no Asaas. Fatura será gerada posteriormente."}
+                      {dados.tipoFaturamento === "depois" && !dados.integrarAsaas && "Proposta transmitida. Fatura será gerada posteriormente."}
                     </p>
                   )}
                 </div>
@@ -490,7 +490,7 @@ export function WizardCadastroCliente({
                         }
                       }, 500)
                     }}
-                    className="flex-1 bg-gradient-to-r from-[#168979] to-[#13786a] hover:from-[#13786a] hover:to-[#0f6b5c] text-white font-bold"
+                    className="flex-1 bg-gradient-to-r from-[#0F172A] to-[#1E293B] hover:from-[#1E293B] hover:to-[#0f6b5c] text-white font-bold"
                   >
                     <ExternalLink className="h-4 w-4 mr-2" />
                     Ver Cliente
@@ -507,7 +507,7 @@ export function WizardCadastroCliente({
               <div className="space-y-6">
                 <div className="space-y-4">
                   <h4 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-                    <Building className="h-5 w-5 text-[#168979]" />
+                    <Building className="h-5 w-5 text-[#0F172A]" />
                     Dados Básicos
                   </h4>
                   
@@ -520,7 +520,7 @@ export function WizardCadastroCliente({
                         value={dados.administradora}
                         onValueChange={(value) => setDados({ ...dados, administradora: value })}
                       >
-                        <SelectTrigger className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base">
+                        <SelectTrigger className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base">
                           <SelectValue placeholder="Selecione uma administradora..." />
                         </SelectTrigger>
                         <SelectContent>
@@ -541,7 +541,7 @@ export function WizardCadastroCliente({
                         type="date"
                         value={dados.dataVencimento}
                         onChange={(e) => setDados({ ...dados, dataVencimento: e.target.value })}
-                        className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base"
+                        className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base"
                       />
                       {proposta.data_vencimento && (
                         <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-700">
@@ -563,7 +563,7 @@ export function WizardCadastroCliente({
                         type="date"
                         value={dados.dataVigencia}
                         onChange={(e) => setDados({ ...dados, dataVigencia: e.target.value })}
-                        className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base"
+                        className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base"
                       />
                     </div>
 
@@ -577,7 +577,7 @@ export function WizardCadastroCliente({
                         value={dados.valorMensal}
                         onChange={(e) => setDados({ ...dados, valorMensal: parseFloat(e.target.value) })}
                         placeholder="0.00"
-                        className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base"
+                        className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base"
                       />
                       <div className="mt-2 p-3 bg-amber-50 border border-amber-200 rounded-lg">
                         <p className="text-sm text-amber-800">
@@ -596,7 +596,7 @@ export function WizardCadastroCliente({
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <h4 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-                      <User className="h-5 w-5 text-[#168979]" />
+                      <User className="h-5 w-5 text-[#0F172A]" />
                       Cadastro no Asaas
                     </h4>
                     <div className="flex items-center gap-2">
@@ -618,7 +618,7 @@ export function WizardCadastroCliente({
                           value={dados.clienteNome}
                           onChange={(e) => setDados({ ...dados, clienteNome: e.target.value })}
                           placeholder="Nome completo do cliente"
-                          className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base"
+                          className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base"
                         />
                       </div>
 
@@ -631,7 +631,7 @@ export function WizardCadastroCliente({
                           value={dados.clienteEmail}
                           onChange={(e) => setDados({ ...dados, clienteEmail: e.target.value })}
                           placeholder="email@exemplo.com"
-                          className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base"
+                          className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base"
                         />
                       </div>
 
@@ -643,7 +643,7 @@ export function WizardCadastroCliente({
                           value={dados.clienteTelefone}
                           onChange={(e) => setDados({ ...dados, clienteTelefone: e.target.value })}
                           placeholder="(00) 00000-0000"
-                          className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base"
+                          className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base"
                         />
                       </div>
 
@@ -655,7 +655,7 @@ export function WizardCadastroCliente({
                           value={dados.clienteCpf}
                           onChange={(e) => setDados({ ...dados, clienteCpf: e.target.value })}
                           placeholder="000.000.000-00"
-                          className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base"
+                          className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base"
                         />
                       </div>
 
@@ -667,7 +667,7 @@ export function WizardCadastroCliente({
                           value={dados.clienteCep}
                           onChange={(e) => setDados({ ...dados, clienteCep: e.target.value })}
                           placeholder="00000-000"
-                          className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base"
+                          className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base"
                         />
                       </div>
 
@@ -679,7 +679,7 @@ export function WizardCadastroCliente({
                           value={dados.clienteEndereco}
                           onChange={(e) => setDados({ ...dados, clienteEndereco: e.target.value })}
                           placeholder="Rua, Avenida, etc"
-                          className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base"
+                          className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base"
                         />
                       </div>
 
@@ -691,7 +691,7 @@ export function WizardCadastroCliente({
                           value={dados.clienteNumero}
                           onChange={(e) => setDados({ ...dados, clienteNumero: e.target.value })}
                           placeholder="123"
-                          className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base"
+                          className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base"
                         />
                       </div>
 
@@ -703,7 +703,7 @@ export function WizardCadastroCliente({
                           value={dados.clienteBairro}
                           onChange={(e) => setDados({ ...dados, clienteBairro: e.target.value })}
                           placeholder="Bairro"
-                          className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base"
+                          className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base"
                         />
                       </div>
 
@@ -715,7 +715,7 @@ export function WizardCadastroCliente({
                           value={dados.clienteCidade}
                           onChange={(e) => setDados({ ...dados, clienteCidade: e.target.value })}
                           placeholder="Cidade"
-                          className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base"
+                          className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base"
                         />
                       </div>
 
@@ -728,7 +728,7 @@ export function WizardCadastroCliente({
                           onChange={(e) => setDados({ ...dados, clienteEstado: e.target.value })}
                           placeholder="UF"
                           maxLength={2}
-                          className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base"
+                          className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base"
                         />
                       </div>
                     </div>
@@ -737,7 +737,7 @@ export function WizardCadastroCliente({
                   {!dados.integrarAsaas && (
                     <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
                       <p className="text-sm text-yellow-800">
-                        ⚠️ O cliente não será cadastrado no Asaas. Você não poderá gerar faturas automaticamente.
+                        ⚠️ O cliente não será cadastrado no Asaas. Você não poderá gerar faturas automaticamente. A proposta será transmitida normalmente.
                       </p>
                     </div>
                   )}
@@ -750,7 +750,7 @@ export function WizardCadastroCliente({
               <div className="space-y-6">
                 <div className="space-y-4">
                   <h4 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-                    <CreditCard className="h-5 w-5 text-[#168979]" />
+                    <CreditCard className="h-5 w-5 text-[#0F172A]" />
                     Tipo de Faturamento
                   </h4>
                 
@@ -769,13 +769,13 @@ export function WizardCadastroCliente({
                         disabled={!dados.integrarAsaas}
                         className={`p-6 border-2 rounded-xl transition-all text-left shadow-sm ${
                           dados.tipoFaturamento === "unica"
-                            ? "border-[#168979] bg-[#168979]/5 ring-2 ring-[#168979]/20"
+                            ? "border-[#0F172A] bg-[#0F172A]/5 ring-2 ring-[#0F172A]/20"
                             : "border-gray-200 hover:border-gray-300 hover:shadow-md"
                         } ${!dados.integrarAsaas ? "opacity-50 cursor-not-allowed" : ""}`}
                       >
                         <div className="flex items-center gap-3 mb-2">
-                          <div className={`p-2 rounded-lg ${dados.tipoFaturamento === "unica" ? "bg-[#168979]/10" : "bg-gray-100"}`}>
-                            <FileText className={`h-6 w-6 ${dados.tipoFaturamento === "unica" ? "text-[#168979]" : "text-gray-400"}`} />
+                          <div className={`p-2 rounded-lg ${dados.tipoFaturamento === "unica" ? "bg-[#0F172A]/10" : "bg-gray-100"}`}>
+                            <FileText className={`h-6 w-6 ${dados.tipoFaturamento === "unica" ? "text-[#0F172A]" : "text-gray-400"}`} />
                           </div>
                           <h4 className="font-bold text-lg text-gray-900">Fatura Única</h4>
                         </div>
@@ -790,13 +790,13 @@ export function WizardCadastroCliente({
                         disabled={!dados.integrarAsaas}
                         className={`p-6 border-2 rounded-xl transition-all text-left shadow-sm ${
                           dados.tipoFaturamento === "recorrente"
-                            ? "border-[#168979] bg-[#168979]/5 ring-2 ring-[#168979]/20"
+                            ? "border-[#0F172A] bg-[#0F172A]/5 ring-2 ring-[#0F172A]/20"
                             : "border-gray-200 hover:border-gray-300 hover:shadow-md"
                         } ${!dados.integrarAsaas ? "opacity-50 cursor-not-allowed" : ""}`}
                       >
                         <div className="flex items-center gap-3 mb-2">
-                          <div className={`p-2 rounded-lg ${dados.tipoFaturamento === "recorrente" ? "bg-[#168979]/10" : "bg-gray-100"}`}>
-                            <RefreshCw className={`h-6 w-6 ${dados.tipoFaturamento === "recorrente" ? "text-[#168979]" : "text-gray-400"}`} />
+                          <div className={`p-2 rounded-lg ${dados.tipoFaturamento === "recorrente" ? "bg-[#0F172A]/10" : "bg-gray-100"}`}>
+                            <RefreshCw className={`h-6 w-6 ${dados.tipoFaturamento === "recorrente" ? "text-[#0F172A]" : "text-gray-400"}`} />
                           </div>
                           <h4 className="font-bold text-lg text-gray-900">Recorrente</h4>
                         </div>
@@ -810,13 +810,13 @@ export function WizardCadastroCliente({
                         onClick={() => setDados({ ...dados, tipoFaturamento: "depois" })}
                         className={`p-6 border-2 rounded-xl transition-all text-left shadow-sm ${
                           dados.tipoFaturamento === "depois"
-                            ? "border-[#168979] bg-[#168979]/5 ring-2 ring-[#168979]/20"
+                            ? "border-[#0F172A] bg-[#0F172A]/5 ring-2 ring-[#0F172A]/20"
                             : "border-gray-200 hover:border-gray-300 hover:shadow-md"
                         }`}
                       >
                         <div className="flex items-center gap-3 mb-2">
-                          <div className={`p-2 rounded-lg ${dados.tipoFaturamento === "depois" ? "bg-[#168979]/10" : "bg-gray-100"}`}>
-                            <Clock className={`h-6 w-6 ${dados.tipoFaturamento === "depois" ? "text-[#168979]" : "text-gray-400"}`} />
+                          <div className={`p-2 rounded-lg ${dados.tipoFaturamento === "depois" ? "bg-[#0F172A]/10" : "bg-gray-100"}`}>
+                            <Clock className={`h-6 w-6 ${dados.tipoFaturamento === "depois" ? "text-[#0F172A]" : "text-gray-400"}`} />
                           </div>
                           <h4 className="font-bold text-lg text-gray-900">Gerar Fatura Depois</h4>
                         </div>
@@ -834,7 +834,7 @@ export function WizardCadastroCliente({
               <div className="space-y-6">
                 <div className="space-y-4">
                   <h4 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-                    <FileText className="h-5 w-5 text-[#168979]" />
+                    <FileText className="h-5 w-5 text-[#0F172A]" />
                     Configuração da Fatura Única
                   </h4>
 
@@ -847,7 +847,7 @@ export function WizardCadastroCliente({
                         value={dados.faturaDescricao}
                         onChange={(e) => setDados({ ...dados, faturaDescricao: e.target.value })}
                         placeholder="Ex: Mensalidade Plano Saúde - Taxa Administrativa: 5,00"
-                        className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base"
+                        className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base"
                       />
                     </div>
 
@@ -859,7 +859,7 @@ export function WizardCadastroCliente({
                         type="date"
                         value={dados.faturaVencimento || dados.dataVencimento}
                         onChange={(e) => setDados({ ...dados, faturaVencimento: e.target.value })}
-                        className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base"
+                        className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base"
                       />
                     </div>
 
@@ -873,7 +873,7 @@ export function WizardCadastroCliente({
                         value={dados.faturaValor}
                         onChange={(e) => setDados({ ...dados, faturaValor: parseFloat(e.target.value) })}
                         placeholder="0.00"
-                        className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base"
+                        className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base"
                       />
                       <div className="mt-2 p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">
                         ⚠️ Lembre-se de incluir a Taxa Administrativa de <strong>R$ 5,00</strong>
@@ -890,7 +890,7 @@ export function WizardCadastroCliente({
                         max="31"
                         value={dados.faturaDiaVencimento}
                         onChange={(e) => setDados({ ...dados, faturaDiaVencimento: parseInt(e.target.value) })}
-                        className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base"
+                        className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base"
                       />
                     </div>
 
@@ -904,7 +904,7 @@ export function WizardCadastroCliente({
                         value={dados.faturaJuros}
                         onChange={(e) => setDados({ ...dados, faturaJuros: parseFloat(e.target.value) })}
                         placeholder="2.00"
-                        className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base"
+                        className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base"
                       />
                     </div>
 
@@ -918,7 +918,7 @@ export function WizardCadastroCliente({
                         value={dados.faturaMulta}
                         onChange={(e) => setDados({ ...dados, faturaMulta: parseFloat(e.target.value) })}
                         placeholder="2.00"
-                        className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base"
+                        className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base"
                       />
                     </div>
 
@@ -932,7 +932,7 @@ export function WizardCadastroCliente({
                         value={dados.faturaDesconto}
                         onChange={(e) => setDados({ ...dados, faturaDesconto: parseFloat(e.target.value) })}
                         placeholder="0.00"
-                        className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base"
+                        className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base"
                       />
                     </div>
 
@@ -945,7 +945,7 @@ export function WizardCadastroCliente({
                         onChange={(e) => setDados({ ...dados, faturaObservacoes: e.target.value })}
                         placeholder="Observações adicionais para a fatura..."
                         rows={3}
-                        className="border-2 border-gray-200 focus:border-[#168979] rounded-lg"
+                        className="border-2 border-gray-200 focus:border-[#0F172A] rounded-lg"
                       />
                     </div>
                   </div>
@@ -958,7 +958,7 @@ export function WizardCadastroCliente({
               <div className="space-y-6">
                 <div className="space-y-4">
                   <h4 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-                    <RefreshCw className="h-5 w-5 text-[#168979]" />
+                    <RefreshCw className="h-5 w-5 text-[#0F172A]" />
                     Configuração da Assinatura Recorrente
                   </h4>
 
@@ -971,7 +971,7 @@ export function WizardCadastroCliente({
                         value={dados.assinaturaDescricao}
                         onChange={(e) => setDados({ ...dados, assinaturaDescricao: e.target.value })}
                         placeholder="Ex: Mensalidade Plano Saúde - Taxa Administrativa: 5,00"
-                        className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base"
+                        className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base"
                       />
                       <p className="text-xs text-gray-500 mt-1">
                         Esta descrição aparecerá em todas as faturas geradas pela assinatura
@@ -988,7 +988,7 @@ export function WizardCadastroCliente({
                         value={dados.assinaturaValor}
                         onChange={(e) => setDados({ ...dados, assinaturaValor: parseFloat(e.target.value) })}
                         placeholder="0.00"
-                        className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base"
+                        className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base"
                       />
                       <div className="mt-2 p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">
                         ⚠️ Lembre-se de incluir a Taxa Administrativa de <strong>R$ 5,00</strong>
@@ -1006,7 +1006,7 @@ export function WizardCadastroCliente({
                         value={dados.assinaturaDiaVencimento}
                         onChange={(e) => setDados({ ...dados, assinaturaDiaVencimento: parseInt(e.target.value) })}
                         placeholder="10"
-                        className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base"
+                        className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base"
                       />
                     </div>
 
@@ -1018,7 +1018,7 @@ export function WizardCadastroCliente({
                         value={dados.assinaturaCiclo}
                         onValueChange={(value: any) => setDados({ ...dados, assinaturaCiclo: value })}
                       >
-                        <SelectTrigger className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base">
+                        <SelectTrigger className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
@@ -1040,7 +1040,7 @@ export function WizardCadastroCliente({
                         value={dados.assinaturaJuros}
                         onChange={(e) => setDados({ ...dados, assinaturaJuros: parseFloat(e.target.value) })}
                         placeholder="2.00"
-                        className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base"
+                        className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base"
                       />
                     </div>
 
@@ -1054,7 +1054,7 @@ export function WizardCadastroCliente({
                         value={dados.assinaturaMulta}
                         onChange={(e) => setDados({ ...dados, assinaturaMulta: parseFloat(e.target.value) })}
                         placeholder="2.00"
-                        className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base"
+                        className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base"
                       />
                     </div>
 
@@ -1066,7 +1066,7 @@ export function WizardCadastroCliente({
                         type="date"
                         value={dados.assinaturaDataInicio}
                         onChange={(e) => setDados({ ...dados, assinaturaDataInicio: e.target.value })}
-                        className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base"
+                        className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base"
                       />
                     </div>
 
@@ -1078,7 +1078,7 @@ export function WizardCadastroCliente({
                         type="date"
                         value={dados.assinaturaDataFim}
                         onChange={(e) => setDados({ ...dados, assinaturaDataFim: e.target.value })}
-                        className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base"
+                        className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg text-sm sm:text-base"
                       />
                     </div>
                   </div>
@@ -1097,15 +1097,15 @@ export function WizardCadastroCliente({
               <div className="space-y-6">
                 <div className="space-y-4">
                   <h4 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-                    <CheckCircle className="h-5 w-5 text-[#168979]" />
+                    <CheckCircle className="h-5 w-5 text-[#0F172A]" />
                     Revisão e Confirmação
                   </h4>
 
                   {/* Resumo Dados Básicos */}
                   <div className="p-6 bg-gradient-to-r from-gray-50 to-gray-100 border border-gray-200 rounded-xl">
                     <div className="flex items-center gap-3 mb-4">
-                      <div className="p-2 bg-[#168979]/10 rounded-lg">
-                        <Building className="h-5 w-5 text-[#168979]" />
+                      <div className="p-2 bg-[#0F172A]/10 rounded-lg">
+                        <Building className="h-5 w-5 text-[#0F172A]" />
                       </div>
                       <h4 className="font-bold text-gray-900">Dados Básicos</h4>
                     </div>
@@ -1163,29 +1163,29 @@ export function WizardCadastroCliente({
 
                   {/* Resumo Fatura */}
                   {dados.tipoFaturamento === "unica" && dados.integrarAsaas && (
-                    <div className="p-6 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-xl">
+                    <div className="p-6 bg-gradient-to-r from-green-50 to-emerald-50 border border-[#7BD9F6] border-opacity-30 rounded-xl">
                       <div className="flex items-center gap-3 mb-4">
-                        <div className="p-2 bg-green-100 rounded-lg">
-                          <FileText className="h-5 w-5 text-green-600" />
+                        <div className="p-2 bg-[#7BD9F6] bg-opacity-30 rounded-lg">
+                          <FileText className="h-5 w-5 text-[#0F172A]" />
                         </div>
-                        <h4 className="font-bold text-green-900">Fatura Única</h4>
+                        <h4 className="font-bold text-[#0F172A]">Fatura Única</h4>
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
                         <div className="bg-white/60 rounded-lg p-3">
-                          <div className="font-semibold text-green-800 mb-1">Descrição</div>
-                          <div className="text-green-900">{dados.faturaDescricao}</div>
+                          <div className="font-semibold text-[#0F172A] mb-1">Descrição</div>
+                          <div className="text-[#0F172A]">{dados.faturaDescricao}</div>
                         </div>
                         <div className="bg-white/60 rounded-lg p-3">
-                          <div className="font-semibold text-green-800 mb-1">Valor</div>
-                          <div className="text-green-900">R$ {dados.faturaValor.toFixed(2)}</div>
+                          <div className="font-semibold text-[#0F172A] mb-1">Valor</div>
+                          <div className="text-[#0F172A]">R$ {dados.faturaValor.toFixed(2)}</div>
                         </div>
                         <div className="bg-white/60 rounded-lg p-3">
-                          <div className="font-semibold text-green-800 mb-1">Vencimento</div>
-                          <div className="text-green-900">{new Date((dados.faturaVencimento || dados.dataVencimento) + 'T00:00:00').toLocaleDateString('pt-BR')}</div>
+                          <div className="font-semibold text-[#0F172A] mb-1">Vencimento</div>
+                          <div className="text-[#0F172A]">{new Date((dados.faturaVencimento || dados.dataVencimento) + 'T00:00:00').toLocaleDateString('pt-BR')}</div>
                         </div>
                         <div className="bg-white/60 rounded-lg p-3">
-                          <div className="font-semibold text-green-800 mb-1">Juros / Multa</div>
-                          <div className="text-green-900">{dados.faturaJuros}% / {dados.faturaMulta}%</div>
+                          <div className="font-semibold text-[#0F172A] mb-1">Juros / Multa</div>
+                          <div className="text-[#0F172A]">{dados.faturaJuros}% / {dados.faturaMulta}%</div>
                         </div>
                       </div>
                     </div>
@@ -1235,7 +1235,7 @@ export function WizardCadastroCliente({
                         <h4 className="font-bold text-amber-900">Fatura Será Gerada Depois</h4>
                       </div>
                       <div className="space-y-2 text-sm text-amber-800">
-                        <p>O cliente será cadastrado no sistema{dados.integrarAsaas && " e no Asaas"}, mas a fatura será gerada posteriormente.</p>
+                        <p>A proposta será transmitida{dados.integrarAsaas && " e o cliente será cadastrado no Asaas"}, mas a fatura será gerada posteriormente.</p>
                         <p className="mt-2 font-semibold">Você poderá gerar a fatura a qualquer momento na página do cliente.</p>
                       </div>
                     </div>
@@ -1286,7 +1286,7 @@ export function WizardCadastroCliente({
               <Button
                 onClick={proximaEtapa}
                 disabled={!podeAvancar() || salvando}
-                className="w-full sm:w-auto h-11 sm:h-12 px-6 sm:px-8 bg-gradient-to-r from-[#168979] to-[#13786a] hover:from-[#13786a] hover:to-[#0f6b5c] text-white font-bold shadow-lg text-sm sm:text-base"
+                className="w-full sm:w-auto h-11 sm:h-12 px-6 sm:px-8 bg-gradient-to-r from-[#0F172A] to-[#1E293B] hover:from-[#1E293B] hover:to-[#0f6b5c] text-white font-bold shadow-lg text-sm sm:text-base"
               >
                 Próximo
                 <ArrowRight className="h-4 w-4 ml-2" />
@@ -1295,7 +1295,7 @@ export function WizardCadastroCliente({
               <Button
                 onClick={finalizarCadastro}
                 disabled={salvando}
-                className="w-full sm:w-auto h-11 sm:h-12 px-6 sm:px-8 bg-gradient-to-r from-[#168979] to-[#13786a] hover:from-[#13786a] hover:to-[#0f6b5c] text-white font-bold shadow-lg text-sm sm:text-base"
+                className="w-full sm:w-auto h-11 sm:h-12 px-6 sm:px-8 bg-gradient-to-r from-[#0F172A] to-[#1E293B] hover:from-[#1E293B] hover:to-[#0f6b5c] text-white font-bold shadow-lg text-sm sm:text-base"
               >
                 <CheckCircle className="h-4 w-4 mr-2" />
                 Finalizar Cadastro

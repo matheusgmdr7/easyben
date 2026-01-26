@@ -9,13 +9,16 @@ import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { toast } from "sonner"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { AlertCircle } from "lucide-react"
+import { AlertCircle, Eye, EyeOff } from "lucide-react"
 import { signInAdmin } from "@/lib/supabase-auth"
 
 export default function AdminLogin() {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [mostrarSenha, setMostrarSenha] = useState(false)
+  // Logo será carregada da configuração do sistema/tenant (configurada no painel EasyBen)
+  const [logoUrl] = useState<string | null>(null)
   const [formData, setFormData] = useState({
     email: "",
     password: "",
@@ -47,7 +50,18 @@ export default function AdminLogin() {
     <div className="min-h-screen flex items-center justify-center bg-gray-100">
       <Card className="w-[400px]">
         <CardHeader>
+          <div className="flex items-center justify-center gap-3 sm:gap-4 md:gap-5 mb-2">
+            {logoUrl && (
+              <div className="relative w-20 h-20 sm:w-24 sm:h-24 md:w-28 md:h-28 flex-shrink-0">
+                <img
+                  src={logoUrl}
+                  alt="Logo"
+                  className="w-full h-full object-contain"
+                />
+              </div>
+            )}
           <CardTitle>Login Administrativo</CardTitle>
+          </div>
           <CardDescription>Entre com suas credenciais para acessar o painel</CardDescription>
         </CardHeader>
         <CardContent>
@@ -61,7 +75,7 @@ export default function AdminLogin() {
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="email" className="font-semibold">Email</Label>
               <Input
                 id="email"
                 type="email"
@@ -69,17 +83,29 @@ export default function AdminLogin() {
                 value={formData.email}
                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                 required
+                className="border-2 border-gray-300"
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="password">Senha</Label>
+              <Label htmlFor="password" className="font-semibold">Senha</Label>
+              <div className="relative">
               <Input
                 id="password"
-                type="password"
+                  type={mostrarSenha ? "text" : "password"}
                 value={formData.password}
                 onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                  className="pr-10 border-2 border-gray-300"
+                  placeholder="Digite sua senha"
                 required
               />
+                <button
+                  type="button"
+                  onClick={() => setMostrarSenha(!mostrarSenha)}
+                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                >
+                  {mostrarSenha ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                </button>
+              </div>
             </div>
             <Button type="submit" className="w-full" disabled={loading}>
               {loading ? "Entrando..." : "Entrar"}

@@ -2,6 +2,8 @@ import type React from "react"
 import type { Metadata } from "next"
 import "./globals.css"
 import MetaPixel from "@/components/meta-pixel"
+import { TenantProvider } from "@/lib/tenant-context"
+import { TenantThemeProvider } from "@/components/theme-provider-tenant"
 
 export const metadata: Metadata = {
   title: "Contratando Planos",
@@ -20,6 +22,10 @@ export default function RootLayout({
   return (
     <html lang="pt-BR">
       <head>
+        {/* Google Fonts - Roboto (comum em sistemas Java/enterprise) */}
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet" />
         {/* Meta Pixel Code */}
         <script
           dangerouslySetInnerHTML={{
@@ -48,10 +54,14 @@ export default function RootLayout({
         {/* End Meta Pixel Code */}
       </head>
       <body>
-        {process.env.NEXT_PUBLIC_META_PIXEL_ID && (
-          <MetaPixel pixelId={process.env.NEXT_PUBLIC_META_PIXEL_ID} />
-        )}
-        {children}
+        <TenantProvider>
+          <TenantThemeProvider>
+            {process.env.NEXT_PUBLIC_META_PIXEL_ID && (
+              <MetaPixel pixelId={process.env.NEXT_PUBLIC_META_PIXEL_ID} />
+            )}
+            {children}
+          </TenantThemeProvider>
+        </TenantProvider>
       </body>
     </html>
   )

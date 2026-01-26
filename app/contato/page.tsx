@@ -12,7 +12,7 @@ export default function ContatoPage() {
 
       <main className="flex-grow">
         {/* Hero Section */}
-        <section className="bg-[#168979] text-white py-12 md:py-16">
+        <section className="bg-[#0F172A] text-white py-12 md:py-16">
           <div className="container px-4 md:px-6">
             <div className="max-w-3xl mx-auto text-center">
               <h1 className="text-3xl md:text-4xl font-bold mb-4">Entre em Contato</h1>
@@ -36,7 +36,7 @@ export default function ContatoPage() {
                   </CardHeader>
                   <CardContent className="space-y-6">
                     <div className="flex items-start">
-                      <Mail className="h-5 w-5 text-[#168979] mr-3 mt-0.5 flex-shrink-0" />
+                      <Mail className="h-5 w-5 text-[#0F172A] mr-3 mt-0.5 flex-shrink-0" />
                       <div>
                         <p className="font-medium">E-mail</p>
                         <p className="text-gray-600 break-words">contato@contratandoplanos.com.br</p>
@@ -44,7 +44,7 @@ export default function ContatoPage() {
                     </div>
 
                     <div className="flex items-start">
-                      <Instagram className="h-5 w-5 text-[#168979] mr-3 mt-0.5 flex-shrink-0" />
+                      <Instagram className="h-5 w-5 text-[#0F172A] mr-3 mt-0.5 flex-shrink-0" />
                       <div>
                         <p className="font-medium">Instagram</p>
                         <p className="text-gray-600">@contratandoplanos</p>
@@ -52,7 +52,7 @@ export default function ContatoPage() {
                     </div>
 
                     <div className="flex items-start">
-                      <Clock className="h-5 w-5 text-[#168979] mr-3 mt-0.5 flex-shrink-0" />
+                      <Clock className="h-5 w-5 text-[#0F172A] mr-3 mt-0.5 flex-shrink-0" />
                       <div>
                         <p className="font-medium">Horário de Atendimento</p>
                         <p className="text-gray-600">
@@ -101,7 +101,7 @@ export default function ContatoPage() {
         <section className="py-12 bg-gray-50">
           <div className="container px-4 md:px-6">
             <div className="max-w-4xl mx-auto">
-              <h2 className="text-2xl md:text-3xl font-bold text-center mb-8 text-[#168979]">Perguntas Frequentes</h2>
+              <h2 className="text-2xl md:text-3xl font-bold text-center mb-8 text-[#0F172A]">Perguntas Frequentes</h2>
 
               <div className="space-y-6">
                 <Card>

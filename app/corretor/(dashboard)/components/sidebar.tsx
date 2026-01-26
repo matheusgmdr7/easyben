@@ -87,7 +87,7 @@ export function Sidebar({ className }: SidebarProps) {
                       className={cn(
                         "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
                         route.active
-                          ? "bg-[#168979] text-white"
+                          ? "bg-[#0F172A] text-white"
                           : "text-gray-600 hover:bg-gray-100 hover:text-gray-900",
                       )}
                     >
@@ -126,7 +126,7 @@ export function Sidebar({ className }: SidebarProps) {
                     href={route.href}
                     className={cn(
                       "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
-                      route.active ? "bg-[#168979] text-white" : "text-gray-600 hover:bg-gray-100 hover:text-gray-900",
+                      route.active ? "bg-[#0F172A] text-white" : "text-gray-600 hover:bg-gray-100 hover:text-gray-900",
                     )}
                   >
                     <route.icon className={cn("h-4 w-4", route.active ? "text-white" : "text-gray-500")} />

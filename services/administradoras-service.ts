@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase"
+import { getCurrentTenantId } from "@/lib/tenant-query-helper"
 
 export interface Administradora {
   id: string
@@ -6,11 +7,11 @@ export interface Administradora {
   cnpj: string
   email?: string
   telefone?: string
-  status: "ativa" | "inativa" | "suspensa"
   observacoes?: string
+  status: "ativa" | "inativa"
+  tenant_id?: string
   created_at?: string
   updated_at?: string
-  created_by?: string
 }
 
 export interface CriarAdministradoraData {
@@ -21,17 +22,15 @@ export interface CriarAdministradoraData {
   observacoes?: string
 }
 
+export interface AtualizarAdministradoraData extends Partial<CriarAdministradoraData> {}
+
 export interface ConfiguracaoFinanceira {
-  id: string
+  id?: string
   administradora_id: string
-  instituicao_financeira?: string
-  api_key?: string
-  api_token?: string
-  ambiente: "sandbox" | "producao"
-  status_integracao: "ativa" | "inativa" | "erro" | "configurando"
-  ultima_sincronizacao?: string
-  mensagem_erro?: string
-  configuracoes_adicionais?: any
+  taxa_administracao?: number
+  dias_vencimento?: number
+  forma_pagamento?: string
+  observacoes?: string
   created_at?: string
   updated_at?: string
 }
@@ -41,24 +40,20 @@ export interface ConfiguracaoFinanceira {
  */
 export class AdministradorasService {
   /**
-   * Buscar todas as administradoras
+   * Buscar todas as administradoras do tenant
    */
-  static async buscarTodas(filtros?: {
-    status?: string
-    nome?: string
-  }): Promise<Administradora[]> {
+  static async buscarTodas(filtros?: { status?: string }): Promise<Administradora[]> {
     try {
+      const tenantId = await getCurrentTenantId()
+      
       let query = supabase
         .from("administradoras")
         .select("*")
+        .eq("tenant_id", tenantId)
         .order("nome", { ascending: true })
 
       if (filtros?.status) {
         query = query.eq("status", filtros.status)
-      }
-
-      if (filtros?.nome) {
-        query = query.ilike("nome", `%${filtros.nome}%`)
       }
 
       const { data, error } = await query
@@ -69,7 +64,7 @@ export class AdministradorasService {
       }
 
       return data || []
-    } catch (error) {
+    } catch (error: any) {
       console.error("❌ Erro ao buscar administradoras:", error)
       throw error
     }
@@ -78,12 +73,15 @@ export class AdministradorasService {
   /**
    * Buscar administradora por ID
    */
-  static async buscarPorId(id: string): Promise<Administradora | null> {
+  static async buscarPorId(id: string): Promise<Administradora> {
     try {
+      const tenantId = await getCurrentTenantId()
+      
       const { data, error } = await supabase
         .from("administradoras")
         .select("*")
         .eq("id", id)
+        .eq("tenant_id", tenantId)
         .single()
 
       if (error) {
@@ -91,8 +89,12 @@ export class AdministradorasService {
         throw error
       }
 
+      if (!data) {
+        throw new Error("Administradora não encontrada")
+      }
+
       return data
-    } catch (error) {
+    } catch (error: any) {
       console.error("❌ Erro ao buscar administradora:", error)
       throw error
     }
@@ -103,17 +105,15 @@ export class AdministradorasService {
    */
   static async criar(dados: CriarAdministradoraData): Promise<Administradora> {
     try {
-      const { data: userData } = await supabase.auth.getUser()
-
+      const tenantId = await getCurrentTenantId()
+      
       const { data, error } = await supabase
         .from("administradoras")
-        .insert([
-          {
-            ...dados,
-            status: "ativa",
-            created_by: userData?.user?.id,
-          },
-        ])
+        .insert({
+          ...dados,
+          tenant_id: tenantId,
+          status: "ativa",
+        })
         .select()
         .single()
 
@@ -123,7 +123,7 @@ export class AdministradorasService {
       }
 
       return data
-    } catch (error) {
+    } catch (error: any) {
       console.error("❌ Erro ao criar administradora:", error)
       throw error
     }
@@ -132,15 +132,18 @@ export class AdministradorasService {
   /**
    * Atualizar administradora
    */
-  static async atualizar(
-    id: string,
-    dados: Partial<CriarAdministradoraData>
-  ): Promise<Administradora> {
+  static async atualizar(id: string, dados: AtualizarAdministradoraData): Promise<Administradora> {
     try {
+      const tenantId = await getCurrentTenantId()
+      
       const { data, error } = await supabase
         .from("administradoras")
-        .update(dados)
+        .update({
+          ...dados,
+          updated_at: new Date().toISOString(),
+        })
         .eq("id", id)
+        .eq("tenant_id", tenantId)
         .select()
         .single()
 
@@ -150,7 +153,7 @@ export class AdministradorasService {
       }
 
       return data
-    } catch (error) {
+    } catch (error: any) {
       console.error("❌ Erro ao atualizar administradora:", error)
       throw error
     }
@@ -159,34 +162,62 @@ export class AdministradorasService {
   /**
    * Alterar status da administradora
    */
-  static async alterarStatus(
-    id: string,
-    status: "ativa" | "inativa" | "suspensa"
-  ): Promise<void> {
+  static async alterarStatus(id: string, status: "ativa" | "inativa"): Promise<void> {
     try {
+      const tenantId = await getCurrentTenantId()
+      
       const { error } = await supabase
         .from("administradoras")
-        .update({ status })
+        .update({
+          status,
+          updated_at: new Date().toISOString(),
+        })
         .eq("id", id)
+        .eq("tenant_id", tenantId)
 
       if (error) {
         console.error("❌ Erro ao alterar status:", error)
         throw error
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("❌ Erro ao alterar status:", error)
       throw error
     }
   }
 
   /**
-   * Deletar administradora (soft delete - apenas inativa)
+   * Deletar administradora
    */
   static async deletar(id: string): Promise<void> {
     try {
-      await this.alterarStatus(id, "inativa")
-    } catch (error) {
+      const tenantId = await getCurrentTenantId()
+      
+      const { error } = await supabase
+        .from("administradoras")
+        .delete()
+        .eq("id", id)
+        .eq("tenant_id", tenantId)
+
+      if (error) {
+        console.error("❌ Erro ao deletar administradora:", error)
+        throw error
+      }
+    } catch (error: any) {
       console.error("❌ Erro ao deletar administradora:", error)
+      throw error
+    }
+  }
+
+  /**
+   * Configurar login da administradora
+   */
+  static async configurarLogin(administradoraId: string, email: string, senha: string): Promise<void> {
+    try {
+      // Esta função pode ser implementada conforme necessário
+      // Por enquanto, apenas um placeholder
+      console.log("Configurar login para administradora:", administradoraId)
+    } catch (error: any) {
+      console.error("❌ Erro ao configurar login:", error)
       throw error
     }
   }
@@ -194,153 +225,90 @@ export class AdministradorasService {
   /**
    * Buscar configuração financeira da administradora
    */
-  static async buscarConfiguracaoFinanceira(
-    administradoraId: string
-  ): Promise<ConfiguracaoFinanceira | null> {
+  static async buscarConfiguracaoFinanceira(administradoraId: string): Promise<ConfiguracaoFinanceira | null> {
     try {
+      const tenantId = await getCurrentTenantId()
+      
       const { data, error } = await supabase
-        .from("administradoras_config_financeira")
+        .from("configuracoes_financeiras")
         .select("*")
         .eq("administradora_id", administradoraId)
+        .eq("tenant_id", tenantId)
         .single()
 
       if (error && error.code !== "PGRST116") {
-        // PGRST116 = não encontrado
         console.error("❌ Erro ao buscar configuração financeira:", error)
         throw error
       }
 
       return data || null
-    } catch (error) {
+    } catch (error: any) {
       console.error("❌ Erro ao buscar configuração financeira:", error)
       throw error
     }
   }
 
   /**
-   * Salvar configuração financeira
+   * Salvar configuração financeira da administradora
    */
   static async salvarConfiguracaoFinanceira(
     administradoraId: string,
-    config: {
-      instituicao_financeira?: string
-      api_key?: string
-      api_token?: string
-      ambiente?: "sandbox" | "producao"
-      status_integracao?: "ativa" | "inativa" | "erro" | "configurando"
-      configuracoes_adicionais?: any
-    }
+    config: Partial<ConfiguracaoFinanceira>
   ): Promise<ConfiguracaoFinanceira> {
     try {
+      const tenantId = await getCurrentTenantId()
+      
       // Verificar se já existe configuração
-      const configExistente = await this.buscarConfiguracaoFinanceira(
-        administradoraId
-      )
+      const existente = await this.buscarConfiguracaoFinanceira(administradoraId)
 
-      if (configExistente) {
+      if (existente) {
         // Atualizar
         const { data, error } = await supabase
-          .from("administradoras_config_financeira")
-          .update(config)
-          .eq("administradora_id", administradoraId)
+          .from("configuracoes_financeiras")
+          .update({
+            ...config,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", existente.id)
+          .eq("tenant_id", tenantId)
           .select()
           .single()
 
         if (error) {
-          console.error("❌ Erro ao atualizar configuração:", error)
+          console.error("❌ Erro ao atualizar configuração financeira:", error)
           throw error
         }
 
         return data
       } else {
-        // Criar nova
+        // Criar
         const { data, error } = await supabase
-          .from("administradoras_config_financeira")
-          .insert([
-            {
-              administradora_id: administradoraId,
-              ...config,
-            },
-          ])
+          .from("configuracoes_financeiras")
+          .insert({
+            administradora_id: administradoraId,
+            tenant_id: tenantId,
+            ...config,
+          })
           .select()
           .single()
 
         if (error) {
-          console.error("❌ Erro ao criar configuração:", error)
+          console.error("❌ Erro ao criar configuração financeira:", error)
           throw error
         }
 
         return data
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("❌ Erro ao salvar configuração financeira:", error)
       throw error
     }
   }
-
-  /**
-   * Contar clientes ativos por administradora
-   */
-  static async contarClientesAtivos(administradoraId: string): Promise<number> {
-    try {
-      const { count, error } = await supabase
-        .from("clientes_administradoras")
-        .select("*", { count: "exact", head: true })
-        .eq("administradora_id", administradoraId)
-        .eq("status", "ativo")
-
-      if (error) {
-        console.error("❌ Erro ao contar clientes:", error)
-        throw error
-      }
-
-      return count || 0
-    } catch (error) {
-      console.error("❌ Erro ao contar clientes:", error)
-      throw error
-    }
-  }
-
-  /**
-   * Buscar dashboard da administradora
-   */
-  static async buscarDashboard(administradoraId: string): Promise<{
-    clientes_ativos: number
-    clientes_inadimplentes: number
-    faturas_pendentes: number
-    faturas_atrasadas: number
-    faturas_pagas: number
-    valor_em_aberto: number
-    valor_recebido_mes: number
-    valor_atrasado: number
-  }> {
-    try {
-      const { data, error } = await supabase
-        .from("vw_dashboard_financeiro")
-        .select("*")
-        .eq("administradora_id", administradoraId)
-        .single()
-
-      if (error && error.code !== "PGRST116") {
-        console.error("❌ Erro ao buscar dashboard:", error)
-        throw error
-      }
-
-      return (
-        data || {
-          clientes_ativos: 0,
-          clientes_inadimplentes: 0,
-          faturas_pendentes: 0,
-          faturas_atrasadas: 0,
-          faturas_pagas: 0,
-          valor_em_aberto: 0,
-          valor_recebido_mes: 0,
-          valor_atrasado: 0,
-        }
-      )
-    } catch (error) {
-      console.error("❌ Erro ao buscar dashboard:", error)
-      throw error
-    }
-  }
 }
+
+
+
+
+
+
+

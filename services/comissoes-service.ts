@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase"
+import { getCurrentTenantId } from "@/lib/tenant-query-helper"
 import type { Comissao, ResumoComissoes, Corretor } from "@/types/corretores"
 
 /**
@@ -10,12 +11,14 @@ export async function buscarComissoes(): Promise<Comissao[]> {
     console.log("🔄 Buscando todas as comissões...")
 
     // Verificar se estamos em ambiente de desenvolvimento
-    if (process.env.NODE_ENV === "development" || window.location.hostname === "localhost") {
+    if (process.env.NODE_ENV === "development" || (typeof window !== 'undefined' && window.location.hostname === "localhost")) {
       console.log("Usando dados fictícios para todas as comissões")
       return gerarTodasComissoesFicticias()
     }
 
-    // Buscar todas as comissões no banco de dados
+    const tenantId = await getCurrentTenantId()
+
+    // Buscar todas as comissões no banco de dados, filtrando por tenant
     const { data, error } = await supabase
       .from("comissoes")
       .select(`
@@ -26,6 +29,7 @@ export async function buscarComissoes(): Promise<Comissao[]> {
           email
         )
       `)
+      .eq("tenant_id", tenantId)
       .order("created_at", { ascending: false })
 
     if (error) {
@@ -57,13 +61,18 @@ export async function buscarResumoComissoes(): Promise<ResumoComissoes> {
     console.log("🔄 Buscando resumo das comissões...")
 
     // Verificar se estamos em ambiente de desenvolvimento
-    if (process.env.NODE_ENV === "development" || window.location.hostname === "localhost") {
+    if (process.env.NODE_ENV === "development" || (typeof window !== 'undefined' && window.location.hostname === "localhost")) {
       console.log("Usando dados fictícios para resumo")
       return gerarResumoFicticio()
     }
 
-    // Buscar dados para o resumo
-    const { data, error } = await supabase.from("comissoes").select("valor, status, created_at, corretor_id")
+    const tenantId = await getCurrentTenantId()
+
+    // Buscar dados para o resumo, filtrando por tenant
+    const { data, error } = await supabase
+      .from("comissoes")
+      .select("valor, status, created_at, corretor_id")
+      .eq("tenant_id", tenantId)
 
     if (error) {
       console.error("❌ Erro ao buscar resumo:", error)
@@ -121,15 +130,18 @@ export async function buscarCorretores(): Promise<Corretor[]> {
     console.log("🔄 Buscando corretores...")
 
     // Verificar se estamos em ambiente de desenvolvimento
-    if (process.env.NODE_ENV === "development" || window.location.hostname === "localhost") {
+    if (process.env.NODE_ENV === "development" || (typeof window !== 'undefined' && window.location.hostname === "localhost")) {
       console.log("Usando dados fictícios para corretores")
       return gerarCorretoresFicticios()
     }
+
+    const tenantId = await getCurrentTenantId()
 
     const { data, error } = await supabase
       .from("corretores")
       .select("id, nome, email, telefone, ativo")
       .eq("ativo", true)
+      .eq("tenant_id", tenantId)
       .order("nome")
 
     if (error) {
@@ -168,7 +180,7 @@ export async function criarComissaoManual(dadosComissao: {
     console.log("🔄 Criando nova comissão manual...")
 
     // Verificar se estamos em ambiente de desenvolvimento
-    if (process.env.NODE_ENV === "development" || window.location.hostname === "localhost") {
+    if (process.env.NODE_ENV === "development" || (typeof window !== 'undefined' && window.location.hostname === "localhost")) {
       console.log("Simulando criação de comissão em desenvolvimento")
 
       // Simular criação bem-sucedida
@@ -193,6 +205,8 @@ export async function criarComissaoManual(dadosComissao: {
       return novaComissao
     }
 
+    const tenantId = await getCurrentTenantId()
+
     const { data, error } = await supabase
       .from("comissoes")
       .insert({
@@ -203,6 +217,7 @@ export async function criarComissaoManual(dadosComissao: {
         data_prevista: dadosComissao.data_prevista,
         status: "pendente",
         tipo: "manual",
+        tenant_id: tenantId, // Adicionar tenant_id automaticamente
       })
       .select(`
         *,
@@ -244,7 +259,7 @@ export async function atualizarStatusComissao(
     console.log("🔄 Atualizando status da comissão:", comissaoId)
 
     // Verificar se estamos em ambiente de desenvolvimento
-    if (process.env.NODE_ENV === "development" || window.location.hostname === "localhost") {
+    if (process.env.NODE_ENV === "development" || (typeof window !== 'undefined' && window.location.hostname === "localhost")) {
       console.log("Simulando atualização de status em desenvolvimento")
 
       // Simular atualização bem-sucedida
@@ -269,10 +284,13 @@ export async function atualizarStatusComissao(
       return comissaoAtualizada
     }
 
+    const tenantId = await getCurrentTenantId()
+
     const { data, error } = await supabase
       .from("comissoes")
       .update(dadosAtualizacao)
       .eq("id", comissaoId)
+      .eq("tenant_id", tenantId) // Garantir que só atualiza do tenant correto
       .select(`
         *,
         corretores (
@@ -306,13 +324,15 @@ export async function buscarComissoesPorCorretor(corretorId: string): Promise<Co
     // Verificar se estamos em ambiente de desenvolvimento com corretor fictício
     if (
       corretorId === "dev-123" &&
-      (process.env.NODE_ENV === "development" || window.location.hostname === "localhost")
+      (process.env.NODE_ENV === "development" || (typeof window !== 'undefined' && window.location.hostname === "localhost"))
     ) {
       console.log("Usando dados fictícios para comissões do corretor")
       return gerarComissoesFicticias()
     }
 
-    // Buscar comissões do corretor no banco de dados
+    const tenantId = await getCurrentTenantId()
+
+    // Buscar comissões do corretor no banco de dados, filtrando por tenant
     const { data, error } = await supabase
       .from("comissoes")
       .select(`
@@ -321,6 +341,7 @@ export async function buscarComissoesPorCorretor(corretorId: string): Promise<Co
         propostas_corretores (*)
       `)
       .eq("corretor_id", corretorId)
+      .eq("tenant_id", tenantId)
       .order("data", { ascending: false })
 
     if (error) {
@@ -333,7 +354,7 @@ export async function buscarComissoesPorCorretor(corretorId: string): Promise<Co
     console.error("Erro ao buscar comissões do corretor:", error)
 
     // Em ambiente de desenvolvimento, retornar dados fictícios em caso de erro
-    if (process.env.NODE_ENV === "development" || window.location.hostname === "localhost") {
+    if (process.env.NODE_ENV === "development" || (typeof window !== 'undefined' && window.location.hostname === "localhost")) {
       console.log("Usando dados fictícios como fallback para comissões")
       return gerarComissoesFicticias()
     }
@@ -515,7 +536,7 @@ export async function buscarComissaoPorId(comissaoId: string): Promise<Comissao 
     // Verificar se estamos em ambiente de desenvolvimento com ID fictício
     if (
       comissaoId.startsWith("com-") &&
-      (process.env.NODE_ENV === "development" || window.location.hostname === "localhost")
+      (process.env.NODE_ENV === "development" || (typeof window !== 'undefined' && window.location.hostname === "localhost"))
     ) {
       console.log("Usando dados fictícios para comissão específica")
 
@@ -525,6 +546,8 @@ export async function buscarComissaoPorId(comissaoId: string): Promise<Comissao 
       return comissoes[index % comissoes.length] || null
     }
 
+    const tenantId = await getCurrentTenantId()
+
     const { data, error } = await supabase
       .from("comissoes")
       .select(`
@@ -533,6 +556,7 @@ export async function buscarComissaoPorId(comissaoId: string): Promise<Comissao 
         propostas_corretores (*)
       `)
       .eq("id", comissaoId)
+      .eq("tenant_id", tenantId)
       .single()
 
     if (error) {

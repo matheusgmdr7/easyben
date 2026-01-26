@@ -130,7 +130,7 @@ export default function PropostaCorretorPage() {
           <div className="space-y-2">
             <button
               onClick={() => window.location.reload()}
-              className="w-full bg-[#168979] text-white px-4 py-2 rounded-lg hover:bg-[#13786a] transition-colors"
+              className="w-full bg-[#0F172A] text-white px-4 py-2 rounded-lg hover:bg-[#1E293B] transition-colors"
             >
               Tentar Novamente
             </button>
@@ -152,7 +152,7 @@ export default function PropostaCorretorPage() {
       <div className="bg-white border-b border-gray-200">
         <div className="max-w-4xl mx-auto px-3 py-3 sm:px-4 sm:py-4 md:px-6 md:py-6">
           <div className="flex flex-col items-center space-y-3 text-center md:flex-row md:items-start md:space-y-0 md:space-x-4 md:text-left">
-            <div className="h-16 w-16 bg-[#168979] rounded-full flex items-center justify-center">
+            <div className="h-16 w-16 bg-[#0F172A] rounded-full flex items-center justify-center">
               <User className="h-8 w-8 text-white" />
             </div>
             <div className="flex-1 min-w-0">

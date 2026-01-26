@@ -39,7 +39,7 @@ export default function StatCard({
     info: "bg-cyan-50 text-cyan-700 border border-cyan-100",
     neutral: "bg-gray-50 text-gray-700 border border-gray-100",
     blue: "bg-blue-50 text-blue-700 border border-blue-100",
-    green: "bg-green-50 text-green-700 border border-green-100",
+    green: "bg-[#7BD9F6] bg-opacity-20 text-[#0F172A] border border-[#7BD9F6] border-opacity-20",
     emerald: "bg-emerald-50 text-emerald-700 border border-emerald-100",
     indigo: "bg-indigo-50 text-indigo-700 border border-indigo-100",
   }

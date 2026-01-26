@@ -298,7 +298,7 @@ export function PdfDownloadButtons({ propostaId, nomeCliente, pdfUrl, documentos
       <Button
         onClick={baixarTodosDocumentos}
         variant="default"
-        className="bg-green-600 hover:bg-green-700"
+        className="bg-[#0F172A] hover:bg-[#0F172A]"
         disabled={downloadLoading}
       >
         <Archive className="h-4 w-4 mr-2" />

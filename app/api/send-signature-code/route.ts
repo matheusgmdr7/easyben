@@ -43,7 +43,7 @@ export async function POST(request: NextRequest) {
       subject: "Seu código de assinatura digital - Contratando Planos",
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <div style="background: linear-gradient(135deg, #168979 0%, #13786a 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
+          <div style="background: linear-gradient(135deg, #0F172A 0%, #1E293B 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
             <h1 style="margin: 0; font-size: 24px;">Código de Assinatura Digital</h1>
             <p style="margin: 10px 0 0 0; opacity: 0.9;">Contratando Planos</p>
           </div>
@@ -57,14 +57,14 @@ export async function POST(request: NextRequest) {
               Você solicitou um código de assinatura digital para finalizar sua proposta de plano de saúde.
             </p>
             
-            <div style="background: white; border: 2px dashed #168979; border-radius: 10px; padding: 25px; text-align: center; margin: 25px 0;">
+            <div style="background: white; border: 2px dashed #0F172A; border-radius: 10px; padding: 25px; text-align: center; margin: 25px 0;">
               <p style="color: #666; font-size: 14px; margin-bottom: 15px;">Seu código de assinatura é:</p>
-              <div style="font-size: 32px; font-weight: bold; color: #168979; letter-spacing: 8px; font-family: 'Courier New', monospace;">
+              <div style="font-size: 32px; font-weight: bold; color: #0F172A; letter-spacing: 8px; font-family: 'Courier New', monospace;">
                 ${code}
               </div>
             </div>
             
-            <div style="background: #e8f5e8; border-left: 4px solid #168979; padding: 15px; margin: 25px 0;">
+            <div style="background: #e8f5e8; border-left: 4px solid #0F172A; padding: 15px; margin: 25px 0;">
               <p style="color: #2d5a2d; font-size: 14px; margin: 0;">
                 <strong>Importante:</strong> Este código é válido apenas para finalizar sua proposta atual. 
                 Não compartilhe este código com outras pessoas.

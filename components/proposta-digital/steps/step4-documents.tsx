@@ -128,7 +128,7 @@ export default function Step4Documents() {
                     <CardDescription>{doc.description}</CardDescription>
                   </div>
                   {file && (
-                    <div className="flex items-center gap-2 text-green-600">
+                    <div className="flex items-center gap-2 text-[#0F172A]">
                       <Check className="h-5 w-5" />
                       <span className="text-sm font-medium">Carregado</span>
                     </div>
@@ -167,12 +167,12 @@ export default function Step4Documents() {
                     )}
                   </div>
                 ) : (
-                  <div className="flex items-center justify-between p-4 bg-green-50 border border-green-200 rounded-lg">
+                  <div className="flex items-center justify-between p-4 bg-[#7BD9F6] bg-opacity-20 border border-[#7BD9F6] border-opacity-30 rounded-lg">
                     <div className="flex items-center gap-3">
-                      <FileText className="h-8 w-8 text-green-600" />
+                      <FileText className="h-8 w-8 text-[#0F172A]" />
                       <div>
-                        <p className="font-medium text-green-900">{getFileDisplayName(file)}</p>
-                        <p className="text-sm text-green-700">{formatFileSize(file.size)}</p>
+                        <p className="font-medium text-[#0F172A]">{getFileDisplayName(file)}</p>
+                        <p className="text-sm text-[#0F172A]">{formatFileSize(file.size)}</p>
                       </div>
                     </div>
                     <Button

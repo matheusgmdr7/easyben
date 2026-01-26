@@ -205,10 +205,15 @@ class AsaasService {
 
   /**
    * Busca um cliente por CPF/CNPJ
+   * Formata automaticamente o CPF/CNPJ removendo caracteres não numéricos
    */
   async getCustomerByCpfCnpj(cpfCnpj: string): Promise<AsaasCustomer | null> {
+    // Formatar CPF/CNPJ removendo pontos, traços e espaços
+    const cpfCnpjLimpo = AsaasService.formatCpfCnpj(cpfCnpj)
+    console.log(`🔍 [ASAAS] Buscando cliente por CPF/CNPJ: ${cpfCnpjLimpo} (original: ${cpfCnpj})`)
+    
     const response = await this.request<{ data: AsaasCustomer[] }>(
-      `/customers?cpfCnpj=${cpfCnpj}`
+      `/customers?cpfCnpj=${cpfCnpjLimpo}`
     )
     return response.data[0] || null
   }

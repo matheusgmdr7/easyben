@@ -36,7 +36,7 @@ export default function Header() {
 
   return (
     <header className={`sticky top-0 z-50 transition-all duration-300 ${scrolled ? "shadow-md" : ""}`}>
-      <div className="bg-[#168979] text-white">
+      <div className="bg-[#0F172A] text-white">
         <div className="container mx-auto px-4 md:px-6 py-3">
           <div className="flex items-center justify-between">
             <Link href="/" className="flex items-center z-20 relative">
@@ -77,7 +77,7 @@ export default function Header() {
               <CustomButton
                 href="/cotacao"
                 size="sm"
-                className="bg-white text-[#168979] hover:bg-white/90 font-medium rounded-full px-4 lg:px-6"
+                className="bg-white text-[#0F172A] hover:bg-white/90 font-medium rounded-full px-4 lg:px-6"
               >
                 Fazer cotação
               </CustomButton>
@@ -95,7 +95,7 @@ export default function Header() {
 
           {/* Mobile Navigation */}
           {isMenuOpen && (
-            <nav className="md:hidden fixed inset-0 bg-[#168979] z-10 pt-20 px-4">
+            <nav className="md:hidden fixed inset-0 bg-[#0F172A] z-10 pt-20 px-4">
               <div className="flex flex-col space-y-4">
                 <Link
                   href="/"
@@ -127,7 +127,7 @@ export default function Header() {
                 </Link>
                 <CustomButton
                   href="/cotacao"
-                  className="bg-white text-[#168979] hover:bg-white/90 w-full mt-2 rounded-full py-3 text-lg"
+                  className="bg-white text-[#0F172A] hover:bg-white/90 w-full mt-2 rounded-full py-3 text-lg"
                   onClick={() => setIsMenuOpen(false)}
                 >
                   Fazer cotação

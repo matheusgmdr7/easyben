@@ -124,7 +124,7 @@ export class PropostaHTMLService {
         }
         
         .header {
-          background: linear-gradient(135deg, #168979 0%, #13786a 100%);
+          background: linear-gradient(135deg, #0F172A 0%, #1E293B 100%);
           color: white;
           padding: 25px 20px;
           text-align: center;
@@ -158,12 +158,12 @@ export class PropostaHTMLService {
         }
         
         .section-title {
-          color: #168979;
+          color: #0F172A;
           font-size: 18px;
           font-weight: 600;
           margin-bottom: 15px;
           padding-bottom: 8px;
-          border-bottom: 2px solid #168979;
+          border-bottom: 2px solid #0F172A;
           display: inline-block;
         }
         
@@ -178,7 +178,7 @@ export class PropostaHTMLService {
           background: #f8f9fa;
           padding: 12px;
           border-radius: 8px;
-          border-left: 4px solid #168979;
+          border-left: 4px solid #0F172A;
         }
         
         .info-label {
@@ -211,7 +211,7 @@ export class PropostaHTMLService {
         }
         
         th {
-          background: #168979;
+          background: #0F172A;
           color: white;
           padding: 12px 10px;
           text-align: left;
@@ -240,7 +240,7 @@ export class PropostaHTMLService {
           padding: 6px 10px;
           border-radius: 6px;
           font-weight: 600;
-          color: #168979;
+          color: #0F172A;
           display: inline-block;
         }
         
@@ -277,7 +277,7 @@ export class PropostaHTMLService {
         }
         
         .valor-total {
-          border: 2px solid #168979;
+          border: 2px solid #0F172A;
           background: #e8f5e8;
           padding: 15px;
           border-radius: 8px;
@@ -285,13 +285,13 @@ export class PropostaHTMLService {
         }
         
         .valor-total .info-label {
-          color: #168979;
+          color: #0F172A;
           font-weight: bold;
           font-size: 14px;
         }
         
         .valor-total .info-value {
-          color: #168979;
+          color: #0F172A;
           font-weight: bold;
           font-size: 18px;
         }
@@ -549,7 +549,7 @@ export class PropostaHTMLService {
                 </div>
               </div>
               
-              <h3 style="color: #168979; margin-top: 20px; margin-bottom: 12px; font-size: 16px;">Endereço</h3>
+              <h3 style="color: #0F172A; margin-top: 20px; margin-bottom: 12px; font-size: 16px;">Endereço</h3>
               <div class="info-grid">
                 <div class="info-item">
                   <div class="info-label">Logradouro</div>

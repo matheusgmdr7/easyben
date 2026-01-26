@@ -247,7 +247,7 @@ export default function DiagnosticoTabelaPropostasPage() {
       case "atencao":
         return "bg-yellow-100 text-yellow-800 border-yellow-200"
       default:
-        return "bg-green-100 text-green-800 border-green-200"
+        return "bg-[#7BD9F6] bg-opacity-30 text-[#0F172A] border-[#7BD9F6] border-opacity-30"
     }
   }
 
@@ -258,7 +258,7 @@ export default function DiagnosticoTabelaPropostasPage() {
       case "atencao":
         return <AlertCircle className="h-4 w-4 text-yellow-500" />
       default:
-        return <CheckCircle className="h-4 w-4 text-green-500" />
+        return <CheckCircle className="h-4 w-4 text-[#0F172A]" />
     }
   }
 

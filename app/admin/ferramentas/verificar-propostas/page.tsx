@@ -130,7 +130,7 @@ export default function VerificarPropostasPage() {
                                 : proposta.status === "pendente"
                                   ? "bg-yellow-100 text-yellow-800"
                                   : proposta.status === "aprovada"
-                                    ? "bg-green-100 text-green-800"
+                                    ? "bg-[#7BD9F6] bg-opacity-30 text-[#0F172A]"
                                     : "bg-red-100 text-red-800"
                             }`}
                           >
@@ -178,7 +178,7 @@ export default function VerificarPropostasPage() {
                                 proposta.status === "pendente"
                                   ? "bg-yellow-100 text-yellow-800"
                                   : proposta.status === "aprovada"
-                                    ? "bg-green-100 text-green-800"
+                                    ? "bg-[#7BD9F6] bg-opacity-30 text-[#0F172A]"
                                     : "bg-red-100 text-red-800"
                               }`}
                             >

@@ -178,7 +178,7 @@ export default function VendasPage() {
             <CardDescription>Propostas aprovadas</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-600">{resumo ? resumo.aprovadas : <Spinner size="sm" />}</div>
+            <div className="text-2xl font-bold text-[#0F172A]">{resumo ? resumo.aprovadas : <Spinner size="sm" />}</div>
           </CardContent>
         </Card>
         <Card>
@@ -198,7 +198,7 @@ export default function VendasPage() {
             <CardDescription>Valor das vendas aprovadas</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-600">
+            <div className="text-2xl font-bold text-[#0F172A]">
               {resumo ? formatarMoeda(resumo.valor_aprovado) : <Spinner size="sm" />}
             </div>
           </CardContent>
@@ -240,7 +240,7 @@ export default function VendasPage() {
                   <SelectItem value="todas">Todas as Corretoras</SelectItem>
                   {corretoras.map((corretora) => (
                     <SelectItem key={corretora.id} value={corretora.id}>
-                      {corretora.nome}
+                      {corretora.nome?.toUpperCase() || "-"}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -308,7 +308,7 @@ export default function VendasPage() {
                       <TableCell>{formatarMoeda(venda.valor)}</TableCell>
                       <TableCell>{new Date(venda.data).toLocaleDateString()}</TableCell>
                       <TableCell>{venda.corretor?.nome || "N/A"}</TableCell>
-                      <TableCell>{venda.corretor?.corretora?.nome || "Independente"}</TableCell>
+                      <TableCell className="font-bold">{venda.corretor?.corretora?.nome?.toUpperCase() || "Independente"}</TableCell>
                       <TableCell>
                         <Badge
                           variant={
@@ -320,7 +320,7 @@ export default function VendasPage() {
                           }
                           className={`${
                             venda.status === "aprovada"
-                              ? "bg-green-100 text-green-800 hover:bg-green-100"
+                              ? "bg-[#7BD9F6] bg-opacity-30 text-[#0F172A] hover:bg-[#7BD9F6] bg-opacity-30"
                               : venda.status === "rejeitada"
                                 ? "bg-red-100 text-red-800 hover:bg-red-100"
                                 : "bg-yellow-100 text-yellow-800 hover:bg-yellow-100"

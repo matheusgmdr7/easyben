@@ -146,7 +146,7 @@ function TabelaPropostas({ propostas }: { propostas: PropostaCorretor[] }) {
 function StatusBadge({ status }: { status: string }) {
   switch (status) {
     case "aprovada":
-      return <Badge className="bg-green-500">Aprovada</Badge>
+      return <Badge className="bg-[#7BD9F6] bg-opacity-200">Aprovada</Badge>
     case "reprovada":
       return <Badge variant="destructive">Reprovada</Badge>
     case "pendente":

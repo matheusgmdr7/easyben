@@ -37,7 +37,7 @@ serve(async (req) => {
           <p>Olá <strong>${nome}</strong>,</p>
           <p>Seu corretor <strong>${corretor}</strong> iniciou uma proposta para você!</p>
           <div style="margin: 30px 0;">
-              <a href="${link}" style="background: #168979; color: white; padding: 15px 30px; text-decoration: none; border-radius: 5px;">
+              <a href="${link}" style="background: #0F172A; color: white; padding: 15px 30px; text-decoration: none; border-radius: 5px;">
                   ✅ COMPLETAR PROPOSTA
               </a>
           </div>

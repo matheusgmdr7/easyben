@@ -82,7 +82,7 @@ export default function TestarEmailPage() {
               <div className="space-y-3">
                 <div className="flex items-center gap-2">
                   {resultado.disponivel ? (
-                    <CheckCircle className="h-5 w-5 text-green-500" />
+                    <CheckCircle className="h-5 w-5 text-[#0F172A]" />
                   ) : (
                     <AlertCircle className="h-5 w-5 text-red-500" />
                   )}
@@ -158,7 +158,7 @@ export default function TestarEmailPage() {
             <CardDescription>Abra o console do navegador (F12) para ver logs detalhados</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="p-3 bg-gray-900 text-green-400 rounded-lg font-mono text-sm">
+            <div className="p-3 bg-gray-900 text-[#7BD9F6] rounded-lg font-mono text-sm">
               <p>💡 Para ver logs detalhados:</p>
               <p>1. Abra o Console (F12 → Console)</p>
               <p>2. Clique em "Testar Serviço"</p>

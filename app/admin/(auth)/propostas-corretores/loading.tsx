@@ -1,17 +1,11 @@
-const Loading = () => {
-  // Declare the undeclared variables.  Using null as a placeholder.
-  const brevity = null
-  const it = null
-  const is = null
-  const correct = null
-  const and = null
+import { LoadingSpinner } from "@/components/ui/loading-spinner"
 
+export default function Loading() {
   return (
-    <div>
-      <h1>Loading...</h1>
-      {/* You can add a loading spinner or any other visual indicator here */}
+    <div className="fixed inset-0 flex items-center justify-center bg-white/80 backdrop-blur-sm z-50">
+      <div className="flex flex-col items-center gap-3">
+        <LoadingSpinner size="sm" text="Carregando" />
+      </div>
     </div>
   )
 }
-
-export default Loading

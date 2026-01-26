@@ -8,8 +8,8 @@ import type React from "react"
 const theme = createTheme({
   palette: {
     primary: {
-      main: "#168979",
-      dark: "#13786a",
+      main: "#0F172A",
+      dark: "#1E293B",
       contrastText: "#ffffff",
     },
     secondary: {
@@ -44,9 +44,9 @@ const theme = createTheme({
           },
         },
         containedPrimary: {
-          backgroundColor: "#168979",
+          backgroundColor: "#0F172A",
           "&:hover": {
-            backgroundColor: "#13786a",
+            backgroundColor: "#1E293B",
           },
         },
       },

@@ -73,10 +73,10 @@ export default function ConfirmarEmail() {
 
             {status === "success" && (
               <>
-                <div className="mx-auto mb-4 bg-green-100 rounded-full p-3 w-16 h-16 flex items-center justify-center">
+                <div className="mx-auto mb-4 bg-[#7BD9F6] bg-opacity-30 rounded-full p-3 w-16 h-16 flex items-center justify-center">
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
-                    className="h-10 w-10 text-green-500"
+                    className="h-10 w-10 text-[#0F172A]"
                     fill="none"
                     viewBox="0 0 24 24"
                     stroke="currentColor"

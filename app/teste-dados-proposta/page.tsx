@@ -304,7 +304,7 @@ export default function TesteDadosPropostaPage() {
       <button
         onClick={testarGeracaoPDF}
         disabled={testandoPDF || !propostaId}
-        className="bg-green-500 text-white px-4 py-2 rounded disabled:opacity-50"
+        className="bg-[#7BD9F6] bg-opacity-200 text-white px-4 py-2 rounded disabled:opacity-50"
       >
         {testandoPDF ? "Gerando PDF..." : "Testar Geração PDF"}
       </button>

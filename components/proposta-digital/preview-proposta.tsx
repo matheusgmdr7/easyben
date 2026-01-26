@@ -132,7 +132,7 @@ export default function PreviewProposta({ proposta }: PreviewPropostaProps) {
             <div className="border-t pt-4">
               <div className="flex justify-between items-center">
                 <span className="text-lg font-medium">Valor Mensal:</span>
-                <span className="text-2xl font-bold text-green-600">{formatarMoeda(Number(proposta.valor) || 0)}</span>
+                <span className="text-2xl font-bold text-[#0F172A]">{formatarMoeda(Number(proposta.valor) || 0)}</span>
               </div>
             </div>
           </CardContent>

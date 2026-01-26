@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react"
 import type { UsuarioAdmin } from "@/services/usuarios-admin-service"
+import { PERFIS_PERMISSOES } from "@/services/usuarios-admin-service"
 import { supabase } from "@/lib/supabase-auth"
 
 interface Permissions {
@@ -66,6 +67,15 @@ export function usePermissions(): Permissions {
             console.log("⚠️ Permissões não encontradas ou em formato inválido:", usuarioData.permissoes)
           }
           
+          // Se não há permissões, usar permissões padrão do perfil
+          if (permissoesUsuario.length === 0 && usuarioData.perfil) {
+            permissoesUsuario = PERFIS_PERMISSOES[usuarioData.perfil as keyof typeof PERFIS_PERMISSOES] || []
+            console.log("⚠️ Permissões vazias, usando permissões padrão do perfil:", {
+              perfil: usuarioData.perfil,
+              permissoesPadrao: permissoesUsuario,
+            })
+          }
+          
           console.log("🔐 Permissões carregadas:", {
             perfil: usuarioData.perfil,
             perfilLower,
@@ -109,23 +119,84 @@ export function usePermissions(): Permissions {
           console.log("🔍 Buscando dados do usuário por email:", email)
           
           // Buscar dados do usuário via API
-          const response = await fetch("/api/admin/auth/user", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ email }),
-          })
+          let usuarioData: any = null
+          let apiFuncionou = false
           
-          if (!response.ok) {
-            console.error("❌ Erro ao buscar usuário:", response.statusText)
-            setIsMaster(false)
-            setPermissoes([])
-            setLoading(false)
-            return
+          try {
+            const response = await fetch("/api/admin/auth/user", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ email }),
+            })
+            
+            if (response.ok) {
+              const data = await response.json()
+              usuarioData = data.usuario
+              apiFuncionou = true
+              console.log("✅ API route funcionou, usuário encontrado via API")
+            } else {
+              console.warn("⚠️ API route retornou erro:", response.status, response.statusText)
+              if (response.status === 404) {
+                console.warn("⚠️ API route não encontrada (404) - tentando fallback direto do Supabase")
+              }
+            }
+          } catch (apiError: any) {
+            console.warn("⚠️ Erro ao chamar API route:", apiError.message)
+            console.warn("⚠️ Tentando fallback direto do Supabase...")
           }
           
-          const { usuario: usuarioData } = await response.json()
+          // FALLBACK: Se a API não funcionou, tentar buscar diretamente do Supabase
+          if (!apiFuncionou || !usuarioData) {
+            console.log("🔄 FALLBACK: Buscando usuário diretamente do Supabase...")
+            console.log("📧 Email buscado:", email.toLowerCase())
+            console.log("🔍 Executando query no Supabase...")
+            
+            try {
+              const { data: usuarioSupabase, error: supabaseError } = await supabase
+                .from("usuarios_admin")
+                .select("*")
+                .eq("email", email.toLowerCase())
+                .eq("ativo", true)
+                .single()
+              
+              console.log("📊 Resultado do fallback Supabase:", {
+                usuarioEncontrado: !!usuarioSupabase,
+                error: supabaseError ? {
+                  message: supabaseError.message,
+                  code: supabaseError.code,
+                  details: supabaseError.details,
+                  hint: supabaseError.hint,
+                } : null,
+                usuarioId: usuarioSupabase?.id,
+                usuarioEmail: usuarioSupabase?.email,
+              })
+              
+              if (supabaseError || !usuarioSupabase) {
+                console.error("❌ Erro ao buscar usuário do Supabase:", {
+                  message: supabaseError?.message,
+                  code: supabaseError?.code,
+                  details: supabaseError?.details,
+                  hint: supabaseError?.hint,
+                })
+                setIsMaster(false)
+                setPermissoes([])
+                setLoading(false)
+                return
+              }
+              
+              usuarioData = usuarioSupabase
+              console.log("✅ Usuário encontrado via fallback do Supabase")
+            } catch (fallbackError: any) {
+              console.error("❌ Erro no fallback ao buscar usuário:", fallbackError)
+              console.error("❌ Stack trace:", fallbackError.stack)
+              setIsMaster(false)
+              setPermissoes([])
+              setLoading(false)
+              return
+            }
+          }
           
           if (!usuarioData) {
             console.log("⚠️ Usuário não encontrado no banco")
@@ -143,25 +214,51 @@ export function usePermissions(): Permissions {
             permissoes: usuarioData.permissoes,
           })
           
-          // Salvar no localStorage para próximas vezes
-          localStorage.setItem("admin_usuario", JSON.stringify(usuarioData))
-          console.log("💾 Usuário salvo no localStorage")
+          // Extrair permissões ANTES de salvar no localStorage
+          let permissoesUsuario: string[] = []
+          if (Array.isArray(usuarioData.permissoes)) {
+            permissoesUsuario = usuarioData.permissoes
+            console.log("✅ Permissões encontradas como array:", permissoesUsuario)
+          } else if (usuarioData.permissoes && typeof usuarioData.permissoes === "object") {
+            permissoesUsuario = Object.keys(usuarioData.permissoes)
+            console.log("⚠️ Permissões encontradas como objeto, convertendo para array:", permissoesUsuario)
+          } else {
+            console.log("⚠️ Permissões não encontradas ou em formato inválido:", usuarioData.permissoes)
+          }
           
-          setUsuario(usuarioData)
+          // Se não há permissões, usar permissões padrão do perfil
+          if (permissoesUsuario.length === 0 && usuarioData.perfil) {
+            permissoesUsuario = PERFIS_PERMISSOES[usuarioData.perfil as keyof typeof PERFIS_PERMISSOES] || []
+            console.log("⚠️ Permissões vazias, usando permissões padrão do perfil:", {
+              perfil: usuarioData.perfil,
+              permissoesPadrao: permissoesUsuario,
+            })
+          }
+          
+          // Preparar usuário para salvar no localStorage (com permissões como array)
+          const usuarioParaSalvar = {
+            ...usuarioData,
+            senha_hash: undefined, // Não salvar o hash da senha
+            permissoes: permissoesUsuario, // Garantir que seja sempre um array
+          }
+          
+          // Salvar no localStorage para próximas vezes
+          localStorage.setItem("admin_usuario", JSON.stringify(usuarioParaSalvar))
+          console.log("💾 Usuário salvo no localStorage:", {
+            id: usuarioParaSalvar.id,
+            email: usuarioParaSalvar.email,
+            perfil: usuarioParaSalvar.perfil,
+            permissoes: usuarioParaSalvar.permissoes,
+            totalPermissoes: permissoesUsuario.length,
+          })
+          
+          setUsuario(usuarioParaSalvar)
           
           // Verificar se é master
           const perfilLower = String(usuarioData.perfil || "").toLowerCase().trim()
           const master = perfilLower === "master"
           
           setIsMaster(master)
-          
-          // Extrair permissões
-          let permissoesUsuario: string[] = []
-          if (Array.isArray(usuarioData.permissoes)) {
-            permissoesUsuario = usuarioData.permissoes
-          } else if (usuarioData.permissoes && typeof usuarioData.permissoes === "object") {
-            permissoesUsuario = Object.keys(usuarioData.permissoes)
-          }
           
           console.log("🔐 Permissões carregadas do banco:", {
             perfil: usuarioData.perfil,
@@ -201,6 +298,12 @@ export function usePermissions(): Permissions {
           } else if (usuarioData.permissoes && typeof usuarioData.permissoes === "object") {
             permissoesUsuario = Object.keys(usuarioData.permissoes)
           }
+          
+          // Se não há permissões, usar permissões padrão do perfil
+          if (permissoesUsuario.length === 0 && usuarioData.perfil) {
+            permissoesUsuario = PERFIS_PERMISSOES[usuarioData.perfil as keyof typeof PERFIS_PERMISSOES] || []
+          }
+          
           setPermissoes(permissoesUsuario)
         } catch (error) {
           console.error("Erro ao atualizar permissões:", error)
@@ -218,6 +321,15 @@ export function usePermissions(): Permissions {
   }, [])
 
   const podeVisualizar = (recurso: string): boolean => {
+    // Log detalhado para debug
+    console.log(`🔍 podeVisualizar chamado para: "${recurso}"`, {
+      isMaster,
+      permissoes,
+      totalPermissoes: permissoes.length,
+      usuario: usuario ? { id: usuario.id, email: usuario.email, perfil: usuario.perfil } : null,
+      loading,
+    })
+    
     // Verificar master no estado OU no localStorage (fallback síncrono)
     let isMasterCheck = isMaster
     
@@ -250,7 +362,14 @@ export function usePermissions(): Permissions {
     
     // Dashboard sempre deve ser visível (mesmo sem permissões)
     if (recurso.toLowerCase() === "dashboard") {
+      console.log(`✅ Dashboard sempre visível - Permitindo acesso`)
       return true
+    }
+    
+    // Se ainda está carregando, retornar false (mas não bloquear master)
+    if (loading && !isMasterCheck) {
+      console.log(`⏳ Ainda carregando permissões para: ${recurso}`)
+      return false
     }
     
     // Se não há usuário carregado ainda, aguardar (mas não bloquear master)
@@ -269,6 +388,7 @@ export function usePermissions(): Permissions {
           // Ignorar erros
         }
       }
+      console.log(`❌ Sem usuário carregado para: ${recurso}`)
       return false
     }
     
@@ -293,6 +413,12 @@ export function usePermissions(): Permissions {
                recursoNormalizado.includes(permNormalizado)
       })
     }
+    
+    console.log(`🔍 Resultado para "${recurso}":`, {
+      recursoNormalizado,
+      temPermissao,
+      permissoesVerificadas: permissoes.map(p => normalizarNome(p)),
+    })
     
     return temPermissao
   }

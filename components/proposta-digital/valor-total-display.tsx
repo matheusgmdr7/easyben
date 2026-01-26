@@ -63,7 +63,7 @@ export default function ValorTotalDisplay() {
   return (
     <Card className="mb-6">
       <CardHeader>
-        <CardTitle className="text-green-700">Resumo da Proposta</CardTitle>
+        <CardTitle className="text-[#0F172A]">Resumo da Proposta</CardTitle>
         <CardDescription>Valor total calculado com base no titular e dependentes</CardDescription>
       </CardHeader>
       <CardContent>
@@ -82,17 +82,17 @@ export default function ValorTotalDisplay() {
                   {item.tipo === "titular" ? "Titular do plano" : "Dependente"}
                 </div>
               </div>
-              <span className="font-medium text-green-600">R$ {item.valor}</span>
+              <span className="font-medium text-[#0F172A]">R$ {item.valor}</span>
             </div>
           ))}
 
-          <div className="bg-green-50 p-4 rounded-lg border border-green-200 mt-4">
+          <div className="bg-[#7BD9F6] bg-opacity-20 p-4 rounded-lg border border-[#7BD9F6] border-opacity-30 mt-4">
             <div className="flex justify-between items-center">
-              <span className="font-bold text-green-800 text-lg">Valor Total da Proposta:</span>
-              <span className="text-2xl font-bold text-green-600">R$ {valorTotal}</span>
+              <span className="font-bold text-[#0F172A] text-lg">Valor Total da Proposta:</span>
+              <span className="text-2xl font-bold text-[#0F172A]">R$ {valorTotal}</span>
             </div>
             {temDependentes && dependentes.length > 0 && (
-              <p className="text-sm text-green-600 mt-2">
+              <p className="text-sm text-[#0F172A] mt-2">
                 Inclui {detalhes.filter((d) => d.tipo === "titular").length} titular +{" "}
                 {detalhes.filter((d) => d.tipo === "dependente").length} dependente(s)
               </p>

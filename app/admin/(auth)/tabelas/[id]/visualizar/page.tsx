@@ -108,7 +108,7 @@ export default function VisualizarTabelaPage({ params }: { params: { id: string 
             <div>
               <h3 className="font-medium text-sm text-muted-foreground">Status</h3>
               {tabelaDetalhada.tabela.ativo ? (
-                <Badge variant="default" className="bg-green-100 text-green-800 hover:bg-green-100">
+                <Badge variant="default" className="bg-[#7BD9F6] bg-opacity-30 text-[#0F172A] hover:bg-[#7BD9F6] bg-opacity-30">
                   Ativa
                 </Badge>
               ) : (

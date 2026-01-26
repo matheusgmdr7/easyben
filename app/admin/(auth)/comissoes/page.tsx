@@ -361,7 +361,7 @@ export default function ComissoesPage() {
           {mostrarRelatorio && (
             <button
               onClick={exportarRelatorio}
-              className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
+              className="bg-[#0F172A] hover:bg-[#0F172A] text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
             >
               <Download className="h-4 w-4" />
               Exportar CSV
@@ -411,7 +411,7 @@ export default function ComissoesPage() {
               <Button
                 onClick={() => marcarTodosComoPago()}
                 disabled={salvando || clientes.filter(c => !c.pago).length === 0}
-                className="w-full bg-green-600 hover:bg-green-700"
+                className="w-full bg-[#0F172A] hover:bg-[#0F172A]"
               >
                 {salvando ? "Salvando..." : `Marcar Todos como Pago (${clientes.filter(c => !c.pago).length})`}
               </Button>
@@ -431,7 +431,7 @@ export default function ComissoesPage() {
           </Card>
           <Card>
             <CardContent className="p-4">
-              <div className="text-2xl font-bold text-green-600">
+              <div className="text-2xl font-bold text-[#0F172A]">
                 {clientes.filter(c => c.pago).length}
               </div>
               <div className="text-sm text-gray-600">Clientes Pagos</div>
@@ -474,7 +474,7 @@ export default function ComissoesPage() {
                   <Button
                     onClick={() => marcarTodosComoPago(corretor.corretor_id)}
                     disabled={salvando || corretor.clientes.filter(c => !c.pago).length === 0}
-                    className="bg-green-600 hover:bg-green-700"
+                    className="bg-[#0F172A] hover:bg-[#0F172A]"
                   >
                     Marcar Todos como Pago ({corretor.clientes.filter(c => !c.pago).length})
                   </Button>
@@ -515,12 +515,12 @@ export default function ComissoesPage() {
                           <td className="py-2 text-right">
                             {formatarMoeda(cliente.valor_mensal)}
                           </td>
-                          <td className="py-2 text-right font-medium text-green-600">
+                          <td className="py-2 text-right font-medium text-[#0F172A]">
                             {formatarMoeda(cliente.valor_comissao)}
                           </td>
                           <td className="py-2 text-center">
                             {cliente.pago ? (
-                              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-[#7BD9F6] bg-opacity-30 text-[#0F172A]">
                                 <CheckCircle className="h-3 w-3 mr-1" />
                                 Pago
                               </span>
@@ -537,7 +537,7 @@ export default function ComissoesPage() {
                               disabled={salvando}
                               variant={cliente.pago ? "outline" : "default"}
                               size="sm"
-                              className={cliente.pago ? "text-red-600" : "bg-green-600 hover:bg-green-700"}
+                              className={cliente.pago ? "text-red-600" : "bg-[#0F172A] hover:bg-[#0F172A]"}
                             >
                               {cliente.pago ? "Desmarcar" : "Marcar Pago"}
                             </Button>
@@ -598,12 +598,12 @@ export default function ComissoesPage() {
                       <td className="py-2 text-right">
                         {formatarMoeda(cliente.valor_mensal)}
                       </td>
-                      <td className="py-2 text-right font-medium text-green-600">
+                      <td className="py-2 text-right font-medium text-[#0F172A]">
                         {formatarMoeda(cliente.valor_comissao)}
                       </td>
                       <td className="py-2 text-center">
                         {cliente.pago ? (
-                          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-[#7BD9F6] bg-opacity-30 text-[#0F172A]">
                             <CheckCircle className="h-3 w-3 mr-1" />
                             Pago
                           </span>
@@ -620,7 +620,7 @@ export default function ComissoesPage() {
                           disabled={salvando}
                           variant={cliente.pago ? "outline" : "default"}
                           size="sm"
-                          className={cliente.pago ? "text-red-600" : "bg-green-600 hover:bg-green-700"}
+                          className={cliente.pago ? "text-red-600" : "bg-[#0F172A] hover:bg-[#0F172A]"}
                         >
                           {cliente.pago ? "Desmarcar" : "Marcar Pago"}
                         </Button>

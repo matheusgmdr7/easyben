@@ -1,9 +1,16 @@
 import { supabase } from "@/lib/supabase"
+import { getCurrentTenantId } from "@/lib/tenant-query-helper"
 import type { Corretor } from "@/types/corretores"
 
 export async function buscarCorretores(): Promise<Corretor[]> {
   try {
-    const { data, error } = await supabase.from("corretores").select("*").order("created_at", { ascending: false })
+    const tenantId = await getCurrentTenantId()
+    
+    const { data, error } = await supabase
+      .from("corretores")
+      .select("*")
+      .eq("tenant_id", tenantId)
+      .order("created_at", { ascending: false })
 
     if (error) {
       console.error("Erro ao buscar corretores:", error)
@@ -19,7 +26,13 @@ export async function buscarCorretores(): Promise<Corretor[]> {
 
 export async function buscarTodosCorretores(): Promise<Corretor[]> {
   try {
-    const { data, error } = await supabase.from("corretores").select("*").order("created_at", { ascending: false })
+    const tenantId = await getCurrentTenantId()
+    
+    const { data, error } = await supabase
+      .from("corretores")
+      .select("*")
+      .eq("tenant_id", tenantId)
+      .order("created_at", { ascending: false })
 
     if (error) {
       console.error("Erro ao buscar corretores:", error)
@@ -35,7 +48,14 @@ export async function buscarTodosCorretores(): Promise<Corretor[]> {
 
 export async function buscarCorretorPorEmail(email: string): Promise<Corretor | null> {
   try {
-    const { data, error } = await supabase.from("corretores").select("*").eq("email", email).single()
+    const tenantId = await getCurrentTenantId()
+    
+    const { data, error } = await supabase
+      .from("corretores")
+      .select("*")
+      .eq("email", email)
+      .eq("tenant_id", tenantId)
+      .single()
 
     if (error) {
       if (error.code === "PGRST116") {
@@ -64,6 +84,9 @@ export async function criarCorretor(corretor: Omit<Corretor, "id" | "created_at"
       return corretorExistente
     }
 
+    // Obter tenant_id atual
+    const tenantId = await getCurrentTenantId()
+    
     // Criar registro na tabela corretores
     const { data, error } = await supabase
       .from("corretores")
@@ -73,10 +96,24 @@ export async function criarCorretor(corretor: Omit<Corretor, "id" | "created_at"
           email: corretor.email,
           whatsapp: corretor.whatsapp,
           estado: corretor.estado,
+          cidade: corretor.cidade,
           cpf: corretor.cpf,
           data_nascimento: corretor.data_nascimento,
-          // Não incluímos o campo cidade aqui
+          // Campos financeiros
+          cnpj: corretor.cnpj || null,
+          chave_pix: corretor.chave_pix || null,
+          tipo_chave_pix: corretor.tipo_chave_pix || null,
+          banco: corretor.banco || null,
+          agencia: corretor.agencia || null,
+          conta: corretor.conta || null,
+          tipo_conta: corretor.tipo_conta || null,
+          nome_titular_conta: corretor.nome_titular_conta || null,
+          cpf_cnpj_titular_conta: corretor.cpf_cnpj_titular_conta || null,
+          // Campos de gestão
           status: corretor.status || "pendente",
+          is_gestor: corretor.is_gestor || false,
+          tenant_id: tenantId, // Adicionar tenant_id automaticamente
+          gestor_id: (corretor as any).gestor_id || null, // Adicionar gestor_id se fornecido
         },
       ])
       .select()
@@ -101,7 +138,18 @@ export async function criarCorretor(corretor: Omit<Corretor, "id" | "created_at"
 
 export async function atualizarCorretor(id: string, corretor: Partial<Corretor>): Promise<Corretor> {
   try {
-    const { data, error } = await supabase.from("corretores").update(corretor).eq("id", id).select().single()
+    const tenantId = await getCurrentTenantId()
+    
+    // Remover tenant_id dos dados de atualização (não deve ser alterado)
+    const { tenant_id, ...dadosAtualizacao } = corretor
+    
+    const { data, error } = await supabase
+      .from("corretores")
+      .update(dadosAtualizacao)
+      .eq("id", id)
+      .eq("tenant_id", tenantId) // Garantir que só atualiza do tenant correto
+      .select()
+      .single()
 
     if (error) {
       console.error("Erro ao atualizar corretor:", error)
@@ -121,7 +169,13 @@ export async function atualizarCorretor(id: string, corretor: Partial<Corretor>)
 
 export async function deletarCorretor(id: string): Promise<void> {
   try {
-    const { error } = await supabase.from("corretores").delete().eq("id", id)
+    const tenantId = await getCurrentTenantId()
+    
+    const { error } = await supabase
+      .from("corretores")
+      .delete()
+      .eq("id", id)
+      .eq("tenant_id", tenantId) // Garantir que só deleta do tenant correto
 
     if (error) {
       console.error("Erro ao deletar corretor:", error)

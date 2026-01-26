@@ -19,7 +19,7 @@ import { downloadPropostaComDocumentos } from "@/services/download-service"
 import { buscarCorretores } from "@/services/corretores-service"
 import { gerarPDFCompleto, gerarPDFSimples } from "@/services/pdf-completo-service"
 import { toast } from "sonner"
-import { ChevronLeft, ChevronRight, Download, Eye, FileText, Heart, Clock, Search, User, UserCheck, Edit, Save, CheckCircle, X, XCircle, Building, Camera, Filter, RefreshCw } from "lucide-react"
+import { ChevronLeft, ChevronRight, Download, Eye, FileText, Heart, Clock, Search, User, UserCheck, Edit, Save, CheckCircle, X, XCircle, Building, Camera, Filter, RefreshCw, RotateCcw } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
@@ -1154,7 +1154,7 @@ export default function PropostasPage() {
     } else if (status === "aprovada") {
       return {
         label: "APROVADA",
-        color: "bg-gray-100 text-green-600",
+        color: "bg-gray-100 text-[#0F172A]",
         icon: CheckCircle
       }
     } else if (status === "rejeitada") {
@@ -1172,6 +1172,18 @@ export default function PropostasPage() {
     } else if (status === "cadastrado" || status === "cadastrada") {
       return {
         label: "CADASTRADO",
+        color: "bg-gray-100 text-[#0F172A]",
+        icon: CheckCircle
+      }
+    } else if (status === "devolvida") {
+      return {
+        label: "DEVOLVIDA",
+        color: "bg-gray-100 text-amber-600",
+        icon: RotateCcw
+      }
+    } else if (status === "transmitida") {
+      return {
+        label: "TRANSMITIDA",
         color: "bg-gray-100 text-green-600",
         icon: CheckCircle
       }
@@ -1318,9 +1330,9 @@ export default function PropostasPage() {
         <div className="space-y-4 sm:space-y-6">
           {/* Fotos do Cliente - Mostrar mesmo se não houver questionário */}
           {temFotos && (
-            <Card className="border-2 border-gray-200 shadow-sm">
-              <CardHeader className="bg-gradient-to-r from-blue-50 to-blue-100/50 border-b border-gray-200 px-3 sm:px-6 py-3 sm:py-4">
-                <CardTitle className="flex items-center gap-2 text-[#168979] text-base sm:text-lg">
+            <Card className="border-2 border-gray-200 shadow-sm rounded-none">
+              <CardHeader className="bg-gradient-to-r from-blue-50 to-blue-100/50 border-b border-gray-200 px-3 sm:px-6 py-3 sm:py-4 rounded-none">
+                <CardTitle className="flex items-center gap-2 text-[#0F172A] text-base sm:text-lg">
                   <Camera className="h-4 w-4 sm:h-5 sm:w-5" />
                   Fotos do Titular
                 </CardTitle>
@@ -1368,9 +1380,9 @@ export default function PropostasPage() {
             </Card>
           )}
           
-          <Card className="border-2 border-gray-200 shadow-sm">
-            <CardHeader className="bg-gradient-to-r from-red-50 to-red-100/50 border-b border-gray-200 px-3 sm:px-6 py-3 sm:py-4">
-              <CardTitle className="flex items-center gap-2 text-[#168979] text-base sm:text-lg">
+          <Card className="border-2 border-gray-200 shadow-sm rounded-none">
+            <CardHeader className="bg-gradient-to-r from-red-50 to-red-100/50 border-b border-gray-200 px-3 sm:px-6 py-3 sm:py-4 rounded-none">
+              <CardTitle className="flex items-center gap-2 text-[#0F172A] text-base sm:text-lg">
                 <Heart className="h-4 w-4 sm:h-5 sm:w-5 text-red-500" />
                 Declaração de Saúde
               </CardTitle>
@@ -1389,9 +1401,9 @@ export default function PropostasPage() {
           const mostrarFotos = isTitular && temFotos
           
           return (
-            <Card key={q.id || idx} className="border-2 border-gray-200 shadow-sm">
-              <CardHeader className="bg-gradient-to-r from-red-50 to-red-100/50 border-b border-gray-200 px-3 sm:px-6 py-3 sm:py-4">
-                <CardTitle className="flex items-center gap-2 text-[#168979] text-base sm:text-lg">
+            <Card key={q.id || idx} className="border-2 border-gray-200 shadow-sm rounded-none">
+              <CardHeader className={`bg-gradient-to-r ${isTitular ? 'from-blue-50 to-blue-100/50' : 'from-red-50 to-red-100/50'} border-b border-gray-200 px-3 sm:px-6 py-3 sm:py-4 rounded-none`}>
+                <CardTitle className="flex items-center gap-2 text-[#0F172A] text-base sm:text-lg">
                   <Heart className="h-4 w-4 sm:h-5 sm:w-5 text-red-500" />
                   <span className="truncate">{isTitular
                       ? "Declaração de Saúde - Titular"
@@ -1462,7 +1474,7 @@ export default function PropostasPage() {
                           <div className="text-sm text-gray-600 mb-2">
                             {resposta.pergunta_texto || resposta.pergunta || obterTextoPergunta(resposta.pergunta_id)}
                           </div>
-                          <div className={`inline-flex px-2 py-1 rounded-full text-xs font-medium ${resposta.resposta === "sim" || resposta.resposta === true ? "bg-red-100 text-red-800" : "bg-green-100 text-green-800"}`}>
+                          <div className={`inline-flex px-2 py-1 rounded-full text-xs font-medium ${resposta.resposta === "sim" || resposta.resposta === true ? "bg-red-100 text-red-800" : "bg-[#7BD9F6] bg-opacity-30 text-[#0F172A]"}`}>
                             {resposta.resposta === "sim" || resposta.resposta === true ? "SIM" : "NÃO"}
                           </div>
                           {resposta.observacao && (
@@ -1488,9 +1500,9 @@ export default function PropostasPage() {
     const isTitular = pessoa === "titular"
     if (!documentos || Object.keys(documentos).length === 0) {
       return (
-        <Card className="border-2 border-gray-200 shadow-sm">
-          <CardHeader className={`bg-gradient-to-r ${isTitular ? 'from-blue-50 to-blue-100/50' : 'from-green-50 to-green-100/50'} border-b border-gray-200 px-3 sm:px-6 py-3 sm:py-4`}>
-            <CardTitle className="flex items-center gap-2 text-[#168979] text-base sm:text-lg">
+        <Card className="border-2 border-gray-200 shadow-sm rounded-none">
+          <CardHeader className={`bg-gradient-to-r ${isTitular ? 'from-blue-50 to-blue-100/50' : 'from-green-50 to-green-100/50'} border-b border-gray-200 px-3 sm:px-6 py-3 sm:py-4 rounded-none`}>
+            <CardTitle className="flex items-center gap-2 text-[#0F172A] text-base sm:text-lg">
               <FileText className="h-4 w-4 sm:h-5 sm:w-5" />
               {titulo}
             </CardTitle>
@@ -1503,9 +1515,9 @@ export default function PropostasPage() {
     }
 
     return (
-      <Card className="border-2 border-gray-200 shadow-sm">
-        <CardHeader className={`bg-gradient-to-r ${isTitular ? 'from-blue-50 to-blue-100/50' : 'from-green-50 to-green-100/50'} border-b border-gray-200 px-3 sm:px-6 py-3 sm:py-4`}>
-          <CardTitle className="flex items-center gap-2 text-[#168979] text-base sm:text-lg">
+      <Card className="border-2 border-gray-200 shadow-sm rounded-none">
+        <CardHeader className={`bg-gradient-to-r ${isTitular ? 'from-blue-50 to-blue-100/50' : 'from-green-50 to-green-100/50'} border-b border-gray-200 px-3 sm:px-6 py-3 sm:py-4 rounded-none`}>
+          <CardTitle className="flex items-center gap-2 text-[#0F172A] text-base sm:text-lg">
             <FileText className="h-4 w-4 sm:h-5 sm:w-5" />
             {titulo}
           </CardTitle>
@@ -1518,7 +1530,7 @@ export default function PropostasPage() {
               const nomeArquivo = `${nomeDoc.replace(/[^a-zA-Z0-9]/g, "_")}.${url.split(".").pop()?.toLowerCase() || "pdf"}`
 
               return (
-                <div key={tipo} className="border-2 border-gray-200 rounded-lg p-3 sm:p-4 hover:shadow-md transition-shadow">
+                <div key={tipo} className="border-2 border-gray-200 rounded-none p-3 sm:p-4 hover:shadow-md transition-shadow">
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex-1 min-w-0">
                       <div className="font-medium text-xs sm:text-sm text-gray-900 truncate">{nomeDoc}</div>
@@ -1614,7 +1626,7 @@ export default function PropostasPage() {
           </div>
         <button
           onClick={carregarPropostas}
-            className="bg-[#168979] hover:bg-[#13786a] text-white font-bold px-4 sm:px-6 py-2 text-sm sm:text-base btn-corporate shadow-corporate flex items-center justify-center gap-2 w-full sm:w-auto"
+            className="bg-[#0F172A] hover:bg-[#1E293B] text-white font-bold px-4 sm:px-6 py-2 text-sm sm:text-base btn-corporate shadow-corporate flex items-center justify-center gap-2 w-full sm:w-auto"
         >
           <span>Atualizar Lista</span>
         </button>
@@ -1622,7 +1634,7 @@ export default function PropostasPage() {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-5 gap-2 sm:gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4">
         <div className="bg-gradient-to-br from-white to-gray-50 border border-gray-200 shadow-sm hover:shadow-lg transition-all duration-300 rounded-lg">
           <div className="flex flex-row items-center justify-between pb-3 pt-4 sm:pt-6 px-3 sm:px-6">
             <div className="flex-1">
@@ -1630,7 +1642,7 @@ export default function PropostasPage() {
                 <FileText className="h-3 w-3 sm:h-4 sm:w-4 text-gray-400 opacity-60" />
                 <h3 className="text-xs sm:text-sm font-bold text-gray-600 uppercase tracking-wider font-sans">Total</h3>
               </div>
-              <div className="text-xl sm:text-3xl font-bold text-[#168979] mt-1 sm:mt-2">{propostas.length}</div>
+              <div className="text-xl sm:text-3xl font-bold text-[#0F172A] mt-1 sm:mt-2">{propostas.length}</div>
             </div>
           </div>
           <div className="pb-4 sm:pb-6 px-3 sm:px-6">
@@ -1644,7 +1656,7 @@ export default function PropostasPage() {
                 <Clock className="h-3 w-3 sm:h-4 sm:w-4 text-gray-400 opacity-60" />
                 <h3 className="text-xs sm:text-sm font-bold text-gray-600 uppercase tracking-wider font-sans">Aguardando</h3>
               </div>
-              <div className="text-xl sm:text-3xl font-bold text-[#168979] mt-1 sm:mt-2">{propostas.filter((p) => p.status === "parcial").length}</div>
+              <div className="text-xl sm:text-3xl font-bold text-[#0F172A] mt-1 sm:mt-2">{propostas.filter((p) => p.status === "parcial").length}</div>
             </div>
           </div>
           <div className="pb-4 sm:pb-6 px-3 sm:px-6">
@@ -1658,7 +1670,7 @@ export default function PropostasPage() {
                 <Search className="h-3 w-3 sm:h-4 sm:w-4 text-gray-400 opacity-60" />
                 <h3 className="text-xs sm:text-sm font-bold text-gray-600 uppercase tracking-wider font-sans">Análise</h3>
               </div>
-              <div className="text-xl sm:text-3xl font-bold text-[#168979] mt-1 sm:mt-2">{propostas.filter((p) => p.status === "pendente").length}</div>
+              <div className="text-xl sm:text-3xl font-bold text-[#0F172A] mt-1 sm:mt-2">{propostas.filter((p) => p.status === "pendente").length}</div>
             </div>
           </div>
           <div className="pb-4 sm:pb-6 px-3 sm:px-6">
@@ -1669,24 +1681,10 @@ export default function PropostasPage() {
           <div className="flex flex-row items-center justify-between pb-3 pt-4 sm:pt-6 px-3 sm:px-6">
             <div className="flex-1">
               <div className="flex items-center gap-2 mb-1">
-                <User className="h-3 w-3 sm:h-4 sm:w-4 text-gray-400 opacity-60" />
-                <h3 className="text-xs sm:text-sm font-bold text-gray-600 uppercase tracking-wider font-sans">Diretos</h3>
-              </div>
-              <div className="text-xl sm:text-3xl font-bold text-[#168979] mt-1 sm:mt-2">{propostas.filter((p) => p.origem === "propostas").length}</div>
-            </div>
-          </div>
-          <div className="pb-4 sm:pb-6 px-3 sm:px-6">
-            <p className="text-[10px] sm:text-xs text-gray-500 font-medium">Propostas diretas</p>
-          </div>
-        </div>
-        <div className="bg-gradient-to-br from-white to-gray-50 border border-gray-200 shadow-sm hover:shadow-lg transition-all duration-300 rounded-lg">
-          <div className="flex flex-row items-center justify-between pb-3 pt-4 sm:pt-6 px-3 sm:px-6">
-            <div className="flex-1">
-              <div className="flex items-center gap-2 mb-1">
                 <UserCheck className="h-3 w-3 sm:h-4 sm:w-4 text-gray-400 opacity-60" />
                 <h3 className="text-xs sm:text-sm font-bold text-gray-600 uppercase tracking-wider font-sans">Corretores</h3>
               </div>
-              <div className="text-xl sm:text-3xl font-bold text-[#168979] mt-1 sm:mt-2">{propostas.filter((p) => p.origem === "propostas_corretores").length}</div>
+              <div className="text-xl sm:text-3xl font-bold text-[#0F172A] mt-1 sm:mt-2">{propostas.filter((p) => p.origem === "propostas_corretores").length}</div>
             </div>
           </div>
           <div className="pb-4 sm:pb-6 px-3 sm:px-6">
@@ -1710,7 +1708,7 @@ export default function PropostasPage() {
               value={filtro}
               onChange={(e) => setFiltro(e.target.value)}
               placeholder="Nome ou email..."
-              className="w-full px-3 py-2 sm:px-2 sm:py-1 border-2 border-gray-300 rounded-lg text-sm sm:text-base focus:outline-none focus:ring-1 focus:ring-[#168979] focus:border-[#168979]"
+              className="w-full px-3 py-2 sm:px-2 sm:py-1 border-2 border-gray-300 rounded-lg text-sm sm:text-base focus:outline-none focus:ring-1 focus:ring-[#0F172A] focus:border-[#0F172A]"
             />
           </div>
           <div>
@@ -1718,7 +1716,7 @@ export default function PropostasPage() {
             <select
               value={statusFiltro}
               onChange={(e) => setStatusFiltro(e.target.value)}
-              className="w-full px-3 py-2 sm:px-2 sm:py-1 border-2 border-gray-300 rounded-lg text-sm sm:text-base focus:outline-none focus:ring-1 focus:ring-[#168979] focus:border-[#168979]"
+              className="w-full px-3 py-2 sm:px-2 sm:py-1 border-2 border-gray-300 rounded-lg text-sm sm:text-base focus:outline-none focus:ring-1 focus:ring-[#0F172A] focus:border-[#0F172A]"
             >
               <option value="todos">Todos</option>
               <option value="parcial">Aguardando Validação</option>
@@ -1734,7 +1732,7 @@ export default function PropostasPage() {
             <select
               value={corretorFiltro}
               onChange={(e) => setCorretorFiltro(e.target.value)}
-              className="w-full px-3 py-2 sm:px-2 sm:py-1 border-2 border-gray-300 rounded-lg text-sm sm:text-base focus:outline-none focus:ring-1 focus:ring-[#168979] focus:border-[#168979]"
+              className="w-full px-3 py-2 sm:px-2 sm:py-1 border-2 border-gray-300 rounded-lg text-sm sm:text-base focus:outline-none focus:ring-1 focus:ring-[#0F172A] focus:border-[#0F172A]"
             >
               <option value="todos">Todos os Corretores</option>
               <option value="direto">Clientes Diretos</option>
@@ -1788,7 +1786,7 @@ export default function PropostasPage() {
                 return (
                   <tr key={`${proposta.origem}-${proposta.id}`} className="hover:bg-gray-50">
                     <td className="px-4 py-4">
-                      <div className="text-sm font-medium text-gray-900" title={obterNomeCliente(proposta)}>
+                      <div className="text-sm font-bold text-gray-900" title={obterNomeCliente(proposta)}>
                         {obterNomeCliente(proposta)}
                       </div>
                       <div className="text-xs text-gray-500">ID: {obterIdSeguro(proposta)}</div>
@@ -1807,12 +1805,8 @@ export default function PropostasPage() {
                     <td className="px-4 py-4">
                       <div className="space-y-1">
                         <span
-                          className={`inline-flex items-center gap-1 px-2 py-1 text-xs font-semibold rounded ${statusConfig.color}`}
+                          className={`inline-flex items-center px-2 py-1 text-xs font-semibold rounded ${statusConfig.color}`}
                         >
-                          {(() => {
-                            const IconComponent = statusConfig.icon
-                            return <IconComponent className="w-3 h-3" />
-                          })()}
                           {statusConfig.label}
                         </span>
                       </div>
@@ -1876,7 +1870,7 @@ export default function PropostasPage() {
                 <div className="space-y-3">
                   {/* Cliente */}
                   <div>
-                    <div className="text-sm font-semibold text-gray-900" title={obterNomeCliente(proposta)}>
+                    <div className="text-sm font-bold text-gray-900" title={obterNomeCliente(proposta)}>
                       {obterNomeCliente(proposta)}
                     </div>
                     <div className="text-xs text-gray-500 mt-1">ID: {obterIdSeguro(proposta)}</div>
@@ -1900,12 +1894,8 @@ export default function PropostasPage() {
                   {/* Status e Origem */}
                   <div className="space-y-1">
                     <span
-                      className={`inline-flex items-center gap-1 px-2 py-1 text-xs font-semibold rounded ${statusConfig.color}`}
+                      className={`inline-flex items-center px-2 py-1 text-xs font-semibold rounded ${statusConfig.color}`}
                     >
-                      {(() => {
-                        const IconComponent = statusConfig.icon
-                        return <IconComponent className="w-3 h-3" />
-                      })()}
                       {statusConfig.label}
                     </span>
                     <div className="text-xs text-gray-600 mt-1" title={proposta.corretor_nome ? `Corretor: ${proposta.corretor_nome}` : "Envio Direto"}>
@@ -1985,10 +1975,10 @@ export default function PropostasPage() {
                   size="sm"
                   onClick={() => setPaginaAtual(Math.max(1, paginaAtual - 1))}
                   disabled={paginaAtual === 1}
-                  className="h-8 sm:h-9 text-xs sm:text-sm"
+                  className="h-8 sm:h-9 text-xs sm:text-sm rounded-none"
                 >
                   <ChevronLeft className="h-3 w-3 sm:h-4 sm:w-4" />
-                  <span className="hidden sm:inline">Anterior</span>
+                  <span className="ml-1">Anterior</span>
                 </Button>
 
                 <div className="flex space-x-1">
@@ -2010,7 +2000,7 @@ export default function PropostasPage() {
                         variant={paginaAtual === pageNum ? "default" : "outline"}
                         size="sm"
                         onClick={() => setPaginaAtual(pageNum)}
-                        className="h-8 sm:h-9 w-8 sm:w-9 p-0 text-xs sm:text-sm"
+                        className="h-8 sm:h-9 w-8 sm:w-9 p-0 text-xs sm:text-sm rounded-none"
                       >
                         {pageNum}
                       </Button>
@@ -2023,9 +2013,9 @@ export default function PropostasPage() {
                   size="sm"
                   onClick={() => setPaginaAtual(Math.min(totalPaginas, paginaAtual + 1))}
                   disabled={paginaAtual === totalPaginas}
-                  className="h-8 sm:h-9 text-xs sm:text-sm"
+                  className="h-8 sm:h-9 text-xs sm:text-sm rounded-none"
                 >
-                  <span className="hidden sm:inline">Próxima</span>
+                  <span className="mr-1">Próxima</span>
                   <ChevronRight className="h-3 w-3 sm:h-4 sm:w-4" />
                 </Button>
               </div>
@@ -2039,7 +2029,7 @@ export default function PropostasPage() {
         <div className="fixed inset-0 flex items-center justify-center z-[100] p-2 sm:p-4">
           <div className="bg-white rounded-xl sm:rounded-2xl shadow-2xl max-w-7xl w-full max-h-[95vh] sm:max-h-[90vh] overflow-hidden flex flex-col">
             {/* Header com Gradiente */}
-            <div className="bg-gradient-to-r from-[#168979] to-[#13786a] px-3 sm:px-6 py-3 sm:py-4">
+            <div className="bg-gradient-to-r from-[#0F172A] to-[#1E293B] px-3 sm:px-6 py-3 sm:py-4">
               <div className="flex items-center justify-between mb-3 sm:mb-4">
                 <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
                   <div className="p-1.5 sm:p-2 bg-white/20 rounded-lg flex-shrink-0">
@@ -2104,7 +2094,7 @@ export default function PropostasPage() {
                         link.click()
                         document.body.removeChild(link)
                       }}
-                      className="bg-green-500/80 hover:bg-green-500 text-white border border-green-400/50 text-xs sm:text-sm px-2 sm:px-3 h-8 sm:h-9"
+                      className="bg-[#0F172A] hover:bg-[#1E293B] text-white border border-[#0F172A] text-xs sm:text-sm px-2 sm:px-3 h-8 sm:h-9"
                       size="sm"
                     >
                       <span className="hidden sm:inline">Baixar PDF</span>
@@ -2151,27 +2141,27 @@ export default function PropostasPage() {
                     <TabsList className="inline-flex h-auto w-full bg-transparent p-0 gap-0 sm:gap-1">
                       <TabsTrigger 
                         value="dados" 
-                        className="flex-1 data-[state=active]:bg-transparent data-[state=active]:text-[#168979] data-[state=active]:border-b-2 data-[state=active]:border-[#168979] data-[state=inactive]:text-gray-500 data-[state=inactive]:border-b-2 data-[state=inactive]:border-transparent hover:text-gray-700 hover:border-gray-300 text-xs sm:text-sm px-3 sm:px-4 py-2.5 sm:py-3 rounded-none transition-all font-medium border-b-2 border-transparent"
+                        className="flex-1 data-[state=active]:bg-transparent data-[state=active]:text-[#0F172A] data-[state=active]:border-b-2 data-[state=active]:border-[#0F172A] data-[state=inactive]:text-gray-500 data-[state=inactive]:border-b-2 data-[state=inactive]:border-transparent hover:text-gray-700 hover:border-gray-300 text-xs sm:text-sm px-3 sm:px-4 py-2.5 sm:py-3 rounded-none transition-all font-medium border-b-2 border-transparent"
                       >
                         <span className="hidden sm:inline">Dados Pessoais</span>
                         <span className="sm:hidden">Dados</span>
                       </TabsTrigger>
                       <TabsTrigger 
                         value="documentos" 
-                        className="flex-1 data-[state=active]:bg-transparent data-[state=active]:text-[#168979] data-[state=active]:border-b-2 data-[state=active]:border-[#168979] data-[state=inactive]:text-gray-500 data-[state=inactive]:border-b-2 data-[state=inactive]:border-transparent hover:text-gray-700 hover:border-gray-300 text-xs sm:text-sm px-3 sm:px-4 py-2.5 sm:py-3 rounded-none transition-all font-medium border-b-2 border-transparent"
+                        className="flex-1 data-[state=active]:bg-transparent data-[state=active]:text-[#0F172A] data-[state=active]:border-b-2 data-[state=active]:border-[#0F172A] data-[state=inactive]:text-gray-500 data-[state=inactive]:border-b-2 data-[state=inactive]:border-transparent hover:text-gray-700 hover:border-gray-300 text-xs sm:text-sm px-3 sm:px-4 py-2.5 sm:py-3 rounded-none transition-all font-medium border-b-2 border-transparent"
                       >
                         Documentos
                       </TabsTrigger>
                       <TabsTrigger 
                         value="saude" 
-                        className="flex-1 data-[state=active]:bg-transparent data-[state=active]:text-[#168979] data-[state=active]:border-b-2 data-[state=active]:border-[#168979] data-[state=inactive]:text-gray-500 data-[state=inactive]:border-b-2 data-[state=inactive]:border-transparent hover:text-gray-700 hover:border-gray-300 text-xs sm:text-sm px-3 sm:px-4 py-2.5 sm:py-3 rounded-none transition-all font-medium border-b-2 border-transparent"
+                        className="flex-1 data-[state=active]:bg-transparent data-[state=active]:text-[#0F172A] data-[state=active]:border-b-2 data-[state=active]:border-[#0F172A] data-[state=inactive]:text-gray-500 data-[state=inactive]:border-b-2 data-[state=inactive]:border-transparent hover:text-gray-700 hover:border-gray-300 text-xs sm:text-sm px-3 sm:px-4 py-2.5 sm:py-3 rounded-none transition-all font-medium border-b-2 border-transparent"
                       >
                         <span className="hidden sm:inline">Declaração de Saúde</span>
                         <span className="sm:hidden">Saúde</span>
                       </TabsTrigger>
                       <TabsTrigger 
                         value="dependentes" 
-                        className="flex-1 data-[state=active]:bg-transparent data-[state=active]:text-[#168979] data-[state=active]:border-b-2 data-[state=active]:border-[#168979] data-[state=inactive]:text-gray-500 data-[state=inactive]:border-b-2 data-[state=inactive]:border-transparent hover:text-gray-700 hover:border-gray-300 text-xs sm:text-sm px-3 sm:px-4 py-2.5 sm:py-3 rounded-none transition-all font-medium border-b-2 border-transparent"
+                        className="flex-1 data-[state=active]:bg-transparent data-[state=active]:text-[#0F172A] data-[state=active]:border-b-2 data-[state=active]:border-[#0F172A] data-[state=inactive]:text-gray-500 data-[state=inactive]:border-b-2 data-[state=inactive]:border-transparent hover:text-gray-700 hover:border-gray-300 text-xs sm:text-sm px-3 sm:px-4 py-2.5 sm:py-3 rounded-none transition-all font-medium border-b-2 border-transparent"
                       >
                         Dependentes
                       </TabsTrigger>
@@ -2180,9 +2170,9 @@ export default function PropostasPage() {
 
                   <TabsContent value="dados" className="space-y-4 sm:space-y-6 mt-0">
                     {/* Dados do Titular */}
-                    <Card className="border-2 border-gray-200 shadow-sm">
-                      <CardHeader className="bg-gradient-to-r from-blue-50 to-blue-100/50 border-b border-gray-200 px-3 sm:px-6 py-3 sm:py-4">
-                        <CardTitle className="flex items-center gap-2 text-[#168979] text-base sm:text-lg">
+                    <Card className="border-2 border-gray-200 shadow-sm rounded-none">
+                      <CardHeader className="bg-gradient-to-r from-blue-50 to-blue-100/50 border-b border-gray-200 px-3 sm:px-6 py-3 sm:py-4 rounded-none">
+                        <CardTitle className="flex items-center gap-2 text-[#0F172A] text-base sm:text-lg">
                           <User className="h-4 w-4 sm:h-5 sm:w-5" />
                           Dados do Titular
                         </CardTitle>
@@ -2195,7 +2185,7 @@ export default function PropostasPage() {
                               <Input
                                 value={editData.nome || ""}
                                 onChange={(e) => setEditData({...editData, nome: e.target.value})}
-                                className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base"
+                                className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-none text-sm sm:text-base"
                               />
                             ) : (
                             <p className="text-gray-900 font-medium">{obterNomeCliente(propostaDetalhada)}</p>
@@ -2208,7 +2198,7 @@ export default function PropostasPage() {
                                 type="email"
                                 value={editData.email || ""}
                                 onChange={(e) => setEditData({...editData, email: e.target.value})}
-                                className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base"
+                                className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-none text-sm sm:text-base"
                               />
                             ) : (
                             <p className="text-gray-900">{obterEmailCliente(propostaDetalhada)}</p>
@@ -2220,7 +2210,7 @@ export default function PropostasPage() {
                               <Input
                                 value={editData.telefone || ""}
                                 onChange={(e) => setEditData({...editData, telefone: e.target.value})}
-                                className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base"
+                                className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-none text-sm sm:text-base"
                               />
                             ) : (
                             <p className="text-gray-900">{obterTelefoneCliente(propostaDetalhada)}</p>
@@ -2232,7 +2222,7 @@ export default function PropostasPage() {
                               <Input
                                 value={editData.cpf || ""}
                                 onChange={(e) => setEditData({...editData, cpf: e.target.value})}
-                                className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base"
+                                className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-none text-sm sm:text-base"
                               />
                             ) : (
                             <p className="text-gray-900">{propostaDetalhada.cpf || "Não informado"}</p>
@@ -2244,7 +2234,7 @@ export default function PropostasPage() {
                               <Input
                                 value={editData.rg || ""}
                                 onChange={(e) => setEditData({...editData, rg: e.target.value})}
-                                className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base"
+                                className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-none text-sm sm:text-base"
                               />
                             ) : (
                             <p className="text-gray-900">{propostaDetalhada.rg || "Não informado"}</p>
@@ -2256,7 +2246,7 @@ export default function PropostasPage() {
                               <Input
                                 value={editData.orgao_emissor || ""}
                                 onChange={(e) => setEditData({...editData, orgao_emissor: e.target.value})}
-                                className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base"
+                                className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-none text-sm sm:text-base"
                               />
                             ) : (
                             <p className="text-gray-900">{propostaDetalhada.orgao_emissor || propostaDetalhada.orgao_expedidor || "Não informado"}</p>
@@ -2268,7 +2258,7 @@ export default function PropostasPage() {
                               <Input
                                 value={editData.cns || ""}
                                 onChange={(e) => setEditData({...editData, cns: e.target.value})}
-                                className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base"
+                                className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-none text-sm sm:text-base"
                               />
                             ) : (
                             <p className="text-gray-900">{propostaDetalhada.cns || propostaDetalhada.cns_cliente || "Não informado"}</p>
@@ -2281,7 +2271,7 @@ export default function PropostasPage() {
                                 type="date"
                                 value={editData.data_nascimento || ""}
                                 onChange={(e) => setEditData({...editData, data_nascimento: e.target.value})}
-                                className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base"
+                                className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-none text-sm sm:text-base"
                               />
                             ) : (
                             <p className="text-gray-900">
@@ -2313,7 +2303,7 @@ export default function PropostasPage() {
                               <Input
                                 value={editData.uf_nascimento || ""}
                                 onChange={(e) => setEditData({...editData, uf_nascimento: e.target.value})}
-                                className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base"
+                                className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-none text-sm sm:text-base"
                                 placeholder="Ex: SP, RJ, MG..."
                               />
                             ) : (
@@ -2326,7 +2316,7 @@ export default function PropostasPage() {
                               <Input
                                 value={editData.nome_mae || ""}
                                 onChange={(e) => setEditData({...editData, nome_mae: e.target.value})}
-                                className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg text-sm sm:text-base"
+                                className="h-11 sm:h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-none text-sm sm:text-base"
                               />
                             ) : (
                             <p className="text-gray-900">{propostaDetalhada.nome_mae || propostaDetalhada.nome_mae_cliente || "Não informado"}</p>
@@ -2361,9 +2351,9 @@ export default function PropostasPage() {
                     </Card>
 
                     {/* Endereço */}
-                    <Card className="border-2 border-gray-200 shadow-sm">
-                      <CardHeader className="bg-gradient-to-r from-green-50 to-green-100/50 border-b border-gray-200 px-3 sm:px-6 py-3 sm:py-4">
-                        <CardTitle className="flex items-center gap-2 text-[#168979] text-base sm:text-lg">
+                    <Card className="border-2 border-gray-200 shadow-sm rounded-none">
+                      <CardHeader className="bg-gradient-to-r from-blue-50 to-blue-100/50 border-b border-gray-200 px-3 sm:px-6 py-3 sm:py-4 rounded-none">
+                        <CardTitle className="flex items-center gap-2 text-[#0F172A] text-base sm:text-lg">
                           <Building className="h-4 w-4 sm:h-5 sm:w-5" />
                           Endereço
                         </CardTitle>
@@ -2404,9 +2394,9 @@ export default function PropostasPage() {
                     </Card>
 
                     {/* Informações do Plano */}
-                    <Card className="border-2 border-gray-200 shadow-sm">
-                      <CardHeader className="bg-gradient-to-r from-purple-50 to-purple-100/50 border-b border-gray-200 px-3 sm:px-6 py-3 sm:py-4">
-                        <CardTitle className="flex items-center gap-2 text-[#168979] text-base sm:text-lg">
+                    <Card className="border-2 border-gray-200 shadow-sm rounded-none">
+                      <CardHeader className="bg-gradient-to-r from-blue-50 to-blue-100/50 border-b border-gray-200 px-3 sm:px-6 py-3 sm:py-4 rounded-none">
+                        <CardTitle className="flex items-center gap-2 text-[#0F172A] text-base sm:text-lg">
                           <FileText className="h-4 w-4 sm:h-5 sm:w-5" />
                           Informações do Plano
                         </CardTitle>
@@ -2435,7 +2425,7 @@ export default function PropostasPage() {
                           </div>
                           <div>
                             <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">Valor Mensal</label>
-                            <p className="text-2xl font-bold text-green-600">
+                            <p className="text-2xl font-bold text-[#0F172A]">
                               R$ {calcularValorTotalMensal(propostaDetalhada).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
                             </p>
                             {/* Detalhamento dos valores se houver dependentes */}
@@ -2505,9 +2495,9 @@ export default function PropostasPage() {
 
                   <TabsContent value="dependentes" className="space-y-4 sm:space-y-6 mt-0">
                     {dependentes.length === 0 ? (
-                      <Card className="border-2 border-gray-200 shadow-sm">
-                        <CardHeader className="bg-gradient-to-r from-purple-50 to-purple-100/50 border-b border-gray-200 px-3 sm:px-6 py-3 sm:py-4">
-                          <CardTitle className="flex items-center gap-2 text-[#168979] text-base sm:text-lg">
+                      <Card className="border-2 border-gray-200 shadow-sm rounded-none">
+                        <CardHeader className="bg-gradient-to-r from-blue-50 to-blue-100/50 border-b border-gray-200 px-3 sm:px-6 py-3 sm:py-4 rounded-none">
+                          <CardTitle className="flex items-center gap-2 text-[#0F172A] text-base sm:text-lg">
                             <User className="h-4 w-4 sm:h-5 sm:w-5" />
                             Dependentes
                           </CardTitle>
@@ -2519,9 +2509,9 @@ export default function PropostasPage() {
                     ) : (
                       <div className="space-y-4">
                         {dependentes.map((dependente: any, index: any) => (
-                          <Card key={dependente.id || index} className="border-2 border-gray-200 shadow-sm">
-                            <CardHeader className="bg-gradient-to-r from-purple-50 to-purple-100/50 border-b border-gray-200 px-3 sm:px-6 py-3 sm:py-4">
-                              <CardTitle className="flex items-center gap-2 text-[#168979] text-base sm:text-lg">
+                          <Card key={dependente.id || index} className="border-2 border-gray-200 shadow-sm rounded-none">
+                            <CardHeader className="bg-gradient-to-r from-blue-50 to-blue-100/50 border-b border-gray-200 px-3 sm:px-6 py-3 sm:py-4 rounded-none">
+                              <CardTitle className="flex items-center gap-2 text-[#0F172A] text-base sm:text-lg">
                                 <User className="h-4 w-4 sm:h-5 sm:w-5" />
                                 <span className="truncate">{dependente.nome} - {getParentescoAmigavel(dependente.parentesco)}</span>
                               </CardTitle>
@@ -2617,7 +2607,7 @@ export default function PropostasPage() {
         <div className="fixed inset-0 flex items-center justify-center z-[100] p-4">
           <div className="bg-white rounded-2xl shadow-2xl max-w-5xl w-full max-h-[95vh] overflow-hidden flex flex-col">
             {/* Header com Gradiente */}
-            <div className="bg-gradient-to-r from-[#168979] to-[#13786a] px-4 sm:px-6 py-3 sm:py-4">
+            <div className="bg-gradient-to-r from-[#0F172A] to-[#1E293B] px-4 sm:px-6 py-3 sm:py-4">
               <div className="flex items-center gap-2">
                 <Heart className="h-4 w-4 sm:h-5 sm:w-5 text-red-500" />
                 <h3 className="text-lg font-semibold mb-4 text-gray-900">Gerar PDF</h3>

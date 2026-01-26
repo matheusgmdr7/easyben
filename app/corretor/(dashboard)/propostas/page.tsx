@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { AlertCircle, Search, FileText, Calendar, User, Phone, Mail, Package, DollarSign, Eye, X, Download, Clock, CheckCircle, XCircle } from "lucide-react"
+import { AlertCircle, Search, FileText, Calendar, User, Phone, Mail, Package, DollarSign, Eye, X, Download, Clock, CheckCircle, XCircle, RotateCcw } from "lucide-react"
 import { buscarPropostasPorCorretor } from "@/services/propostas-service-unificado"
 import { verificarAutenticacao } from "@/services/auth-corretores-simples"
 import { Spinner } from "@/components/ui/spinner"
@@ -37,7 +37,7 @@ const mapearStatusProposta = (status: string) => {
   } else if (statusLower === 'aprovada' || statusLower === 'aprovado') {
     return {
       label: 'APROVADA',
-      color: 'bg-gray-100 text-green-600',
+      color: 'bg-gray-100 text-[#0F172A]',
       icon: CheckCircle
     }
   } else if (statusLower === 'rejeitada' || statusLower === 'rejeitado') {
@@ -55,6 +55,18 @@ const mapearStatusProposta = (status: string) => {
   } else if (statusLower === 'cadastrado' || statusLower === 'cadastrada') {
     return {
       label: 'CADASTRADA',
+      color: 'bg-gray-100 text-[#0F172A]',
+      icon: CheckCircle
+    }
+  } else if (statusLower === 'devolvida') {
+    return {
+      label: 'DEVOLVIDA',
+      color: 'bg-gray-100 text-amber-600',
+      icon: RotateCcw
+    }
+  } else if (statusLower === 'transmitida') {
+    return {
+      label: 'TRANSMITIDA',
       color: 'bg-gray-100 text-green-600',
       icon: CheckCircle
     }
@@ -283,7 +295,7 @@ export default function CorretorPropostasPage() {
                 <AlertCircle className="h-8 w-8 text-red-600" />
               </div>
               <p className="text-red-600 font-semibold">{erro}</p>
-              <Button onClick={() => window.location.reload()} className="bg-[#168979] hover:bg-[#13786a] btn-corporate">
+              <Button onClick={() => window.location.reload()} className="bg-[#0F172A] hover:bg-[#1E293B] btn-corporate">
                 Tentar novamente
               </Button>
             </div>
@@ -304,7 +316,7 @@ export default function CorretorPropostasPage() {
           </div>
           <Button
             onClick={() => router.push("/corretor/propostas/nova")}
-            className="bg-[#168979] hover:bg-[#13786a] text-white btn-corporate shadow-corporate"
+            className="bg-[#0F172A] hover:bg-[#1E293B] text-white btn-corporate shadow-corporate"
           >
             <FileText className="mr-2 h-4 w-4" />
             Nova Proposta
@@ -421,7 +433,7 @@ export default function CorretorPropostasPage() {
                           {mapearStatusProposta(proposta.status).label}
                         </span>
                       </TableCell>
-                      <TableCell className="font-bold text-[#168979]">
+                      <TableCell className="font-bold text-[#0F172A]">
                         {(() => {
                           const valorTotal = calcularValorTotalComDependentes(proposta)
                           return valorTotal > 0 ? formatarMoeda(valorTotal) : "-"
@@ -430,7 +442,7 @@ export default function CorretorPropostasPage() {
                       <TableCell className="text-left">
                         <Button
                           onClick={() => visualizarPDF(proposta)}
-                          className="bg-[#168979] hover:bg-[#13786a] text-white p-2 rounded transition-colors"
+                          className="bg-[#0F172A] hover:bg-[#1E293B] text-white p-2 rounded transition-colors"
                           title="Visualizar PDF da proposta"
                         >
                           <Eye className="h-4 w-4" />
@@ -531,7 +543,7 @@ export default function CorretorPropostasPage() {
                         <DollarSign className="h-4 w-4 text-gray-400" />
                         <span className="text-xs text-gray-500 font-medium">VALOR TOTAL</span>
                       </div>
-                      <div className="text-2xl font-bold text-[#168979]">
+                      <div className="text-2xl font-bold text-[#0F172A]">
                         {(() => {
                           const valorTotal = calcularValorTotalComDependentes(proposta)
                           return valorTotal > 0 ? formatarMoeda(valorTotal) : "Não definido"
@@ -554,7 +566,7 @@ export default function CorretorPropostasPage() {
                   <div className="mt-4 pt-3 border-t border-gray-100">
                     <Button
                       onClick={() => visualizarPDF(proposta)}
-                      className="w-full bg-[#168979] hover:bg-[#13786a] text-white px-4 py-2 text-sm font-medium rounded transition-colors"
+                      className="w-full bg-[#0F172A] hover:bg-[#1E293B] text-white px-4 py-2 text-sm font-medium rounded transition-colors"
                     >
                       <Eye className="h-4 w-4 mr-2" />
                       Visualizar PDF
@@ -574,7 +586,7 @@ export default function CorretorPropostasPage() {
             {/* Header do Modal */}
             <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-gray-50">
               <div className="flex items-center gap-3">
-                <FileText className="h-6 w-6 text-[#168979]" />
+                <FileText className="h-6 w-6 text-[#0F172A]" />
                 <h3 className="text-xl font-bold text-gray-900">
                   Proposta - {propostaSelecionada?.nome_cliente || "Cliente"}
                 </h3>
@@ -602,7 +614,7 @@ export default function CorretorPropostasPage() {
                     <div className="flex items-center gap-2">
                       <Button
                         onClick={downloadPDF}
-                        className="bg-[#168979] hover:bg-[#13786a] text-white px-3 py-1 text-sm rounded flex items-center gap-1"
+                        className="bg-[#0F172A] hover:bg-[#1E293B] text-white px-3 py-1 text-sm rounded flex items-center gap-1"
                       >
                         <Download className="h-3 w-3" />
                         Baixar
@@ -631,7 +643,7 @@ export default function CorretorPropostasPage() {
                   </p>
                   <Button
                     onClick={fecharModalPDF}
-                    className="bg-[#168979] hover:bg-[#13786a] text-white px-6 py-3 rounded text-lg"
+                    className="bg-[#0F172A] hover:bg-[#1E293B] text-white px-6 py-3 rounded text-lg"
                   >
                     Fechar
                   </Button>

@@ -82,7 +82,7 @@ export default function VerificarAPIPage() {
                     {supabaseUrl || "Não configurado"}
                   </code>
                   {supabaseUrl ? (
-                    <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+                    <Badge variant="outline" className="bg-[#7BD9F6] bg-opacity-20 text-[#0F172A] border-[#7BD9F6] border-opacity-30">
                       <CheckCircle className="h-3 w-3 mr-1" /> Configurado
                     </Badge>
                   ) : (
@@ -100,7 +100,7 @@ export default function VerificarAPIPage() {
                     {supabaseKey || "Não configurado"}
                   </code>
                   {supabaseKey ? (
-                    <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+                    <Badge variant="outline" className="bg-[#7BD9F6] bg-opacity-20 text-[#0F172A] border-[#7BD9F6] border-opacity-30">
                       <CheckCircle className="h-3 w-3 mr-1" /> Configurado
                     </Badge>
                   ) : (

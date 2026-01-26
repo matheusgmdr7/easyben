@@ -47,7 +47,7 @@ serve(async (req) => {
                         <table width="600" cellpadding="0" cellspacing="0" style="background-color: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
                             <!-- HEADER -->
                             <tr>
-                                <td style="background: linear-gradient(135deg, #168979 0%, #13786a 100%); padding: 40px 30px; text-align: center;">
+                                <td style="background: linear-gradient(135deg, #0F172A 0%, #1E293B 100%); padding: 40px 30px; text-align: center;">
                                     <h1 style="color: white; margin: 0; font-size: 28px; font-weight: bold;">🎉 PROPOSTA COMPLETADA!</h1>
                                     <p style="color: #e8f5e8; margin: 10px 0 0 0; font-size: 16px;">Contratando Planos</p>
                                 </td>
@@ -55,15 +55,15 @@ serve(async (req) => {
                             <!-- CONTENT -->
                             <tr>
                                 <td style="padding: 40px 30px;">
-                                    <p style="font-size: 18px; color: #333; margin: 0 0 20px 0;">Olá <strong style="color: #168979;">${nome}</strong>,</p>
+                                    <p style="font-size: 18px; color: #333; margin: 0 0 20px 0;">Olá <strong style="color: #0F172A;">${nome}</strong>,</p>
                                     
-                                    <div style="background: #e8f5e8; padding: 25px; border-radius: 8px; border-left: 5px solid #168979; margin: 25px 0;">
-                                        <h3 style="color: #168979; margin: 0 0 15px 0; font-size: 20px;">✅ Excelente notícia!</h3>
+                                    <div style="background: #e8f5e8; padding: 25px; border-radius: 8px; border-left: 5px solid #0F172A; margin: 25px 0;">
+                                        <h3 style="color: #0F172A; margin: 0 0 15px 0; font-size: 20px;">✅ Excelente notícia!</h3>
                                         <p style="margin: 0; font-size: 16px; color: #333;">O cliente <strong>${cliente}</strong> completou a proposta <strong>${proposta}</strong> com sucesso!</p>
                                     </div>
                                     
                                     <div style="background: #f8f9fa; padding: 25px; border-radius: 8px; margin: 25px 0;">
-                                        <h4 style="color: #168979; margin: 0 0 15px 0;">📋 Próximos passos:</h4>
+                                        <h4 style="color: #0F172A; margin: 0 0 15px 0;">📋 Próximos passos:</h4>
                                         <ul style="margin: 0; padding-left: 20px; color: #333;">
                                             <li style="margin-bottom: 8px;">Acesse seu painel de corretor</li>
                                             <li style="margin-bottom: 8px;">Revise os documentos enviados</li>
@@ -106,7 +106,7 @@ serve(async (req) => {
                         <table width="600" cellpadding="0" cellspacing="0" style="background-color: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
                             <!-- HEADER -->
                             <tr>
-                                <td style="background: linear-gradient(135deg, #168979 0%, #13786a 100%); padding: 50px 30px; text-align: center;">
+                                <td style="background: linear-gradient(135deg, #0F172A 0%, #1E293B 100%); padding: 50px 30px; text-align: center;">
                                     <div style="background: rgba(255,255,255,0.1); padding: 20px; border-radius: 50px; display: inline-block; margin-bottom: 20px;">
                                         <span style="font-size: 48px;">🛡️</span>
                                     </div>
@@ -117,30 +117,30 @@ serve(async (req) => {
                             <!-- CONTENT -->
                             <tr>
                                 <td style="padding: 40px 30px;">
-                                    <h2 style="color: #168979; margin: 0 0 20px 0; font-size: 24px; text-align: center;">Complete sua proposta em poucos cliques!</h2>
+                                    <h2 style="color: #0F172A; margin: 0 0 20px 0; font-size: 24px; text-align: center;">Complete sua proposta em poucos cliques!</h2>
                                     
-                                    <p style="font-size: 18px; color: #333; margin: 0 0 25px 0; text-align: center;">Olá <strong style="color: #168979;">${nome}</strong>,</p>
+                                    <p style="font-size: 18px; color: #333; margin: 0 0 25px 0; text-align: center;">Olá <strong style="color: #0F172A;">${nome}</strong>,</p>
                                     
-                                    <p style="font-size: 16px; color: #333; margin: 0 0 30px 0; text-align: center;">Seu corretor <strong style="color: #168979;">${corretor}</strong> preparou uma proposta especial de plano de saúde para você!</p>
+                                    <p style="font-size: 16px; color: #333; margin: 0 0 30px 0; text-align: center;">Seu corretor <strong style="color: #0F172A;">${corretor}</strong> preparou uma proposta especial de plano de saúde para você!</p>
                                     
                                     <!-- STEPS -->
                                     <div style="background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); padding: 30px; border-radius: 12px; margin: 30px 0;">
-                                        <h3 style="color: #168979; margin: 0 0 20px 0; text-align: center; font-size: 20px;">📋 Como funciona:</h3>
+                                        <h3 style="color: #0F172A; margin: 0 0 20px 0; text-align: center; font-size: 20px;">📋 Como funciona:</h3>
                                         <div style="display: flex; flex-direction: column; gap: 15px;">
                                             <div style="display: flex; align-items: center; background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                                                <div style="background: #168979; color: white; width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; margin-right: 15px;">1</div>
+                                                <div style="background: #0F172A; color: white; width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; margin-right: 15px;">1</div>
                                                 <span style="color: #333; font-size: 16px;">Clique no botão abaixo para acessar</span>
                                             </div>
                                             <div style="display: flex; align-items: center; background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                                                <div style="background: #168979; color: white; width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; margin-right: 15px;">2</div>
+                                                <div style="background: #0F172A; color: white; width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; margin-right: 15px;">2</div>
                                                 <span style="color: #333; font-size: 16px;">Preencha a declaração de saúde</span>
                                             </div>
                                             <div style="display: flex; align-items: center; background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                                                <div style="background: #168979; color: white; width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; margin-right: 15px;">3</div>
+                                                <div style="background: #0F172A; color: white; width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; margin-right: 15px;">3</div>
                                                 <span style="color: #333; font-size: 16px;">Assine digitalmente</span>
                                             </div>
                                             <div style="display: flex; align-items: center; background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                                                <div style="background: #168979; color: white; width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; margin-right: 15px;">✓</div>
+                                                <div style="background: #0F172A; color: white; width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; margin-right: 15px;">✓</div>
                                                 <span style="color: #333; font-size: 16px;">Pronto! Proposta enviada para análise</span>
                                             </div>
                                         </div>
@@ -148,16 +148,16 @@ serve(async (req) => {
                                     
                                     <!-- CTA BUTTON -->
                                     <div style="text-align: center; margin: 40px 0;">
-                                        <a href="${link}" style="background: linear-gradient(135deg, #168979 0%, #13786a 100%); color: white; padding: 18px 40px; text-decoration: none; border-radius: 50px; font-size: 18px; font-weight: bold; display: inline-block; box-shadow: 0 4px 12px rgba(22, 137, 121, 0.3); transition: all 0.3s ease;">
+                                        <a href="${link}" style="background: linear-gradient(135deg, #0F172A 0%, #1E293B 100%); color: white; padding: 18px 40px; text-decoration: none; border-radius: 50px; font-size: 18px; font-weight: bold; display: inline-block; box-shadow: 0 4px 12px rgba(22, 137, 121, 0.3); transition: all 0.3s ease;">
                                             ✅ COMPLETAR PROPOSTA AGORA
                                         </a>
                                     </div>
                                     
                                     <!-- LINK BACKUP -->
                                     <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin: 30px 0;">
-                                        <p style="margin: 0 0 10px 0; font-weight: bold; color: #168979; text-align: center;">🔗 Link direto:</p>
+                                        <p style="margin: 0 0 10px 0; font-weight: bold; color: #0F172A; text-align: center;">🔗 Link direto:</p>
                                         <p style="margin: 0; word-break: break-all; text-align: center; font-size: 14px;">
-                                            <a href="${link}" style="color: #168979; text-decoration: none;">${link}</a>
+                                            <a href="${link}" style="color: #0F172A; text-decoration: none;">${link}</a>
                                         </p>
                                     </div>
                                     
@@ -175,7 +175,7 @@ serve(async (req) => {
                             </tr>
                             <!-- FOOTER -->
                             <tr>
-                                <td style="background: #168979; padding: 30px; text-align: center;">
+                                <td style="background: #0F172A; padding: 30px; text-align: center;">
                                     <p style="margin: 0 0 10px 0; color: white; font-size: 16px; font-weight: bold;">CONTRATANDO PLANOS</p>
                                     <p style="margin: 0; color: #e8f5e8; font-size: 12px;">© 2024 - Especialistas em Planos de Saúde</p>
                                     <p style="margin: 5px 0 0 0; color: #e8f5e8; font-size: 12px;">Este é um email automático, não responda.</p>

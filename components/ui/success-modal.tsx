@@ -62,8 +62,8 @@ function SuccessModal({ isOpen, onClose, data }: SuccessModalProps) {
         <DialogHeader className="space-y-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3">
-              <CheckCircle className="h-8 w-8 text-green-600" />
-              <DialogTitle className="text-2xl font-bold text-green-700">Proposta Criada</DialogTitle>
+              <CheckCircle className="h-8 w-8 text-[#0F172A]" />
+              <DialogTitle className="text-2xl font-bold text-[#0F172A]">Proposta Criada</DialogTitle>
             </div>
           </div>
           <DialogDescription className="sr-only">
@@ -73,19 +73,19 @@ function SuccessModal({ isOpen, onClose, data }: SuccessModalProps) {
 
         <div className="space-y-6">
           {/* Status do Email */}
-          <Card className={emailStatus ? "border-green-200 bg-green-50" : "border-orange-200 bg-orange-50"}>
+          <Card className={emailStatus ? "border-[#7BD9F6] border-opacity-30 bg-[#7BD9F6] bg-opacity-20" : "border-orange-200 bg-orange-50"}>
             <CardContent className="pt-4">
               <div className="flex items-start space-x-3">
                 {emailStatus ? (
-                  <CheckCircle className="h-5 w-5 text-green-600 mt-0.5" />
+                  <CheckCircle className="h-5 w-5 text-[#0F172A] mt-0.5" />
                 ) : (
                   <AlertTriangle className="h-5 w-5 text-orange-600 mt-0.5" />
                 )}
                 <div className="flex-1">
-                  <h3 className={`font-semibold ${emailStatus ? "text-green-800" : "text-orange-800"}`}>
+                  <h3 className={`font-semibold ${emailStatus ? "text-[#0F172A]" : "text-orange-800"}`}>
                     {emailStatus ? "Email enviado automaticamente" : "Email não foi enviado automaticamente"}
                   </h3>
-                  <p className={`text-sm mt-1 ${emailStatus ? "text-green-700" : "text-orange-700"}`}>
+                  <p className={`text-sm mt-1 ${emailStatus ? "text-[#0F172A]" : "text-orange-700"}`}>
                     {emailStatus
                       ? `Link da proposta enviado para ${data.clienteEmail}`
                       : `Você precisará enviar o link manualmente para ${data.clienteEmail}`}

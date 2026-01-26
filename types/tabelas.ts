@@ -3,10 +3,16 @@ export interface TabelaPreco {
   titulo: string
   descricao?: string | null
   operadora?: string | null
+  operadora_id?: string | null
+  produto_id?: string | number | null
   tipo_plano?: string | null
   segmentacao?: string | null
-  corretora?: string | null // Adicionado campo corretora
-  abrangencia?: string | null // NOVO CAMPO
+  corretora?: string | null
+  abrangencia?: string | null
+  data?: string | null
+  data_fechamento?: string | null
+  data_vencimento?: string | null
+  data_vigencia?: string | null
   ativo: boolean
   created_at: string
   updated_at?: string | null

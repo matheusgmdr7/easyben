@@ -60,10 +60,10 @@ export function VerificarCamposPDF() {
       </div>
 
       {resultado && (
-        <div className={`p-4 rounded-lg ${resultado.temCampos ? "bg-green-50" : "bg-yellow-50"}`}>
+        <div className={`p-4 rounded-lg ${resultado.temCampos ? "bg-[#7BD9F6] bg-opacity-20" : "bg-yellow-50"}`}>
           <div className="flex items-start">
             {resultado.temCampos ? (
-              <CheckCircle className="h-5 w-5 text-green-500 mt-0.5 mr-2 flex-shrink-0" />
+              <CheckCircle className="h-5 w-5 text-[#0F172A] mt-0.5 mr-2 flex-shrink-0" />
             ) : (
               <AlertCircle className="h-5 w-5 text-yellow-500 mt-0.5 mr-2 flex-shrink-0" />
             )}

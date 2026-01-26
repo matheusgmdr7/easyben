@@ -1,10 +1,13 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
-import ModalCriarUsuario from "@/components/admin/modals/modal-criar-usuario"
-import ModalEditarUsuario from "@/components/admin/modals/modal-editar-usuario"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import usuariosAdminService from "@/services/usuarios-admin-service"
+import type { UsuarioAdmin } from "@/services/usuarios-admin-service"
+import { buscarTodosCorretores } from "@/services/corretores-service"
+import type { Corretor } from "@/types/corretores"
+import { Spinner } from "@/components/ui/spinner"
+import { toast } from "sonner"
+import { Users, Search, Plus, Edit, Trash2, Power, CheckCircle, XCircle, Shield, UserCheck, Building2, UserCog, Settings } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -15,192 +18,279 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import {
-  Settings,
-  Plus,
-  Search,
-  Edit,
-  Trash2,
-  Eye,
-  EyeOff,
-  CheckCircle,
-  XCircle,
-  Users as UsersIcon,
-  Shield,
-  Mail,
-  Calendar,
-  Power,
-} from "lucide-react"
-import { toast } from "sonner"
-import UsuariosAdminService, {
-  type UsuarioAdmin,
-  type CriarUsuarioData,
-  type AtualizarUsuarioData,
-  type Permissao,
-  PERFIS_LABELS,
-  PERMISSOES_LABELS,
-  PERFIS_PERMISSOES,
-} from "@/services/usuarios-admin-service"
+import { supabase } from "@/lib/supabase"
+import { getCurrentTenantId } from "@/lib/tenant-query-helper"
+import ModalEditarUsuario from "@/components/admin/modals/modal-editar-usuario"
+import UsuariosAdminService, { PERFIS_LABELS, PERMISSOES_LABELS, PERFIS_PERMISSOES, type Permissao } from "@/services/usuarios-admin-service"
+import { useModalOverlay } from "@/hooks/use-modal-overlay"
 
-interface FormUsuarioData {
+type TipoUsuario = "admin" | "analista" | "gestor" | "supervisor" | "todos"
+
+interface UsuarioUnificado {
+  id: string
   nome: string
   email: string
-  senha: string
-  perfil: string
-  permissoes: Permissao[]
-  ativo: boolean
+  tipo: TipoUsuario
+  status: string
+  criado_em?: string
+  ultimo_acesso?: string
+  dadosOriginais: UsuarioAdmin | Corretor
 }
 
 export default function UsuariosPage() {
-  const router = useRouter()
-  const [usuarios, setUsuarios] = useState<UsuarioAdmin[]>([])
+  const [usuarios, setUsuarios] = useState<UsuarioUnificado[]>([])
   const [loading, setLoading] = useState(true)
-  const [filtroNome, setFiltroNome] = useState("")
-  const [filtroPerfil, setFiltroPerfil] = useState("todos")
-  const [filtroStatus, setFiltroStatus] = useState("todos")
+  const [filtro, setFiltro] = useState("")
+  const [tipoFiltro, setTipoFiltro] = useState<TipoUsuario>("todos")
+  const [statusFiltro, setStatusFiltro] = useState<string>("todos")
   
-  // Modal estados
-  const [showModalCriar, setShowModalCriar] = useState(false)
-  const [showModalEditar, setShowModalEditar] = useState(false)
-  const [usuarioSelecionado, setUsuarioSelecionado] = useState<UsuarioAdmin | null>(null)
-  const [saving, setSaving] = useState(false)
   
-  // Form dados
-  const [formData, setFormData] = useState<FormUsuarioData>({
+  // Form dados para criar analista
+  const [formDataAnalista, setFormDataAnalista] = useState({
     nome: "",
     email: "",
     senha: "",
-    perfil: "atendimento",
-    permissoes: [],
-    ativo: true,
+    confirmarSenha: ""
   })
+  const [mostrarFormAnalista, setMostrarFormAnalista] = useState(false)
+  const [salvandoAnalista, setSalvandoAnalista] = useState(false)
   
-  const [permissoesSelecionadas, setPermissoesSelecionadas] = useState<Permissao[]>([])
-  const [mostrarSenha, setMostrarSenha] = useState(false)
-  const [mostrarPermissoesCriar, setMostrarPermissoesCriar] = useState(false)
-  const [mostrarPermissoesEditar, setMostrarPermissoesEditar] = useState(false)
+  // Hook para overlay do modal
+  useModalOverlay(mostrarFormAnalista)
+  
+  // Modal de gerenciar usuário
+  const [showModalGerenciar, setShowModalGerenciar] = useState(false)
+  const [usuarioSelecionado, setUsuarioSelecionado] = useState<UsuarioUnificado | null>(null)
+  const [formDataGerenciar, setFormDataGerenciar] = useState({
+    nome: "",
+    email: "",
+    senha: "",
+    perfil: "assistente" as UsuarioAdmin["perfil"],
+    permissoes: [] as Permissao[],
+    ativo: true
+  })
+  const [salvandoGerenciar, setSalvandoGerenciar] = useState(false)
 
   useEffect(() => {
     carregarUsuarios()
   }, [])
 
-  const carregarUsuarios = async () => {
+  async function carregarUsuarios() {
     try {
       setLoading(true)
-      console.log("🔄 Carregando usuários...")
-      const data = await UsuariosAdminService.listar()
-      console.log("✅ Usuários carregados:", data?.length || 0)
-      setUsuarios(data || [])
-    } catch (error: any) {
-      console.error("❌ Erro ao carregar usuários:", error)
-      console.error("Erro detalhado:", {
-        message: error?.message,
-        stack: error?.stack,
-        name: error?.name
+      
+      // Carregar usuários admin
+      const usuariosAdmin = await usuariosAdminService.listar()
+      
+      // Carregar corretores (gestores e supervisores)
+      const corretores = await buscarTodosCorretores()
+      
+      // Transformar em lista unificada
+      const usuariosUnificados: UsuarioUnificado[] = []
+      
+      // Adicionar admins
+      usuariosAdmin.forEach((usuario) => {
+        let tipo: TipoUsuario = "admin"
+        if (usuario.perfil === "assistente" || 
+            (Array.isArray(usuario.permissoes) && 
+             (usuario.permissoes.includes("propostas") || 
+              usuario.permissoes.includes("em_analise") || 
+              usuario.permissoes.includes("cadastrado")))) {
+          tipo = "analista"
+        }
+        
+        usuariosUnificados.push({
+          id: usuario.id,
+          nome: usuario.nome,
+          email: usuario.email,
+          tipo,
+          status: usuario.status || "ativo",
+          criado_em: usuario.criado_em,
+          ultimo_acesso: usuario.ultimo_acesso,
+          dadosOriginais: usuario
+        })
       })
-      toast.error(`Erro ao carregar usuários: ${error?.message || "Erro desconhecido"}`)
-      setUsuarios([]) // Garantir que sempre temos um array
+      
+      // Adicionar apenas gestores e supervisores (não corretores simples)
+      corretores.forEach((corretor) => {
+        // Filtrar apenas gestores e supervisores
+        if (corretor.is_gestor || (corretor.gestor_id && corretor.acesso_portal_gestor)) {
+          const tipo: TipoUsuario = corretor.is_gestor ? "gestor" : "supervisor"
+          
+          usuariosUnificados.push({
+            id: corretor.id,
+            nome: corretor.nome || "",
+            email: corretor.email || "",
+            tipo,
+            status: corretor.status || "pendente",
+            criado_em: corretor.created_at,
+            ultimo_acesso: corretor.updated_at,
+            dadosOriginais: corretor
+          })
+        }
+      })
+      
+      setUsuarios(usuariosUnificados)
+    } catch (error) {
+      console.error("Erro ao carregar usuários:", error)
+      toast.error("Erro ao carregar usuários")
     } finally {
       setLoading(false)
     }
   }
 
-  const usuariosFiltrados = usuarios.filter((usuario) => {
-    const matchNome = usuario.nome.toLowerCase().includes(filtroNome.toLowerCase()) ||
-                      usuario.email.toLowerCase().includes(filtroNome.toLowerCase())
-    const matchPerfil = filtroPerfil === "todos" || usuario.perfil === filtroPerfil
-    const matchStatus = filtroStatus === "todos" || usuario.status === filtroStatus
-    
-    return matchNome && matchPerfil && matchStatus
-  })
-
-  const handleCriar = async () => {
-    try {
-    if (!formData.nome || !formData.email || !formData.senha) {
+  async function criarAnalista() {
+    if (!formDataAnalista.nome || !formDataAnalista.email || !formDataAnalista.senha) {
         toast.error("Preencha todos os campos obrigatórios")
       return
     }
 
-      setSaving(true)
-      
-      // Usar permissões selecionadas se houver, senão usar do perfil
-      const dados: CriarUsuarioData = {
-        nome: formData.nome,
-        email: formData.email,
-        senha: formData.senha,
-        perfil: formData.perfil as any,
-        permissoes: permissoesSelecionadas.length > 0 ? permissoesSelecionadas : formData.permissoes
-      }
-      
-      await UsuariosAdminService.criar(dados)
-      toast.success("Usuário criado com sucesso!")
-      setShowModalCriar(false)
-      limparFormulario()
-      carregarUsuarios()
-    } catch (error) {
-      console.error("Erro ao criar usuário:", error)
-      toast.error("Erro ao criar usuário")
-    } finally {
-      setSaving(false)
+    if (formDataAnalista.senha !== formDataAnalista.confirmarSenha) {
+      toast.error("As senhas não coincidem")
+      return
     }
-  }
 
-  const handleAtualizar = async () => {
+    if (formDataAnalista.senha.length < 6) {
+      toast.error("A senha deve ter no mínimo 6 caracteres")
+      return
+    }
+
     try {
-      if (!usuarioSelecionado) return
+      setSalvandoAnalista(true)
 
-      setSaving(true)
-      
-      // IMPORTANTE: Sempre usar formData.permissoes (mesmo que vazio) para garantir que as mudanças sejam salvas
-      // Se formData.permissoes é um array válido (mesmo que vazio), usar ele
-      // Isso permite salvar um array vazio quando o usuário desmarca todas as permissões
-      const permissoesParaSalvar = Array.isArray(formData.permissoes)
-        ? formData.permissoes
-        : PERFIS_PERMISSOES[formData.perfil] || []
-      
-      const dados: AtualizarUsuarioData = {
-        nome: formData.nome,
-        email: formData.email,
-        perfil: formData.perfil as any,
-        permissoes: permissoesParaSalvar, // Sempre enviar, mesmo que vazio
+      // Verificar se o email já está cadastrado
+      const { data: usuarioExistente } = await supabase
+        .from("usuarios_admin")
+        .select("*")
+        .eq("email", formDataAnalista.email)
+        .maybeSingle()
+
+      if (usuarioExistente) {
+        toast.error("Este email já está cadastrado")
+        return
       }
-      
-      console.log("📝 Preparando para salvar:", {
-        permissoesFormData: formData.permissoes,
-        permissoesParaSalvar,
-        perfil: formData.perfil,
-      })
-      
-      if (formData.senha) {
-        dados.senha = formData.senha
-      }
-      
-      console.log("📝 Dados para atualizar:", {
-        id: usuarioSelecionado.id,
-        dados: {
-          ...dados,
-          senha: dados.senha ? "[REDACTED]" : undefined,
+
+      // Criar usuário no Supabase Auth
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: formDataAnalista.email,
+        password: formDataAnalista.senha,
+        options: {
+          data: {
+            role: "analista",
+            nome: formDataAnalista.nome,
+          },
         },
       })
 
-      await UsuariosAdminService.atualizar(usuarioSelecionado.id, dados)
-      toast.success("Usuário atualizado com sucesso!")
-      setShowModalEditar(false)
-      setUsuarioSelecionado(null)
-      limparFormulario()
+      if (authError) {
+        console.error("Erro ao criar usuário no Auth:", authError)
+        if (authError.message.includes("already registered") || authError.message.includes("already exists")) {
+          // Tentar fazer login para obter o ID do usuário existente
+          const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+            email: formDataAnalista.email,
+            password: formDataAnalista.senha,
+          })
+
+          if (signInError) {
+            toast.error("Este email já está cadastrado no sistema")
+            return
+          }
+
+          // Usar o ID do usuário existente
+          const authUserId = signInData.user.id
+          
+          // Criar registro na tabela usuarios_admin
+          const tenantId = await getCurrentTenantId()
+          const { error: adminError } = await supabase
+            .from("usuarios_admin")
+            .insert([
+              {
+                nome: formDataAnalista.nome.toUpperCase(),
+                email: formDataAnalista.email,
+                perfil: "assistente",
+                permissoes: ["propostas", "em_analise", "cadastrado"],
+                status: "ativo",
+                ativo: true,
+                auth_user_id: authUserId,
+                tenant_id: tenantId,
+              },
+            ])
+
+          if (adminError) {
+            console.error("Erro ao criar analista:", adminError)
+            toast.error("Erro ao criar analista")
+            return
+          }
+
+          toast.success("Analista criado com sucesso!")
+          setMostrarFormAnalista(false)
+          setFormDataAnalista({ nome: "", email: "", senha: "", confirmarSenha: "" })
+          carregarUsuarios()
+          return
+        } else {
+          toast.error(`Erro ao criar conta: ${authError.message}`)
+          return
+        }
+      }
+
+      if (!authData.user) {
+        toast.error("Erro ao criar usuário")
+        return
+      }
+
+      // Criar registro na tabela usuarios_admin
+      const tenantId = await getCurrentTenantId()
+      const { error: adminError } = await supabase
+        .from("usuarios_admin")
+        .insert([
+          {
+            nome: formDataAnalista.nome.toUpperCase(),
+            email: formDataAnalista.email,
+            perfil: "assistente",
+            permissoes: ["propostas", "em_analise", "cadastrado"],
+            status: "ativo",
+            ativo: true,
+            auth_user_id: authData.user.id,
+            tenant_id: tenantId,
+          },
+        ])
+
+      if (adminError) {
+        console.error("Erro ao criar analista:", adminError)
+        toast.error("Erro ao criar analista")
+        return
+      }
+
+      toast.success("Analista criado com sucesso!")
+      setMostrarFormAnalista(false)
+      setFormDataAnalista({ nome: "", email: "", senha: "", confirmarSenha: "" })
       carregarUsuarios()
     } catch (error) {
-      console.error("Erro ao atualizar usuário:", error)
-      toast.error("Erro ao atualizar usuário")
+      console.error("Erro ao criar analista:", error)
+      toast.error("Erro ao criar analista")
     } finally {
-      setSaving(false)
+      setSalvandoAnalista(false)
     }
   }
 
-  const handleToggleAtivo = async (usuario: UsuarioAdmin) => {
+  async function toggleStatusUsuario(usuario: UsuarioUnificado) {
     try {
-      await UsuariosAdminService.toggleAtivo(usuario.id, !usuario.ativo)
-      toast.success(`Usuário ${!usuario.ativo ? "ativado" : "desativado"} com sucesso!`)
+      if (usuario.tipo === "admin" || usuario.tipo === "analista") {
+        const dadosOriginais = usuario.dadosOriginais as UsuarioAdmin
+        await usuariosAdminService.atualizar(usuario.id, {
+          status: dadosOriginais.status === "ativo" ? "inativo" : "ativo"
+        })
+      } else {
+        const dadosOriginais = usuario.dadosOriginais as Corretor
+        const { error } = await supabase
+          .from("corretores")
+          .update({ ativo: !dadosOriginais.ativo })
+          .eq("id", usuario.id)
+        
+        if (error) throw error
+      }
+      
+      toast.success(`Usuário ${usuario.status === "ativo" ? "desativado" : "ativado"} com sucesso!`)
       carregarUsuarios()
     } catch (error) {
       console.error("Erro ao alterar status:", error)
@@ -208,359 +298,473 @@ export default function UsuariosPage() {
     }
   }
 
-  const handleExcluir = async (usuario: UsuarioAdmin) => {
-    try {
-      const confirmar = confirm(
-        `Tem certeza que deseja EXCLUIR PERMANENTEMENTE o usuário "${usuario.nome}"?\n\n` +
-        `Esta ação não pode ser desfeita e irá:\n` +
-        `• Remover o usuário do sistema\n` +
-        `• Remover do Supabase Auth\n` +
-        `• Deletar todos os dados associados`
-      )
-      
-      if (!confirmar) {
-        toast.info("Exclusão cancelada")
+  function abrirModalGerenciar(usuario: UsuarioUnificado) {
+    // Só pode gerenciar admins e analistas (que são usuarios_admin)
+    if (usuario.tipo !== "admin" && usuario.tipo !== "analista") {
+      toast.error("Apenas administradores e analistas podem ter permissões gerenciadas")
         return
       }
 
-      await UsuariosAdminService.excluir(usuario.id)
-      toast.success(`Usuário "${usuario.nome}" excluído permanentemente!`)
+    const dadosOriginais = usuario.dadosOriginais as UsuarioAdmin
+    const permissoesUsuario = Array.isArray(dadosOriginais.permissoes) ? dadosOriginais.permissoes : []
+    
+    setUsuarioSelecionado(usuario)
+    setFormDataGerenciar({
+      nome: dadosOriginais.nome,
+      email: dadosOriginais.email,
+      senha: "",
+      perfil: dadosOriginais.perfil,
+      permissoes: permissoesUsuario,
+      ativo: dadosOriginais.ativo
+    })
+    setShowModalGerenciar(true)
+  }
+
+  async function salvarGerenciamento(data?: any) {
+    if (!usuarioSelecionado) return
+
+    try {
+      setSalvandoGerenciar(true)
+      
+      // Usar dados do formDataGerenciar ou os dados passados
+      const dadosParaSalvar = data || formDataGerenciar
+      
+      const permissoesParaSalvar = Array.isArray(dadosParaSalvar.permissoes)
+        ? dadosParaSalvar.permissoes
+        : PERFIS_PERMISSOES[dadosParaSalvar.perfil] || []
+      
+      const dados: any = {
+        nome: dadosParaSalvar.nome,
+        email: dadosParaSalvar.email,
+        perfil: dadosParaSalvar.perfil,
+        permissoes: permissoesParaSalvar,
+        ativo: dadosParaSalvar.ativo
+      }
+      
+      if (dadosParaSalvar.senha) {
+        dados.senha = dadosParaSalvar.senha
+      }
+      
+      await usuariosAdminService.atualizar(usuarioSelecionado.id, dados)
+      toast.success("Usuário atualizado com sucesso!")
+      setShowModalGerenciar(false)
+      setUsuarioSelecionado(null)
+      limparFormularioGerenciar()
       carregarUsuarios()
     } catch (error) {
-      console.error("Erro ao excluir usuário:", error)
-      toast.error("Erro ao excluir usuário")
+      console.error("Erro ao atualizar usuário:", error)
+      toast.error("Erro ao atualizar usuário")
+    } finally {
+      setSalvandoGerenciar(false)
     }
   }
 
-
-  const abrirModalEditar = (usuario: UsuarioAdmin) => {
-    // Normalizar permissões do usuário
-    const permissoesUsuario = Array.isArray(usuario.permissoes) ? usuario.permissoes : []
-    
-    setUsuarioSelecionado(usuario)
-    setFormData({
-      nome: usuario.nome,
-      email: usuario.email,
-      senha: "",
-      perfil: usuario.perfil,
-      permissoes: permissoesUsuario,
-      ativo: usuario.ativo,
-    })
-    // Sincronizar permissoesSelecionadas com formData.permissoes
-    setPermissoesSelecionadas(permissoesUsuario)
-    setMostrarPermissoesEditar(true)
-    setShowModalEditar(true)
-  }
-
-
-  const limparFormulario = () => {
-    setFormData({
+  function limparFormularioGerenciar() {
+    setFormDataGerenciar({
       nome: "",
       email: "",
       senha: "",
-      perfil: "atendimento",
+      perfil: "assistente",
       permissoes: [],
-      ativo: true,
+      ativo: true
     })
-    setPermissoesSelecionadas([])
-    setMostrarSenha(false)
-    setMostrarPermissoesCriar(false)
-    setMostrarPermissoesEditar(false)
   }
 
-  const togglePermissao = (permissao: Permissao) => {
-    if (permissoesSelecionadas.includes(permissao)) {
-      setPermissoesSelecionadas(permissoesSelecionadas.filter((p) => p !== permissao))
-      } else {
-      setPermissoesSelecionadas([...permissoesSelecionadas, permissao])
-    }
-  }
+  const usuariosFiltrados = usuarios.filter((usuario) => {
+    const matchFiltro =
+      usuario.nome.toLowerCase().includes(filtro.toLowerCase()) ||
+      usuario.email.toLowerCase().includes(filtro.toLowerCase())
 
-  const aplicarPermissoesDoPerfil = (perfil: UsuarioAdmin["perfil"]) => {
-    setPermissoesSelecionadas(PERFIS_PERMISSOES[perfil] || [])
-  }
-  
-  const handleChangePerfilCriar = (perfil: UsuarioAdmin["perfil"]) => {
-    setFormData({ ...formData, perfil })
-    // Aplicar permissões do perfil automaticamente
-    setPermissoesSelecionadas(PERFIS_PERMISSOES[perfil] || [])
-    setMostrarPermissoesCriar(true)
-  }
-  
-  const handleChangePerfilEditar = (perfil: UsuarioAdmin["perfil"]) => {
-    setFormData({ ...formData, perfil })
-    // Sugerir permissões do perfil, mas manter as já selecionadas se usuário quiser
-    if (permissoesSelecionadas.length === 0) {
-      setPermissoesSelecionadas(PERFIS_PERMISSOES[perfil] || [])
-    }
+    const matchTipo = tipoFiltro === "todos" || usuario.tipo === tipoFiltro
+    const matchStatus = statusFiltro === "todos" || usuario.status === statusFiltro
+
+    return matchFiltro && matchTipo && matchStatus
+  })
+
+  const formatarData = (data: string | undefined) => {
+    if (!data) return "-"
+    return new Date(data).toLocaleDateString("pt-BR")
   }
 
   const getStatusBadge = (status: string) => {
-    const badges = {
-      ativo: { bg: "bg-green-100 text-green-800", icon: CheckCircle },
-      inativo: { bg: "bg-gray-100 text-gray-800", icon: XCircle },
-      bloqueado: { bg: "bg-red-100 text-red-800", icon: XCircle },
-      pendente: { bg: "bg-yellow-100 text-yellow-800", icon: Calendar },
-    }
-    return badges[status as keyof typeof badges] || badges.ativo
-  }
-
-  const getPerfilBadge = (perfil: string) => {
-    const badges = {
-      master: "bg-indigo-100 text-indigo-800",
-      super_admin: "bg-purple-100 text-purple-800",
-      admin: "bg-blue-100 text-blue-800",
-      assistente: "bg-teal-100 text-teal-800",
-      financeiro: "bg-green-100 text-green-800",
-      vendas: "bg-orange-100 text-orange-800",
-      atendimento: "bg-cyan-100 text-cyan-800",
-      readonly: "bg-gray-100 text-gray-800",
-    }
-    return badges[perfil as keyof typeof badges] || badges.readonly
-  }
-
-  if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="text-center">
-          <div className="loading-corporate mx-auto"></div>
-          <span className="block mt-4 loading-text-corporate">Carregando usuários...</span>
-        </div>
-      </div>
+      <Badge variant={status === "ativo" ? "default" : "secondary"}>
+        {status}
+      </Badge>
     )
   }
 
+  const getTipoBadge = (tipo: TipoUsuario) => {
+    const badges = {
+      admin: { bg: "bg-blue-100 text-blue-800", label: "Administrador" },
+      analista: { bg: "bg-[#7BD9F6] bg-opacity-30 text-[#0F172A]", label: "Analista" },
+      gestor: { bg: "bg-purple-100 text-purple-800", label: "Gestor" },
+      supervisor: { bg: "bg-orange-100 text-orange-800", label: "Supervisor" },
+    }
+    const badge = badges[tipo] || badges.admin
+    return (
+      <Badge className={badge.bg}>
+        {badge.label}
+      </Badge>
+    )
+  }
+
+  const totalUsuarios = usuarios.length
+  const usuariosAtivos = usuarios.filter((u) => u.status === "ativo").length
+  const usuariosPendentes = usuarios.filter((u) => u.status === "pendente").length
+
   return (
     <div className="space-y-6">
-      {/* Header */}
+      {/* Header Section */}
       <div className="bg-gradient-to-r from-gray-50 to-white rounded-lg border border-gray-200 shadow-sm p-4 md:p-6">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div>
-            <h1 className="text-2xl font-bold text-gray-900 tracking-tight font-sans flex items-center gap-2">
-              <Settings className="h-6 w-6 text-[#168979]" />
-              Gestão de Usuários
-            </h1>
-            <p className="text-gray-600 mt-1 font-medium">
-              Gerencie usuários e permissões de acesso ao sistema
-          </p>
+            <h1 className="text-2xl font-bold text-gray-900 tracking-tight font-sans">Gerenciamento de Usuários</h1>
+            <p className="text-gray-600 mt-1 font-medium">Gerencie todos os usuários do sistema</p>
         </div>
+          <div className="flex gap-2">
           <Button
-            onClick={() => setShowModalCriar(true)}
-            className="bg-[#168979] hover:bg-[#13786a] text-white font-bold btn-corporate shadow-corporate flex items-center gap-2"
+              onClick={() => setMostrarFormAnalista(true)}
+              className="bg-[#0F172A] hover:bg-[#1E293B] text-white font-bold"
           >
-            <Plus className="h-4 w-4" />
-              Novo Usuário
+              <Plus className="h-4 w-4 mr-2" />
+              Novo Analista
             </Button>
+          </div>
+        </div>
+      </div>
+
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="bg-gradient-to-br from-white to-gray-50 border border-gray-200 shadow-sm hover:shadow-lg transition-all duration-300 rounded-lg">
+          <div className="flex flex-row items-center justify-between pb-3 pt-4 sm:pt-6 px-3 sm:px-6">
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-1">
+                <Users className="h-3 w-3 sm:h-4 sm:w-4 text-gray-400 opacity-60" />
+                <h3 className="text-xs sm:text-sm font-bold text-gray-600 uppercase tracking-wider font-sans">Total</h3>
+              </div>
+              <div className="text-xl sm:text-3xl font-bold text-[#0F172A] mt-1 sm:mt-2">{totalUsuarios}</div>
+            </div>
+          </div>
+          <div className="pb-4 sm:pb-6 px-3 sm:px-6">
+            <p className="text-[10px] sm:text-xs text-gray-500 font-medium">Usuários cadastrados</p>
+          </div>
+        </div>
+
+        <div className="bg-gradient-to-br from-white to-gray-50 border border-gray-200 shadow-sm hover:shadow-lg transition-all duration-300 rounded-lg">
+          <div className="flex flex-row items-center justify-between pb-3 pt-4 sm:pt-6 px-3 sm:px-6">
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-1">
+                <CheckCircle className="h-3 w-3 sm:h-4 sm:w-4 text-gray-400 opacity-60" />
+                <h3 className="text-xs sm:text-sm font-bold text-gray-600 uppercase tracking-wider font-sans">Ativos</h3>
+              </div>
+              <div className="text-xl sm:text-3xl font-bold text-[#0F172A] mt-1 sm:mt-2">{usuariosAtivos}</div>
+            </div>
+          </div>
+          <div className="pb-4 sm:pb-6 px-3 sm:px-6">
+            <p className="text-[10px] sm:text-xs text-gray-500 font-medium">Usuários ativos</p>
+          </div>
+        </div>
+
+        <div className="bg-gradient-to-br from-white to-gray-50 border border-gray-200 shadow-sm hover:shadow-lg transition-all duration-300 rounded-lg">
+          <div className="flex flex-row items-center justify-between pb-3 pt-4 sm:pt-6 px-3 sm:px-6">
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-1">
+                <XCircle className="h-3 w-3 sm:h-4 sm:w-4 text-gray-400 opacity-60" />
+                <h3 className="text-xs sm:text-sm font-bold text-gray-600 uppercase tracking-wider font-sans">Pendentes</h3>
+              </div>
+              <div className="text-xl sm:text-3xl font-bold text-[#0F172A] mt-1 sm:mt-2">{usuariosPendentes}</div>
+            </div>
+          </div>
+          <div className="pb-4 sm:pb-6 px-3 sm:px-6">
+            <p className="text-[10px] sm:text-xs text-gray-500 font-medium">Aguardando aprovação</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Legenda de Perfis */}
+      <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4">
+        <h3 className="text-sm font-bold text-[#0F172A] mb-3 font-sans">Legenda de Perfis</h3>
+        <div className="flex flex-wrap gap-4 text-xs">
+          <div className="flex items-center gap-2">
+            <UserCheck className="h-4 w-4 text-[#0F172A]" />
+            <span className="font-semibold text-[#0F172A]">Analista:</span>
+            <span className="text-gray-600">Portal do analista</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Building2 className="h-4 w-4 text-[#0F172A]" />
+            <span className="font-semibold text-[#0F172A]">Gestor:</span>
+            <span className="text-gray-600">Portal do admin sem Usuários</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <UserCog className="h-4 w-4 text-[#0F172A]" />
+            <span className="font-semibold text-[#0F172A]">Supervisor:</span>
+            <span className="text-gray-600">Portal do gestor de equipes</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Shield className="h-4 w-4 text-[#0F172A]" />
+            <span className="font-semibold text-[#0F172A]">Master:</span>
+            <span className="text-gray-600">Portal do admin e aos usuários</span>
+          </div>
         </div>
               </div>
               
       {/* Filtros */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg font-bold text-gray-900 font-sans">Filtros</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                <Search className="h-4 w-4 inline mr-1" />
-                Buscar
-              </label>
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+        <div className="flex flex-col sm:flex-row gap-4">
+          <div className="flex-1 relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
                 <Input
-                placeholder="Nome ou e-mail..."
-                value={filtroNome}
-                onChange={(e) => setFiltroNome(e.target.value)}
+              type="text"
+              placeholder="Buscar por nome ou email..."
+              value={filtro}
+              onChange={(e) => setFiltro(e.target.value)}
+              className="pl-10"
                 />
               </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                <Shield className="h-4 w-4 inline mr-1" />
-                Perfil
-              </label>
-              <Select value={filtroPerfil} onValueChange={setFiltroPerfil}>
-                  <SelectTrigger>
+          <Select value={tipoFiltro} onValueChange={(value) => setTipoFiltro(value as TipoUsuario)}>
+            <SelectTrigger className="w-full sm:w-[200px]">
                   <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                  <SelectItem value="todos">Todos os perfis</SelectItem>
-                  <SelectItem value="master">Master</SelectItem>
-                  <SelectItem value="super_admin">Super Admin</SelectItem>
-                  <SelectItem value="admin">Administrador</SelectItem>
-                    <SelectItem value="assistente">Assistente</SelectItem>
-                  <SelectItem value="financeiro">Financeiro</SelectItem>
-                  <SelectItem value="vendas">Vendas</SelectItem>
-                  <SelectItem value="atendimento">Atendimento</SelectItem>
-                  <SelectItem value="readonly">Somente Leitura</SelectItem>
+              <SelectItem value="todos">Todos os tipos</SelectItem>
+              <SelectItem value="admin">Administradores</SelectItem>
+              <SelectItem value="analista">Analistas</SelectItem>
+              <SelectItem value="gestor">Gestores</SelectItem>
+              <SelectItem value="supervisor">Supervisores</SelectItem>
                   </SelectContent>
                 </Select>
-            </div>
-              <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                <Power className="h-4 w-4 inline mr-1" />
-                Status
-              </label>
-              <Select value={filtroStatus} onValueChange={setFiltroStatus}>
-                <SelectTrigger>
+          <Select value={statusFiltro} onValueChange={setStatusFiltro}>
+            <SelectTrigger className="w-full sm:w-[200px]">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="todos">Todos</SelectItem>
+              <SelectItem value="todos">Todos os status</SelectItem>
                   <SelectItem value="ativo">Ativo</SelectItem>
+              <SelectItem value="pendente">Pendente</SelectItem>
+              <SelectItem value="bloqueado">Bloqueado</SelectItem>
                   <SelectItem value="inativo">Inativo</SelectItem>
-                  <SelectItem value="bloqueado">Bloqueado</SelectItem>
-                  <SelectItem value="pendente">Pendente</SelectItem>
                 </SelectContent>
               </Select>
               </div>
             </div>
-          </CardContent>
-        </Card>
 
-      {/* Lista de Usuários */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-lg font-bold text-gray-900 font-sans flex items-center gap-2">
-              <UsersIcon className="h-5 w-5 text-[#168979]" />
-              Usuários ({usuariosFiltrados.length})
-            </CardTitle>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-3">
-            {usuariosFiltrados.map((usuario) => {
-              const StatusBadge = getStatusBadge(usuario.status)
-              
-              return (
-                <div
-                  key={usuario.id}
-                  className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow bg-white"
-                >
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-3 mb-2 flex-wrap">
-                        <h3 className="font-semibold text-gray-900 text-lg">{usuario.nome}</h3>
-                        <Badge className={getPerfilBadge(usuario.perfil)}>
-                          {PERFIS_LABELS[usuario.perfil]}
-                        </Badge>
-                        <Badge className={StatusBadge.bg}>
-                          <StatusBadge.icon className="h-3 w-3 mr-1" />
-                          {usuario.status}
-                        </Badge>
-                      </div>
-                      
-                      <div className="space-y-1 text-sm text-gray-600">
-                        <div className="flex items-center gap-2">
-                          <Mail className="h-4 w-4" />
-                          <span>{usuario.email}</span>
-                        </div>
-                        {usuario.ultimo_acesso && (
-                          <div className="flex items-center gap-2">
-                            <Calendar className="h-4 w-4" />
-                            <span>
-                              Último acesso: {new Date(usuario.ultimo_acesso).toLocaleDateString("pt-BR")}
-                            </span>
-                          </div>
-                        )}
-                        <div className="flex items-center gap-2 flex-wrap mt-2">
-                          <span className="text-xs font-medium text-gray-700">Permissões:</span>
-                          {Array.isArray(usuario.permissoes) ? (
-                            <>
-                              {usuario.permissoes.slice(0, 3).map((perm: Permissao) => (
-                                <Badge key={perm} variant="outline" className="text-xs">
-                                  {PERMISSOES_LABELS[perm]}
-                                </Badge>
-                              ))}
-                              {usuario.permissoes.length > 3 && (
-                                <Badge variant="outline" className="text-xs">
-                                  +{usuario.permissoes.length - 3} mais
-                                </Badge>
-                              )}
-                            </>
-                          ) : (
-                            <Badge variant="outline" className="text-xs text-gray-500">
-                              Nenhuma permissão definida
-                            </Badge>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                  
-                    <div className="flex flex-col gap-2">
-                    <Button
-                        onClick={() => abrirModalEditar(usuario)}
-                        size="sm"
-                      variant="outline"
-                        className="flex items-center gap-1"
-                    >
-                        <Edit className="h-4 w-4" />
-                      Editar
-                    </Button>
-                      <Button
-                        onClick={() => handleToggleAtivo(usuario)}
-                        size="sm"
-                        variant={usuario.ativo ? "destructive" : "default"}
-                        className="flex items-center gap-1"
-                      >
-                        <Power className="h-4 w-4" />
-                        {usuario.ativo ? "Desativar" : "Ativar"}
-                      </Button>
-                      {!usuario.ativo && (
-                        <Button
-                          onClick={() => handleExcluir(usuario)}
-                          size="sm"
-                          variant="destructive"
-                          className="flex items-center gap-1"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                          Excluir
-                        </Button>
-                      )}
-                    </div>
-                  </div>
+      {/* Modal Criar Analista */}
+      {mostrarFormAnalista && (
+        <div className="fixed inset-0 flex items-center justify-center z-[100] p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-hidden flex flex-col">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-[#0F172A] to-[#1E293B] px-6 py-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-xl font-bold text-white">Novo Analista</h3>
+                  <p className="text-white/80 text-sm">Cadastre um novo analista no sistema</p>
                 </div>
-              )
-            })}
-
-            {usuariosFiltrados.length === 0 && (
-              <div className="py-12 text-center">
-                <UsersIcon className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                <p className="text-gray-600 text-lg">Nenhum usuário encontrado</p>
-                <p className="text-gray-500 text-sm mt-2">
-                  Ajuste os filtros ou crie um novo usuário
-                </p>
+                <Button
+                  onClick={() => {
+                    setMostrarFormAnalista(false)
+                    setFormDataAnalista({ nome: "", email: "", senha: "", confirmarSenha: "" })
+                  }}
+                  variant="ghost"
+                  size="sm"
+                  className="text-white hover:bg-white/20"
+                >
+                  <XCircle className="h-5 w-5" />
+                </Button>
+              </div>
             </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto p-6">
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <label className="block text-sm font-bold text-gray-900 uppercase tracking-wide">
+                    Nome Completo <span className="text-red-500">*</span>
+                  </label>
+                  <Input
+                    value={formDataAnalista.nome}
+                    onChange={(e) => setFormDataAnalista({ ...formDataAnalista, nome: e.target.value.toUpperCase() })}
+                    className="h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg"
+                    placeholder="Nome completo do analista"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block text-sm font-bold text-gray-900 uppercase tracking-wide">
+                    Email <span className="text-red-500">*</span>
+                  </label>
+                  <Input
+                    type="email"
+                    value={formDataAnalista.email}
+                    onChange={(e) => setFormDataAnalista({ ...formDataAnalista, email: e.target.value })}
+                    className="h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg"
+                    placeholder="email@exemplo.com"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block text-sm font-bold text-gray-900 uppercase tracking-wide">
+                    Senha <span className="text-red-500">*</span>
+                  </label>
+                  <Input
+                    type="password"
+                    value={formDataAnalista.senha}
+                    onChange={(e) => setFormDataAnalista({ ...formDataAnalista, senha: e.target.value })}
+                    className="h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg"
+                    placeholder="Mínimo 6 caracteres"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block text-sm font-bold text-gray-900 uppercase tracking-wide">
+                    Confirmar Senha <span className="text-red-500">*</span>
+                  </label>
+                  <Input
+                    type="password"
+                    value={formDataAnalista.confirmarSenha}
+                    onChange={(e) => setFormDataAnalista({ ...formDataAnalista, confirmarSenha: e.target.value })}
+                    className="h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg"
+                    placeholder="Confirme a senha"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="border-t border-gray-200 bg-gray-50 px-6 py-4">
+              <div className="flex flex-col sm:flex-row gap-3 justify-end">
+                <Button
+                  onClick={() => {
+                    setMostrarFormAnalista(false)
+                    setFormDataAnalista({ nome: "", email: "", senha: "", confirmarSenha: "" })
+                  }}
+                  variant="outline"
+                  className="h-12 px-6 border-2 border-gray-300 hover:border-gray-400"
+                  disabled={salvandoAnalista}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  onClick={criarAnalista}
+                  disabled={salvandoAnalista}
+                  className="h-12 px-8 bg-gradient-to-r from-[#0F172A] to-[#1E293B] hover:from-[#1E293B] hover:to-[#0f6b5c] text-white font-bold shadow-lg"
+                >
+                  {salvandoAnalista ? (
+                    <div className="flex items-center gap-2">
+                      <div className="loading-corporate-small"></div>
+                      Salvando...
+                    </div>
+                  ) : (
+                    "Criar Analista"
+                  )}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Tabela */}
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+        {loading ? (
+          <div className="flex justify-center items-center h-64">
+            <Spinner />
+            <span className="ml-2 text-gray-600">Carregando usuários...</span>
+          </div>
+        ) : (
+          <>
+            <div className="overflow-x-auto">
+              <table className="min-w-full bg-white">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Nome
+                    </th>
+                    <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Email
+                    </th>
+                    <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Tipo
+                    </th>
+                    <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Status
+                    </th>
+                    <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Data de Cadastro
+                    </th>
+                    <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Ações
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {usuariosFiltrados.length > 0 ? (
+                    usuariosFiltrados.map((usuario) => (
+                      <tr key={usuario.id} className="hover:bg-gray-50">
+                        <td className="py-4 px-4 text-sm font-medium text-gray-900">{usuario.nome}</td>
+                        <td className="py-4 px-4 text-sm text-gray-600">{usuario.email}</td>
+                        <td className="py-4 px-4 text-sm">{getTipoBadge(usuario.tipo)}</td>
+                        <td className="py-4 px-4 text-sm">{getStatusBadge(usuario.status)}</td>
+                        <td className="py-4 px-4 text-sm text-gray-600">
+                          {formatarData(usuario.criado_em)}
+                        </td>
+                        <td className="py-4 px-4 text-sm">
+                          <div className="flex items-center justify-end gap-2">
+                            {(usuario.tipo === "admin" || usuario.tipo === "analista") && (
+                              <Button
+                                onClick={() => abrirModalGerenciar(usuario)}
+                                variant="ghost"
+                                size="sm"
+                                className="text-[#0F172A] hover:bg-[#0F172A]/10"
+                              >
+                                <Settings className="h-4 w-4 mr-1" />
+                                Gerenciar
+                              </Button>
+                            )}
+                            <Button
+                              onClick={() => toggleStatusUsuario(usuario)}
+                              variant="ghost"
+                              size="sm"
+                              className="text-[#0F172A] hover:bg-[#0F172A]/10"
+                            >
+                              <Power className="h-4 w-4 mr-1" />
+                              {usuario.status === "ativo" ? "Desativar" : "Ativar"}
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={6} className="py-8 text-center text-gray-500">
+                        Nenhum usuário encontrado
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </>
           )}
           </div>
-        </CardContent>
-      </Card>
 
-      {/* Modal Criar Usuário */}
-      <ModalCriarUsuario
-        isOpen={showModalCriar}
-        onClose={() => setShowModalCriar(false)}
-        onSave={handleCriar}
-        saving={saving}
-        formData={formData}
-        setFormData={setFormData}
-        limparFormulario={limparFormulario}
-      />
-
-      {/* Modal Editar Usuário */}
+      {/* Modal Gerenciar Usuário */}
+      {showModalGerenciar && usuarioSelecionado && (
       <ModalEditarUsuario
-        isOpen={showModalEditar && !!usuarioSelecionado}
+          isOpen={showModalGerenciar}
         onClose={() => {
-          setShowModalEditar(false)
+            setShowModalGerenciar(false)
           setUsuarioSelecionado(null)
-        }}
-        onSave={handleAtualizar}
-        saving={saving}
-        formData={formData}
-        setFormData={setFormData}
-        limparFormulario={limparFormulario}
-        usuarioOriginal={usuarioSelecionado}
-      />
-
+            limparFormularioGerenciar()
+          }}
+          onSave={salvarGerenciamento}
+          saving={salvandoGerenciar}
+          formData={formDataGerenciar}
+          setFormData={setFormDataGerenciar}
+          limparFormulario={limparFormularioGerenciar}
+          usuarioOriginal={usuarioSelecionado.dadosOriginais as UsuarioAdmin}
+        />
+      )}
     </div>
   )
 }

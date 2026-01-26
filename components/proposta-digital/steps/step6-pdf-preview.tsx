@@ -252,8 +252,8 @@ export default function Step6PDFPreview({ propostaId, onNext, onBack }: Step6PDF
   return (
     <div className="space-y-6">
       <div className="text-center mb-6">
-        <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-green-100 mb-3">
-          <CheckCircle className="h-6 w-6 text-green-600" />
+        <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-[#7BD9F6] bg-opacity-30 mb-3">
+          <CheckCircle className="h-6 w-6 text-[#0F172A]" />
         </div>
         <h3 className="text-xl font-bold text-gray-800">Resumo da Proposta</h3>
         <p className="text-gray-600 mt-1">Revise os detalhes da sua proposta antes de prosseguir para a assinatura.</p>
@@ -274,7 +274,7 @@ export default function Step6PDFPreview({ propostaId, onNext, onBack }: Step6PDF
         <Button type="button" onClick={onBack} variant="outline">
           Voltar e revisar
         </Button>
-        <Button type="button" onClick={onNext} className="bg-[#168979] hover:bg-[#13786a]">
+        <Button type="button" onClick={onNext} className="bg-[#0F172A] hover:bg-[#1E293B]">
           Confirmar e prosseguir
         </Button>
       </div>

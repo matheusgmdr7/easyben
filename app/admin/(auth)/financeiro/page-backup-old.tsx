@@ -168,7 +168,7 @@ export default function FinanceiroPage() {
   const getStatusBadge = (status: string) => {
     const badges = {
       pendente: { bg: "bg-yellow-100 text-yellow-800", icon: Clock },
-      paga: { bg: "bg-green-100 text-green-800", icon: CheckCircle },
+      paga: { bg: "bg-[#7BD9F6] bg-opacity-30 text-[#0F172A]", icon: CheckCircle },
       atrasada: { bg: "bg-red-100 text-red-800", icon: AlertCircle },
       cancelada: { bg: "bg-gray-100 text-gray-800", icon: FileText },
       parcialmente_paga: { bg: "bg-blue-100 text-blue-800", icon: DollarSign },
@@ -191,7 +191,7 @@ export default function FinanceiroPage() {
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold text-gray-900 tracking-tight font-sans flex items-center gap-2">
-              <Wallet className="h-6 w-6 text-[#168979]" />
+              <Wallet className="h-6 w-6 text-[#0F172A]" />
               Financeiro
             </h1>
             <p className="text-gray-600 mt-1 font-medium">
@@ -201,7 +201,7 @@ export default function FinanceiroPage() {
           <div className="flex gap-2">
             <Button
               onClick={() => setShowModalGerar(true)}
-              className="bg-[#168979] hover:bg-[#13786a] text-white font-bold btn-corporate shadow-corporate flex items-center gap-2"
+              className="bg-[#0F172A] hover:bg-[#1E293B] text-white font-bold btn-corporate shadow-corporate flex items-center gap-2"
             >
               <Plus className="h-4 w-4" />
               Gerar Faturas
@@ -291,15 +291,15 @@ export default function FinanceiroPage() {
             <div className="flex flex-row items-center justify-between pb-3 pt-6 px-6">
               <div>
                 <h3 className="text-sm font-bold text-gray-600 uppercase tracking-wider font-sans">Pagas no Mês</h3>
-                <div className="text-3xl font-bold text-green-600 mt-2">
+                <div className="text-3xl font-bold text-[#0F172A] mt-2">
                   {estatisticas.total_pagas_mes}
                 </div>
                 <p className="text-xs text-gray-500 mt-1 font-medium">
                   R$ {estatisticas.valor_recebido_mes.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
                 </p>
               </div>
-              <div className="w-14 h-14 bg-green-50 rounded-lg flex items-center justify-center border border-green-200">
-                <CheckCircle className="h-6 w-6 text-green-600" />
+              <div className="w-14 h-14 bg-[#7BD9F6] bg-opacity-20 rounded-lg flex items-center justify-center border border-[#7BD9F6] border-opacity-30">
+                <CheckCircle className="h-6 w-6 text-[#0F172A]" />
               </div>
             </div>
             <div className="pb-6 px-6">
@@ -311,7 +311,7 @@ export default function FinanceiroPage() {
             <div className="flex flex-row items-center justify-between pb-3 pt-6 px-6">
               <div>
                 <h3 className="text-sm font-bold text-gray-600 uppercase tracking-wider font-sans">Total Aberto</h3>
-                <div className="text-2xl font-bold text-[#168979] mt-2">
+                <div className="text-2xl font-bold text-[#0F172A] mt-2">
                   R$ {(estatisticas.valor_pendente + estatisticas.valor_atrasado).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
                 </div>
                 <p className="text-xs text-gray-500 mt-1 font-medium">
@@ -398,7 +398,7 @@ export default function FinanceiroPage() {
                           </div>
                           <div>
                             <p className="text-gray-600">Valor Pago</p>
-                            <p className="font-medium text-green-600">
+                            <p className="font-medium text-[#0F172A]">
                               R$ {fatura.valor_pago.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
                             </p>
                           </div>
@@ -419,7 +419,7 @@ export default function FinanceiroPage() {
                           <Button
                             onClick={() => handleRegistrarPagamento(fatura.id)}
                             size="sm"
-                            className="bg-green-600 hover:bg-green-700 text-white"
+                            className="bg-[#0F172A] hover:bg-[#0F172A] text-white"
                           >
                             <CheckCircle className="h-4 w-4 mr-1" />
                             Registrar Pagamento
@@ -516,7 +516,7 @@ export default function FinanceiroPage() {
               <Button
                 onClick={handleGerarFaturas}
                 disabled={gerandoFaturas}
-                className="bg-[#168979] hover:bg-[#13786a] text-white"
+                className="bg-[#0F172A] hover:bg-[#1E293B] text-white"
               >
                 {gerandoFaturas ? "Gerando..." : "Gerar Faturas"}
               </Button>

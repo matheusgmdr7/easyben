@@ -11,7 +11,7 @@ export default function SobrePage() {
 
       <main className="flex-grow">
         {/* Hero Section */}
-        <section className="bg-[#168979] text-white py-20">
+        <section className="bg-[#0F172A] text-white py-20">
           <div className="container px-4 md:px-6">
             <div className="max-w-3xl mx-auto text-center">
               <h1 className="text-4xl md:text-5xl font-bold mb-6">Sobre a Contratandoplanos</h1>
@@ -28,7 +28,7 @@ export default function SobrePage() {
             <div className="max-w-4xl mx-auto">
               <div className="flex flex-col md:flex-row gap-8 items-center">
                 <div className="md:w-1/2">
-                  <h2 className="text-3xl font-bold mb-6 text-[#168979]">Nossa História</h2>
+                  <h2 className="text-3xl font-bold mb-6 text-[#0F172A]">Nossa História</h2>
                   <p className="text-gray-600 mb-4">
                     A Contratandoplanos nasceu com o propósito de simplificar o acesso à saúde privada no Brasil.
                     Identificamos que muitas pessoas tinham dificuldade em encontrar planos adequados às suas
@@ -60,12 +60,12 @@ export default function SobrePage() {
         <section className="py-16 bg-gray-50">
           <div className="container px-4 md:px-6">
             <div className="max-w-4xl mx-auto">
-              <h2 className="text-3xl font-bold text-center mb-12 text-[#168979]">Nossos Diferenciais</h2>
+              <h2 className="text-3xl font-bold text-center mb-12 text-[#0F172A]">Nossos Diferenciais</h2>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 <div className="flex items-start bg-white p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow">
-                  <div className="bg-[#168979]/10 p-3 rounded-full mr-4 flex-shrink-0">
-                    <Users className="h-6 w-6 text-[#168979]" />
+                  <div className="bg-[#0F172A]/10 p-3 rounded-full mr-4 flex-shrink-0">
+                    <Users className="h-6 w-6 text-[#0F172A]" />
                   </div>
                   <div>
                     <h3 className="text-xl font-semibold mb-2 text-gray-900">Atendimento Personalizado</h3>
@@ -78,8 +78,8 @@ export default function SobrePage() {
                 </div>
 
                 <div className="flex items-start bg-white p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow">
-                  <div className="bg-[#168979]/10 p-3 rounded-full mr-4 flex-shrink-0">
-                    <Shield className="h-6 w-6 text-[#168979]" />
+                  <div className="bg-[#0F172A]/10 p-3 rounded-full mr-4 flex-shrink-0">
+                    <Shield className="h-6 w-6 text-[#0F172A]" />
                   </div>
                   <div>
                     <h3 className="text-xl font-semibold mb-2 text-gray-900">Parceria com as Melhores Operadoras</h3>
@@ -91,8 +91,8 @@ export default function SobrePage() {
                 </div>
 
                 <div className="flex items-start bg-white p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow">
-                  <div className="bg-[#168979]/10 p-3 rounded-full mr-4 flex-shrink-0">
-                    <Clock className="h-6 w-6 text-[#168979]" />
+                  <div className="bg-[#0F172A]/10 p-3 rounded-full mr-4 flex-shrink-0">
+                    <Clock className="h-6 w-6 text-[#0F172A]" />
                   </div>
                   <div>
                     <h3 className="text-xl font-semibold mb-2 text-gray-900">Agilidade nos Processos</h3>
@@ -104,8 +104,8 @@ export default function SobrePage() {
                 </div>
 
                 <div className="flex items-start bg-white p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow">
-                  <div className="bg-[#168979]/10 p-3 rounded-full mr-4 flex-shrink-0">
-                    <Heart className="h-6 w-6 text-[#168979]" />
+                  <div className="bg-[#0F172A]/10 p-3 rounded-full mr-4 flex-shrink-0">
+                    <Heart className="h-6 w-6 text-[#0F172A]" />
                   </div>
                   <div>
                     <h3 className="text-xl font-semibold mb-2 text-gray-900">Suporte Contínuo</h3>
@@ -125,26 +125,26 @@ export default function SobrePage() {
         <section className="py-16 bg-white">
           <div className="container px-4 md:px-6">
             <div className="max-w-4xl mx-auto text-center">
-              <h2 className="text-3xl font-bold mb-12 text-[#168979]">Contratandoplanos em Números</h2>
+              <h2 className="text-3xl font-bold mb-12 text-[#0F172A]">Contratandoplanos em Números</h2>
 
               <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
                 <div className="p-6 bg-gray-50 rounded-xl shadow-sm hover:shadow-md transition-shadow">
-                  <p className="text-4xl font-bold text-[#168979] mb-2">5</p>
+                  <p className="text-4xl font-bold text-[#0F172A] mb-2">5</p>
                   <p className="text-gray-600">Anos de experiência</p>
                 </div>
 
                 <div className="p-6 bg-gray-50 rounded-xl shadow-sm hover:shadow-md transition-shadow">
-                  <p className="text-4xl font-bold text-[#168979] mb-2">+2k</p>
+                  <p className="text-4xl font-bold text-[#0F172A] mb-2">+2k</p>
                   <p className="text-gray-600">Clientes atendidos</p>
                 </div>
 
                 <div className="p-6 bg-gray-50 rounded-xl shadow-sm hover:shadow-md transition-shadow">
-                  <p className="text-4xl font-bold text-[#168979] mb-2">+10</p>
+                  <p className="text-4xl font-bold text-[#0F172A] mb-2">+10</p>
                   <p className="text-gray-600">Corretoras e Operadoras parceiras</p>
                 </div>
 
                 <div className="p-6 bg-gray-50 rounded-xl shadow-sm hover:shadow-md transition-shadow">
-                  <p className="text-4xl font-bold text-[#168979] mb-2">97%</p>
+                  <p className="text-4xl font-bold text-[#0F172A] mb-2">97%</p>
                   <p className="text-gray-600">Clientes satisfeitos</p>
                 </div>
               </div>
@@ -153,7 +153,7 @@ export default function SobrePage() {
         </section>
 
         {/* CTA Section */}
-        <section className="py-20 bg-gradient-to-r from-[#168979] to-[#13786a] text-white">
+        <section className="py-20 bg-gradient-to-r from-[#0F172A] to-[#1E293B] text-white">
           <div className="container px-4 md:px-6 text-center">
             <p className="text-xl mb-8 max-w-2xl mx-auto">
               Faça uma cotação gratuita e descubra como podemos ajudar você a encontrar o plano de saúde ideal.
@@ -169,7 +169,7 @@ export default function SobrePage() {
                   <ArrowRight className="ml-2 h-5 w-5" />
                 </Link>
               </Button>
-              <Button asChild size="lg" className="bg-white text-[#168979] hover:bg-white/90 rounded-full font-medium">
+              <Button asChild size="lg" className="bg-white text-[#0F172A] hover:bg-white/90 rounded-full font-medium">
                 <Link href="/contato">Falar com um consultor</Link>
               </Button>
             </div>

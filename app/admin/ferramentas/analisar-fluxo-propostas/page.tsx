@@ -181,7 +181,7 @@ export default function AnalisarFluxoPropostasPage() {
                         item.status === "pendente"
                           ? "bg-yellow-100 text-yellow-800"
                           : item.status === "aprovada"
-                            ? "bg-green-100 text-green-800"
+                            ? "bg-[#7BD9F6] bg-opacity-30 text-[#0F172A]"
                             : item.status === "aguardando_cliente"
                               ? "bg-blue-100 text-blue-800"
                               : "bg-gray-100 text-gray-800"
@@ -190,7 +190,7 @@ export default function AnalisarFluxoPropostasPage() {
                       {item.status}
                     </Badge>
                     {item.emailEnviado ? (
-                      <CheckCircle className="h-4 w-4 text-green-500" />
+                      <CheckCircle className="h-4 w-4 text-[#0F172A]" />
                     ) : (
                       <XCircle className="h-4 w-4 text-red-500" />
                     )}

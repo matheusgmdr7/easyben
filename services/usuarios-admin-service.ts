@@ -21,6 +21,7 @@ export type Permissao =
   | "financeiro"
   | "usuarios"
   | "configuracoes"
+  | "analistas"
 
 export interface UsuarioAdmin {
   id: string
@@ -77,6 +78,7 @@ export const PERFIS_PERMISSOES: Record<UsuarioAdmin["perfil"], Permissao[]> = {
     "financeiro",
     "usuarios",
     "configuracoes",
+    "analistas",
   ],
   super_admin: [
     "dashboard",
@@ -96,6 +98,7 @@ export const PERFIS_PERMISSOES: Record<UsuarioAdmin["perfil"], Permissao[]> = {
     "financeiro",
     "usuarios",
     "configuracoes",
+    "analistas",
   ],
   admin: [
     "dashboard",
@@ -169,6 +172,7 @@ export const PERMISSOES_LABELS: Record<Permissao, string> = {
   financeiro: "Financeiro",
   usuarios: "Usuários",
   configuracoes: "Configurações",
+  analistas: "Analistas",
 }
 
 export const PERFIS_LABELS: Record<UsuarioAdmin["perfil"], string> = {
@@ -224,6 +228,8 @@ class UsuariosAdminService {
    * Busca um usuário por email
    */
   async buscarPorEmail(email: string): Promise<UsuarioAdmin | null> {
+    console.log("🔍 UsuariosAdminService.buscarPorEmail - Buscando na tabela: usuarios_admin (CORRETO)")
+    console.log("📋 Email:", email)
     const { data, error } = await supabase
         .from("usuarios_admin")
       .select("*")
@@ -1082,16 +1088,20 @@ export async function criarUsuarioAdmin(dados: CriarUsuarioData) {
 
 export async function atualizarUsuarioAdmin(id: string, dados: Partial<UsuarioAdmin>) {
   // Atualiza apenas os campos enviados
+  const updateData: any = {
+    updated_at: new Date().toISOString(),
+  }
+
+  if (dados.nome !== undefined) updateData.nome = dados.nome
+  if (dados.email !== undefined) updateData.email = dados.email.toLowerCase()
+  if (dados.perfil !== undefined) updateData.perfil = dados.perfil
+  if (dados.permissoes !== undefined) updateData.permissoes = dados.permissoes
+  if (dados.ativo !== undefined) updateData.ativo = dados.ativo
+  if (dados.status !== undefined) updateData.status = dados.status
+
   const { error } = await supabase
     .from("usuarios_admin")
-    .update({
-      nome: dados.nome,
-      email: dados.email?.toLowerCase(),
-      perfil: dados.perfil,
-      permissoes: dados.permissoes,
-      ativo: dados.ativo,
-      updated_at: new Date().toISOString(),
-    })
+    .update(updateData)
     .eq("id", id)
 
   if (error) throw new Error(error.message)
@@ -1155,6 +1165,7 @@ export async function buscarPermissoesPerfil() {
 export async function validarSenhaUsuarioAdmin(email: string, senha: string): Promise<UsuarioAdmin | null> {
   try {
     console.log("🔐 Validando senha do usuário admin:", email)
+    console.log("📋 TABELA CONSULTADA: usuarios_admin (CORRETO)")
 
     // Buscar usuário pelo email
     const { data: usuario, error } = await supabase
@@ -1197,11 +1208,22 @@ export async function validarSenhaUsuarioAdmin(email: string, senha: string): Pr
       permissoesArray = Object.keys(usuario.permissoes)
     }
     
+    // Se não há permissões definidas, usar permissões padrão do perfil
+    if (permissoesArray.length === 0 && usuario.perfil) {
+      const service = new UsuariosAdminService()
+      permissoesArray = service.obterPermissoesPadrao(usuario.perfil)
+      console.log("⚠️ Permissões vazias, usando permissões padrão do perfil:", {
+        perfil: usuario.perfil,
+        permissoesPadrao: permissoesArray,
+      })
+    }
+    
     console.log("🔐 Permissões do usuário:", {
       email: usuario.email,
       perfil: usuario.perfil,
       permissoesOriginais: usuario.permissoes,
       permissoesArray,
+      totalPermissoes: permissoesArray.length,
     })
     
     return {

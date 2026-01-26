@@ -70,6 +70,17 @@ export default function CorretoresPage() {
     }
   }
 
+  async function promoverGestor(id: string, isGestor: boolean) {
+    try {
+      await atualizarCorretor(id, { is_gestor: isGestor })
+      toast.success(isGestor ? "Corretor promovido a gestor com sucesso" : "Status de gestor removido com sucesso")
+      carregarCorretores()
+    } catch (error) {
+      console.error("Erro ao atualizar status de gestor:", error)
+      toast.error("Erro ao atualizar status de gestor")
+    }
+  }
+
   const corretoresFiltrados = corretores.filter((corretor) => {
     const matchFiltro =
       corretor.nome.toLowerCase().includes(filtro.toLowerCase()) ||
@@ -124,7 +135,7 @@ export default function CorretoresPage() {
           <div className="flex flex-row items-center justify-between pb-3 pt-6 px-6">
             <div>
               <h3 className="text-sm font-bold text-gray-600 uppercase tracking-wider font-sans">Total</h3>
-              <div className="text-3xl font-bold text-[#168979] mt-2">{corretores.length}</div>
+              <div className="text-3xl font-bold text-[#0F172A] mt-2">{corretores.length}</div>
             </div>
             <div className="w-14 h-14 bg-gray-100 rounded-lg flex items-center justify-center">
               <Users className="h-6 w-6 text-gray-700" />
@@ -139,7 +150,7 @@ export default function CorretoresPage() {
           <div className="flex flex-row items-center justify-between pb-3 pt-6 px-6">
             <div>
               <h3 className="text-sm font-bold text-gray-600 uppercase tracking-wider font-sans">Pendentes</h3>
-              <div className="text-3xl font-bold text-[#168979] mt-2">{corretores.filter((c) => c.status === "pendente").length}</div>
+              <div className="text-3xl font-bold text-[#0F172A] mt-2">{corretores.filter((c) => c.status === "pendente").length}</div>
             </div>
             <div className="w-14 h-14 bg-gray-100 rounded-lg flex items-center justify-center">
               <Clock className="h-6 w-6 text-gray-700" />
@@ -154,7 +165,7 @@ export default function CorretoresPage() {
           <div className="flex flex-row items-center justify-between pb-3 pt-6 px-6">
             <div>
               <h3 className="text-sm font-bold text-gray-600 uppercase tracking-wider font-sans">Ativos</h3>
-              <div className="text-3xl font-bold text-[#168979] mt-2">{corretores.filter((c) => c.status === "aprovado").length}</div>
+              <div className="text-3xl font-bold text-[#0F172A] mt-2">{corretores.filter((c) => c.status === "aprovado").length}</div>
             </div>
             <div className="w-14 h-14 bg-gray-100 rounded-lg flex items-center justify-center">
               <UserCheck className="h-6 w-6 text-gray-700" />
@@ -283,55 +294,76 @@ export default function CorretoresPage() {
                         <td className="py-4 px-4 text-sm text-gray-900">{formatarData(corretor.data_nascimento)}</td>
                         <td className="py-4 px-4 text-sm text-gray-900">{formatarData(corretor.created_at)}</td>
                         <td className="py-4 px-4">
-                          <span
-                            className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                              corretor.status === "aprovado"
-                                ? "bg-gray-100 text-gray-800"
+                          <div className="flex flex-col gap-1">
+                            <span
+                              className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                                corretor.status === "aprovado"
+                                  ? "bg-gray-100 text-gray-800"
+                                  : corretor.status === "rejeitado"
+                                    ? "bg-gray-100 text-gray-600"
+                                    : "bg-gray-50 text-gray-700"
+                              }`}
+                            >
+                              {corretor.status === "aprovado"
+                                ? "Aprovado"
                                 : corretor.status === "rejeitado"
-                                  ? "bg-gray-100 text-gray-600"
-                                  : "bg-gray-50 text-gray-700"
-                            }`}
-                          >
-                            {corretor.status === "aprovado"
-                              ? "Aprovado"
-                              : corretor.status === "rejeitado"
-                                ? "Rejeitado"
-                                : "Pendente"}
-                          </span>
+                                  ? "Rejeitado"
+                                  : "Pendente"}
+                            </span>
+                            {corretor.is_gestor && (
+                              <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800">
+                                Gestor
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td className="py-4 px-4">
-                          {corretor.status === "pendente" && (
-                            <div className="flex space-x-2">
+                          <div className="flex flex-col gap-2">
+                            {corretor.status === "pendente" && (
+                              <div className="flex space-x-2">
+                                <button
+                                  onClick={() => aprovarCorretor(corretor.id)}
+                                  className="bg-gray-600 text-white px-3 py-1 rounded-md text-sm hover:bg-gray-700 transition-colors"
+                                >
+                                  Aprovar
+                                </button>
+                                <button
+                                  onClick={() => rejeitarCorretor(corretor.id)}
+                                  className="bg-red-100 text-red-700 px-3 py-1 rounded-md text-sm hover:bg-red-200 transition-colors border border-red-200"
+                                >
+                                  Rejeitar
+                                </button>
+                              </div>
+                            )}
+                            {corretor.status === "rejeitado" && (
                               <button
                                 onClick={() => aprovarCorretor(corretor.id)}
                                 className="bg-gray-600 text-white px-3 py-1 rounded-md text-sm hover:bg-gray-700 transition-colors"
                               >
                                 Aprovar
                               </button>
+                            )}
+                            {corretor.status === "aprovado" && (
                               <button
                                 onClick={() => rejeitarCorretor(corretor.id)}
                                 className="bg-red-100 text-red-700 px-3 py-1 rounded-md text-sm hover:bg-red-200 transition-colors border border-red-200"
                               >
-                                Rejeitar
+                                Desativar
                               </button>
-                            </div>
-                          )}
-                          {corretor.status === "rejeitado" && (
-                            <button
-                              onClick={() => aprovarCorretor(corretor.id)}
-                              className="bg-gray-600 text-white px-3 py-1 rounded-md text-sm hover:bg-gray-700 transition-colors"
-                            >
-                              Aprovar
-                            </button>
-                          )}
-                          {corretor.status === "aprovado" && (
-                            <button
-                              onClick={() => rejeitarCorretor(corretor.id)}
-                              className="bg-red-100 text-red-700 px-3 py-1 rounded-md text-sm hover:bg-red-200 transition-colors border border-red-200"
-                            >
-                              Desativar
-                            </button>
-                          )}
+                            )}
+                            {corretor.status === "aprovado" && (
+                              <button
+                                onClick={() => promoverGestor(corretor.id, !corretor.is_gestor)}
+                                className={`px-3 py-1 rounded-md text-sm transition-colors ${
+                                  corretor.is_gestor
+                                    ? "bg-orange-100 text-orange-700 hover:bg-orange-200 border border-orange-200"
+                                    : "bg-blue-100 text-blue-700 hover:bg-blue-200 border border-blue-200"
+                                }`}
+                              >
+                                {corretor.is_gestor ? "Remover Gestor" : "Promover a Gestor"}
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     ))
@@ -348,21 +380,21 @@ export default function CorretoresPage() {
 
             {/* Paginação */}
             {totalPaginas > 1 && (
-              <div className="px-4 py-3 border-t border-gray-200 bg-gray-50">
-                <div className="flex items-center justify-between">
-                  <div className="text-sm text-gray-700">
+              <div className="px-3 sm:px-4 py-3 border-t border-gray-200 bg-gray-50">
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+                  <div className="text-xs sm:text-sm text-gray-700">
                     Página {paginaAtual} de {totalPaginas}
                   </div>
-                  <div className="flex items-center space-x-2">
+                  <div className="flex items-center space-x-1 sm:space-x-2 w-full sm:w-auto justify-center">
                     <Button
                       variant="outline"
                       size="sm"
                       onClick={() => setPaginaAtual(Math.max(1, paginaAtual - 1))}
                       disabled={paginaAtual === 1}
-                      className="h-8"
+                      className="h-8 sm:h-9 text-xs sm:text-sm rounded-none"
                     >
-                      <ChevronLeft className="h-4 w-4" />
-                      Anterior
+                      <ChevronLeft className="h-3 w-3 sm:h-4 sm:w-4" />
+                      <span className="ml-1">Anterior</span>
                     </Button>
 
                     <div className="flex space-x-1">
@@ -384,7 +416,7 @@ export default function CorretoresPage() {
                             variant={paginaAtual === pageNum ? "default" : "outline"}
                             size="sm"
                             onClick={() => setPaginaAtual(pageNum)}
-                            className="h-8 w-8 p-0"
+                            className="h-8 sm:h-9 w-8 sm:w-9 p-0 text-xs sm:text-sm rounded-none"
                           >
                             {pageNum}
                           </Button>
@@ -397,10 +429,10 @@ export default function CorretoresPage() {
                       size="sm"
                       onClick={() => setPaginaAtual(Math.min(totalPaginas, paginaAtual + 1))}
                       disabled={paginaAtual === totalPaginas}
-                      className="h-8"
+                      className="h-8 sm:h-9 text-xs sm:text-sm rounded-none"
                     >
-                      Próxima
-                      <ChevronRight className="h-4 w-4" />
+                      <span className="mr-1">Próxima</span>
+                      <ChevronRight className="h-3 w-3 sm:h-4 sm:w-4" />
                     </Button>
                   </div>
                 </div>

@@ -99,7 +99,7 @@ export default function ImportarAsaasPage() {
             </Button>
             <div>
               <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-                <Download className="h-6 w-6 text-[#168979]" />
+                <Download className="h-6 w-6 text-[#0F172A]" />
                 Importar Dados do Asaas
               </h1>
               <p className="text-gray-600 mt-1">
@@ -155,9 +155,9 @@ export default function ImportarAsaasPage() {
             </ul>
           </div>
 
-          <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-            <h3 className="font-bold text-green-900 mb-2">✅ Após a Importação:</h3>
-            <ul className="space-y-1 text-sm text-green-800">
+          <div className="bg-[#7BD9F6] bg-opacity-20 border border-[#7BD9F6] border-opacity-30 rounded-lg p-4">
+            <h3 className="font-bold text-[#0F172A] mb-2">✅ Após a Importação:</h3>
+            <ul className="space-y-1 text-sm text-[#0F172A]">
               <li>• Todos os boletos aparecerão na página Financeiro</li>
               <li>• Status de pagamento sincronizado</li>
               <li>• Links dos boletos disponíveis</li>
@@ -177,7 +177,7 @@ export default function ImportarAsaasPage() {
             <Button
               onClick={handleImportar}
               disabled={importando}
-              className="h-14 px-8 bg-gradient-to-r from-[#168979] to-[#13786a] hover:from-[#13786a] hover:to-[#0f6b5c] text-white font-bold shadow-lg text-lg"
+              className="h-14 px-8 bg-gradient-to-r from-[#0F172A] to-[#1E293B] hover:from-[#1E293B] hover:to-[#0f6b5c] text-white font-bold shadow-lg text-lg"
             >
               {importando ? (
                 <div className="flex items-center gap-3">
@@ -204,7 +204,7 @@ export default function ImportarAsaasPage() {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <CheckCircle className="h-5 w-5 text-green-600" />
+              <CheckCircle className="h-5 w-5 text-[#0F172A]" />
               Resultado da Importação
             </CardTitle>
           </CardHeader>
@@ -212,14 +212,14 @@ export default function ImportarAsaasPage() {
             <div className="space-y-4">
               {/* Estatísticas */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                <div className="bg-[#7BD9F6] bg-opacity-20 border border-[#7BD9F6] border-opacity-30 rounded-lg p-4">
                   <div className="flex items-center gap-3">
-                    <Users className="h-8 w-8 text-green-600" />
+                    <Users className="h-8 w-8 text-[#0F172A]" />
                     <div>
-                      <p className="text-2xl font-bold text-green-900">
+                      <p className="text-2xl font-bold text-[#0F172A]">
                         {resultado.clientes_importados}
                       </p>
-                      <p className="text-sm text-green-700">Clientes Importados</p>
+                      <p className="text-sm text-[#0F172A]">Clientes Importados</p>
                     </div>
                   </div>
                 </div>
@@ -274,16 +274,16 @@ export default function ImportarAsaasPage() {
 
               {/* Mensagem de Sucesso */}
               {resultado.clientes_importados > 0 && (
-                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                  <p className="text-green-900 font-semibold">
+                <div className="bg-[#7BD9F6] bg-opacity-20 border border-[#7BD9F6] border-opacity-30 rounded-lg p-4">
+                  <p className="text-[#0F172A] font-semibold">
                     ✅ Importação concluída com sucesso!
                   </p>
-                  <p className="text-sm text-green-700 mt-2">
+                  <p className="text-sm text-[#0F172A] mt-2">
                     Acesse a <strong>página Financeiro</strong> para ver todas as faturas importadas.
                   </p>
                   <Button
                     onClick={() => router.push("/admin/financeiro")}
-                    className="mt-4 bg-[#168979] hover:bg-[#13786a]"
+                    className="mt-4 bg-[#0F172A] hover:bg-[#1E293B]"
                   >
                     Ver Faturas
                   </Button>

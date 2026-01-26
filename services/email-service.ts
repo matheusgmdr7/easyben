@@ -527,11 +527,11 @@ export async function enviarEmailAprovacaoCorretor(emailCorretor: string, nomeCo
     const subject = "Cadastro aprovado - Bem-vindo ao Corretor Digital!"
     const html = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <h2 style="color: #168979;">Parabéns, ${nomeCorretor}!</h2>
+        <h2 style="color: #0F172A;">Parabéns, ${nomeCorretor}!</h2>
         <p>Seu cadastro como corretor foi <strong>aprovado</strong>! 🎉</p>
         <p>Agora você já pode acessar a plataforma Corretor Digital e aproveitar todos os recursos disponíveis para impulsionar suas vendas.</p>
         <div style="margin: 20px 0; padding: 20px; background-color: #e8f5e8; border-radius: 8px;">
-          <a href="${linkLogin}" style="display: inline-block; padding: 12px 24px; background-color: #168979; color: white; text-decoration: none; border-radius: 6px; font-weight: bold;">Acessar Corretor Digital</a>
+          <a href="${linkLogin}" style="display: inline-block; padding: 12px 24px; background-color: #0F172A; color: white; text-decoration: none; border-radius: 6px; font-weight: bold;">Acessar Corretor Digital</a>
         </div>
         <p style="color: #6b7280; font-size: 14px;">Se você tiver qualquer dúvida, conte com nosso suporte.</p>
         <p style="color: #6b7280; font-size: 13px; margin-top: 32px;">Atenciosamente,<br/>Equipe Contratando Planos</p>

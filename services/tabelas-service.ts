@@ -1,5 +1,6 @@
 import { supabaseClient } from "@/lib/supabase-client"
 import { supabase } from "@/lib/supabase"
+import { getCurrentTenantId } from "@/lib/tenant-query-helper"
 import type { TabelaPreco, TabelaPrecoFaixa, TabelaPrecoDetalhada, TabelaProduto } from "@/types/tabelas"
 
 /**
@@ -26,7 +27,13 @@ export async function buscarTabelasPrecos(): Promise<TabelaPreco[]> {
   try {
     console.log("🔍 [tabelas_precos] Buscando todas as tabelas de preços...")
 
-    const { data, error } = await supabaseClient.from("tabelas_precos").select("*").order("titulo", { ascending: true })
+    const tenantId = await getCurrentTenantId()
+
+    const { data, error } = await supabaseClient
+      .from("tabelas_precos")
+      .select("*")
+      .eq("tenant_id", tenantId)
+      .order("titulo", { ascending: true })
 
     if (error) {
       console.error("❌ [tabelas_precos] Erro ao buscar tabelas:", error)
@@ -51,11 +58,14 @@ export async function buscarTabelaPrecoDetalhada(id: string | number): Promise<T
   try {
     console.log("🔍 [tabelas_precos] Buscando tabela detalhada:", id)
 
-    // Buscar a tabela principal
+    const tenantId = await getCurrentTenantId()
+
+    // Buscar a tabela principal, filtrando por tenant
     const { data: tabela, error: tabelaError } = await supabaseClient
       .from("tabelas_precos")
       .select("*")
       .eq("id", id)
+      .eq("tenant_id", tenantId)
       .single()
 
     if (tabelaError || !tabela) {
@@ -63,11 +73,12 @@ export async function buscarTabelaPrecoDetalhada(id: string | number): Promise<T
       throw new Error(`Tabela com ID ${id} não encontrada`)
     }
 
-    // Buscar faixas etárias da tabela
+    // Buscar faixas etárias da tabela, filtrando por tenant
     const { data: faixas, error: faixasError } = await supabaseClient
       .from("tabelas_precos_faixas")
       .select("*")
       .eq("tabela_id", tabela.id)
+      .eq("tenant_id", tenantId)
       .order("faixa_etaria", { ascending: true })
 
     if (faixasError) {
@@ -95,6 +106,8 @@ export async function buscarTabelasPrecosPorProduto(produtoId: string): Promise<
   try {
     console.log("🔍 [produto_tabela_relacao] Buscando tabelas vinculadas ao produto:", produtoId)
 
+    const tenantId = await getCurrentTenantId()
+
     const { data: relacoes, error: relacoesError } = await supabase
       .from("produto_tabela_relacao")
       .select(`
@@ -107,6 +120,7 @@ export async function buscarTabelasPrecosPorProduto(produtoId: string): Promise<
         )
       `)
       .eq("produto_id", produtoId)
+      .eq("tenant_id", tenantId)
       .order("segmentacao", { ascending: true })
 
     if (relacoesError) {
@@ -152,6 +166,8 @@ export async function vincularTabelaProduto(
       descricao,
     })
 
+    const tenantId = await getCurrentTenantId()
+
     // Verificar se a vinculação já existe
     const { data: vinculacaoExistente } = await supabaseClient
       .from("produto_tabela_relacao")
@@ -159,6 +175,7 @@ export async function vincularTabelaProduto(
       .eq("produto_id", produtoId)
       .eq("tabela_id", tabelaId)
       .eq("segmentacao", segmentacao)
+      .eq("tenant_id", tenantId)
       .single()
 
     if (vinculacaoExistente) {
@@ -173,6 +190,7 @@ export async function vincularTabelaProduto(
         tabela_id: tabelaId,
         segmentacao,
         descricao,
+        tenant_id: tenantId, // Adicionar tenant_id automaticamente
       })
       .select("id")
       .single()
@@ -198,7 +216,13 @@ export async function desvincularTabelaProduto(relacaoId: string | number): Prom
   try {
     console.log("🔓 [produto_tabela_relacao] Desvinculando tabela:", relacaoId)
 
-    const { error } = await supabaseClient.from("produto_tabela_relacao").delete().eq("id", relacaoId)
+    const tenantId = await getCurrentTenantId()
+    
+    const { error } = await supabaseClient
+      .from("produto_tabela_relacao")
+      .delete()
+      .eq("id", relacaoId)
+      .eq("tenant_id", tenantId) // Garantir que só deleta do tenant correto
 
     if (error) {
       console.error(`❌ [produto_tabela_relacao] Erro ao desvincular:`, error)
@@ -219,12 +243,18 @@ export async function desvincularTabelaProduto(relacaoId: string | number): Prom
 export async function criarTabelaPreco(dadosTabela: {
   titulo: string
   operadora?: string
+  operadora_id?: string
+  produto_id?: string
   tipo_plano?: string
   segmentacao?: string
-  corretora?: string // Adicionado campo corretora
+  corretora?: string
   descricao?: string
   ativo?: boolean
   abrangencia?: string
+  data?: string
+  data_fechamento?: string
+  data_vencimento?: string
+  data_vigencia?: string
 }): Promise<TabelaPreco> {
   try {
     console.log("📝 [tabelas_precos] Criando nova tabela:", dadosTabela)
@@ -235,21 +265,35 @@ export async function criarTabelaPreco(dadosTabela: {
     }
 
     // Preparar dados para inserção - incluindo todos os campos possíveis
-    const dadosParaInserir = {
+    const dadosParaInserir: any = {
       titulo: dadosTabela.titulo.trim(),
       descricao: dadosTabela.descricao?.trim() || null,
       operadora: dadosTabela.operadora?.trim() || null,
+      operadora_id: dadosTabela.operadora_id || null,
       tipo_plano: dadosTabela.tipo_plano?.trim() || null,
       segmentacao: dadosTabela.segmentacao?.trim() || null,
-      corretora: dadosTabela.corretora?.trim() || null, // Incluído campo corretora
-      abrangencia: dadosTabela.abrangencia?.trim() || null, // NOVO CAMPO
+      corretora: dadosTabela.corretora?.trim() || null,
+      abrangencia: dadosTabela.abrangencia?.trim() || null,
       ativo: dadosTabela.ativo !== undefined ? dadosTabela.ativo : true,
+      data: dadosTabela.data || dadosTabela.data_fechamento || null,
+      data_fechamento: dadosTabela.data_fechamento || null,
+      data_vencimento: dadosTabela.data_vencimento || null,
+      data_vigencia: dadosTabela.data_vigencia || null,
       updated_at: new Date().toISOString(),
     }
 
     console.log("📝 [tabelas_precos] Dados preparados para inserção:", dadosParaInserir)
 
-    const { data, error } = await supabaseClient.from("tabelas_precos").insert(dadosParaInserir).select().single()
+    const tenantId = await getCurrentTenantId()
+
+    const { data, error } = await supabaseClient
+      .from("tabelas_precos")
+      .insert({
+        ...dadosParaInserir,
+        tenant_id: tenantId, // Adicionar tenant_id automaticamente
+      })
+      .select()
+      .single()
 
     if (error) {
       console.error("❌ [tabelas_precos] Erro ao criar tabela:", error)
@@ -317,10 +361,16 @@ export async function atualizarTabelaPreco(
 
     console.log("📝 [tabelas_precos] Dados preparados para atualização:", dadosParaAtualizar)
 
+    const tenantId = await getCurrentTenantId()
+    
+    // Remover tenant_id dos dados de atualização (não deve ser alterado)
+    const { tenant_id, ...dadosSemTenant } = dadosParaAtualizar
+
     const { data, error } = await supabaseClient
       .from("tabelas_precos")
-      .update(dadosParaAtualizar)
+      .update(dadosSemTenant)
       .eq("id", id)
+      .eq("tenant_id", tenantId) // Garantir que só atualiza do tenant correto
       .select()
       .single()
 
@@ -358,12 +408,15 @@ export async function adicionarFaixaEtaria(
       throw new Error("Valor não pode ser negativo")
     }
 
+    const tenantId = await getCurrentTenantId()
+
     const { data, error } = await supabaseClient
       .from("tabelas_precos_faixas")
       .insert({
         tabela_id: faixa.tabela_id,
         faixa_etaria: faixa.faixa_etaria.trim(),
         valor: Number(faixa.valor) || 0,
+        tenant_id: tenantId, // Adicionar tenant_id automaticamente
       })
       .select()
       .single()
@@ -392,10 +445,16 @@ export async function atualizarFaixaEtaria(
   try {
     console.log("📝 [tabelas_precos_faixas] Atualizando faixa etária:", id, faixa)
 
+    const tenantId = await getCurrentTenantId()
+    
+    // Remover tenant_id dos dados de atualização (não deve ser alterado)
+    const { tenant_id, ...dadosSemTenant } = faixa
+
     const { data, error } = await supabaseClient
       .from("tabelas_precos_faixas")
-      .update(faixa)
+      .update(dadosSemTenant)
       .eq("id", id)
+      .eq("tenant_id", tenantId) // Garantir que só atualiza do tenant correto
       .select()
       .single()
 
@@ -420,7 +479,13 @@ export async function removerFaixaEtaria(id: string | number): Promise<void> {
   try {
     console.log("🗑️ [tabelas_precos_faixas] Removendo faixa etária:", id)
 
-    const { error } = await supabaseClient.from("tabelas_precos_faixas").delete().eq("id", id)
+    const tenantId = await getCurrentTenantId()
+    
+    const { error } = await supabaseClient
+      .from("tabelas_precos_faixas")
+      .delete()
+      .eq("id", id)
+      .eq("tenant_id", tenantId) // Garantir que só deleta do tenant correto
 
     if (error) {
       console.error(`❌ [tabelas_precos_faixas] Erro ao remover:`, error)
@@ -442,10 +507,13 @@ export async function obterValorPorIdade(tabelaId: string | number, idade: numbe
   try {
     console.log(`🔍 [tabelas_precos_faixas] Buscando valor para idade ${idade} na tabela ${tabelaId}`)
 
+    const tenantId = await getCurrentTenantId()
+
     const { data: faixas, error } = await supabaseClient
       .from("tabelas_precos_faixas")
       .select("faixa_etaria, valor")
       .eq("tabela_id", tabelaId)
+      .eq("tenant_id", tenantId)
 
     if (error) {
       console.error(`❌ [tabelas_precos_faixas] Erro ao buscar faixas:`, error)
@@ -506,10 +574,13 @@ export async function buscarFaixasEtariasPorTabela(tabelaId: string): Promise<Ta
   try {
     console.log("🔍 [tabelas_precos_faixas] Buscando faixas etárias para tabela:", tabelaId)
 
+    const tenantId = await getCurrentTenantId()
+
     const { data, error } = await supabase
       .from("tabelas_precos_faixas")
       .select("*")
       .eq("tabela_id", tabelaId)
+      .eq("tenant_id", tenantId)
       .order("faixa_etaria", { ascending: true })
 
     if (error) {

@@ -267,7 +267,7 @@ export default function InvestigarFluxoDocumentosPage() {
                 </div>
               )}
               {resultados.analise?.diretas && (
-                <div className="bg-green-50 p-4 rounded">
+                <div className="bg-[#7BD9F6] bg-opacity-20 p-4 rounded">
                   <h3 className="font-medium mb-2">Propostas Diretas</h3>
                   <div className="space-y-1 text-sm">
                     <div>Total: {resultados.analise.diretas.total}</div>
@@ -332,7 +332,7 @@ export default function InvestigarFluxoDocumentosPage() {
           {resultados.analise?.exemplo_com_documentos && (
             <div className="bg-white p-6 rounded-lg shadow">
               <h2 className="text-xl font-semibold mb-4">📄 Exemplo com Documentos</h2>
-              <div className="bg-green-50 p-4 rounded">
+              <div className="bg-[#7BD9F6] bg-opacity-20 p-4 rounded">
                 <div className="space-y-2 text-sm">
                   <div>
                     <strong>Cliente:</strong> {resultados.analise.exemplo_com_documentos.cliente}

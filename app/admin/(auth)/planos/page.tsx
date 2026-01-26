@@ -233,34 +233,36 @@ export default function PlanosAdminPage() {
           <div className="grid gap-4 py-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="nome">Nome do Plano *</Label>
+                <Label htmlFor="nome" className="font-semibold">Nome do Plano *</Label>
                 <Input
                   id="nome"
                   value={planoAtual.nome}
                   onChange={(e) => setPlanoAtual({ ...planoAtual, nome: e.target.value })}
                   placeholder="Ex: Plano Premium"
                   required
+                  className="border-2 border-gray-300"
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="operadora">Operadora *</Label>
+                <Label htmlFor="operadora" className="font-semibold">Operadora *</Label>
                 <Input
                   id="operadora"
                   value={planoAtual.operadora}
                   onChange={(e) => setPlanoAtual({ ...planoAtual, operadora: e.target.value })}
                   placeholder="Ex: Unimed"
                   required
+                  className="border-2 border-gray-300"
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="tipo">Tipo *</Label>
+                <Label htmlFor="tipo" className="font-semibold">Tipo *</Label>
                 <Select
                   value={planoAtual.tipo}
                   onValueChange={(value) => setPlanoAtual({ ...planoAtual, tipo: value })}
                 >
-                  <SelectTrigger id="tipo">
+                  <SelectTrigger id="tipo" className="border-2 border-gray-300">
                     <SelectValue placeholder="Selecione o tipo" />
                   </SelectTrigger>
                   <SelectContent>
@@ -273,34 +275,36 @@ export default function PlanosAdminPage() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="cobertura">Cobertura *</Label>
+                <Label htmlFor="cobertura" className="font-semibold">Cobertura *</Label>
                 <Input
                   id="cobertura"
                   value={planoAtual.cobertura}
                   onChange={(e) => setPlanoAtual({ ...planoAtual, cobertura: e.target.value })}
                   placeholder="Ex: Nacional"
                   required
+                  className="border-2 border-gray-300"
                 />
               </div>
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="descricao">Descrição</Label>
+              <Label htmlFor="descricao" className="font-semibold">Descrição</Label>
               <Textarea
                 id="descricao"
                 value={planoAtual.descricao}
                 onChange={(e) => setPlanoAtual({ ...planoAtual, descricao: e.target.value })}
                 placeholder="Descreva os detalhes e benefícios do plano"
                 rows={4}
+                className="border-2 border-gray-300"
               />
             </div>
 
             <div className="space-y-4">
-              <Label>Preços por Faixa Etária *</Label>
+              <Label className="font-semibold">Preços por Faixa Etária *</Label>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {precos.map((preco) => (
                   <div key={preco.faixa_etaria} className="space-y-2">
-                    <Label htmlFor={`preco-${preco.faixa_etaria}`} className="text-sm">
+                    <Label htmlFor={`preco-${preco.faixa_etaria}`} className="text-sm font-semibold">
                       {preco.faixa_etaria} anos
                     </Label>
                     <div className="relative">
@@ -319,7 +323,7 @@ export default function PlanosAdminPage() {
                             ),
                           )
                         }}
-                        className="pl-8"
+                        className="border-2 border-gray-300 pl-8"
                         placeholder="0,00"
                       />
                     </div>

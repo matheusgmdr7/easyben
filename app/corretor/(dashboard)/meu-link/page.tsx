@@ -127,7 +127,7 @@ export default function MeuLinkPage() {
     return (
       <div className="space-y-6">
         <div className="flex justify-center items-center py-12">
-          <div className="animate-spin h-8 w-8 border-4 border-[#168979] border-t-transparent rounded-full"></div>
+          <div className="animate-spin h-8 w-8 border-4 border-[#0F172A] border-t-transparent rounded-full"></div>
           <span className="ml-3 text-gray-600">Carregando...</span>
         </div>
       </div>
@@ -155,7 +155,7 @@ export default function MeuLinkPage() {
     <div className="space-y-5">
       <div className="flex justify-between items-center border-b pb-3">
         <h1 className="text-xl font-semibold tracking-tight">Meu Link Exclusivo</h1>
-        <Badge variant="outline" className="text-[#168979] border-[#168979] text-xs font-medium">
+        <Badge variant="outline" className="text-[#0F172A] border-[#0F172A] text-xs font-medium">
           Ativo
         </Badge>
       </div>
@@ -164,7 +164,7 @@ export default function MeuLinkPage() {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card className="shadow-sm border-gray-200">
           <CardContent className="p-4 text-center">
-            <FileText className="h-5 w-5 text-[#168979] mx-auto mb-2 opacity-80" />
+            <FileText className="h-5 w-5 text-[#0F172A] mx-auto mb-2 opacity-80" />
             <p className="text-xl font-semibold">{estatisticas.total_propostas}</p>
             <p className="text-xs text-gray-600 mt-1">Total de Propostas</p>
           </CardContent>
@@ -180,7 +180,7 @@ export default function MeuLinkPage() {
 
         <Card className="shadow-sm border-gray-200">
           <CardContent className="p-4 text-center">
-            <CheckCircle className="h-5 w-5 text-green-500 mx-auto mb-2 opacity-80" />
+            <CheckCircle className="h-5 w-5 text-[#0F172A] mx-auto mb-2 opacity-80" />
             <p className="text-xl font-semibold">{estatisticas.propostas_aprovadas}</p>
             <p className="text-xs text-gray-600 mt-1">Aprovadas</p>
           </CardContent>
@@ -222,7 +222,7 @@ export default function MeuLinkPage() {
           </div>
 
           <div className="flex flex-wrap gap-2">
-            <Button onClick={copiarLink} className="bg-[#168979] hover:bg-[#13786a] h-8 text-xs">
+            <Button onClick={copiarLink} className="bg-[#0F172A] hover:bg-[#1E293B] h-8 text-xs">
               <Copy className="mr-1.5 h-3.5 w-3.5" />
               Copiar Link
             </Button>
@@ -283,7 +283,7 @@ export default function MeuLinkPage() {
 
             <div>
               <Label className="text-xs font-medium text-gray-600">Status</Label>
-              <p className="font-medium text-sm text-green-600">Ativo</p>
+              <p className="font-medium text-sm text-[#0F172A]">Ativo</p>
             </div>
 
             <div>

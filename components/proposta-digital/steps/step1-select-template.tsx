@@ -189,9 +189,9 @@ export default function Step1SelectTemplate({ onNext, corretorPredefinido }: Ste
 
       {/* Informações do Corretor */}
       {corretorPredefinido && (
-        <Card className="bg-green-50 border-green-200">
+        <Card className="bg-[#7BD9F6] bg-opacity-20 border-[#7BD9F6] border-opacity-30">
           <CardHeader className="pb-3">
-            <CardTitle className="text-green-800 flex items-center space-x-2">
+            <CardTitle className="text-[#0F172A] flex items-center space-x-2">
               <Shield className="h-5 w-5" />
               <span>Corretor Responsável</span>
             </CardTitle>
@@ -199,20 +199,20 @@ export default function Step1SelectTemplate({ onNext, corretorPredefinido }: Ste
           <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
               <div>
-                <span className="font-medium text-green-700">Nome:</span>
-                <p className="text-green-600">{corretorPredefinido.nome}</p>
+                <span className="font-medium text-[#0F172A]">Nome:</span>
+                <p className="text-[#0F172A]">{corretorPredefinido.nome}</p>
               </div>
               <div>
-                <span className="font-medium text-green-700">Email:</span>
-                <p className="text-green-600">{corretorPredefinido.email}</p>
+                <span className="font-medium text-[#0F172A]">Email:</span>
+                <p className="text-[#0F172A]">{corretorPredefinido.email}</p>
               </div>
               <div>
-                <span className="font-medium text-green-700">Telefone:</span>
-                <p className="text-green-600">{corretorPredefinido.telefone}</p>
+                <span className="font-medium text-[#0F172A]">Telefone:</span>
+                <p className="text-[#0F172A]">{corretorPredefinido.telefone}</p>
               </div>
               <div>
-                <span className="font-medium text-green-700">SUSEP:</span>
-                <p className="text-green-600">{corretorPredefinido.susep}</p>
+                <span className="font-medium text-[#0F172A]">SUSEP:</span>
+                <p className="text-[#0F172A]">{corretorPredefinido.susep}</p>
               </div>
             </div>
           </CardContent>

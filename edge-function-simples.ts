@@ -40,14 +40,14 @@ serve(async (req) => {
       </head>
       <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
           <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
-              <div style="background: #168979; color: white; padding: 30px; text-align: center; border-radius: 8px;">
+              <div style="background: #0F172A; color: white; padding: 30px; text-align: center; border-radius: 8px;">
                   <h1>🛡️ Complete sua Proposta</h1>
               </div>
               <div style="background: #f9f9f9; padding: 30px;">
                   <p>Olá <strong>${nome}</strong>,</p>
                   <p>Seu corretor <strong>${corretor}</strong> iniciou uma proposta de plano de saúde para você!</p>
                   <div style="text-align: center; margin: 30px 0;">
-                      <a href="${link}" style="background: #168979; color: white; padding: 15px 30px; text-decoration: none; border-radius: 5px; display: inline-block;">
+                      <a href="${link}" style="background: #0F172A; color: white; padding: 15px 30px; text-decoration: none; border-radius: 5px; display: inline-block;">
                           ✅ COMPLETAR PROPOSTA
                       </a>
                   </div>

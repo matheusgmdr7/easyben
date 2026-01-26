@@ -75,7 +75,7 @@ export default function ModalNovaAdministradora({
     <div className="fixed inset-0 flex items-center justify-center z-[100] p-4">
       <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
-        <div className="bg-gradient-to-r from-[#168979] to-[#13786a] px-6 py-4">
+        <div className="bg-gradient-to-r from-[#0F172A] to-[#1E293B] px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <Building className="h-6 w-6 text-white" />
@@ -162,7 +162,7 @@ export default function ModalNovaAdministradora({
                 placeholder="Informações adicionais sobre a administradora"
                 value={formData.observacoes}
                 onChange={(e) => setFormData({ ...formData, observacoes: e.target.value })}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#168979] focus:border-transparent min-h-[100px]"
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#0F172A] focus:border-transparent min-h-[100px]"
                 rows={4}
               />
             </div>
@@ -183,7 +183,7 @@ export default function ModalNovaAdministradora({
             <Button
               onClick={handleSave}
               disabled={!isFormValid || saving}
-              className="bg-[#168979] hover:bg-[#13786a] text-white"
+              className="bg-[#0F172A] hover:bg-[#1E293B] text-white"
             >
               {saving ? "Salvando..." : "Salvar"}
             </Button>

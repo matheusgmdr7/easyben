@@ -42,7 +42,7 @@ export default function RecuperarSenhaPage() {
       <main className="flex-grow py-8 md:py-10 bg-gray-50">
         <div className="container px-4 md:px-6">
           <div className="max-w-md mx-auto">
-            <h1 className="text-2xl md:text-3xl font-bold text-center mb-6 md:mb-8 text-[#168979]">Recuperar Senha</h1>
+            <h1 className="text-2xl md:text-3xl font-bold text-center mb-6 md:mb-8 text-[#0F172A]">Recuperar Senha</h1>
 
             <Card>
               <CardHeader>
@@ -65,7 +65,7 @@ export default function RecuperarSenhaPage() {
                         Tentar com outro email
                       </Button>
                       <Link href="/corretor/login">
-                        <Button className="w-full bg-[#168979] hover:bg-[#13786a]">Voltar para o login</Button>
+                        <Button className="w-full bg-[#0F172A] hover:bg-[#1E293B]">Voltar para o login</Button>
                       </Link>
                     </div>
                   </div>
@@ -88,7 +88,7 @@ export default function RecuperarSenhaPage() {
 
                     <Button
                       type="submit"
-                      className="w-full bg-[#168979] hover:bg-[#13786a] text-sm md:text-base py-2 md:py-3"
+                      className="w-full bg-[#0F172A] hover:bg-[#1E293B] text-sm md:text-base py-2 md:py-3"
                       disabled={carregando}
                     >
                       {carregando ? "Enviando..." : "Recuperar Senha"}
@@ -96,7 +96,7 @@ export default function RecuperarSenhaPage() {
 
                     <div className="text-center text-sm text-gray-500">
                       Lembrou sua senha?{" "}
-                      <Link href="/corretor/login" className="text-[#168979] hover:underline">
+                      <Link href="/corretor/login" className="text-[#0F172A] hover:underline">
                         Voltar para o login
                       </Link>
                     </div>

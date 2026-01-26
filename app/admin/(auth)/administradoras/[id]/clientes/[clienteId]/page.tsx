@@ -296,15 +296,15 @@ export default function ClienteDetalhesPage() {
 
   const getStatusInfo = (status: string) => {
     const badges = {
-      ativo: { bg: "bg-green-50 text-green-700 border border-green-200", icon: CheckCircle },
+      ativo: { bg: "bg-[#7BD9F6] bg-opacity-20 text-[#0F172A] border border-[#7BD9F6] border-opacity-30", icon: CheckCircle },
       aguardando_implantacao: { bg: "bg-blue-50 text-blue-700 border border-blue-200", icon: Clock },
       suspenso: { bg: "bg-yellow-50 text-yellow-700 border border-yellow-200", icon: AlertCircle },
       cancelado: { bg: "bg-red-50 text-red-700 border border-red-200", icon: XCircle },
       inadimplente: { bg: "bg-orange-50 text-orange-700 border border-orange-200", icon: Clock },
       // Status das faturas
       pendente: { bg: "bg-yellow-100 text-yellow-800", icon: Clock },
-      paga: { bg: "bg-green-100 text-green-800", icon: CheckCircle },
-      pago: { bg: "bg-green-100 text-green-800", icon: CheckCircle },
+      paga: { bg: "bg-[#7BD9F6] bg-opacity-30 text-[#0F172A]", icon: CheckCircle },
+      pago: { bg: "bg-[#7BD9F6] bg-opacity-30 text-[#0F172A]", icon: CheckCircle },
       atrasada: { bg: "bg-red-100 text-red-800", icon: AlertCircle },
       cancelada: { bg: "bg-gray-100 text-gray-800", icon: XCircle },
     }
@@ -318,7 +318,7 @@ export default function ClienteDetalhesPage() {
       // Priorizar status de implantação sobre status geral
       if (cliente.implantado === true) {
         return (
-          <Badge className="bg-green-50 text-green-700 border border-green-200 flex items-center gap-1">
+          <Badge className="bg-[#7BD9F6] bg-opacity-20 text-[#0F172A] border border-[#7BD9F6] border-opacity-30 flex items-center gap-1">
             <CheckCircle className="h-3 w-3" />
             Implantado
           </Badge>
@@ -519,7 +519,7 @@ export default function ClienteDetalhesPage() {
                 variant="outline"
                 size="sm"
                 onClick={() => setShowModalTransferir(true)}
-                className="border-[#168979] text-[#168979] hover:bg-[#168979] hover:text-white"
+                className="border-[#0F172A] text-[#0F172A] hover:bg-[#0F172A] hover:text-white"
                 disabled={cliente.status === "cancelado"}
               >
                 <ArrowRight className="h-4 w-4 mr-1.5" />
@@ -544,7 +544,7 @@ export default function ClienteDetalhesPage() {
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-lg sm:text-xl">
-              <ArrowRight className="h-5 w-5 text-[#168979]" />
+              <ArrowRight className="h-5 w-5 text-[#0F172A]" />
               Transferir Cliente
             </DialogTitle>
             <DialogDescription>
@@ -607,7 +607,7 @@ export default function ClienteDetalhesPage() {
             <Button
               onClick={transferirCliente}
               disabled={!novaAdministradoraId || transferindo}
-              className="bg-[#168979] hover:bg-[#13786a] text-white"
+              className="bg-[#0F172A] hover:bg-[#1E293B] text-white"
             >
               {transferindo ? (
                 <>
@@ -688,20 +688,20 @@ export default function ClienteDetalhesPage() {
         <TabsList className="inline-flex h-auto w-full bg-transparent p-0 gap-0 sm:gap-1">
           <TabsTrigger 
             value="dados" 
-            className="text-xs sm:text-sm px-3 sm:px-4 py-2.5 sm:py-3 data-[state=active]:bg-transparent data-[state=active]:text-[#168979] data-[state=active]:border-b-2 data-[state=active]:border-[#168979] rounded-none"
+            className="text-xs sm:text-sm px-3 sm:px-4 py-2.5 sm:py-3 data-[state=active]:bg-transparent data-[state=active]:text-[#0F172A] data-[state=active]:border-b-2 data-[state=active]:border-[#0F172A] rounded-none"
           >
             Dados Pessoais
           </TabsTrigger>
           <TabsTrigger 
             value="contrato" 
-            className="text-xs sm:text-sm px-3 sm:px-4 py-2.5 sm:py-3 data-[state=active]:bg-transparent data-[state=active]:text-[#168979] data-[state=active]:border-b-2 data-[state=active]:border-[#168979] rounded-none"
+            className="text-xs sm:text-sm px-3 sm:px-4 py-2.5 sm:py-3 data-[state=active]:bg-transparent data-[state=active]:text-[#0F172A] data-[state=active]:border-b-2 data-[state=active]:border-[#0F172A] rounded-none"
           >
             Contrato
           </TabsTrigger>
           <TabsTrigger 
             value="financeiro" 
             data-aba="financeiro"
-            className="text-xs sm:text-sm px-3 sm:px-4 py-2.5 sm:py-3 data-[state=active]:bg-transparent data-[state=active]:text-[#168979] data-[state=active]:border-b-2 data-[state=active]:border-[#168979] rounded-none"
+            className="text-xs sm:text-sm px-3 sm:px-4 py-2.5 sm:py-3 data-[state=active]:bg-transparent data-[state=active]:text-[#0F172A] data-[state=active]:border-b-2 data-[state=active]:border-[#0F172A] rounded-none"
           >
             Financeiro
           </TabsTrigger>
@@ -858,7 +858,7 @@ export default function ClienteDetalhesPage() {
                   <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">
                     Valor Mensal
                   </label>
-                  <p className="text-2xl sm:text-3xl font-bold text-[#168979]">{formatarValor(cliente.valor_mensal)}</p>
+                  <p className="text-2xl sm:text-3xl font-bold text-[#0F172A]">{formatarValor(cliente.valor_mensal)}</p>
                 </div>
                 {cliente.observacoes && (
                   <div>
@@ -884,7 +884,7 @@ export default function ClienteDetalhesPage() {
                       onClick={() => setEditandoImplantacao(true)}
                       variant="outline"
                       size="sm"
-                      className="border-[#168979] text-[#168979] hover:bg-[#168979] hover:text-white"
+                      className="border-[#0F172A] text-[#0F172A] hover:bg-[#0F172A] hover:text-white"
                     >
                       <Edit className="h-4 w-4 mr-1.5" />
                       Editar
@@ -906,7 +906,7 @@ export default function ClienteDetalhesPage() {
                             name="implantado"
                             checked={implantado === true}
                             onChange={() => setImplantado(true)}
-                            className="h-4 w-4 text-[#168979] focus:ring-[#168979]"
+                            className="h-4 w-4 text-[#0F172A] focus:ring-[#0F172A]"
                           />
                           <span className="text-sm sm:text-base text-gray-700">Implantado</span>
                         </label>
@@ -916,7 +916,7 @@ export default function ClienteDetalhesPage() {
                             name="implantado"
                             checked={implantado === false}
                             onChange={() => setImplantado(false)}
-                            className="h-4 w-4 text-[#168979] focus:ring-[#168979]"
+                            className="h-4 w-4 text-[#0F172A] focus:ring-[#0F172A]"
                           />
                           <span className="text-sm sm:text-base text-gray-700">Aguardando Implantação</span>
                         </label>
@@ -931,14 +931,14 @@ export default function ClienteDetalhesPage() {
                         value={numeroCarteirinha}
                         onChange={(e) => setNumeroCarteirinha(e.target.value)}
                         placeholder="Digite o número da carteirinha"
-                        className="h-10 sm:h-11 border-2 border-gray-300 focus:border-[#168979] rounded-lg text-sm sm:text-base"
+                        className="h-10 sm:h-11 border-2 border-gray-300 focus:border-[#0F172A] rounded-lg text-sm sm:text-base"
                       />
                     </div>
                     <div className="flex gap-2 pt-2">
                       <Button
                         onClick={salvarImplantacao}
                         disabled={salvandoImplantacao}
-                        className="bg-[#168979] hover:bg-[#13786a] text-white flex-1"
+                        className="bg-[#0F172A] hover:bg-[#1E293B] text-white flex-1"
                         size="sm"
                       >
                         {salvandoImplantacao ? (
@@ -973,7 +973,7 @@ export default function ClienteDetalhesPage() {
                       </label>
                       <div className="flex items-center gap-2">
                         {cliente.implantado ? (
-                          <Badge className="bg-green-50 text-green-700 border border-green-200 flex items-center gap-1">
+                          <Badge className="bg-[#7BD9F6] bg-opacity-20 text-[#0F172A] border border-[#7BD9F6] border-opacity-30 flex items-center gap-1">
                             <CheckCircle className="h-3 w-3" />
                             Implantado
                           </Badge>
@@ -1015,14 +1015,14 @@ export default function ClienteDetalhesPage() {
                     variant="outline"
                     size="sm"
                     disabled={loadingFaturas}
-                    className="flex items-center gap-2 border-[#168979] text-[#168979] hover:bg-[#168979] hover:text-white flex-1 sm:flex-none"
+                    className="flex items-center gap-2 border-[#0F172A] text-[#0F172A] hover:bg-[#0F172A] hover:text-white flex-1 sm:flex-none"
                   >
                     <RefreshCw className={`h-4 w-4 ${loadingFaturas ? 'animate-spin' : ''}`} />
                     Atualizar
                   </Button>
                   <Button
                     onClick={() => router.push(`/admin/administradoras/${administradoraId}/clientes/${clienteId}/faturas`)}
-                    className="flex items-center gap-2 bg-[#168979] hover:bg-[#13786a] text-white flex-1 sm:flex-none"
+                    className="flex items-center gap-2 bg-[#0F172A] hover:bg-[#1E293B] text-white flex-1 sm:flex-none"
                     size="sm"
                   >
                     <FileText className="h-4 w-4" />
@@ -1038,9 +1038,9 @@ export default function ClienteDetalhesPage() {
                   <p className="text-xs sm:text-sm text-blue-700 font-semibold uppercase tracking-wide mb-1.5 sm:mb-2">Total de Faturas</p>
                   <p className="text-xl sm:text-2xl font-bold text-blue-700">{cliente.total_faturas || 0}</p>
                 </div>
-                <div className="bg-gradient-to-br from-green-50 to-green-100 border border-green-200 rounded-lg p-3 sm:p-4 text-center">
-                  <p className="text-xs sm:text-sm text-green-700 font-semibold uppercase tracking-wide mb-1.5 sm:mb-2">Faturas Pagas</p>
-                  <p className="text-xl sm:text-2xl font-bold text-green-700">{cliente.faturas_pagas || 0}</p>
+                <div className="bg-gradient-to-br from-green-50 to-green-100 border border-[#7BD9F6] border-opacity-30 rounded-lg p-3 sm:p-4 text-center">
+                  <p className="text-xs sm:text-sm text-[#0F172A] font-semibold uppercase tracking-wide mb-1.5 sm:mb-2">Faturas Pagas</p>
+                  <p className="text-xl sm:text-2xl font-bold text-[#0F172A]">{cliente.faturas_pagas || 0}</p>
                 </div>
                 <div className="bg-gradient-to-br from-red-50 to-red-100 border border-red-200 rounded-lg p-3 sm:p-4 text-center">
                   <p className="text-xs sm:text-sm text-red-700 font-semibold uppercase tracking-wide mb-1.5 sm:mb-2">Faturas Atrasadas</p>
@@ -1099,7 +1099,7 @@ export default function ClienteDetalhesPage() {
                               <Button
                                 onClick={() => window.open(fatura.asaas_boleto_url || fatura.boleto_url || fatura.asaas_invoice_url, "_blank")}
                                 size="sm"
-                                className="bg-[#168979] hover:bg-[#13786a] text-white w-full sm:w-auto"
+                                className="bg-[#0F172A] hover:bg-[#1E293B] text-white w-full sm:w-auto"
                               >
                                 <Download className="h-3 w-3 sm:h-4 sm:w-4 mr-1.5" />
                                 {fatura.asaas_boleto_url ? "Boleto" : "Fatura"}

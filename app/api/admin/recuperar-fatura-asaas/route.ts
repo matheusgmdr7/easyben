@@ -160,9 +160,11 @@ export async function POST(request: NextRequest) {
     console.log("🔧 Configurando API key do Asaas...")
     AsaasServiceInstance.setApiKey(apiKeyToUse, ambienteAsaas)
     
-    // Buscar cliente no Asaas por CPF
-    console.log("🔍 Buscando cliente no Asaas por CPF:", proposta.cpf)
-    const asaasCustomer = await AsaasServiceInstance.getCustomerByCpfCnpj(proposta.cpf)
+    // Buscar cliente no Asaas por CPF (limpar formatação)
+    const cpfLimpo = proposta.cpf?.replace(/\D/g, '') || proposta.cpf
+    console.log("🔍 Buscando cliente no Asaas por CPF:", cpfLimpo)
+    console.log("🔍 CPF original:", proposta.cpf)
+    const asaasCustomer = await AsaasServiceInstance.getCustomerByCpfCnpj(cpfLimpo)
 
     if (!asaasCustomer) {
       console.error("❌ Cliente não encontrado no Asaas com CPF:", proposta.cpf)

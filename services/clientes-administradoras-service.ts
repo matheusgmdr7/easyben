@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase"
+import { getCurrentTenantId } from "@/lib/tenant-query-helper"
 import { IntegracaoAsaasService } from "./integracao-asaas-service"
 
 export interface ClienteAdministradora {
@@ -103,12 +104,15 @@ export class ClientesAdministradorasService {
     try {
       const { data: userData } = await supabase.auth.getUser()
 
+      const tenantId = await getCurrentTenantId()
+
       // Verificar se o cliente já está vinculado a esta administradora
       const { data: vinculoExistente } = await supabase
         .from("clientes_administradoras")
         .select("*")
         .eq("administradora_id", dados.administradora_id)
         .eq("proposta_id", dados.proposta_id)
+        .eq("tenant_id", tenantId)
         .single()
 
       if (vinculoExistente) {
@@ -142,6 +146,7 @@ export class ClientesAdministradorasService {
             status: "ativo",
             data_vinculacao: new Date().toISOString(),
             created_by: userData?.user?.id,
+            tenant_id: tenantId, // Adicionar tenant_id automaticamente
           },
         ])
         .select()
@@ -152,23 +157,24 @@ export class ClientesAdministradorasService {
         throw error
       }
 
-      // Atualizar status da proposta para "cadastrado"
+      // Atualizar status da proposta para "transmitida"
       const { error: erroUpdateProposta } = await supabase
         .from("propostas")
         .update({
-          status: "cadastrado",
+          status: "transmitida",
           administradora: dados.administradora_id,
           data_cadastro: new Date().toISOString(),
           data_vencimento: dados.data_vencimento,
           data_vigencia: dados.data_vigencia,
         })
         .eq("id", dados.proposta_id)
+        .eq("tenant_id", tenantId) // Garantir que só atualiza do tenant correto
 
       if (erroUpdateProposta) {
         console.error("⚠️ Erro ao atualizar status da proposta:", erroUpdateProposta)
         // Não bloquear o cadastro, mas logar o erro
       } else {
-        console.log("✅ Status da proposta atualizado para 'cadastrado'")
+        console.log("✅ Status da proposta atualizado para 'transmitida'")
       }
 
       // Integração automática com Asaas (se solicitada)
@@ -180,6 +186,7 @@ export class ClientesAdministradorasService {
             .from("propostas")
             .select("id")
             .eq("id", dados.proposta_id)
+            .eq("tenant_id", tenantId)
             .single()
           
           if (erroVerificacao || !propostaVerificada) {
@@ -258,6 +265,7 @@ export class ClientesAdministradorasService {
     paginacao?: PaginacaoClientes
   ): Promise<ResultadoClientes> {
     try {
+      const tenantId = await getCurrentTenantId()
       const limite = paginacao?.limite || 10
       const pagina = paginacao?.pagina || 1
       const offset = (pagina - 1) * limite
@@ -267,6 +275,7 @@ export class ClientesAdministradorasService {
         .from("vw_clientes_administradoras_completo")
         .select("*", { count: "exact", head: true })
         .eq("administradora_id", administradoraId)
+        .eq("tenant_id", tenantId)
 
       // Aplicar filtros no count
       if (filtros?.status) {
@@ -299,6 +308,7 @@ export class ClientesAdministradorasService {
         .from("vw_clientes_administradoras_completo")
         .select("*")
         .eq("administradora_id", administradoraId)
+        .eq("tenant_id", tenantId)
         .range(offset, offset + limite - 1)
 
       // Aplicar filtros
@@ -363,10 +373,13 @@ export class ClientesAdministradorasService {
    */
   static async buscarPorId(id: string): Promise<ClienteAdministradoraCompleto | null> {
     try {
+      const tenantId = await getCurrentTenantId()
+      
       const { data, error } = await supabase
         .from("vw_clientes_administradoras_completo")
         .select("*")
         .eq("id", id)
+        .eq("tenant_id", tenantId)
         .single()
 
       if (error && error.code !== "PGRST116") {
@@ -415,10 +428,16 @@ export class ClientesAdministradorasService {
         }
       }
 
+      const tenantId = await getCurrentTenantId()
+      
+      // Remover tenant_id dos dados de atualização (não deve ser alterado)
+      const { tenant_id, ...dadosSemTenant } = dadosAtualizacao
+
       const { data, error } = await supabase
         .from("clientes_administradoras")
-        .update(dadosAtualizacao)
+        .update(dadosSemTenant)
         .eq("id", id)
+        .eq("tenant_id", tenantId) // Garantir que só atualiza do tenant correto
         .select()
         .single()
 
@@ -449,10 +468,13 @@ export class ClientesAdministradorasService {
         dados.data_cancelamento = new Date().toISOString()
       }
 
+      const tenantId = await getCurrentTenantId()
+      
       const { error } = await supabase
         .from("clientes_administradoras")
         .update(dados)
         .eq("id", id)
+        .eq("tenant_id", tenantId) // Garantir que só atualiza do tenant correto
 
       if (error) {
         console.error("❌ Erro ao alterar status:", error)
@@ -491,12 +513,15 @@ export class ClientesAdministradorasService {
         throw new Error("Cliente não encontrado")
       }
 
+      const tenantId = await getCurrentTenantId()
+      
       // Verificar se o cliente já está vinculado à nova administradora
       const { data: vinculoExistente } = await supabase
         .from("clientes_administradoras")
         .select("*")
         .eq("administradora_id", novaAdministradoraId)
         .eq("proposta_id", clienteAtual.proposta_id)
+        .eq("tenant_id", tenantId)
         .single()
 
       if (vinculoExistente) {
@@ -511,6 +536,7 @@ export class ClientesAdministradorasService {
           updated_at: new Date().toISOString()
         })
         .eq("id", clienteAdministradoraId)
+        .eq("tenant_id", tenantId) // Garantir que só atualiza do tenant correto
         .select()
         .single()
 
@@ -527,6 +553,7 @@ export class ClientesAdministradorasService {
           updated_at: new Date().toISOString()
         })
         .eq("cliente_administradora_id", clienteAdministradoraId)
+        .eq("tenant_id", tenantId) // Garantir que só atualiza do tenant correto
 
       if (erroFaturas) {
         console.warn("⚠️ Aviso ao atualizar faturas:", erroFaturas)
@@ -545,11 +572,14 @@ export class ClientesAdministradorasService {
    */
   static async buscarDadosCompletos(clienteAdministradoraId: string): Promise<any> {
     try {
+      const tenantId = await getCurrentTenantId()
+      
       // Buscar dados do vínculo
       const { data: clienteData, error: clienteError } = await supabase
         .from("vw_clientes_administradoras_completo")
         .select("*")
         .eq("id", clienteAdministradoraId)
+        .eq("tenant_id", tenantId)
         .single()
 
       if (clienteError) {
@@ -561,6 +591,7 @@ export class ClientesAdministradorasService {
         .from("propostas")
         .select("*")
         .eq("id", clienteData.proposta_id)
+        .eq("tenant_id", tenantId)
         .single()
 
       if (propostaError) {
@@ -572,18 +603,21 @@ export class ClientesAdministradorasService {
         .from("dependentes_propostas")
         .select("*")
         .eq("proposta_id", clienteData.proposta_id)
+        .eq("tenant_id", tenantId)
 
       // Buscar questionários de saúde
       const { data: questionariosData } = await supabase
         .from("questionarios_saude")
         .select("*")
         .eq("proposta_id", clienteData.proposta_id)
+        .eq("tenant_id", tenantId)
 
       // Buscar faturas
       const { data: faturasData } = await supabase
         .from("faturas")
         .select("*")
         .eq("cliente_administradora_id", clienteAdministradoraId)
+        .eq("tenant_id", tenantId)
         .order("data_vencimento", { ascending: false })
 
       return {
@@ -604,11 +638,14 @@ export class ClientesAdministradorasService {
    */
   static async verificarInadimplencia(clienteAdministradoraId: string): Promise<boolean> {
     try {
+      const tenantId = await getCurrentTenantId()
+      
       const { data, error } = await supabase
         .from("faturas")
         .select("*", { count: "exact", head: true })
         .eq("cliente_administradora_id", clienteAdministradoraId)
         .eq("status", "atrasada")
+        .eq("tenant_id", tenantId)
 
       if (error) {
         throw error

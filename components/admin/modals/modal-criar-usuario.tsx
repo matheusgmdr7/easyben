@@ -96,7 +96,7 @@ export default function ModalCriarUsuario({
       <div className="fixed inset-0 flex items-center justify-center z-[100] p-4">
         <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col">
           {/* Header */}
-          <div className="bg-gradient-to-r from-[#168979] to-[#13786a] px-6 py-4">
+          <div className="bg-gradient-to-r from-[#0F172A] to-[#1E293B] px-6 py-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-white/20 rounded-lg">
@@ -124,7 +124,7 @@ export default function ModalCriarUsuario({
               {/* Dados Básicos */}
               <div className="space-y-4">
                 <h4 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-                  <User className="h-5 w-5 text-[#168979]" />
+                  <User className="h-5 w-5 text-[#0F172A]" />
                   Dados Básicos
                 </h4>
 
@@ -136,7 +136,7 @@ export default function ModalCriarUsuario({
                   <Input
                     value={formData.nome}
                     onChange={(e) => setFormData({ ...formData, nome: e.target.value })}
-                    className="h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg"
+                    className="h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg"
                     placeholder="Nome completo do usuário"
                   />
                 </div>
@@ -151,7 +151,7 @@ export default function ModalCriarUsuario({
                       type="email"
                       value={formData.email}
                       onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                      className="h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg"
+                      className="h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg"
                       placeholder="usuario@exemplo.com"
                     />
                   </div>
@@ -164,7 +164,7 @@ export default function ModalCriarUsuario({
                       type="password"
                       value={formData.senha}
                       onChange={(e) => setFormData({ ...formData, senha: e.target.value })}
-                      className="h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg"
+                      className="h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg"
                       placeholder="Senha segura"
                     />
                   </div>
@@ -174,7 +174,7 @@ export default function ModalCriarUsuario({
               {/* Perfil */}
               <div className="space-y-4">
                 <h4 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-                  <Shield className="h-5 w-5 text-[#168979]" />
+                  <Shield className="h-5 w-5 text-[#0F172A]" />
                   Perfil e Permissões
                 </h4>
 
@@ -183,15 +183,15 @@ export default function ModalCriarUsuario({
                     Perfil <span className="text-red-500">*</span>
                   </label>
                   <Select value={formData.perfil} onValueChange={handlePerfilChange}>
-                    <SelectTrigger className="h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg">
+                    <SelectTrigger className="h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg">
                       <SelectValue placeholder="Selecione um perfil" />
                     </SelectTrigger>
                     <SelectContent>
                       {Object.entries(PERFIS_LABELS).map(([valor, label]) => (
                         <SelectItem key={valor} value={valor}>
                           <div className="flex items-center gap-2">
-                            <div className="p-1 bg-[#168979]/10 rounded">
-                              <Shield className="h-4 w-4 text-[#168979]" />
+                            <div className="p-1 bg-[#0F172A]/10 rounded">
+                              <Shield className="h-4 w-4 text-[#0F172A]" />
                             </div>
                             {label}
                           </div>
@@ -215,7 +215,7 @@ export default function ModalCriarUsuario({
                         key={permissao}
                         className={`p-3 rounded-lg border-2 cursor-pointer transition-all ${
                           formData.permissoes.includes(permissao as Permissao)
-                            ? 'border-[#168979] bg-[#168979]/5'
+                            ? 'border-[#0F172A] bg-[#0F172A]/5'
                             : 'border-gray-200 hover:border-gray-300'
                         }`}
                         onClick={() => togglePermissao(permissao as Permissao)}
@@ -223,7 +223,7 @@ export default function ModalCriarUsuario({
                         <div className="flex items-center gap-2">
                           <div className={`w-4 h-4 rounded border-2 flex items-center justify-center ${
                             formData.permissoes.includes(permissao as Permissao)
-                              ? 'border-[#168979] bg-[#168979]'
+                              ? 'border-[#0F172A] bg-[#0F172A]'
                               : 'border-gray-300'
                           }`}>
                             {formData.permissoes.includes(permissao as Permissao) && (
@@ -272,31 +272,31 @@ export default function ModalCriarUsuario({
 
               {/* Preview da operação */}
               {formData.nome && formData.email && formData.perfil && (
-                <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-xl p-6">
+                <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-[#7BD9F6] border-opacity-30 rounded-xl p-6">
                   <div className="flex items-center gap-3 mb-3">
-                    <div className="p-2 bg-green-100 rounded-lg">
-                      <Users className="h-5 w-5 text-green-600" />
+                    <div className="p-2 bg-[#7BD9F6] bg-opacity-30 rounded-lg">
+                      <Users className="h-5 w-5 text-[#0F172A]" />
                     </div>
-                    <h4 className="text-sm font-bold text-green-900">
+                    <h4 className="text-sm font-bold text-[#0F172A]">
                       📊 Resumo do Novo Usuário
                     </h4>
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
                     <div className="bg-white/60 rounded-lg p-3">
-                      <div className="font-semibold text-green-800">Nome</div>
-                      <div className="text-green-700 mt-1">{formData.nome}</div>
+                      <div className="font-semibold text-[#0F172A]">Nome</div>
+                      <div className="text-[#0F172A] mt-1">{formData.nome}</div>
                     </div>
                     <div className="bg-white/60 rounded-lg p-3">
-                      <div className="font-semibold text-green-800">Email</div>
-                      <div className="text-green-700 mt-1">{formData.email}</div>
+                      <div className="font-semibold text-[#0F172A]">Email</div>
+                      <div className="text-[#0F172A] mt-1">{formData.email}</div>
                     </div>
                     <div className="bg-white/60 rounded-lg p-3">
-                      <div className="font-semibold text-green-800">Perfil</div>
-                      <div className="text-green-700 mt-1">{PERFIS_LABELS[formData.perfil as keyof typeof PERFIS_LABELS]}</div>
+                      <div className="font-semibold text-[#0F172A]">Perfil</div>
+                      <div className="text-[#0F172A] mt-1">{PERFIS_LABELS[formData.perfil as keyof typeof PERFIS_LABELS]}</div>
                     </div>
                     <div className="bg-white/60 rounded-lg p-3">
-                      <div className="font-semibold text-green-800">Permissões</div>
-                      <div className="text-green-700 mt-1">{formData.permissoes.length} permissões</div>
+                      <div className="font-semibold text-[#0F172A]">Permissões</div>
+                      <div className="text-[#0F172A] mt-1">{formData.permissoes.length} permissões</div>
                     </div>
                   </div>
                 </div>
@@ -318,7 +318,7 @@ export default function ModalCriarUsuario({
               <Button
                 onClick={handleSave}
                 disabled={saving || !isFormValid}
-                className="h-12 px-8 bg-gradient-to-r from-[#168979] to-[#13786a] hover:from-[#13786a] hover:to-[#0f6b5c] text-white font-bold shadow-lg"
+                className="h-12 px-8 bg-gradient-to-r from-[#0F172A] to-[#1E293B] hover:from-[#1E293B] hover:to-[#0f6b5c] text-white font-bold shadow-lg"
               >
                 {saving ? (
                   <div className="flex items-center gap-2">

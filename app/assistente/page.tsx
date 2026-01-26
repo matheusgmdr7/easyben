@@ -60,7 +60,7 @@ export default function FaleComConsultorPage() {
       <main className="flex-grow py-8 md:py-12 bg-gray-50">
         <div className="container px-4 md:px-6">
           <div className="max-w-4xl mx-auto">
-            <h1 className="text-2xl md:text-4xl font-bold text-center mb-4 text-[#168979]">Fale com um Consultor</h1>
+            <h1 className="text-2xl md:text-4xl font-bold text-center mb-4 text-[#0F172A]">Fale com um Consultor</h1>
             <p className="text-base md:text-xl text-center text-gray-600 mb-8 md:mb-10">
               Nossos consultores especializados estão prontos para ajudar você a encontrar o plano de saúde ideal para
               suas necessidades.
@@ -75,7 +75,7 @@ export default function FaleComConsultorPage() {
                 }
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center justify-center px-8 py-4 text-lg font-bold text-white bg-[#168979] rounded-lg shadow-lg hover:bg-[#13786a] transition-all duration-200 transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-[#168979]/50"
+                className="inline-flex items-center justify-center px-8 py-4 text-lg font-bold text-white bg-[#0F172A] rounded-lg shadow-lg hover:bg-[#1E293B] transition-all duration-200 transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-[#0F172A]/50"
               >
                 Consultor Barreto
                 <ArrowRight className="ml-2 h-5 w-5" />
@@ -96,7 +96,7 @@ export default function FaleComConsultorPage() {
             </div>
 
             {dadosCliente && (
-              <Card className="mb-6 md:mb-8 bg-[#168979] text-white">
+              <Card className="mb-6 md:mb-8 bg-[#0F172A] text-white">
                 <CardContent className="p-4 md:p-6">
                   <div className="flex flex-col md:flex-row justify-between items-center gap-4">
                     <div>
@@ -112,7 +112,7 @@ export default function FaleComConsultorPage() {
                       href={`https://wa.me/5521973244434?text=Olá! Meu nome é ${dadosCliente.nome} e tenho interesse no plano ${dadosCliente.planoSelecionado.nome} da ${dadosCliente.planoSelecionado.operadora}.`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex items-center justify-center w-full md:w-auto px-6 py-3 text-base font-bold text-[#168979] bg-white rounded-lg shadow-md hover:bg-yellow-300 transition-all duration-200 transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-white/50"
+                      className="inline-flex items-center justify-center w-full md:w-auto px-6 py-3 text-base font-bold text-[#0F172A] bg-white rounded-lg shadow-md hover:bg-yellow-300 transition-all duration-200 transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-white/50"
                     >
                       Falar com consultor agora
                       <ArrowRight className="ml-2 h-5 w-5" />
@@ -123,11 +123,11 @@ export default function FaleComConsultorPage() {
             )}
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-10">
-              <Card className="bg-white border-2 border-[#168979]/20 hover:border-[#168979]/50 transition-all">
+              <Card className="bg-white border-2 border-[#0F172A]/20 hover:border-[#0F172A]/50 transition-all">
                 <CardContent className="p-6">
                   <div className="flex flex-col h-full">
-                    <div className="mb-4 p-3 bg-[#168979]/10 rounded-full w-fit">
-                      <Phone className="h-6 w-6 text-[#168979]" />
+                    <div className="mb-4 p-3 bg-[#0F172A]/10 rounded-full w-fit">
+                      <Phone className="h-6 w-6 text-[#0F172A]" />
                     </div>
                     <h3 className="text-xl font-semibold mb-2">Atendimento Rápido</h3>
                     <p className="text-gray-600 mb-6 flex-grow">
@@ -142,7 +142,7 @@ export default function FaleComConsultorPage() {
                       }
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex items-center justify-center w-full px-4 py-2 text-base font-medium text-white bg-[#168979] rounded-lg hover:bg-[#13786a] transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-[#168979]/50"
+                      className="inline-flex items-center justify-center w-full px-4 py-2 text-base font-medium text-white bg-[#0F172A] rounded-lg hover:bg-[#1E293B] transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-[#0F172A]/50"
                     >
                       WhatsApp Direto
                       <ArrowRight className="ml-2 h-4 w-4" />
@@ -151,11 +151,11 @@ export default function FaleComConsultorPage() {
                 </CardContent>
               </Card>
 
-              <Card className="bg-white border-2 border-[#168979]/20 hover:border-[#168979]/50 transition-all">
+              <Card className="bg-white border-2 border-[#0F172A]/20 hover:border-[#0F172A]/50 transition-all">
                 <CardContent className="p-6">
                   <div className="flex flex-col h-full">
-                    <div className="mb-4 p-3 bg-[#168979]/10 rounded-full w-fit">
-                      <Calendar className="h-6 w-6 text-[#168979]" />
+                    <div className="mb-4 p-3 bg-[#0F172A]/10 rounded-full w-fit">
+                      <Calendar className="h-6 w-6 text-[#0F172A]" />
                     </div>
                     <h3 className="text-xl font-semibold mb-2">Agendar Consulta</h3>
                     <p className="text-gray-600 mb-6 flex-grow">
@@ -170,7 +170,7 @@ export default function FaleComConsultorPage() {
                       }
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex items-center justify-center w-full px-4 py-2 text-base font-medium text-white bg-[#168979] rounded-lg hover:bg-[#13786a] transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-[#168979]/50"
+                      className="inline-flex items-center justify-center w-full px-4 py-2 text-base font-medium text-white bg-[#0F172A] rounded-lg hover:bg-[#1E293B] transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-[#0F172A]/50"
                     >
                       Agendar Consulta
                       <ArrowRight className="ml-2 h-4 w-4" />
@@ -188,8 +188,8 @@ export default function FaleComConsultorPage() {
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   <div className="flex flex-col items-center text-center">
-                    <div className="mb-4 p-3 bg-[#168979]/10 rounded-full">
-                      <Shield className="h-6 w-6 text-[#168979]" />
+                    <div className="mb-4 p-3 bg-[#0F172A]/10 rounded-full">
+                      <Shield className="h-6 w-6 text-[#0F172A]" />
                     </div>
                     <h4 className="font-medium mb-2">Especialistas em Planos</h4>
                     <p className="text-sm text-gray-600">
@@ -198,8 +198,8 @@ export default function FaleComConsultorPage() {
                   </div>
 
                   <div className="flex flex-col items-center text-center">
-                    <div className="mb-4 p-3 bg-[#168979]/10 rounded-full">
-                      <Award className="h-6 w-6 text-[#168979]" />
+                    <div className="mb-4 p-3 bg-[#0F172A]/10 rounded-full">
+                      <Award className="h-6 w-6 text-[#0F172A]" />
                     </div>
                     <h4 className="font-medium mb-2">Atendimento Personalizado</h4>
                     <p className="text-sm text-gray-600">
@@ -209,8 +209,8 @@ export default function FaleComConsultorPage() {
                   </div>
 
                   <div className="flex flex-col items-center text-center">
-                    <div className="mb-4 p-3 bg-[#168979]/10 rounded-full">
-                      <Clock className="h-6 w-6 text-[#168979]" />
+                    <div className="mb-4 p-3 bg-[#0F172A]/10 rounded-full">
+                      <Clock className="h-6 w-6 text-[#0F172A]" />
                     </div>
                     <h4 className="font-medium mb-2">Suporte Contínuo</h4>
                     <p className="text-sm text-gray-600">

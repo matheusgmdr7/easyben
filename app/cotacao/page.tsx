@@ -89,7 +89,7 @@ export default function CotacaoPage() {
 
       <main className="flex-grow py-8 md:py-10 bg-gray-50">
         <div className="container px-4 md:px-6">
-          <h1 className="text-2xl md:text-3xl font-bold text-center mb-6 md:mb-8 text-[#168979]">
+          <h1 className="text-2xl md:text-3xl font-bold text-center mb-6 md:mb-8 text-[#0F172A]">
             Faça sua cotação de plano de saúde
           </h1>
 
@@ -148,7 +148,7 @@ export default function CotacaoPage() {
 
                   <Button
                     type="submit"
-                    className="w-full bg-[#168979] hover:bg-[#13786a] text-sm md:text-base py-2 md:py-3"
+                    className="w-full bg-[#0F172A] hover:bg-[#1E293B] text-sm md:text-base py-2 md:py-3"
                     disabled={carregando}
                   >
                     {carregando ? "Buscando produtos..." : "Buscar produtos"}
@@ -161,7 +161,7 @@ export default function CotacaoPage() {
           ) : (
             <div className="space-y-4 md:space-y-6">
               <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
-                <h2 className="text-xl md:text-2xl font-bold text-[#168979]">Produtos encontrados</h2>
+                <h2 className="text-xl md:text-2xl font-bold text-[#0F172A]">Produtos encontrados</h2>
                 <Button variant="outline" className="w-full sm:w-auto" onClick={() => setMostrarResultados(false)}>
                   Voltar à pesquisa
                 </Button>
@@ -170,13 +170,13 @@ export default function CotacaoPage() {
               {Object.keys(produtosPorOperadora).length > 0 ? (
                 Object.entries(produtosPorOperadora).map(([operadora, produtos]) => (
                   <div key={operadora} className="space-y-4 md:space-y-6">
-                    <h3 className="text-xl md:text-2xl font-bold text-[#168979] border-b-2 border-[#168979] pb-2">
+                    <h3 className="text-xl md:text-2xl font-bold text-[#0F172A] border-b-2 border-[#0F172A] pb-2">
                       {operadora}
                     </h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
                       {produtos.map((produto) => (
                         <Card key={produto.id} className="overflow-hidden">
-                      <CardHeader className="bg-[#168979] text-white">
+                      <CardHeader className="bg-[#0F172A] text-white">
                             <CardTitle className="text-lg md:text-xl">{produto.nome}</CardTitle>
                             <CardDescription className="text-gray-100">{produto.operadora}</CardDescription>
                       </CardHeader>
@@ -192,7 +192,7 @@ export default function CotacaoPage() {
                                   </p>
                                 </div>
                               ) : (
-                          <p className="text-2xl md:text-3xl font-bold text-[#168979]">
+                          <p className="text-2xl md:text-3xl font-bold text-[#0F172A]">
                                   R$ {produto.preco.toFixed(2)}
                             <span className="text-sm font-normal text-gray-500">/mês</span>
                           </p>
@@ -208,7 +208,7 @@ export default function CotacaoPage() {
                               <p className="text-sm md:text-base text-gray-600">{produto.descricao}</p>
                         </div>
                         <Button
-                          className="w-full bg-[#168979] hover:bg-[#13786a] text-sm md:text-base py-2 md:py-3"
+                          className="w-full bg-[#0F172A] hover:bg-[#1E293B] text-sm md:text-base py-2 md:py-3"
                               onClick={() => handleSelecionarPlano(produto)}
                         >
                               {produto.semPreco ? "Solicitar cotação" : "Selecionar produto"}

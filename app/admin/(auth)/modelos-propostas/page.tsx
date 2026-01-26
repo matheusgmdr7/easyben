@@ -89,11 +89,11 @@ export default function ModelosPropostasPage() {
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold text-gray-900 tracking-tight font-sans flex items-center gap-2">
-              <FileText className="h-6 w-6 text-[#168979]" /> Modelos de Propostas
+              <FileText className="h-6 w-6 text-[#0F172A]" /> Modelos de Propostas
             </h1>
             <p className="text-gray-600 mt-1 font-medium">Gerencie os modelos de propostas disponíveis</p>
           </div>
-          <Button onClick={() => setShowNovo(!showNovo)} className="bg-[#168979] hover:bg-[#13786a] text-white font-bold px-6 py-2 btn-corporate shadow-corporate flex items-center gap-2">
+          <Button onClick={() => setShowNovo(!showNovo)} className="bg-[#0F172A] hover:bg-[#1E293B] text-white font-bold px-6 py-2 btn-corporate shadow-corporate flex items-center gap-2">
             <Plus className="h-4 w-4" /> Novo Modelo
           </Button>
         </div>
@@ -149,7 +149,7 @@ export default function ModelosPropostasPage() {
                     <div className="font-medium text-gray-900 flex items-center gap-2">
                       <FileText className="h-4 w-4 text-blue-600" /> {modelo.titulo}
                       {modelo.ativo ? (
-                        <span className="ml-2 px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-800 flex items-center gap-1"><CheckCircle className="h-3 w-3" /> Ativo</span>
+                        <span className="ml-2 px-2 py-0.5 rounded-full text-xs bg-[#7BD9F6] bg-opacity-30 text-[#0F172A] flex items-center gap-1"><CheckCircle className="h-3 w-3" /> Ativo</span>
                       ) : (
                         <span className="ml-2 px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-600 flex items-center gap-1"><XCircle className="h-3 w-3" /> Inativo</span>
                       )}

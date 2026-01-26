@@ -30,36 +30,175 @@ function isDevEnvironment(): boolean {
  * Função simplificada para autenticação de corretores
  */
 export async function autenticarCorretor(loginData: LoginData): Promise<AuthResult> {
+  // LOG FORÇADO PARA DEBUG - SE NÃO APARECER, O CÓDIGO ANTIGO ESTÁ SENDO USADO
+  console.log("=".repeat(50))
+  console.log("🚀🚀🚀 NOVA VERSÃO DO CÓDIGO DE LOGIN 🚀🚀🚀")
+  console.log("=".repeat(50))
+  
   try {
     const emailNormalizado = loginData.email.trim().toLowerCase()
-    console.log("Tentando autenticar corretor com email:", loginData.email)
-    console.log("Email normalizado para busca:", emailNormalizado)
+    console.log("🚀 [LOGIN] Iniciando autenticação de corretor")
+    console.log("📧 [LOGIN] Email:", loginData.email)
+    console.log("📧 [LOGIN] Email normalizado:", emailNormalizado)
 
-    // 1. Buscar corretor pelo email (case-insensitive)
-    const { data: corretor, error } = await supabase
-      .from("corretores")
-      .select("*")
-      .ilike("email", emailNormalizado)
-      .maybeSingle()
+    // IMPORTANTE: Usar APENAS a API route (bypassa RLS)
+    // Não usar fallback do Supabase direto pois está bloqueado pelo RLS
+    console.log("🔍 [LOGIN] Buscando corretor via API route (bypassa RLS)...")
+    console.log("🌐 [LOGIN] URL da API: /api/corretor/auth/login")
+    
+    try {
+      const response = await fetch("/api/corretor/auth/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ email: loginData.email, senha: loginData.senha }),
+      })
 
-    // 2. Verificar se o corretor existe
-    if (error || !corretor) {
-      if (error) {
-        console.error("Erro ao buscar corretor:", error)
-      } else {
-        console.log("Corretor não encontrado para o email:", loginData.email)
+      console.log("📡 [LOGIN] Resposta da API route:", {
+        status: response.status,
+        statusText: response.statusText,
+        ok: response.ok,
+      })
+
+      const responseText = await response.text()
+      console.log("📦 [LOGIN] Resposta (text):", responseText)
+
+      let data: any = {}
+      try {
+        data = JSON.parse(responseText)
+        console.log("📦 [LOGIN] Resposta parseada (JSON):", data)
+      } catch (parseError: any) {
+        console.error("❌ [LOGIN] Erro ao fazer parse da resposta:", parseError)
+        console.error("❌ [LOGIN] Resposta original:", responseText)
+        return {
+          success: false,
+          message: "Erro ao processar resposta do servidor. Tente novamente.",
+        }
       }
 
-      // MODO DE DESENVOLVIMENTO: Permitir login com qualquer email
-      // Esta exceção só funciona em ambiente de desenvolvimento
-      if (isDevEnvironment()) {
-        console.log("MODO DE DESENVOLVIMENTO: Permitindo login com qualquer email")
+      if (response.ok && data.success && data.corretor) {
+        const corretor = data.corretor
+        console.log("✅ [LOGIN] Corretor encontrado via API route:", {
+          id: corretor.id,
+          nome: corretor.nome,
+          email: corretor.email,
+          status: corretor.status,
+        })
 
-        // Criar um corretor fictício para desenvolvimento
+        // Verificar status do corretor
+        if (corretor.status !== "aprovado") {
+          // Salvar no localStorage mesmo se não estiver aprovado
+          if (typeof window !== "undefined") {
+            localStorage.setItem(
+              "corretorLogado",
+              JSON.stringify({
+                ...corretor,
+                session: {
+                  access_token: `token_${corretor.id}`,
+                  expires_at: Date.now() + 86400000,
+                  refresh_token: `refresh_${corretor.id}`,
+                },
+              }),
+            )
+          }
+
+          return {
+            success: true,
+            message: "Login realizado com sucesso, aguardando aprovação.",
+            corretor,
+          }
+        }
+
+        // Login bem-sucedido - corretor aprovado
+        console.log("✅ [LOGIN] Login bem-sucedido para:", corretor.nome)
+
+        // Salvar dados no localStorage
+        if (typeof window !== "undefined") {
+          localStorage.setItem(
+            "corretorLogado",
+            JSON.stringify({
+              ...corretor,
+              session: {
+                access_token: `token_${corretor.id}`,
+                expires_at: Date.now() + 86400000, // 24 horas
+                refresh_token: `refresh_${corretor.id}`,
+              },
+            }),
+          )
+        }
+
+        return {
+          success: true,
+          message: "Login realizado com sucesso!",
+          corretor,
+        }
+      } else {
+        // API retornou erro
+        console.error("❌ [LOGIN] API route retornou erro:", {
+          status: response.status,
+          error: data.error,
+          message: data.message,
+        })
+
+        // MODO DE DESENVOLVIMENTO: Permitir login com qualquer email
+        if (isDevEnvironment()) {
+          console.log("🔧 [LOGIN] MODO DE DESENVOLVIMENTO: Permitindo login com qualquer email")
+
+          const corretorFicticio = {
+            id: "dev-123",
+            nome: "Corretor Desenvolvimento",
+            email: emailNormalizado,
+            status: "aprovado",
+            telefone: "11999999999",
+            cpf: "12345678900",
+            cidade: "São Paulo",
+            estado: "SP",
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          }
+
+          if (typeof window !== "undefined") {
+            localStorage.setItem(
+              "corretorLogado",
+              JSON.stringify({
+                ...corretorFicticio,
+                session: {
+                  access_token: `token_dev_${corretorFicticio.id}`,
+                  expires_at: Date.now() + 86400000,
+                  refresh_token: `refresh_dev_${corretorFicticio.id}`,
+                },
+              }),
+            )
+          }
+
+          return {
+            success: true,
+            message: "Login de desenvolvimento realizado com sucesso!",
+            corretor: corretorFicticio as Corretor,
+          }
+        }
+
+        // Retornar mensagem de erro da API ou mensagem padrão
+        return {
+          success: false,
+          message: data.message || data.error || "Corretor não encontrado. Verifique seu email ou faça seu cadastro.",
+        }
+      }
+    } catch (apiError: any) {
+      console.error("❌ [LOGIN] Erro ao chamar API route:", {
+        message: apiError.message,
+        stack: apiError.stack,
+        name: apiError.name,
+      })
+
+      // MODO DE DESENVOLVIMENTO: Permitir login com qualquer email
+      if (isDevEnvironment()) {
+        console.log("🔧 [LOGIN] MODO DE DESENVOLVIMENTO: Permitindo login com qualquer email (erro na API)")
+
         const corretorFicticio = {
           id: "dev-123",
           nome: "Corretor Desenvolvimento",
-          email: emailNormalizado,
           email: emailNormalizado,
           status: "aprovado",
           telefone: "11999999999",
@@ -70,7 +209,6 @@ export async function autenticarCorretor(loginData: LoginData): Promise<AuthResu
           updated_at: new Date().toISOString(),
         }
 
-        // Salvar no localStorage
         if (typeof window !== "undefined") {
           localStorage.setItem(
             "corretorLogado",
@@ -78,7 +216,7 @@ export async function autenticarCorretor(loginData: LoginData): Promise<AuthResu
               ...corretorFicticio,
               session: {
                 access_token: `token_dev_${corretorFicticio.id}`,
-                expires_at: Date.now() + 86400000, // 24 horas
+                expires_at: Date.now() + 86400000,
                 refresh_token: `refresh_dev_${corretorFicticio.id}`,
               },
             }),
@@ -94,49 +232,11 @@ export async function autenticarCorretor(loginData: LoginData): Promise<AuthResu
 
       return {
         success: false,
-        message: "Corretor não encontrado. Verifique seu email ou faça seu cadastro.",
+        message: "Erro ao conectar com o servidor. Verifique sua conexão e tente novamente.",
       }
     }
-
-    // 3. IMPORTANTE: Desabilitar verificação de senha em TODOS os ambientes
-    // Isso é uma solução temporária para permitir login em produção
-    // Em uma implementação de produção real, você deve verificar a senha
-
-    // 4. Verificar status do corretor
-    if (corretor.status !== "aprovado") {
-      return {
-        success: true,
-        message: "Login realizado com sucesso, aguardando aprovação.",
-        corretor,
-      }
-    }
-
-    // 5. Login bem-sucedido
-    console.log("Login bem-sucedido para:", corretor.nome)
-
-    // 6. Salvar dados no localStorage
-    if (typeof window !== "undefined") {
-      localStorage.setItem(
-        "corretorLogado",
-        JSON.stringify({
-          ...corretor,
-          // Criar uma sessão fictícia para compatibilidade
-          session: {
-            access_token: `token_${corretor.id}`,
-            expires_at: Date.now() + 86400000, // 24 horas
-            refresh_token: `refresh_${corretor.id}`,
-          },
-        }),
-      )
-    }
-
-    return {
-      success: true,
-      message: "Login realizado com sucesso!",
-      corretor,
-    }
-  } catch (error) {
-    console.error("Erro ao fazer login:", error)
+  } catch (error: any) {
+    console.error("❌ [LOGIN] Erro geral ao fazer login:", error)
     return {
       success: false,
       message: "Ocorreu um erro ao fazer login. Tente novamente.",

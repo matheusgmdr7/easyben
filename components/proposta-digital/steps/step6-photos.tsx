@@ -320,7 +320,7 @@ export default function Step6Photos({ onNext, onBack, propostaId, onPhotosSaved 
       <Card className="bg-gradient-to-br from-white to-gray-50 border border-gray-200 shadow-sm">
         <CardHeader className="pb-4 pt-6 bg-gray-50 rounded-t-lg">
           <CardTitle className="flex items-center gap-3 text-lg sm:text-xl font-bold text-gray-900 font-sans">
-            <div className="w-10 h-10 bg-[#168979] rounded-lg flex items-center justify-center">
+            <div className="w-10 h-10 bg-[#0F172A] rounded-lg flex items-center justify-center">
               <Camera className="h-5 w-5 text-white" />
             </div>
             Captura de Fotos
@@ -339,7 +339,7 @@ export default function Step6Photos({ onNext, onBack, propostaId, onPhotosSaved 
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-semibold flex items-center gap-2">
-                <UserCircle className="h-5 w-5 text-[#168979]" />
+                <UserCircle className="h-5 w-5 text-[#0F172A]" />
                 Foto de Rosto
               </h3>
               {fotoRosto && !capturando && (
@@ -359,7 +359,7 @@ export default function Step6Photos({ onNext, onBack, propostaId, onPhotosSaved 
               <Button
                 type="button"
                 onClick={() => iniciarCamera("rosto")}
-                className="w-full bg-[#168979] hover:bg-[#13786a] text-white"
+                className="w-full bg-[#0F172A] hover:bg-[#1E293B] text-white"
               >
                 <Camera className="h-4 w-4 mr-2" />
                 Capturar Foto de Rosto
@@ -380,7 +380,7 @@ export default function Step6Photos({ onNext, onBack, propostaId, onPhotosSaved 
                   <Button
                     type="button"
                     onClick={capturarFoto}
-                    className="flex-1 bg-[#168979] hover:bg-[#13786a] text-white"
+                    className="flex-1 bg-[#0F172A] hover:bg-[#1E293B] text-white"
                   >
                     <Camera className="h-4 w-4 mr-2" />
                     Capturar
@@ -433,7 +433,7 @@ export default function Step6Photos({ onNext, onBack, propostaId, onPhotosSaved 
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-semibold flex items-center gap-2">
-                <User className="h-5 w-5 text-[#168979]" />
+                <User className="h-5 w-5 text-[#0F172A]" />
                 Foto de Corpo Inteiro
               </h3>
               {fotoCorpoInteiro && !capturando && (
@@ -453,7 +453,7 @@ export default function Step6Photos({ onNext, onBack, propostaId, onPhotosSaved 
               <Button
                 type="button"
                 onClick={() => iniciarCamera("corpo")}
-                className="w-full bg-[#168979] hover:bg-[#13786a] text-white"
+                className="w-full bg-[#0F172A] hover:bg-[#1E293B] text-white"
               >
                 <Camera className="h-4 w-4 mr-2" />
                 Capturar Foto de Corpo Inteiro
@@ -474,7 +474,7 @@ export default function Step6Photos({ onNext, onBack, propostaId, onPhotosSaved 
                   <Button
                     type="button"
                     onClick={capturarFoto}
-                    className="flex-1 bg-[#168979] hover:bg-[#13786a] text-white"
+                    className="flex-1 bg-[#0F172A] hover:bg-[#1E293B] text-white"
                   >
                     <Camera className="h-4 w-4 mr-2" />
                     Capturar
@@ -541,7 +541,7 @@ export default function Step6Photos({ onNext, onBack, propostaId, onPhotosSaved 
           <Button
             onClick={salvarFotos}
             disabled={(!fotoRosto || !fotoCorpoInteiro) && (!fotoRostoUrl || !fotoCorpoInteiroUrl) || salvando || carregandoFotos}
-            className="w-full sm:w-auto bg-[#168979] hover:bg-[#13786a] text-white font-bold btn-corporate shadow-corporate disabled:opacity-50"
+            className="w-full sm:w-auto bg-[#0F172A] hover:bg-[#1E293B] text-white font-bold btn-corporate shadow-corporate disabled:opacity-50"
           >
             {carregandoFotos ? (
               <>

@@ -134,7 +134,7 @@ export default function DiagnosticoStatusPropostasPage() {
       },
       aprovada: {
         label: "Aprovada",
-        color: "bg-green-100 text-green-800",
+        color: "bg-[#7BD9F6] bg-opacity-30 text-[#0F172A]",
         description: "Proposta aprovada pelo admin",
       },
       rejeitada: {
@@ -334,7 +334,7 @@ export default function DiagnosticoStatusPropostasPage() {
                   ) && <li className="text-orange-600">⚠️ Status não mapeados encontrados</li>}
                   {statusDistribuicao.every((s) =>
                     ["parcial", "aguardando_cliente", "pendente", "aprovada", "rejeitada"].includes(s.status),
-                  ) && <li className="text-green-600">✅ Todos os status estão corretos</li>}
+                  ) && <li className="text-[#0F172A]">✅ Todos os status estão corretos</li>}
                 </ul>
               </div>
             </div>

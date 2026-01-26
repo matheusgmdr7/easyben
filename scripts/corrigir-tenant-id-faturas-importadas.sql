@@ -55,3 +55,9 @@ WHERE f.administradora_id = '050be541-db3b-4d3c-be95-df80b68747f1'
 ORDER BY f.created_at DESC
 LIMIT 10;
 
+
+
+
+
+
+

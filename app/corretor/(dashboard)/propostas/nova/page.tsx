@@ -213,7 +213,7 @@ export default function NovaPropostaPage() {
     }
 
     setCorretor(corretorLogado)
-    carregarProdutos()
+    carregarProdutos() // Carregar todos os produtos inicialmente
     carregarTemplates()
   }, [router])
 
@@ -348,7 +348,7 @@ export default function NovaPropostaPage() {
     }
   }
 
-  const carregarProdutos = async () => {
+  const carregarProdutos = async (cidade?: string, estado?: string) => {
     setCarregandoProdutos(true)
     try {
       console.log("Iniciando carregamento de produtos...")
@@ -361,8 +361,38 @@ export default function NovaPropostaPage() {
         throw error
       }
 
-      console.log("Produtos carregados diretamente:", data)
-      setProdutos(data || [])
+      // Filtrar produtos por área de comercialização
+      let produtosFiltrados = data || []
+      
+      if (cidade && estado) {
+        produtosFiltrados = produtosFiltrados.filter((produto) => {
+          const area = produto.area_comercializacao
+          
+          // Se não tem área definida, permitir (compatibilidade com produtos antigos)
+          if (!area) return true
+          
+          // Nacional: permite qualquer cidade/estado
+          if (area === "Nacional") return true
+          
+          // Estadual: por enquanto permite todos os produtos estaduais
+          // (pode ser melhorado no futuro com configuração específica de estados)
+          if (area === "Estadual") {
+            return true
+          }
+          
+          // Regional: por enquanto permite todos os produtos regionais
+          // (pode ser melhorado no futuro com configuração específica de regiões)
+          if (area === "Regional") {
+            return true
+          }
+          
+          // Se a área não corresponde a nenhuma das opções conhecidas, não permitir
+          return false
+        })
+      }
+
+      console.log("Produtos carregados e filtrados:", produtosFiltrados)
+      setProdutos(produtosFiltrados)
     } catch (error) {
       console.error("Erro ao carregar produtos:", error)
       toast.error("Erro ao carregar produtos. Tente novamente.")
@@ -1250,7 +1280,7 @@ export default function NovaPropostaPage() {
       </Button>
 
       <Card className="shadow-md border-0">
-        <CardHeader className="bg-gradient-to-r from-[#168979] to-[#13786a] text-white">
+        <CardHeader className="bg-gradient-to-r from-[#0F172A] to-[#1E293B] text-white">
           <CardTitle>Nova Proposta</CardTitle>
           <CardDescription className="text-gray-100">
             Preencha os dados para criar uma proposta para seu cliente
@@ -1365,9 +1395,9 @@ export default function NovaPropostaPage() {
                       name="nome"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Nome do Cliente</FormLabel>
+                          <FormLabel className="font-semibold">Nome do Cliente</FormLabel>
                           <FormControl>
-                            <Input placeholder="Nome completo" {...field} />
+                            <Input placeholder="Nome completo" {...field} className="border-2 border-gray-300" />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -1378,9 +1408,9 @@ export default function NovaPropostaPage() {
                       name="email"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Email</FormLabel>
+                          <FormLabel className="font-semibold">Email</FormLabel>
                           <FormControl>
-                            <Input type="email" placeholder="email@exemplo.com" {...field} />
+                            <Input type="email" placeholder="email@exemplo.com" {...field} className="border-2 border-gray-300" />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -1394,7 +1424,7 @@ export default function NovaPropostaPage() {
                       name="telefone"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Telefone</FormLabel>
+                          <FormLabel className="font-semibold">Telefone</FormLabel>
                           <FormControl>
                             <Input
                               placeholder="(00) 00000-0000"
@@ -1403,6 +1433,7 @@ export default function NovaPropostaPage() {
                                 field.onChange(e)
                                 formatarTelefoneInput(e)
                               }}
+                              className="border-2 border-gray-300"
                             />
                           </FormControl>
                           <FormMessage />
@@ -1414,7 +1445,7 @@ export default function NovaPropostaPage() {
                       name="cpf"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>CPF</FormLabel>
+                          <FormLabel className="font-semibold">CPF</FormLabel>
                           <FormControl>
                             <Input
                               placeholder="000.000.000-00"
@@ -1423,6 +1454,7 @@ export default function NovaPropostaPage() {
                                 field.onChange(e)
                                 formatarCpfInput(e)
                               }}
+                              className="border-2 border-gray-300"
                             />
                           </FormControl>
                           <FormMessage />
@@ -1436,9 +1468,9 @@ export default function NovaPropostaPage() {
                     name="data_nascimento"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Data de Nascimento</FormLabel>
+                        <FormLabel className="font-semibold">Data de Nascimento</FormLabel>
                         <FormControl>
-                          <Input type="date" {...field} />
+                          <Input type="date" {...field} className="border-2 border-gray-300" />
                         </FormControl>
                         <FormMessage />
                         {idadeCliente !== null && (
@@ -1454,9 +1486,9 @@ export default function NovaPropostaPage() {
                       name="rg"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>RG</FormLabel>
+                          <FormLabel className="font-semibold">RG</FormLabel>
                           <FormControl>
-                            <Input placeholder="Número do RG" {...field} />
+                            <Input placeholder="Número do RG" {...field} className="border-2 border-gray-300" />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -1467,9 +1499,9 @@ export default function NovaPropostaPage() {
                       name="orgao_emissor"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Órgão Emissor</FormLabel>
+                          <FormLabel className="font-semibold">Órgão Emissor</FormLabel>
                           <FormControl>
-                            <Input placeholder="Ex: SSP/SP" {...field} />
+                            <Input placeholder="Ex: SSP/SP" {...field} className="border-2 border-gray-300" />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -1483,9 +1515,9 @@ export default function NovaPropostaPage() {
                       name="cns"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>CNS (Cartão Nacional de Saúde)</FormLabel>
+                          <FormLabel className="font-semibold">CNS (Cartão Nacional de Saúde)</FormLabel>
                           <FormControl>
-                            <Input placeholder="Número do CNS" {...field} />
+                            <Input placeholder="Número do CNS" {...field} className="border-2 border-gray-300" />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -1496,9 +1528,14 @@ export default function NovaPropostaPage() {
                       name="nome_mae"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Nome da Mãe</FormLabel>
+                          <FormLabel className="font-semibold">Nome da Mãe</FormLabel>
                           <FormControl>
-                            <Input placeholder="Nome completo da mãe" {...field} />
+                            <Input 
+                              placeholder="Nome completo da mãe" 
+                              {...field} 
+                              className="border-2 border-gray-300 uppercase"
+                              onChange={(e) => field.onChange(e.target.value.toUpperCase())}
+                            />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -1511,10 +1548,10 @@ export default function NovaPropostaPage() {
                     name="sexo"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Sexo</FormLabel>
+                        <FormLabel className="font-semibold">Sexo</FormLabel>
                         <Select onValueChange={field.onChange} value={field.value}>
                           <FormControl>
-                            <SelectTrigger>
+                            <SelectTrigger className="border-2 border-gray-300">
                               <SelectValue placeholder="Selecione o sexo" />
                             </SelectTrigger>
                           </FormControl>
@@ -1535,10 +1572,10 @@ export default function NovaPropostaPage() {
                     name="estado_civil"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Estado Civil</FormLabel>
+                        <FormLabel className="font-semibold">Estado Civil</FormLabel>
                         <Select onValueChange={field.onChange} value={field.value}>
                           <FormControl>
-                            <SelectTrigger>
+                            <SelectTrigger className="border-2 border-gray-300">
                               <SelectValue placeholder="Selecione o estado civil" />
                             </SelectTrigger>
                           </FormControl>
@@ -1582,7 +1619,7 @@ export default function NovaPropostaPage() {
                   </div>
 
                   <div className="flex justify-end mt-6">
-                    <Button type="button" onClick={nextTab} className="bg-[#168979] hover:bg-[#13786a]">
+                    <Button type="button" onClick={nextTab} className="bg-[#0F172A] hover:bg-[#1E293B]">
                       Próximo
                     </Button>
                   </div>
@@ -1594,12 +1631,13 @@ export default function NovaPropostaPage() {
                     name="cep"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>CEP</FormLabel>
+                        <FormLabel className="font-semibold">CEP</FormLabel>
                         <FormControl>
                           <div className="flex gap-2">
                             <Input
                               placeholder="00000-000"
                               value={field.value}
+                              className="border-2 border-gray-300"
                               onChange={(e) => {
                                 field.onChange(e)
                                 formatarCepInput(e)
@@ -1629,9 +1667,9 @@ export default function NovaPropostaPage() {
                         name="endereco"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Endereço</FormLabel>
+                            <FormLabel className="font-semibold">Endereço</FormLabel>
                             <FormControl>
-                              <Input placeholder="Rua, Avenida, etc" {...field} />
+                              <Input placeholder="Rua, Avenida, etc" {...field} className="border-2 border-gray-300" />
                             </FormControl>
                             <FormMessage />
                           </FormItem>
@@ -1643,9 +1681,9 @@ export default function NovaPropostaPage() {
                       name="numero"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Número</FormLabel>
+                          <FormLabel className="font-semibold">Número</FormLabel>
                           <FormControl>
-                            <Input id="numero" placeholder="123" {...field} />
+                            <Input id="numero" placeholder="123" {...field} className="border-2 border-gray-300" />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -1658,9 +1696,9 @@ export default function NovaPropostaPage() {
                     name="complemento"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Complemento</FormLabel>
+                        <FormLabel className="font-semibold">Complemento</FormLabel>
                         <FormControl>
-                          <Input placeholder="Apto, Bloco, etc" {...field} />
+                          <Input placeholder="Apto, Bloco, etc" {...field} className="border-2 border-gray-300" />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -1673,9 +1711,9 @@ export default function NovaPropostaPage() {
                       name="bairro"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Bairro</FormLabel>
+                          <FormLabel className="font-semibold">Bairro</FormLabel>
                           <FormControl>
-                            <Input placeholder="Bairro" {...field} />
+                            <Input placeholder="Bairro" {...field} className="border-2 border-gray-300" />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -1686,9 +1724,21 @@ export default function NovaPropostaPage() {
                       name="cidade"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Cidade</FormLabel>
+                          <FormLabel className="font-semibold">Cidade</FormLabel>
                           <FormControl>
-                            <Input placeholder="Cidade" {...field} />
+                            <Input 
+                              placeholder="Cidade" 
+                              {...field}
+                              className="border-2 border-gray-300"
+                              onChange={(e) => {
+                                field.onChange(e)
+                                // Recarregar produtos quando a cidade mudar
+                                const estado = form.getValues("estado")
+                                if (e.target.value && estado) {
+                                  carregarProdutos(e.target.value, estado.toUpperCase())
+                                }
+                              }}
+                            />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -1699,11 +1749,27 @@ export default function NovaPropostaPage() {
                       name="estado"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Estado</FormLabel>
+                          <FormLabel className="font-semibold">Estado</FormLabel>
                           <FormControl>
-                            <Input placeholder="UF" maxLength={2} {...field} />
+                            <Input 
+                              placeholder="UF" 
+                              maxLength={2} 
+                              {...field}
+                              className="border-2 border-gray-300"
+                              onChange={(e) => {
+                                field.onChange(e)
+                                // Recarregar produtos quando o estado mudar
+                                const cidade = form.getValues("cidade")
+                                if (cidade && e.target.value) {
+                                  carregarProdutos(cidade, e.target.value.toUpperCase())
+                                }
+                              }}
+                            />
                           </FormControl>
                           <FormMessage />
+                          <p className="text-xs text-gray-500 mt-1">
+                            Os produtos disponíveis serão filtrados pela área de comercialização após preencher cidade e estado
+                          </p>
                         </FormItem>
                       )}
                     />
@@ -1713,7 +1779,22 @@ export default function NovaPropostaPage() {
                     <Button type="button" variant="outline" onClick={prevTab}>
                       Voltar
                     </Button>
-                    <Button type="button" onClick={nextTab} className="bg-[#168979] hover:bg-[#13786a]">
+                    <Button 
+                      type="button" 
+                      onClick={() => {
+                        const cidade = form.getValues("cidade")
+                        const estado = form.getValues("estado")
+                        if (cidade && estado) {
+                          // Recarregar produtos com filtro de área antes de avançar
+                          carregarProdutos(cidade, estado.toUpperCase()).then(() => {
+                            nextTab()
+                          })
+                        } else {
+                          nextTab()
+                        }
+                      }} 
+                      className="bg-[#0F172A] hover:bg-[#1E293B]"
+                    >
                       Próximo
                     </Button>
                   </div>
@@ -1725,7 +1806,7 @@ export default function NovaPropostaPage() {
                     name="produto_id"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Produto</FormLabel>
+                        <FormLabel className="font-semibold">Produto</FormLabel>
                         <FormControl>
                           <Select
                             onValueChange={(value) => {
@@ -1743,7 +1824,7 @@ export default function NovaPropostaPage() {
                             defaultValue={field.value}
                             disabled={carregandoProdutos}
                           >
-                            <SelectTrigger className="border-2 border-amber-300 bg-amber-50 hover:border-amber-400 focus:border-amber-500 shadow-sm">
+                            <SelectTrigger className="border-2 border-amber-300 bg-amber-50 hover:border-amber-400 shadow-sm">
                               <SelectValue placeholder="Selecione um produto" />
                             </SelectTrigger>
                             <SelectContent>
@@ -1777,7 +1858,7 @@ export default function NovaPropostaPage() {
                       name="tabela_id"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Tabela de Preços</FormLabel>
+                          <FormLabel className="font-semibold">Tabela de Preços</FormLabel>
                           <FormControl>
                             <Select
                               onValueChange={(value) => {
@@ -1791,7 +1872,7 @@ export default function NovaPropostaPage() {
                               value={field.value}
                               disabled={carregandoTabelas || tabelas.length === 0}
                             >
-                              <SelectTrigger>
+                              <SelectTrigger className="border-2 border-gray-300">
                                 <SelectValue placeholder="Selecione uma tabela" />
                               </SelectTrigger>
                               <SelectContent>
@@ -1827,9 +1908,9 @@ export default function NovaPropostaPage() {
                       name="cobertura"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Cobertura</FormLabel>
+                          <FormLabel className="font-semibold">Cobertura</FormLabel>
                           <Select onValueChange={field.onChange} defaultValue={field.value}>
-                            <SelectTrigger>
+                            <SelectTrigger className="border-2 border-gray-300">
                               <SelectValue placeholder="Selecione a cobertura" />
                             </SelectTrigger>
                             <SelectContent>
@@ -1847,9 +1928,9 @@ export default function NovaPropostaPage() {
                       name="acomodacao"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Acomodação</FormLabel>
+                          <FormLabel className="font-semibold">Acomodação</FormLabel>
                           <Select onValueChange={field.onChange} defaultValue={field.value}>
-                            <SelectTrigger>
+                            <SelectTrigger className="border-2 border-gray-300">
                               <SelectValue placeholder="Selecione a acomodação" />
                             </SelectTrigger>
                             <SelectContent>
@@ -1869,12 +1950,13 @@ export default function NovaPropostaPage() {
                       name="sigla_plano"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Código do Plano (máx. 20 caracteres)</FormLabel>
+                          <FormLabel className="font-semibold">Código do Plano (máx. 20 caracteres)</FormLabel>
                           <FormControl>
                             <Input
                               placeholder="Ex: PLANO-PREMIUM"
                               maxLength={20}
                               {...field}
+                              className="border-2 border-gray-300"
                             />
                           </FormControl>
                           <FormDescription>
@@ -1889,23 +1971,19 @@ export default function NovaPropostaPage() {
                       name="valor"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Valor</FormLabel>
+                          <FormLabel className="font-semibold">Valor</FormLabel>
                           <FormControl>
                             <Input
                               placeholder="R$ 0,00"
                               value={field.value}
-                              onChange={(e) => {
-                                field.onChange(e)
-                                formatarValorInput(e)
-                              }}
+                              readOnly
+                              className="bg-gray-50 cursor-not-allowed border-2 border-gray-300"
                             />
                           </FormControl>
                           <FormMessage />
-                          {valorCalculado !== null && (
-                            <p className="text-sm text-green-600">
-                              Valor calculado automaticamente com base na idade e tabela selecionada.
-                            </p>
-                          )}
+                          <p className="text-sm text-[#0F172A]">
+                            Valor calculado automaticamente com base na idade e tabela selecionada. Não é possível editar.
+                          </p>
                         </FormItem>
                       )}
                     />
@@ -1915,9 +1993,9 @@ export default function NovaPropostaPage() {
                       name="dia_vencimento"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Dia de Vencimento</FormLabel>
+                          <FormLabel className="font-semibold">Dia de Vencimento</FormLabel>
                           <Select onValueChange={field.onChange} defaultValue={field.value}>
-                            <SelectTrigger>
+                            <SelectTrigger className="border-2 border-gray-300">
                               <SelectValue placeholder="Selecione o dia de vencimento" />
                             </SelectTrigger>
                             <SelectContent>
@@ -1938,9 +2016,9 @@ export default function NovaPropostaPage() {
                       name="mes_vencimento"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Mês de Vencimento</FormLabel>
+                          <FormLabel className="font-semibold">Mês de Vencimento</FormLabel>
                           <Select onValueChange={field.onChange} defaultValue={field.value}>
-                            <SelectTrigger>
+                            <SelectTrigger className="border-2 border-gray-300">
                               <SelectValue placeholder="Selecione o mês de vencimento" />
                             </SelectTrigger>
                             <SelectContent>
@@ -2002,7 +2080,7 @@ export default function NovaPropostaPage() {
                     <Button type="button" variant="outline" onClick={prevTab}>
                       Voltar
                     </Button>
-                    <Button type="button" onClick={nextTab} className="bg-[#168979] hover:bg-[#13786a]">
+                    <Button type="button" onClick={nextTab} className="bg-[#0F172A] hover:bg-[#1E293B]">
                       Próximo
                     </Button>
                   </div>
@@ -2042,7 +2120,12 @@ export default function NovaPropostaPage() {
                                 <FormItem>
                                   <FormLabel>Nome Completo</FormLabel>
                                   <FormControl>
-                                    <Input placeholder="Nome completo" {...field} />
+                                    <Input 
+                                      placeholder="Nome completo" 
+                                      {...field}
+                                      className="uppercase"
+                                      onChange={(e) => field.onChange(e.target.value.toUpperCase())}
+                                    />
                                   </FormControl>
                                   <FormMessage />
                                 </FormItem>
@@ -2214,7 +2297,12 @@ export default function NovaPropostaPage() {
                                 <FormItem>
                                   <FormLabel>Nome da Mãe</FormLabel>
                                   <FormControl>
-                                    <Input placeholder="Nome completo da mãe" {...field} />
+                                    <Input 
+                                      placeholder="Nome completo da mãe" 
+                                      {...field}
+                                      className="uppercase"
+                                      onChange={(e) => field.onChange(e.target.value.toUpperCase())}
+                                    />
                                   </FormControl>
                                   <FormMessage />
                                 </FormItem>
@@ -2323,7 +2411,7 @@ export default function NovaPropostaPage() {
                     <Button type="button" variant="outline" onClick={prevTab}>
                       Voltar
                     </Button>
-                    <Button type="button" onClick={nextTab} className="bg-[#168979] hover:bg-[#13786a]">
+                    <Button type="button" onClick={nextTab} className="bg-[#0F172A] hover:bg-[#1E293B]">
                       Próximo
                     </Button>
                   </div>
@@ -2338,14 +2426,14 @@ export default function NovaPropostaPage() {
                     <FormItem>
                       <FormLabel>RG (Frente)</FormLabel>
                       <FormControl>
-                        <label className={`flex items-center gap-2 cursor-pointer px-3 py-2 rounded border border-dashed transition-colors ${documentosUpload.rg_frente ? 'bg-green-50 border-green-300' : 'bg-muted hover:bg-muted-foreground/10'}`}> 
+                        <label className={`flex items-center gap-2 cursor-pointer px-3 py-2 rounded border border-dashed transition-colors ${documentosUpload.rg_frente ? 'bg-[#7BD9F6] bg-opacity-20 border-green-300' : 'bg-muted hover:bg-muted-foreground/10'}`}> 
                           <Upload className="h-4 w-4 text-primary" />
                           <span className="text-xs sm:text-sm">{documentosUpload.rg_frente ? 'Arquivo selecionado' : 'Selecionar arquivo'}</span>
                           <input type="file" accept="image/*,application/pdf" onChange={(e) => handleFileChange("rg_frente", e)} className="hidden" />
                         </label>
                       </FormControl>
                       {documentosUpload.rg_frente && (
-                        <span className="block text-xs text-green-700 mt-1 truncate">{documentosUpload.rg_frente.name}</span>
+                        <span className="block text-xs text-[#0F172A] mt-1 truncate">{documentosUpload.rg_frente.name}</span>
                       )}
                     </FormItem>
                   </div>
@@ -2353,14 +2441,14 @@ export default function NovaPropostaPage() {
                     <FormItem>
                       <FormLabel>RG (Verso)</FormLabel>
                       <FormControl>
-                        <label className={`flex items-center gap-2 cursor-pointer px-3 py-2 rounded border border-dashed transition-colors ${documentosUpload.rg_verso ? 'bg-green-50 border-green-300' : 'bg-muted hover:bg-muted-foreground/10'}`}> 
+                        <label className={`flex items-center gap-2 cursor-pointer px-3 py-2 rounded border border-dashed transition-colors ${documentosUpload.rg_verso ? 'bg-[#7BD9F6] bg-opacity-20 border-green-300' : 'bg-muted hover:bg-muted-foreground/10'}`}> 
                           <Upload className="h-4 w-4 text-primary" />
                           <span className="text-xs sm:text-sm">{documentosUpload.rg_verso ? 'Arquivo selecionado' : 'Selecionar arquivo'}</span>
                           <input type="file" accept="image/*,application/pdf" onChange={(e) => handleFileChange("rg_verso", e)} className="hidden" />
                         </label>
                       </FormControl>
                       {documentosUpload.rg_verso && (
-                        <span className="block text-xs text-green-700 mt-1 truncate">{documentosUpload.rg_verso.name}</span>
+                        <span className="block text-xs text-[#0F172A] mt-1 truncate">{documentosUpload.rg_verso.name}</span>
                       )}
                     </FormItem>
                   </div>
@@ -2369,14 +2457,14 @@ export default function NovaPropostaPage() {
                       <FormItem>
                         <FormLabel>CPF</FormLabel>
                         <FormControl>
-                          <label className={`flex items-center gap-2 cursor-pointer px-3 py-2 rounded border border-dashed transition-colors ${documentosUpload.cpf ? 'bg-green-50 border-green-300' : 'bg-muted hover:bg-muted-foreground/10'}`}> 
+                          <label className={`flex items-center gap-2 cursor-pointer px-3 py-2 rounded border border-dashed transition-colors ${documentosUpload.cpf ? 'bg-[#7BD9F6] bg-opacity-20 border-green-300' : 'bg-muted hover:bg-muted-foreground/10'}`}> 
                             <Upload className="h-4 w-4 text-primary" />
                             <span className="text-xs sm:text-sm">{documentosUpload.cpf ? 'Arquivo selecionado' : 'Selecionar arquivo'}</span>
                             <input type="file" accept="image/*,application/pdf" onChange={(e) => handleFileChange("cpf", e)} className="hidden" />
                           </label>
                         </FormControl>
                         {documentosUpload.cpf && (
-                          <span className="block text-xs text-green-700 mt-1 truncate">{documentosUpload.cpf.name}</span>
+                          <span className="block text-xs text-[#0F172A] mt-1 truncate">{documentosUpload.cpf.name}</span>
                         )}
                       </FormItem>
                     </div>
@@ -2385,14 +2473,14 @@ export default function NovaPropostaPage() {
                       <FormItem>
                         <FormLabel>Comprovante de Residência</FormLabel>
                         <FormControl>
-                          <label className={`flex items-center gap-2 cursor-pointer px-3 py-2 rounded border border-dashed transition-colors ${documentosUpload.comprovante_residencia ? 'bg-green-50 border-green-300' : 'bg-muted hover:bg-muted-foreground/10'}`}> 
+                          <label className={`flex items-center gap-2 cursor-pointer px-3 py-2 rounded border border-dashed transition-colors ${documentosUpload.comprovante_residencia ? 'bg-[#7BD9F6] bg-opacity-20 border-green-300' : 'bg-muted hover:bg-muted-foreground/10'}`}> 
                             <Upload className="h-4 w-4 text-primary" />
                             <span className="text-xs sm:text-sm">{documentosUpload.comprovante_residencia ? 'Arquivo selecionado' : 'Selecionar arquivo'}</span>
                             <input type="file" accept="image/*,application/pdf" onChange={(e) => handleFileChange("comprovante_residencia", e)} className="hidden" />
                           </label>
                         </FormControl>
                         {documentosUpload.comprovante_residencia && (
-                          <span className="block text-xs text-green-700 mt-1 truncate">{documentosUpload.comprovante_residencia.name}</span>
+                          <span className="block text-xs text-[#0F172A] mt-1 truncate">{documentosUpload.comprovante_residencia.name}</span>
                         )}
                       </FormItem>
                     </div>
@@ -2402,14 +2490,14 @@ export default function NovaPropostaPage() {
                     <FormItem>
                       <FormLabel>CNS (Cartão Nacional de Saúde)</FormLabel>
                       <FormControl>
-                        <label className={`flex items-center gap-2 cursor-pointer px-3 py-2 rounded border border-dashed transition-colors ${documentosUpload.cns ? 'bg-green-50 border-green-300' : 'bg-muted hover:bg-muted-foreground/10'}`}> 
+                        <label className={`flex items-center gap-2 cursor-pointer px-3 py-2 rounded border border-dashed transition-colors ${documentosUpload.cns ? 'bg-[#7BD9F6] bg-opacity-20 border-green-300' : 'bg-muted hover:bg-muted-foreground/10'}`}> 
                           <Upload className="h-4 w-4 text-primary" />
                           <span className="text-xs sm:text-sm">{documentosUpload.cns ? 'Arquivo selecionado' : 'Selecionar arquivo'}</span>
                           <input type="file" accept="image/*,application/pdf" onChange={(e) => handleFileChange("cns", e)} className="hidden" />
                         </label>
                       </FormControl>
                       {documentosUpload.cns && (
-                        <span className="block text-xs text-green-700 mt-1 truncate">{documentosUpload.cns.name}</span>
+                        <span className="block text-xs text-[#0F172A] mt-1 truncate">{documentosUpload.cns.name}</span>
                       )}
                     </FormItem>
                   </div>
@@ -2431,14 +2519,14 @@ export default function NovaPropostaPage() {
                               <FormItem>
                                 <FormLabel>RG (Frente)</FormLabel>
                                 <FormControl>
-                                  <label className={`flex items-center gap-2 cursor-pointer px-3 py-2 rounded border border-dashed transition-colors ${documentosDependentesUpload[index.toString()] && documentosDependentesUpload[index.toString()].rg_frente ? 'bg-green-50 border-green-300' : 'bg-muted hover:bg-muted-foreground/10'}`}> 
+                                  <label className={`flex items-center gap-2 cursor-pointer px-3 py-2 rounded border border-dashed transition-colors ${documentosDependentesUpload[index.toString()] && documentosDependentesUpload[index.toString()].rg_frente ? 'bg-[#7BD9F6] bg-opacity-20 border-green-300' : 'bg-muted hover:bg-muted-foreground/10'}`}> 
                                     <Upload className="h-4 w-4 text-primary" />
                                     <span className="text-xs sm:text-sm">{documentosDependentesUpload[index.toString()] && documentosDependentesUpload[index.toString()].rg_frente ? 'Arquivo selecionado' : 'Selecionar arquivo'}</span>
                                     <input type="file" accept="image/*,application/pdf" onChange={(e) => handleDependentFileChange(index, "rg_frente", e)} className="hidden" />
                                   </label>
                                 </FormControl>
                                 {documentosDependentesUpload[index.toString()] && documentosDependentesUpload[index.toString()].rg_frente && (
-                                  <span className="block text-xs text-green-700 mt-1 truncate">{documentosDependentesUpload[index.toString()].rg_frente.name}</span>
+                                  <span className="block text-xs text-[#0F172A] mt-1 truncate">{documentosDependentesUpload[index.toString()].rg_frente.name}</span>
                                 )}
                               </FormItem>
                             </div>
@@ -2446,14 +2534,14 @@ export default function NovaPropostaPage() {
                               <FormItem>
                                 <FormLabel>RG (Verso)</FormLabel>
                                 <FormControl>
-                                  <label className={`flex items-center gap-2 cursor-pointer px-3 py-2 rounded border border-dashed transition-colors ${documentosDependentesUpload[index.toString()] && documentosDependentesUpload[index.toString()].rg_verso ? 'bg-green-50 border-green-300' : 'bg-muted hover:bg-muted-foreground/10'}`}> 
+                                  <label className={`flex items-center gap-2 cursor-pointer px-3 py-2 rounded border border-dashed transition-colors ${documentosDependentesUpload[index.toString()] && documentosDependentesUpload[index.toString()].rg_verso ? 'bg-[#7BD9F6] bg-opacity-20 border-green-300' : 'bg-muted hover:bg-muted-foreground/10'}`}> 
                                     <Upload className="h-4 w-4 text-primary" />
                                     <span className="text-xs sm:text-sm">{documentosDependentesUpload[index.toString()] && documentosDependentesUpload[index.toString()].rg_verso ? 'Arquivo selecionado' : 'Selecionar arquivo'}</span>
                                     <input type="file" accept="image/*,application/pdf" onChange={(e) => handleDependentFileChange(index, "rg_verso", e)} className="hidden" />
                                   </label>
                                 </FormControl>
                                 {documentosDependentesUpload[index.toString()] && documentosDependentesUpload[index.toString()].rg_verso && (
-                                  <span className="block text-xs text-green-700 mt-1 truncate">{documentosDependentesUpload[index.toString()].rg_verso.name}</span>
+                                  <span className="block text-xs text-[#0F172A] mt-1 truncate">{documentosDependentesUpload[index.toString()].rg_verso.name}</span>
                                 )}
                               </FormItem>
                             </div>
@@ -2463,14 +2551,14 @@ export default function NovaPropostaPage() {
                                 <FormItem>
                                   <FormLabel>CPF</FormLabel>
                                   <FormControl>
-                                    <label className={`flex items-center gap-2 cursor-pointer px-3 py-2 rounded border border-dashed transition-colors ${documentosDependentesUpload[index.toString()] && documentosDependentesUpload[index.toString()].cpf ? 'bg-green-50 border-green-300' : 'bg-muted hover:bg-muted-foreground/10'}`}> 
+                                    <label className={`flex items-center gap-2 cursor-pointer px-3 py-2 rounded border border-dashed transition-colors ${documentosDependentesUpload[index.toString()] && documentosDependentesUpload[index.toString()].cpf ? 'bg-[#7BD9F6] bg-opacity-20 border-green-300' : 'bg-muted hover:bg-muted-foreground/10'}`}> 
                                       <Upload className="h-4 w-4 text-primary" />
                                       <span className="text-xs sm:text-sm">{documentosDependentesUpload[index.toString()] && documentosDependentesUpload[index.toString()].cpf ? 'Arquivo selecionado' : 'Selecionar arquivo'}</span>
                                       <input type="file" accept="image/*,application/pdf" onChange={(e) => handleDependentFileChange(index, "cpf", e)} className="hidden" />
                                     </label>
                                   </FormControl>
                                   {documentosDependentesUpload[index.toString()] && documentosDependentesUpload[index.toString()].cpf && (
-                                    <span className="block text-xs text-green-700 mt-1 truncate">{documentosDependentesUpload[index.toString()].cpf.name}</span>
+                                    <span className="block text-xs text-[#0F172A] mt-1 truncate">{documentosDependentesUpload[index.toString()].cpf.name}</span>
                                   )}
                                 </FormItem>
                               </div>
@@ -2479,14 +2567,14 @@ export default function NovaPropostaPage() {
                                 <FormItem>
                                   <FormLabel>CNS (Cartão Nacional de Saúde)</FormLabel>
                                   <FormControl>
-                                    <label className={`flex items-center gap-2 cursor-pointer px-3 py-2 rounded border border-dashed transition-colors ${documentosDependentesUpload[index.toString()] && documentosDependentesUpload[index.toString()].cns ? 'bg-green-50 border-green-300' : 'bg-muted hover:bg-muted-foreground/10'}`}> 
+                                    <label className={`flex items-center gap-2 cursor-pointer px-3 py-2 rounded border border-dashed transition-colors ${documentosDependentesUpload[index.toString()] && documentosDependentesUpload[index.toString()].cns ? 'bg-[#7BD9F6] bg-opacity-20 border-green-300' : 'bg-muted hover:bg-muted-foreground/10'}`}> 
                                       <Upload className="h-4 w-4 text-primary" />
                                       <span className="text-xs sm:text-sm">{documentosDependentesUpload[index.toString()] && documentosDependentesUpload[index.toString()].cns ? 'Arquivo selecionado' : 'Selecionar arquivo'}</span>
                                       <input type="file" accept="image/*,application/pdf" onChange={(e) => handleDependentFileChange(index, "cns", e)} className="hidden" />
                                     </label>
                                   </FormControl>
                                   {documentosDependentesUpload[index.toString()] && documentosDependentesUpload[index.toString()].cns && (
-                                    <span className="block text-xs text-green-700 mt-1 truncate">{documentosDependentesUpload[index.toString()].cns.name}</span>
+                                    <span className="block text-xs text-[#0F172A] mt-1 truncate">{documentosDependentesUpload[index.toString()].cns.name}</span>
                                   )}
                                 </FormItem>
                               </div>
@@ -2495,14 +2583,14 @@ export default function NovaPropostaPage() {
                                 <FormItem>
                                   <FormLabel>Comprovante de Residência</FormLabel>
                                   <FormControl>
-                                    <label className={`flex items-center gap-2 cursor-pointer px-3 py-2 rounded border border-dashed transition-colors ${documentosDependentesUpload[index.toString()] && documentosDependentesUpload[index.toString()].comprovante_residencia ? 'bg-green-50 border-green-300' : 'bg-muted hover:bg-muted-foreground/10'}`}> 
+                                    <label className={`flex items-center gap-2 cursor-pointer px-3 py-2 rounded border border-dashed transition-colors ${documentosDependentesUpload[index.toString()] && documentosDependentesUpload[index.toString()].comprovante_residencia ? 'bg-[#7BD9F6] bg-opacity-20 border-green-300' : 'bg-muted hover:bg-muted-foreground/10'}`}> 
                                       <Upload className="h-4 w-4 text-primary" />
                                       <span className="text-xs sm:text-sm">{documentosDependentesUpload[index.toString()] && documentosDependentesUpload[index.toString()].comprovante_residencia ? 'Arquivo selecionado' : 'Selecionar arquivo'}</span>
                                       <input type="file" accept="image/*,application/pdf" onChange={(e) => handleDependentFileChange(index, "comprovante_residencia", e)} className="hidden" />
                                     </label>
                                   </FormControl>
                                   {documentosDependentesUpload[index.toString()] && documentosDependentesUpload[index.toString()].comprovante_residencia && (
-                                    <span className="block text-xs text-green-700 mt-1 truncate">{documentosDependentesUpload[index.toString()].comprovante_residencia.name}</span>
+                                    <span className="block text-xs text-[#0F172A] mt-1 truncate">{documentosDependentesUpload[index.toString()].comprovante_residencia.name}</span>
                                   )}
                                 </FormItem>
                               </div>
@@ -2518,7 +2606,7 @@ export default function NovaPropostaPage() {
                     </Button>
                     <Button 
                       type="submit" 
-                      className="bg-[#168979] hover:bg-[#13786a]" 
+                      className="bg-[#0F172A] hover:bg-[#1E293B]" 
                       disabled={enviando}
                       onClick={() => {
                         console.log("🖱️ BOTÃO CLICADO!")
@@ -2555,14 +2643,14 @@ export default function NovaPropostaPage() {
           <div className="bg-white rounded-lg p-8 max-w-md w-full mx-4">
             <div className="text-center space-y-4">
               <div className="relative">
-                <div className="w-16 h-16 border-4 border-gray-200 border-t-[#168979] rounded-full animate-spin mx-auto"></div>
+                <div className="w-16 h-16 border-4 border-gray-200 border-t-[#0F172A] rounded-full animate-spin mx-auto"></div>
               </div>
               <div>
                 <h3 className="text-lg font-semibold text-gray-900 mb-2">Enviando Proposta</h3>
                 <p className="text-sm text-gray-600 mb-4">{loadingStep}</p>
                 <div className="w-full bg-gray-200 rounded-full h-2">
                   <div 
-                    className="bg-[#168979] h-2 rounded-full transition-all duration-300 ease-out"
+                    className="bg-[#0F172A] h-2 rounded-full transition-all duration-300 ease-out"
                     style={{ width: `${loadingProgress}%` }}
                   ></div>
                 </div>

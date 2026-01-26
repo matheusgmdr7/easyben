@@ -66,13 +66,28 @@ export async function criarPropostaDigital(dadosProposta: any) {
       }
     }
 
+    // Converter nomes para maiúsculas para padronização
+    const nomeCliente = dadosProposta.nome ? dadosProposta.nome.toUpperCase() : dadosProposta.nome
+    const nomeMae = dadosProposta.nome_mae ? dadosProposta.nome_mae.toUpperCase() : dadosProposta.nome_mae
+    const corretorNome = dadosProposta.corretor_nome ? dadosProposta.corretor_nome.toUpperCase() : dadosProposta.corretor_nome
+    
+    // Converter nomes dos dependentes se houver
+    let dependentesDados = dadosProposta.dependentes || []
+    if (Array.isArray(dependentesDados)) {
+      dependentesDados = dependentesDados.map((dep: any) => ({
+        ...dep,
+        nome: dep.nome ? dep.nome.toUpperCase() : dep.nome,
+        nome_mae: dep.nome_mae ? dep.nome_mae.toUpperCase() : dep.nome_mae,
+      }))
+    }
+
     const dadosParaInserir = {
       id: dadosProposta.id,
       corretor_id: dadosProposta.corretor_id,
-      corretor_nome: dadosProposta.corretor_nome,
+      corretor_nome: corretorNome,
       modelo_id: dadosProposta.template_id,
       template_titulo: dadosProposta.template_titulo,
-      nome_cliente: dadosProposta.nome,
+      nome_cliente: nomeCliente,
       email: dadosProposta.email,
       telefone: dadosProposta.telefone,
       whatsapp: dadosProposta.whatsapp || dadosProposta.telefone,
@@ -81,7 +96,7 @@ export async function criarPropostaDigital(dadosProposta: any) {
       orgao_emissor: dadosProposta.orgao_emissor,
       data_nascimento: dadosProposta.data_nascimento,
       cns: dadosProposta.cns,
-      nome_mae: dadosProposta.nome_mae,
+      nome_mae: nomeMae,
       sexo: dadosProposta.sexo,
       endereco: enderecoCompleto,
       numero: dadosProposta.numero,
@@ -98,7 +113,7 @@ export async function criarPropostaDigital(dadosProposta: any) {
       produto_nome: dadosProposta.produto_nome,
       status: dadosProposta.status || "parcial",
       tem_dependentes: dadosProposta.tem_dependentes || false,
-      dependentes_dados: dadosProposta.dependentes ? JSON.stringify(dadosProposta.dependentes) : "[]",
+      dependentes_dados: dependentesDados ? JSON.stringify(dependentesDados) : "[]",
       peso: dadosProposta.peso ? Number.parseFloat(dadosProposta.peso) : null,
       altura: dadosProposta.altura ? Number.parseFloat(dadosProposta.altura) : null,
       observacoes: dadosProposta.observacoes,

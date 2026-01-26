@@ -47,8 +47,6 @@ interface QuestionarioSaudeData {
  */
 export async function buscarPropostas(): Promise<PropostaUnificada[]> {
   try {
-    console.log("🔍 BUSCANDO PROPOSTAS DA TABELA UNIFICADA...")
-    console.log("=".repeat(50))
 
     // Buscar todas as propostas da tabela unificada (sem JOIN)
     const { data: propostas, error } = await supabase
@@ -61,7 +59,6 @@ export async function buscarPropostas(): Promise<PropostaUnificada[]> {
       throw error
     }
 
-    console.log(`✅ Encontradas ${propostas?.length || 0} propostas na tabela unificada`)
 
     // Buscar dados dos corretores separadamente se necessário
     const corretoresIds = propostas
@@ -71,7 +68,6 @@ export async function buscarPropostas(): Promise<PropostaUnificada[]> {
 
     let corretoresData: any[] = []
     if (corretoresIds && corretoresIds.length > 0) {
-      console.log(`🔍 Buscando dados de ${corretoresIds.length} corretores...`)
 
       const { data: corretores, error: corretoresError } = await supabase
         .from("corretores")
@@ -83,7 +79,6 @@ export async function buscarPropostas(): Promise<PropostaUnificada[]> {
         // Não falhar por causa dos corretores
       } else {
         corretoresData = corretores || []
-        console.log(`✅ Encontrados ${corretoresData.length} corretores`)
       }
     }
 
@@ -94,13 +89,6 @@ export async function buscarPropostas(): Promise<PropostaUnificada[]> {
 
       // Buscar dados do corretor
       const corretor = corretoresData.find((c) => c.id === proposta.corretor_id)
-
-      console.log(`📋 Processando proposta ${proposta.id}:`)
-      console.log(`   - Corretor ID: ${proposta.corretor_id}`)
-      console.log(`   - Corretor dados: ${corretor ? corretor.nome : "null"}`)
-      console.log(`   - Status: ${proposta.status}`)
-      console.log(`   - Email enviado: ${proposta.email_validacao_enviado}`)
-      console.log(`   - Origem determinada: ${origem}`)
 
       return {
         ...proposta,
@@ -118,29 +106,6 @@ export async function buscarPropostas(): Promise<PropostaUnificada[]> {
       }
     })
 
-    console.log(`🎉 TOTAL DE PROPOSTAS PROCESSADAS: ${propostasProcessadas.length}`)
-    console.log(`📊 Propostas diretas: ${propostasProcessadas.filter((p) => p.origem === "propostas").length}`)
-    console.log(
-      `📊 Propostas de corretores: ${propostasProcessadas.filter((p) => p.origem === "propostas_corretores").length}`,
-    )
-
-    // Log detalhado dos status e emails
-    const statusCount = propostasProcessadas.reduce(
-      (acc, p) => {
-        acc[p.status] = (acc[p.status] || 0) + 1
-        return acc
-      },
-      {} as Record<string, number>,
-    )
-    console.log("📊 Status das propostas:", statusCount)
-
-    const emailCount = {
-      enviados: propostasProcessadas.filter((p) => p.email_validacao_enviado).length,
-      nao_enviados: propostasProcessadas.filter((p) => !p.email_validacao_enviado).length,
-    }
-    console.log("📧 Status dos emails:", emailCount)
-
-    console.log("=".repeat(50))
 
     return propostasProcessadas
   } catch (error) {
@@ -155,7 +120,6 @@ export async function buscarPropostas(): Promise<PropostaUnificada[]> {
  */
 export async function buscarPropostaCompleta(id: string): Promise<PropostaUnificada | null> {
   try {
-    console.log(`🔍 Buscando proposta completa - ID: ${id}`)
 
     // Tentar buscar com retry em caso de erro de rede
     let proposta = null
@@ -538,6 +502,26 @@ export async function criarProposta(dadosProposta: any): Promise<string | null> 
       }
     }
 
+    // Converter nomes para maiúsculas para padronização
+    if (dadosProposta.nome) {
+      dadosProposta.nome = dadosProposta.nome.toUpperCase()
+      dadosProposta.nome_cliente = dadosProposta.nome
+    }
+    if (dadosProposta.nome_mae) {
+      dadosProposta.nome_mae = dadosProposta.nome_mae.toUpperCase()
+    }
+    if (dadosProposta.corretor_nome) {
+      dadosProposta.corretor_nome = dadosProposta.corretor_nome.toUpperCase()
+    }
+    // Converter nomes dos dependentes
+    if (dadosProposta.dependentes && Array.isArray(dadosProposta.dependentes)) {
+      dadosProposta.dependentes = dadosProposta.dependentes.map((dep: any) => ({
+        ...dep,
+        nome: dep.nome ? dep.nome.toUpperCase() : dep.nome,
+        nome_mae: dep.nome_mae ? dep.nome_mae.toUpperCase() : dep.nome_mae,
+      }))
+    }
+
     // Preparar dados para inserção
     const dadosParaInserir = {
       ...dadosProposta,
@@ -639,7 +623,6 @@ export async function buscarPropostasPorCorretor(corretorId: string): Promise<Pr
       throw error
     }
 
-    console.log(`✅ Encontradas ${propostas?.length || 0} propostas do corretor`)
 
     // Buscar dados do corretor
     let corretor = null
@@ -755,26 +738,9 @@ export function obterValorProposta(proposta: any): number {
   const valorProposta = proposta?.valor_proposta
   const valor = proposta?.valor
 
-  console.log(`🔍 DEBUG obterValorProposta - Proposta ${proposta?.id}:`, {
-    valorTotal,
-    valorMensal,
-    valorProposta,
-    valor,
-    tipos: {
-      valorTotal: typeof valorTotal,
-      valorMensal: typeof valorMensal,
-      valorProposta: typeof valorProposta,
-      valor: typeof valor
-    },
-    valorTotalString: String(valorTotal),
-    valorMensalString: String(valorMensal)
-  })
-
   // Função para converter valor corretamente
   const converterValor = (valor: any): number => {
     if (valor === null || valor === undefined) return 0
-    
-    console.log(`🔍 converterValor - Entrada:`, { valor, tipo: typeof valor })
     
     // Se for string, tratar separadores
     if (typeof valor === 'string') {
@@ -783,16 +749,12 @@ export function obterValorProposta(proposta: any): number {
       
       if (valor.includes('.')) {
         const partes = valor.split('.')
-        console.log(`🔍 Analisando string com ponto:`, { valor, partes })
         
         // Se a parte após o ponto tem 3 dígitos e não contém zeros, é separador de milhar
         if (partes[1] && partes[1].length === 3 && !partes[1].includes('0')) {
-          console.log(`🔧 Detectado separador de milhar incorreto: "${valor}"`)
           const valorCorrigido = valor.replace('.', '')
-          console.log(`📝 String corrigida: "${valor}" → "${valorCorrigido}"`)
           return parseFloat(valorCorrigido) || 0
         } else {
-          console.log(`✅ Valor decimal válido, mantendo: "${valor}"`)
           // Trocar vírgula por ponto se houver
           const valorLimpo = valor.replace(',', '.')
           return parseFloat(valorLimpo) || 0
@@ -800,18 +762,15 @@ export function obterValorProposta(proposta: any): number {
       } else {
         // Sem ponto, só trocar vírgula por ponto se houver
         const valorLimpo = valor.replace(',', '.')
-        console.log(`📝 String sem ponto processada: "${valor}" → "${valorLimpo}"`)
         return parseFloat(valorLimpo) || 0
       }
     }
     
     // Se for número, retornar diretamente
     if (typeof valor === 'number') {
-      console.log(`✅ Número direto: ${valor}`)
       return valor
     }
     
-    console.log(`⚠️ Tipo não reconhecido, retornando 0`)
     return 0
   }
 
@@ -819,32 +778,20 @@ export function obterValorProposta(proposta: any): number {
   let valorNumerico = 0
 
   if (valorTotal !== null && valorTotal !== undefined) {
-    console.log(`📝 Processando valorTotal: "${valorTotal}" (tipo: ${typeof valorTotal})`)
     valorNumerico = converterValor(valorTotal)
-    console.log(`✅ Usando valor_total: ${valorTotal} → ${valorNumerico}`)
   } else if (valorMensal !== null && valorMensal !== undefined) {
-    console.log(`📝 Processando valorMensal: "${valorMensal}" (tipo: ${typeof valorMensal})`)
     valorNumerico = converterValor(valorMensal)
-    console.log(`✅ Usando valor_mensal: ${valorMensal} → ${valorNumerico}`)
   } else if (valorProposta !== null && valorProposta !== undefined) {
-    console.log(`📝 Processando valorProposta: "${valorProposta}" (tipo: ${typeof valorProposta})`)
     valorNumerico = converterValor(valorProposta)
-    console.log(`✅ Usando valor_proposta: ${valorProposta} → ${valorNumerico}`)
   } else if (valor !== null && valor !== undefined) {
-    console.log(`📝 Processando valor: "${valor}" (tipo: ${typeof valor})`)
     valorNumerico = converterValor(valor)
-    console.log(`✅ Usando valor: ${valor} → ${valorNumerico}`)
-  } else {
-    console.log(`⚠️ Nenhum valor encontrado, usando 0`)
   }
 
   // Garantir que o valor seja um número válido
   if (isNaN(valorNumerico)) {
-    console.warn("⚠️ Valor inválido encontrado na proposta:", { valorTotal, valorMensal, valorProposta, valor })
     return 0
   }
 
-  console.log(`🎯 Valor final retornado: ${valorNumerico}`)
   return valorNumerico
 }
 
@@ -863,8 +810,6 @@ export function obterDocumentosInteligente(
 
   // Se for dependente e temos a proposta completa, buscar documentos em documentos_dependentes_urls
   if (tipo === "dependente" && propostaCompleta && typeof dependenteIndex === "number") {
-    console.log(`🔍 Buscando documentos do dependente ${dependenteIndex} na proposta completa`)
-    
     const documentosDependentes = propostaCompleta.documentos_dependentes_urls
     if (documentosDependentes && typeof documentosDependentes === "object") {
       const dependenteKey = dependenteIndex.toString()

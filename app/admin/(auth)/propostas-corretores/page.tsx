@@ -98,7 +98,7 @@ export default function PropostasCorretoresPage() {
             <p className="text-sm text-gray-600">Pendentes de Aprovação</p>
             <p className="text-2xl font-bold">{propostas.filter((p) => p.status === "pendente").length}</p>
           </div>
-          <div className="bg-green-50 p-4 rounded-lg">
+          <div className="bg-[#7BD9F6] bg-opacity-20 p-4 rounded-lg">
             <p className="text-sm text-gray-600">Valor Total Aprovado</p>
             <p className="text-2xl font-bold">
               {formatarMoeda(
@@ -168,7 +168,7 @@ export default function PropostasCorretoresPage() {
                             href={`https://wa.me/${proposta.whatsapp_cliente.replace(/\D/g, "")}`}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="text-green-600 hover:underline flex items-center"
+                            className="text-[#0F172A] hover:underline flex items-center"
                           >
                             <svg
                               xmlns="http://www.w3.org/2000/svg"
@@ -197,7 +197,7 @@ export default function PropostasCorretoresPage() {
                         <span
                           className={`px-2 py-1 rounded-full text-xs ${
                             proposta.status === "aprovada"
-                              ? "bg-green-100 text-green-800"
+                              ? "bg-[#7BD9F6] bg-opacity-30 text-[#0F172A]"
                               : proposta.status === "rejeitada"
                                 ? "bg-red-100 text-red-800"
                                 : "bg-yellow-100 text-yellow-800"
@@ -231,7 +231,7 @@ export default function PropostasCorretoresPage() {
                           <div className="flex space-x-2">
                             <button
                               onClick={() => aprovarProposta(proposta.id)}
-                              className="bg-green-500 text-white px-3 py-1 rounded-md text-sm hover:bg-green-600"
+                              className="bg-[#7BD9F6] bg-opacity-200 text-white px-3 py-1 rounded-md text-sm hover:bg-[#0F172A]"
                             >
                               Aprovar
                             </button>
@@ -319,7 +319,7 @@ export default function PropostasCorretoresPage() {
                     href={`https://wa.me/${propostaDetalhada.whatsapp_cliente.replace(/\D/g, "")}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-green-600 hover:underline flex items-center"
+                    className="text-[#0F172A] hover:underline flex items-center"
                   >
                     <svg
                       xmlns="http://www.w3.org/2000/svg"
@@ -362,7 +362,7 @@ export default function PropostasCorretoresPage() {
                   <span
                     className={`px-2 py-1 rounded-full text-xs ${
                       propostaDetalhada.status === "aprovada"
-                        ? "bg-green-100 text-green-800"
+                        ? "bg-[#7BD9F6] bg-opacity-30 text-[#0F172A]"
                         : propostaDetalhada.status === "rejeitada"
                           ? "bg-red-100 text-red-800"
                           : "bg-yellow-100 text-yellow-800"
@@ -469,7 +469,7 @@ export default function PropostasCorretoresPage() {
                     href={`https://wa.me/${propostaDocumentos.whatsapp_cliente.replace(/\D/g, "")}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-green-600 hover:underline"
+                    className="text-[#0F172A] hover:underline"
                   >
                     {propostaDocumentos.whatsapp_cliente}
                   </a>

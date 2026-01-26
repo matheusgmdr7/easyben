@@ -443,7 +443,7 @@ export default function CompletarPropostaPage() {
               </div>
               <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-3 sm:p-4 w-full sm:w-auto">
                 <p className="text-xs font-bold text-gray-700 uppercase tracking-wider">Proposta</p>
-                <p className="font-mono text-sm font-bold text-[#168979] break-all sm:break-normal">{propostaId.slice(0, 8)}...</p>
+                <p className="font-mono text-sm font-bold text-[#0F172A] break-all sm:break-normal">{propostaId.slice(0, 8)}...</p>
               </div>
             </div>
 
@@ -452,13 +452,13 @@ export default function CompletarPropostaPage() {
               <div className="space-y-3 sm:space-y-4">
                 <div className="flex justify-between text-xs sm:text-sm font-medium">
                   <span className="text-gray-700">Progresso da Proposta</span>
-                  <span className="text-[#168979] font-bold">{Math.round(progressoAtual)}% completo</span>
+                  <span className="text-[#0F172A] font-bold">{Math.round(progressoAtual)}% completo</span>
                 </div>
                 <Progress value={progressoAtual} className="h-2 sm:h-3 bg-gray-200" />
                 
                 {/* Current Step - Mobile Optimized */}
                 <div className="flex items-center justify-center">
-                  <div className="flex items-center space-x-2 sm:space-x-3 bg-gradient-to-r from-[#168979] to-[#13786a] px-3 sm:px-4 lg:px-6 py-2 sm:py-3 lg:py-4 rounded-lg text-white w-full sm:w-auto">
+                  <div className="flex items-center space-x-2 sm:space-x-3 bg-gradient-to-r from-[#0F172A] to-[#1E293B] px-3 sm:px-4 lg:px-6 py-2 sm:py-3 lg:py-4 rounded-lg text-white w-full sm:w-auto">
                     <Icon className="h-4 w-4 sm:h-5 sm:w-5 flex-shrink-0" />
                     <div className="min-w-0 flex-1 sm:flex-none">
                       <p className="font-bold text-xs sm:text-sm lg:text-base">
@@ -486,7 +486,7 @@ export default function CompletarPropostaPage() {
                           isActive
                             ? "border-blue-600 bg-blue-600 text-white shadow-lg"
                             : isCompleted
-                              ? "border-green-600 bg-green-600 text-white shadow-md"
+                              ? "border-green-600 bg-[#0F172A] text-white shadow-md"
                               : "border-gray-300 bg-white text-gray-400"
                         }`}
                       >
@@ -498,7 +498,7 @@ export default function CompletarPropostaPage() {
                       </div>
                       <span
                         className={`mt-1 text-[9px] sm:text-[10px] lg:text-xs font-medium text-center max-w-[60px] sm:max-w-[80px] lg:max-w-none leading-tight ${
-                          isActive ? "text-blue-600" : isCompleted ? "text-green-600" : "text-gray-400"
+                          isActive ? "text-blue-600" : isCompleted ? "text-[#0F172A]" : "text-gray-400"
                         }`}
                       >
                         {etapa.nome.split(' ').map((palavra, i) => (
@@ -520,7 +520,7 @@ export default function CompletarPropostaPage() {
             <Card className="bg-gradient-to-br from-white to-gray-50 border border-gray-200 shadow-sm">
               <CardHeader className="pb-4 pt-6 bg-gray-50 rounded-t-lg">
                 <CardTitle className="flex items-center gap-3 text-lg sm:text-xl font-bold text-gray-900 font-sans">
-                  <div className="w-10 h-10 bg-[#168979] rounded-lg flex items-center justify-center">
+                  <div className="w-10 h-10 bg-[#0F172A] rounded-lg flex items-center justify-center">
                     <User className="h-5 w-5 text-white" />
                   </div>
                   Dados do Titular
@@ -570,7 +570,7 @@ export default function CompletarPropostaPage() {
             <Card className="bg-gradient-to-br from-white to-gray-50 border border-gray-200 shadow-sm">
               <CardHeader className="pb-4 pt-6 bg-gray-50 rounded-t-lg">
                 <CardTitle className="flex items-center gap-3 text-lg sm:text-xl font-bold text-gray-900 font-sans">
-                  <div className="w-10 h-10 bg-[#168979] rounded-lg flex items-center justify-center">
+                  <div className="w-10 h-10 bg-[#0F172A] rounded-lg flex items-center justify-center">
                     <Users className="h-5 w-5 text-white" />
                   </div>
                   Dependentes ({proposta.dependentes_dados?.length || 0})
@@ -611,7 +611,7 @@ export default function CompletarPropostaPage() {
                           </div>
                           <div>
                             <p className="text-muted-foreground">Valor Individual</p>
-                            <p className="font-medium text-green-600">
+                            <p className="font-medium text-[#0F172A]">
                               {dependente.valor_individual || "Não informado"}
                             </p>
                           </div>
@@ -634,7 +634,7 @@ export default function CompletarPropostaPage() {
             <Card className="bg-gradient-to-br from-white to-gray-50 border border-gray-200 shadow-sm">
               <CardHeader className="pb-4 pt-6 bg-gray-50 rounded-t-lg">
                 <CardTitle className="flex items-center gap-3 text-lg sm:text-xl font-bold text-gray-900 font-sans">
-                  <div className="w-10 h-10 bg-[#168979] rounded-lg flex items-center justify-center">
+                  <div className="w-10 h-10 bg-[#0F172A] rounded-lg flex items-center justify-center">
                     <FileText className="h-5 w-5 text-white" />
                   </div>
                   Informações do Plano
@@ -648,7 +648,7 @@ export default function CompletarPropostaPage() {
                   </div>
                   <div>
                     <p className="text-sm font-medium text-muted-foreground">Valor Mensal</p>
-                    <p className="font-medium text-lg text-green-600">
+                    <p className="font-medium text-lg text-[#0F172A]">
                       R$ {proposta.valor_total?.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
                     </p>
                   </div>
@@ -726,7 +726,7 @@ export default function CompletarPropostaPage() {
                 <Button 
                   onClick={proximaEtapa} 
                   disabled={etapaAtual === ETAPAS.length} 
-                  className="w-full sm:w-auto bg-[#168979] hover:bg-[#13786a] text-white font-bold btn-corporate shadow-corporate min-h-[44px] sm:min-h-[40px]"
+                  className="w-full sm:w-auto bg-[#0F172A] hover:bg-[#1E293B] text-white font-bold btn-corporate shadow-corporate min-h-[44px] sm:min-h-[40px]"
                 >
                   <span className="truncate">{etapaAtual === 4 ? "Salvar Declaração" : "Próxima"}</span>
                   <ArrowRight className="h-4 w-4 ml-2 flex-shrink-0" />

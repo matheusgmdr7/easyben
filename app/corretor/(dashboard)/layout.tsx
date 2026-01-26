@@ -230,7 +230,7 @@ export default function CorretorDashboardLayout({
                       className={cn(
                         "group flex items-center px-4 py-3 text-sm font-bold rounded-lg transition-all duration-200 relative font-sans",
                         isActive 
-                          ? "bg-[#168979] text-white shadow-lg" 
+                          ? "bg-[#0F172A] text-white shadow-lg" 
                           : "text-gray-700 hover:bg-white hover:text-gray-900 hover:shadow-sm",
                       )}
                       onClick={() => setMobileMenuOpen(false)}
@@ -296,7 +296,7 @@ export default function CorretorDashboardLayout({
                     className={cn(
                       "group flex items-center px-4 py-3 text-sm font-bold corporate-rounded-lg transition-all duration-200 relative font-sans",
                       isActive 
-                        ? "bg-[#168979] text-white shadow-lg" 
+                        ? "bg-[#0F172A] text-white shadow-lg" 
                         : "text-gray-700 hover:bg-white hover:text-gray-900 hover:shadow-sm",
                     )}
                   >

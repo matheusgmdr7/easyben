@@ -220,7 +220,7 @@ export default function CadastroPage() {
       <main className="flex-grow py-8 md:py-10 bg-gray-50">
         <div className="container px-4 md:px-6">
           <div className="max-w-2xl mx-auto">
-            <h1 className="text-2xl md:text-3xl font-bold text-center mb-6 md:mb-8 text-[#168979]">
+            <h1 className="text-2xl md:text-3xl font-bold text-center mb-6 md:mb-8 text-[#0F172A]">
               Receba mais informações
             </h1>
 
@@ -247,7 +247,7 @@ export default function CadastroPage() {
                   </div>
                   <div className="flex justify-between">
                     <span className="font-medium">Valor mensal:</span>
-                    <span className="font-bold text-[#168979] text-lg md:text-xl">
+                    <span className="font-bold text-[#0F172A] text-lg md:text-xl">
                       R$ {planoSelecionado.preco.toFixed(2)}
                     </span>
                   </div>
@@ -328,7 +328,7 @@ export default function CadastroPage() {
 
                   <Button
                     type="submit"
-                    className="w-full bg-[#168979] hover:bg-[#13786a] text-sm md:text-base py-2 md:py-3"
+                    className="w-full bg-[#0F172A] hover:bg-[#1E293B] text-sm md:text-base py-2 md:py-3"
                     disabled={isSubmitting || carregando}
                   >
                     {carregando ? "Enviando..." : "Quero mais informações"}

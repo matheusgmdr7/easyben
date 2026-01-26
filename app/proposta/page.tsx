@@ -932,7 +932,7 @@ export default function PropostaPage() {
               <div className="flex justify-end mt-6">
                 <Button
                   type="submit"
-                  className="w-full sm:w-auto bg-[#168979] hover:bg-[#13786a]"
+                  className="w-full sm:w-auto bg-[#0F172A] hover:bg-[#1E293B]"
                   disabled={isSubmitting}
                 >
                   {isSubmitting ? (

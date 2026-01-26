@@ -182,7 +182,7 @@ export default function TestarLinkPropostaPage() {
                 <Button
                   onClick={() => testarProposta(propostaId)}
                   disabled={loading || !propostaId}
-                  className="bg-[#168979] hover:bg-[#13786a]"
+                  className="bg-[#0F172A] hover:bg-[#1E293B]"
                 >
                   {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Testar"}
                 </Button>
@@ -217,7 +217,7 @@ export default function TestarLinkPropostaPage() {
                         setPropostaId(prop.id)
                         testarProposta(prop.id)
                       }}
-                      className="bg-[#168979] hover:bg-[#13786a]"
+                      className="bg-[#0F172A] hover:bg-[#1E293B]"
                     >
                       Testar
                     </Button>
@@ -232,7 +232,7 @@ export default function TestarLinkPropostaPage() {
         {resultado && (
           <Card>
             <CardHeader>
-              <CardTitle className={`flex items-center ${resultado.sucesso ? "text-green-600" : "text-red-600"}`}>
+              <CardTitle className={`flex items-center ${resultado.sucesso ? "text-[#0F172A]" : "text-red-600"}`}>
                 {resultado.sucesso ? (
                   <CheckCircle className="mr-2 h-5 w-5" />
                 ) : (
@@ -266,25 +266,25 @@ export default function TestarLinkPropostaPage() {
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <Label>Dependentes</Label>
-                      <p className={resultado.detalhes.tem_dependentes ? "text-green-600" : "text-gray-500"}>
+                      <p className={resultado.detalhes.tem_dependentes ? "text-[#0F172A]" : "text-gray-500"}>
                         {resultado.dependentes.length} dependente(s)
                       </p>
                     </div>
                     <div>
                       <Label>Questionário</Label>
-                      <p className={resultado.detalhes.questionario_respondido ? "text-green-600" : "text-gray-500"}>
+                      <p className={resultado.detalhes.questionario_respondido ? "text-[#0F172A]" : "text-gray-500"}>
                         {resultado.detalhes.questionario_respondido ? "Respondido" : "Não respondido"}
                       </p>
                     </div>
                     <div>
                       <Label>Assinatura</Label>
-                      <p className={resultado.detalhes.assinado ? "text-green-600" : "text-gray-500"}>
+                      <p className={resultado.detalhes.assinado ? "text-[#0F172A]" : "text-gray-500"}>
                         {resultado.detalhes.assinado ? "Assinado" : "Não assinado"}
                       </p>
                     </div>
                     <div>
                       <Label>Peso/Altura</Label>
-                      <p className={resultado.detalhes.peso_altura ? "text-green-600" : "text-gray-500"}>
+                      <p className={resultado.detalhes.peso_altura ? "text-[#0F172A]" : "text-gray-500"}>
                         {resultado.detalhes.peso_altura ? "Preenchido" : "Não preenchido"}
                       </p>
                     </div>

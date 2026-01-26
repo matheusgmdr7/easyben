@@ -243,7 +243,7 @@ export default function ComissoesPage() {
             <CardTitle className="text-sm font-medium text-gray-700">Comissões Pagas</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-600">{formatarMoeda(resumo.pagas)}</div>
+            <div className="text-2xl font-bold text-[#0F172A]">{formatarMoeda(resumo.pagas)}</div>
             <p className="text-xs text-gray-500 mt-1">Valor já recebido</p>
           </CardContent>
         </Card>
@@ -356,7 +356,7 @@ export default function ComissoesPage() {
                           variant={comissao.status === "pago" ? "success" : "outline"}
                           className={`text-xs font-normal ${
                             comissao.status === "pago"
-                              ? "bg-green-100 text-green-800 hover:bg-green-100"
+                              ? "bg-[#7BD9F6] bg-opacity-30 text-[#0F172A] hover:bg-[#7BD9F6] bg-opacity-30"
                               : "bg-yellow-100 text-yellow-800 hover:bg-yellow-100"
                           }`}
                         >

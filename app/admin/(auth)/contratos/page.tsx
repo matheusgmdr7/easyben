@@ -199,7 +199,7 @@ export default function ContratosPage() {
   const getStatusBadgeClass = (status) => {
     switch (status) {
       case "ativo":
-        return "bg-gray-100 text-green-600"
+        return "bg-gray-100 text-[#0F172A]"
       case "pendente":
         return "bg-gray-100 text-yellow-600"
       case "cancelado":
@@ -251,13 +251,13 @@ export default function ContratosPage() {
             </Card>
             <Card className="bg-white rounded-lg shadow-sm p-4 border border-gray-100">
               <p className="text-sm text-gray-600">Contratos Ativos</p>
-              <p className="text-2xl font-bold text-green-600">
+              <p className="text-2xl font-bold text-[#0F172A]">
                 {contratos.filter((c) => c.status === "ativo").length}
               </p>
             </Card>
             <Card className="bg-white rounded-lg shadow-sm p-4 border border-gray-100">
               <p className="text-sm text-gray-600">Valor Mensal Total</p>
-              <p className="text-2xl font-bold text-[#168979]">{formatarMoeda(calcularValorMensalTotal())}</p>
+              <p className="text-2xl font-bold text-[#0F172A]">{formatarMoeda(calcularValorMensalTotal())}</p>
             </Card>
           </div>
 
@@ -416,7 +416,7 @@ export default function ContratosPage() {
                                 onClick={() => baixarTodosDocumentos(contrato)}
                                 variant="ghost"
                                 size="sm"
-                                className="w-full mt-2 text-green-600 hover:text-green-800 hover:bg-green-50 justify-center"
+                                className="w-full mt-2 text-[#0F172A] hover:text-[#0F172A] hover:bg-[#7BD9F6] bg-opacity-20 justify-center"
                                 disabled={downloadLoading}
                               >
                                 <Archive className="h-4 w-4 mr-1" />

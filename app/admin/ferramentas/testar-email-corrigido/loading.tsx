@@ -1,21 +1,10 @@
-import { Skeleton } from "@/components/ui/skeleton"
+import { LoadingSpinner } from "@/components/ui/loading-spinner"
 
 export default function Loading() {
   return (
-    <div className="container mx-auto py-8">
-      <div className="mb-6">
-        <Skeleton className="h-8 w-64 mb-2" />
-        <Skeleton className="h-4 w-96" />
-      </div>
-
-      <div className="space-y-6">
-        <Skeleton className="h-32 w-full" />
-        <Skeleton className="h-48 w-full" />
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <Skeleton className="h-64 w-full" />
-          <Skeleton className="h-64 w-full" />
-        </div>
-        <Skeleton className="h-32 w-full" />
+    <div className="fixed inset-0 flex items-center justify-center bg-white/80 backdrop-blur-sm z-50">
+      <div className="flex flex-col items-center gap-3">
+        <LoadingSpinner size="sm" text="Carregando" />
       </div>
     </div>
   )

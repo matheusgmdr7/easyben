@@ -445,8 +445,8 @@ ORDER BY ordinal_position;
                                 </>
                               ) : (
                                 <>
-                                  <CheckCircle className="h-4 w-4 text-green-500" />
-                                  <span className="text-green-600 text-sm">OK</span>
+                                  <CheckCircle className="h-4 w-4 text-[#0F172A]" />
+                                  <span className="text-[#0F172A] text-sm">OK</span>
                                 </>
                               )}
                             </div>
@@ -490,9 +490,9 @@ ORDER BY ordinal_position;
             </CardHeader>
             <CardContent>
               {resultadoTeste.sucesso ? (
-                <Alert className="border-green-200 bg-green-50">
-                  <CheckCircle className="h-4 w-4 text-green-600" />
-                  <AlertDescription className="text-green-800">
+                <Alert className="border-[#7BD9F6] border-opacity-30 bg-[#7BD9F6] bg-opacity-20">
+                  <CheckCircle className="h-4 w-4 text-[#0F172A]" />
+                  <AlertDescription className="text-[#0F172A]">
                     ✅ Teste bem-sucedido! Os tipos de dados estão funcionando corretamente.
                     <br />
                     ID da proposta teste: {resultadoTeste.id}

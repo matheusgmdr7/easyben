@@ -1019,7 +1019,7 @@ export default function PDFGenerator({
                   </Button>
                 </div>
               ) : (
-                <Button onClick={gerarPDF} disabled={pdfLoading} className="bg-[#168979] hover:bg-[#13786a]">
+                <Button onClick={gerarPDF} disabled={pdfLoading} className="bg-[#0F172A] hover:bg-[#1E293B]">
                   {pdfLoading ? (
                     <>
                       <Spinner className="h-4 w-4 mr-2" />

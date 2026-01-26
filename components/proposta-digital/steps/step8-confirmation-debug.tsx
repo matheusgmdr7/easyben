@@ -223,13 +223,13 @@ export default function Step8ConfirmationDebug({
       </Card>
 
       {/* Header de Sucesso */}
-      <Card className="border-green-200 bg-green-50">
+      <Card className="border-[#7BD9F6] border-opacity-30 bg-[#7BD9F6] bg-opacity-20">
         <CardHeader className="text-center">
           <div className="flex justify-center mb-4">
-            <CheckCircle className="h-16 w-16 text-green-600" />
+            <CheckCircle className="h-16 w-16 text-[#0F172A]" />
           </div>
-          <CardTitle className="text-2xl text-green-800">Proposta Criada com Sucesso! 🎉</CardTitle>
-          <p className="text-green-700 mt-2">
+          <CardTitle className="text-2xl text-[#0F172A]">Proposta Criada com Sucesso! 🎉</CardTitle>
+          <p className="text-[#0F172A] mt-2">
             A proposta foi criada para <strong>{nomeCliente}</strong>
           </p>
           <div className="mt-4">
@@ -255,7 +255,7 @@ export default function Step8ConfirmationDebug({
               <h4 className="font-semibold text-blue-800 mb-2">🎯 Status Atual Detectado:</h4>
               <div className="text-lg font-bold text-center">
                 {mostrarComoEnviado ? (
-                  <span className="text-green-600">✅ EMAIL ENVIADO</span>
+                  <span className="text-[#0F172A]">✅ EMAIL ENVIADO</span>
                 ) : (
                   <span className="text-red-600">❌ EMAIL NÃO ENVIADO</span>
                 )}
@@ -267,17 +267,17 @@ export default function Step8ConfirmationDebug({
 
             {/* Cenário 1: Email Enviado */}
             <div
-              className={`p-4 rounded-lg border-2 ${mostrarComoEnviado ? "border-green-500 bg-green-50" : "border-gray-300 bg-gray-50"}`}
+              className={`p-4 rounded-lg border-2 ${mostrarComoEnviado ? "border-green-500 bg-[#7BD9F6] bg-opacity-20" : "border-gray-300 bg-gray-50"}`}
             >
               <h4 className="font-semibold mb-2">
                 ✅ Cenário: Email Enviado {mostrarComoEnviado ? "(ATIVO)" : "(INATIVO)"}
               </h4>
               {mostrarComoEnviado ? (
                 <div className="flex items-center gap-3">
-                  <CheckCircle className="h-5 w-5 text-green-600" />
+                  <CheckCircle className="h-5 w-5 text-[#0F172A]" />
                   <div>
-                    <p className="font-medium text-green-800">✅ Email enviado com sucesso!</p>
-                    <p className="text-sm text-green-600">
+                    <p className="font-medium text-[#0F172A]">✅ Email enviado com sucesso!</p>
+                    <p className="text-sm text-[#0F172A]">
                       O cliente {nomeCliente} recebeu o link por email em: {emailCliente}
                     </p>
                   </div>

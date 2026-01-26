@@ -234,8 +234,8 @@ export default function VerificarIdsPropostasPage() {
                 <p className="text-2xl font-bold text-blue-600">{estatisticas.total_propostas}</p>
                 <p className="text-sm text-gray-600">Propostas Diretas</p>
               </div>
-              <div className="text-center p-4 bg-green-50 rounded-lg">
-                <p className="text-2xl font-bold text-green-600">{estatisticas.total_propostas_corretores}</p>
+              <div className="text-center p-4 bg-[#7BD9F6] bg-opacity-20 rounded-lg">
+                <p className="text-2xl font-bold text-[#0F172A]">{estatisticas.total_propostas_corretores}</p>
                 <p className="text-sm text-gray-600">Propostas de Corretores</p>
               </div>
             </div>
@@ -261,7 +261,7 @@ export default function VerificarIdsPropostasPage() {
               <CardHeader>
                 <CardTitle className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <CheckCircle className="h-5 w-5 text-green-500" />
+                    <CheckCircle className="h-5 w-5 text-[#0F172A]" />
                     Encontrado em: {resultado.tabela}
                   </div>
                   <Badge variant={resultado.tabela === "propostas" ? "default" : "secondary"}>

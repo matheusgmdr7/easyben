@@ -272,7 +272,7 @@ export default function Step5HealthQuestionnaire({ onNext, onBack }: Step5Health
                 index === pessoaAtual
                   ? "bg-blue-600 text-white"
                   : index < pessoaAtual
-                    ? "bg-green-100 text-green-800"
+                    ? "bg-[#7BD9F6] bg-opacity-30 text-[#0F172A]"
                     : "bg-gray-100 text-gray-600"
               }`}
             >

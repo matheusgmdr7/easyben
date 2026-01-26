@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase"
+import { getCurrentTenantId } from "@/lib/tenant-query-helper"
 
 export interface DashboardStats {
   propostasEnviadas: number
@@ -33,11 +34,14 @@ export async function buscarDadosDashboardCorretor(corretorId: string): Promise<
 
     console.log("Buscando dados do dashboard para o corretor:", corretorId)
 
-    // 1. Buscar todas as propostas do corretor
+    const tenantId = await getCurrentTenantId()
+
+    // 1. Buscar todas as propostas do corretor, filtrando por tenant
     const { data: propostas, error: propostasError } = await supabase
       .from("propostas_corretores")
       .select("*, produto:produto_id(*)")
       .eq("corretor_id", corretorId)
+      .eq("tenant_id", tenantId)
       .order("created_at", { ascending: false })
 
     if (propostasError) {
@@ -45,11 +49,12 @@ export async function buscarDadosDashboardCorretor(corretorId: string): Promise<
       throw new Error(`Erro ao buscar propostas: ${propostasError.message}`)
     }
 
-    // 2. Buscar comissões do corretor
+    // 2. Buscar comissões do corretor, filtrando por tenant
     const { data: comissoes, error: comissoesError } = await supabase
       .from("comissoes")
       .select("*, proposta:proposta_id(*, produto:produto_id(*))")
       .eq("corretor_id", corretorId)
+      .eq("tenant_id", tenantId)
       .order("created_at", { ascending: false })
 
     if (comissoesError) {

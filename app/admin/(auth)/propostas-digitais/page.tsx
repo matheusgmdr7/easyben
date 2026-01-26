@@ -250,7 +250,7 @@ export default function PropostasDigitaisPage() {
       case "pendente":
         return "bg-yellow-100 text-yellow-800"
       case "aprovada":
-        return "bg-green-100 text-green-800"
+        return "bg-[#7BD9F6] bg-opacity-30 text-[#0F172A]"
       case "rejeitada":
         return "bg-red-100 text-red-800"
       default:
@@ -286,7 +286,7 @@ export default function PropostasDigitaisPage() {
         </Card>
         <Card className="bg-white rounded-lg shadow-sm p-4 border border-gray-100">
           <p className="text-sm text-gray-600">Valor Total Aprovado</p>
-          <p className="text-2xl font-bold text-green-600">
+          <p className="text-2xl font-bold text-[#0F172A]">
             {formatarMoeda(
               propostas.filter((p) => p.status === "aprovada").reduce((acc, p) => acc + Number(p.valor || 0), 0),
             )}
@@ -387,7 +387,7 @@ export default function PropostasDigitaisPage() {
                                   onClick={() => baixarTodosDocumentos(proposta)}
                                   variant="ghost"
                                   size="sm"
-                                  className="text-green-600 hover:text-green-800 hover:bg-green-50"
+                                  className="text-[#0F172A] hover:text-[#0F172A] hover:bg-[#7BD9F6] bg-opacity-20"
                                   disabled={downloadLoading}
                                 >
                                   <Archive className="h-4 w-4 mr-1" />
@@ -478,7 +478,7 @@ export default function PropostasDigitaisPage() {
                             onClick={() => baixarTodosDocumentos(proposta)}
                             variant="ghost"
                             size="sm"
-                            className="w-full mt-2 text-green-600 hover:text-green-800 hover:bg-green-50 justify-center"
+                            className="w-full mt-2 text-[#0F172A] hover:text-[#0F172A] hover:bg-[#7BD9F6] bg-opacity-20 justify-center"
                             disabled={downloadLoading}
                           >
                             <Archive className="h-4 w-4 mr-1" />
@@ -753,7 +753,7 @@ export default function PropostasDigitaisPage() {
                     <>
                       <Button
                         onClick={() => window.open(propostaDetalhada.pdf_url, "_blank")}
-                        className="bg-[#168979] hover:bg-[#13786a] w-full md:w-auto"
+                        className="bg-[#0F172A] hover:bg-[#1E293B] w-full md:w-auto"
                       >
                         <FileText className="h-4 w-4 mr-2" />
                         Visualizar Proposta
@@ -761,7 +761,7 @@ export default function PropostasDigitaisPage() {
 
                       <Button
                         onClick={() => baixarTodosDocumentos(propostaDetalhada)}
-                        className="bg-green-600 hover:bg-green-700 w-full md:w-auto"
+                        className="bg-[#0F172A] hover:bg-[#0F172A] w-full md:w-auto"
                         disabled={downloadLoading}
                       >
                         <Archive className="h-4 w-4 mr-2" />

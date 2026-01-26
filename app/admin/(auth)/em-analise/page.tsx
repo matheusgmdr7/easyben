@@ -16,7 +16,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Eye, CheckCircle, XCircle, Search, Filter, RefreshCw, Heart, Clock, User, UserCheck, FileText, Camera, Building } from "lucide-react"
+import { Eye, CheckCircle, XCircle, Search, Filter, RefreshCw, Heart, Clock, User, UserCheck, FileText, Camera, Building, ChevronLeft, ChevronRight } from "lucide-react"
 import { formatarMoeda } from "@/utils/formatters"
 import { supabase } from "@/lib/supabase"
 import { useModalOverlay } from "@/hooks/use-modal-overlay"
@@ -209,7 +209,7 @@ export default function EmAnalisePage() {
           {temFotos && (
             <Card className="border-2 border-gray-200 shadow-sm">
               <CardHeader className="bg-gradient-to-r from-blue-50 to-blue-100/50 border-b border-gray-200 px-3 sm:px-6 py-3 sm:py-4">
-                <CardTitle className="flex items-center gap-2 text-[#168979] text-base sm:text-lg">
+                <CardTitle className="flex items-center gap-2 text-[#0F172A] text-base sm:text-lg">
                   <Camera className="h-4 w-4 sm:h-5 sm:w-5" />
                   Fotos do Titular
                 </CardTitle>
@@ -259,7 +259,7 @@ export default function EmAnalisePage() {
           
           <Card className="border-2 border-gray-200 shadow-sm">
             <CardHeader className="bg-gradient-to-r from-red-50 to-red-100/50 border-b border-gray-200 px-3 sm:px-6 py-3 sm:py-4">
-              <CardTitle className="flex items-center gap-2 text-[#168979] text-base sm:text-lg">
+              <CardTitle className="flex items-center gap-2 text-[#0F172A] text-base sm:text-lg">
                 <Heart className="h-4 w-4 sm:h-5 sm:w-5 text-red-500" />
                 Declaração de Saúde
               </CardTitle>
@@ -280,7 +280,7 @@ export default function EmAnalisePage() {
           return (
             <Card key={q.id || idx} className="border-2 border-gray-200 shadow-sm">
               <CardHeader className="bg-gradient-to-r from-red-50 to-red-100/50 border-b border-gray-200 px-3 sm:px-6 py-3 sm:py-4">
-                <CardTitle className="flex items-center gap-2 text-[#168979] text-base sm:text-lg">
+                <CardTitle className="flex items-center gap-2 text-[#0F172A] text-base sm:text-lg">
                   <Heart className="h-4 w-4 sm:h-5 sm:w-5 text-red-500" />
                   <span className="truncate">{isTitular
                       ? "Declaração de Saúde - Titular"
@@ -351,7 +351,7 @@ export default function EmAnalisePage() {
                           <div className="text-sm text-gray-600 mb-2">
                             {resposta.pergunta_texto || resposta.pergunta || obterTextoPergunta(resposta.pergunta_id)}
                           </div>
-                          <div className={`inline-flex px-2 py-1 rounded-full text-xs font-medium ${resposta.resposta === "sim" || resposta.resposta === true ? "bg-red-100 text-red-800" : "bg-green-100 text-green-800"}`}>
+                          <div className={`inline-flex px-2 py-1 rounded-full text-xs font-medium ${resposta.resposta === "sim" || resposta.resposta === true ? "bg-red-100 text-red-800" : "bg-[#7BD9F6] bg-opacity-30 text-[#0F172A]"}`}>
                             {resposta.resposta === "sim" || resposta.resposta === true ? "SIM" : "NÃO"}
                           </div>
                           {resposta.observacao && (
@@ -412,7 +412,7 @@ export default function EmAnalisePage() {
     } else if (status === "aprovada") {
       return {
         label: "APROVADA",
-        color: "bg-gray-100 text-green-600",
+        color: "bg-gray-100 text-[#0F172A]",
         icon: CheckCircle
       }
     } else if (status === "rejeitada") {
@@ -430,6 +430,18 @@ export default function EmAnalisePage() {
     } else if (status === "cadastrado" || status === "cadastrada") {
       return {
         label: "CADASTRADO",
+        color: "bg-gray-100 text-[#0F172A]",
+        icon: CheckCircle
+      }
+    } else if (status === "devolvida") {
+      return {
+        label: "DEVOLVIDA",
+        color: "bg-gray-100 text-amber-600",
+        icon: RotateCcw
+      }
+    } else if (status === "transmitida") {
+      return {
+        label: "TRANSMITIDA",
         color: "bg-gray-100 text-green-600",
         icon: CheckCircle
       }
@@ -582,7 +594,7 @@ export default function EmAnalisePage() {
                 <Search className="h-3 w-3 sm:h-4 sm:w-4 text-gray-400 opacity-60" />
                 <h3 className="text-xs sm:text-sm font-bold text-gray-600 uppercase tracking-wider font-sans">Total em Análise</h3>
               </div>
-              <div className="text-xl sm:text-3xl font-bold text-[#168979] mt-1 sm:mt-2">{propostas.length}</div>
+              <div className="text-xl sm:text-3xl font-bold text-[#0F172A] mt-1 sm:mt-2">{propostas.length}</div>
             </div>
           </div>
           <div className="pb-4 sm:pb-6 px-3 sm:px-6">
@@ -596,7 +608,7 @@ export default function EmAnalisePage() {
                 <User className="h-3 w-3 sm:h-4 sm:w-4 text-gray-400 opacity-60" />
                 <h3 className="text-xs sm:text-sm font-bold text-gray-600 uppercase tracking-wider font-sans">Clientes Diretos</h3>
               </div>
-              <div className="text-xl sm:text-3xl font-bold text-[#168979] mt-1 sm:mt-2">
+              <div className="text-xl sm:text-3xl font-bold text-[#0F172A] mt-1 sm:mt-2">
                 {propostas.filter((p) => p.origem === "propostas").length}
               </div>
             </div>
@@ -612,7 +624,7 @@ export default function EmAnalisePage() {
                 <UserCheck className="h-3 w-3 sm:h-4 sm:w-4 text-gray-400 opacity-60" />
                 <h3 className="text-xs sm:text-sm font-bold text-gray-600 uppercase tracking-wider font-sans">Via Corretores</h3>
               </div>
-              <div className="text-xl sm:text-3xl font-bold text-[#168979] mt-1 sm:mt-2">
+              <div className="text-xl sm:text-3xl font-bold text-[#0F172A] mt-1 sm:mt-2">
                 {propostas.filter((p) => p.origem === "propostas_corretores").length}
               </div>
             </div>
@@ -753,7 +765,7 @@ export default function EmAnalisePage() {
                         <div className="flex space-x-1">
                           <button
                             onClick={() => aprovarProposta(proposta.id)}
-                            className="text-green-700 hover:text-green-900 bg-green-50 hover:bg-green-100 px-2 py-1 rounded transition-colors text-xs flex-1"
+                            className="text-[#0F172A] hover:text-[#1E293B] bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded transition-colors text-xs flex-1"
                           >
                             Aprovar
                           </button>
@@ -783,6 +795,67 @@ export default function EmAnalisePage() {
             </div>
           </div>
         )}
+
+        {/* Paginação */}
+        {totalPaginas > 1 && (
+          <div className="px-3 sm:px-4 py-3 border-t border-gray-200 bg-gray-50">
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+              <div className="text-xs sm:text-sm text-gray-700">
+                Página {paginaAtual} de {totalPaginas}
+              </div>
+              <div className="flex items-center space-x-1 sm:space-x-2 w-full sm:w-auto justify-center">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPaginaAtual(Math.max(1, paginaAtual - 1))}
+                  disabled={paginaAtual === 1}
+                  className="h-8 sm:h-9 text-xs sm:text-sm rounded-none"
+                >
+                  <ChevronLeft className="h-3 w-3 sm:h-4 sm:w-4" />
+                  <span className="ml-1">Anterior</span>
+                </Button>
+
+                <div className="flex space-x-1">
+                  {Array.from({ length: Math.min(5, totalPaginas) }, (_, i) => {
+                    let pageNum
+                    if (totalPaginas <= 5) {
+                      pageNum = i + 1
+                    } else if (paginaAtual <= 3) {
+                      pageNum = i + 1
+                    } else if (paginaAtual >= totalPaginas - 2) {
+                      pageNum = totalPaginas - 4 + i
+                    } else {
+                      pageNum = paginaAtual - 2 + i
+                    }
+
+                    return (
+                      <Button
+                        key={pageNum}
+                        variant={paginaAtual === pageNum ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => setPaginaAtual(pageNum)}
+                        className="h-8 sm:h-9 w-8 sm:w-9 p-0 text-xs sm:text-sm rounded-none"
+                      >
+                        {pageNum}
+                      </Button>
+                    )
+                  })}
+                </div>
+
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPaginaAtual(Math.min(totalPaginas, paginaAtual + 1))}
+                  disabled={paginaAtual === totalPaginas}
+                  className="h-8 sm:h-9 text-xs sm:text-sm rounded-none"
+                >
+                  <span className="mr-1">Próxima</span>
+                  <ChevronRight className="h-3 w-3 sm:h-4 sm:w-4" />
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Modal de Rejeição */}
@@ -806,7 +879,7 @@ export default function EmAnalisePage() {
                 <textarea
                   value={motivoRejeicao}
                   onChange={(e) => setMotivoRejeicao(e.target.value)}
-                  className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:border-[#168979] focus:ring-1 focus:ring-[#168979] text-sm sm:text-base"
+                  className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:border-[#0F172A] focus:ring-1 focus:ring-[#0F172A] text-sm sm:text-base"
                   rows={3}
                   placeholder="Informe o motivo da rejeição..."
                 />
@@ -840,7 +913,7 @@ export default function EmAnalisePage() {
         <div className="fixed inset-0 flex items-center justify-center z-[100] p-2 sm:p-4">
           <div className="bg-white rounded-xl sm:rounded-2xl shadow-2xl max-w-7xl w-full max-h-[95vh] sm:max-h-[90vh] overflow-hidden flex flex-col">
             {/* Header com Gradiente */}
-            <div className="bg-gradient-to-r from-[#168979] to-[#13786a] px-3 sm:px-6 py-3 sm:py-4">
+            <div className="bg-gradient-to-r from-[#0F172A] to-[#1E293B] px-3 sm:px-6 py-3 sm:py-4">
               <div className="flex items-center justify-between mb-3 sm:mb-4">
                 <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
                   <div className="p-1.5 sm:p-2 bg-white/20 rounded-lg flex-shrink-0">
@@ -881,14 +954,14 @@ export default function EmAnalisePage() {
                     <TabsList className="inline-flex h-auto w-full bg-transparent p-0 gap-0 sm:gap-1">
                       <TabsTrigger 
                         value="dados" 
-                        className="flex-1 data-[state=active]:bg-transparent data-[state=active]:text-[#168979] data-[state=active]:border-b-2 data-[state=active]:border-[#168979] data-[state=inactive]:text-gray-500 data-[state=inactive]:border-b-2 data-[state=inactive]:border-transparent hover:text-gray-700 hover:border-gray-300 text-xs sm:text-sm px-3 sm:px-4 py-2.5 sm:py-3 rounded-none transition-all font-medium border-b-2 border-transparent"
+                        className="flex-1 data-[state=active]:bg-transparent data-[state=active]:text-[#0F172A] data-[state=active]:border-b-2 data-[state=active]:border-[#0F172A] data-[state=inactive]:text-gray-500 data-[state=inactive]:border-b-2 data-[state=inactive]:border-transparent hover:text-gray-700 hover:border-gray-300 text-xs sm:text-sm px-3 sm:px-4 py-2.5 sm:py-3 rounded-none transition-all font-medium border-b-2 border-transparent"
                       >
                         <span className="hidden sm:inline">Dados Pessoais</span>
                         <span className="sm:hidden">Dados</span>
                       </TabsTrigger>
                       <TabsTrigger 
                         value="saude" 
-                        className="flex-1 data-[state=active]:bg-transparent data-[state=active]:text-[#168979] data-[state=active]:border-b-2 data-[state=active]:border-[#168979] data-[state=inactive]:text-gray-500 data-[state=inactive]:border-b-2 data-[state=inactive]:border-transparent hover:text-gray-700 hover:border-gray-300 text-xs sm:text-sm px-3 sm:px-4 py-2.5 sm:py-3 rounded-none transition-all font-medium border-b-2 border-transparent"
+                        className="flex-1 data-[state=active]:bg-transparent data-[state=active]:text-[#0F172A] data-[state=active]:border-b-2 data-[state=active]:border-[#0F172A] data-[state=inactive]:text-gray-500 data-[state=inactive]:border-b-2 data-[state=inactive]:border-transparent hover:text-gray-700 hover:border-gray-300 text-xs sm:text-sm px-3 sm:px-4 py-2.5 sm:py-3 rounded-none transition-all font-medium border-b-2 border-transparent"
                       >
                         <span className="hidden sm:inline">Declaração de Saúde</span>
                         <span className="sm:hidden">Saúde</span>
@@ -900,7 +973,7 @@ export default function EmAnalisePage() {
                     {/* Dados do Cliente */}
                     <Card className="border-2 border-gray-200 shadow-sm">
                       <CardHeader className="bg-gradient-to-r from-blue-50 to-blue-100/50 border-b border-gray-200 px-3 sm:px-6 py-3 sm:py-4">
-                        <CardTitle className="flex items-center gap-2 text-[#168979] text-base sm:text-lg">
+                        <CardTitle className="flex items-center gap-2 text-[#0F172A] text-base sm:text-lg">
                           <User className="h-4 w-4 sm:h-5 sm:w-5" />
                           Dados do Cliente
                         </CardTitle>
@@ -923,7 +996,7 @@ export default function EmAnalisePage() {
                           </div>
                           <div>
                             <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">Valor</label>
-                            <p className="text-sm sm:text-base font-bold text-[#168979]">
+                            <p className="text-sm sm:text-base font-bold text-[#0F172A]">
                               {propostaDetalhada.valor ? formatarMoeda(propostaDetalhada.valor) : "Não informado"}
                             </p>
                           </div>
@@ -935,7 +1008,7 @@ export default function EmAnalisePage() {
                     <div className="flex flex-col sm:flex-row justify-end gap-2 sm:gap-3 pt-4 border-t border-gray-200">
                       <Button
                         onClick={() => aprovarProposta(propostaDetalhada.id)}
-                        className="bg-green-600 hover:bg-green-700 text-white w-full sm:w-auto"
+                        className="bg-[#0F172A] hover:bg-[#1E293B] text-white w-full sm:w-auto"
                       >
                         <CheckCircle className="h-4 w-4 mr-2" />
                         Aprovar

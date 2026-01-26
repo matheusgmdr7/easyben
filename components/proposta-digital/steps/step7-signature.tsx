@@ -301,7 +301,7 @@ export default function Step7Signature({ onNext, onPrev, onFinalizar, formData, 
       <Card className="bg-gradient-to-br from-white to-gray-50 border border-gray-200 shadow-sm">
         <CardHeader className="pb-4 pt-6 bg-gray-50 rounded-t-lg">
           <CardTitle className="flex items-center gap-3 text-lg sm:text-xl font-bold text-gray-900 font-sans">
-            <div className="w-10 h-10 bg-[#168979] rounded-lg flex items-center justify-center">
+            <div className="w-10 h-10 bg-[#0F172A] rounded-lg flex items-center justify-center">
               <PenTool className="h-5 w-5 text-white" />
             </div>
             Assinatura Digital
@@ -443,18 +443,18 @@ export default function Step7Signature({ onNext, onPrev, onFinalizar, formData, 
                 </Dialog>
               </>
             ) : (
-              <div className="border-2 border-dashed border-gray-300 rounded-lg bg-white shadow-sm hover:border-[#168979] transition-colors">
+              <div className="border-2 border-dashed border-gray-300 rounded-lg bg-white shadow-sm hover:border-[#0F172A] transition-colors">
                 <div className="p-4 sm:p-6">
                   <div className="text-center mb-4">
                     <div className="flex items-center justify-center gap-2 text-sm font-medium text-gray-700">
                       {isMobile ? (
                         <>
-                          <Smartphone className="h-4 w-4 text-[#168979]" />
+                          <Smartphone className="h-4 w-4 text-[#0F172A]" />
                           <span>Assine com o dedo na área abaixo</span>
                         </>
                       ) : (
                         <>
-                          <Mouse className="h-4 w-4 text-[#168979]" />
+                          <Mouse className="h-4 w-4 text-[#0F172A]" />
                           <span>Assine com o mouse na área abaixo</span>
                         </>
                       )}
@@ -495,7 +495,7 @@ export default function Step7Signature({ onNext, onPrev, onFinalizar, formData, 
                     </Button>
                     
                     {hasSignature && (
-                      <div className="flex items-center gap-2 text-sm text-green-600 font-medium">
+                      <div className="flex items-center gap-2 text-sm text-[#0F172A] font-medium">
                         <CheckCircle className="h-4 w-4" />
                         Assinatura capturada
                       </div>
@@ -568,7 +568,7 @@ export default function Step7Signature({ onNext, onPrev, onFinalizar, formData, 
           <Button
             onClick={handleSubmit}
             disabled={!hasSignature || !declaracaoAceita || isSubmitting}
-            className="w-full sm:w-auto bg-[#168979] hover:bg-[#13786a] text-white font-bold btn-corporate shadow-corporate disabled:opacity-50"
+            className="w-full sm:w-auto bg-[#0F172A] hover:bg-[#1E293B] text-white font-bold btn-corporate shadow-corporate disabled:opacity-50"
           >
             {isSubmitting ? (
               <>

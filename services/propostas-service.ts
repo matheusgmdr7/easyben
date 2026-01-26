@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase"
+import { getCurrentTenantId } from "@/lib/tenant-query-helper"
 
 // CORREÇÃO: Usar a mesma tabela que "Propostas Digitais" usa (que está funcionando corretamente)
 const TABELA_PROPOSTAS = "propostas" // Mudança: era "propostas_corretores", agora é "propostas"
@@ -9,8 +10,16 @@ export async function buscarPropostas() {
     console.log("=".repeat(50))
     console.log("📋 Tabela configurada:", TABELA_PROPOSTAS)
 
-    // Buscar da mesma tabela que "Propostas Digitais" usa
-    const { data, error } = await supabase.from(TABELA_PROPOSTAS).select("*").order("created_at", { ascending: false })
+    // Obter tenant_id atual
+    const tenantId = await getCurrentTenantId()
+    console.log("🏢 Tenant ID:", tenantId)
+
+    // Buscar da mesma tabela que "Propostas Digitais" usa, filtrando por tenant
+    const { data, error } = await supabase
+      .from(TABELA_PROPOSTAS)
+      .select("*")
+      .eq("tenant_id", tenantId)
+      .order("created_at", { ascending: false })
 
     if (error) {
       console.error("❌ Erro ao buscar propostas:", error)
@@ -50,9 +59,12 @@ export async function buscarPropostas() {
 // Função para buscar propostas de corretores (mantida para compatibilidade)
 export async function buscarPropostasCorretores() {
   try {
+    const tenantId = await getCurrentTenantId()
+    
     const { data, error } = await supabase
       .from("propostas_corretores")
       .select("*")
+      .eq("tenant_id", tenantId)
       .order("created_at", { ascending: false })
 
     if (error) {
@@ -159,8 +171,16 @@ export async function buscarPropostaCompleta(propostaId: string) {
     console.log("=".repeat(50))
     console.log("📋 Proposta ID:", propostaId)
 
-    // Buscar proposta principal
-    const { data: proposta, error } = await supabase.from(TABELA_PROPOSTAS).select("*").eq("id", propostaId).single()
+    // Obter tenant_id atual
+    const tenantId = await getCurrentTenantId()
+    
+    // Buscar proposta principal, filtrando por tenant
+    const { data: proposta, error } = await supabase
+      .from(TABELA_PROPOSTAS)
+      .select("*")
+      .eq("id", propostaId)
+      .eq("tenant_id", tenantId)
+      .single()
 
     if (error) {
       console.error("❌ Erro ao buscar proposta:", error)
@@ -313,12 +333,18 @@ export async function buscarQuestionarioSaudeDependentes(propostaId: string) {
 
 export async function atualizarStatusProposta(id: string, status: string, motivo?: string) {
   try {
+    const tenantId = await getCurrentTenantId()
+    
     const updateData: any = { status }
     if (motivo) {
       updateData.motivo_rejeicao = motivo
     }
 
-    const { data, error } = await supabase.from(TABELA_PROPOSTAS).update(updateData).eq("id", id)
+    const { data, error } = await supabase
+      .from(TABELA_PROPOSTAS)
+      .update(updateData)
+      .eq("id", id)
+      .eq("tenant_id", tenantId) // Garantir que só atualiza do tenant correto
 
     if (error) {
       console.error("Erro ao atualizar status da proposta:", error)
@@ -355,7 +381,14 @@ export async function enviarValidacaoEmail(propostaId: string, emailCliente: str
     if (!nomeCliente || nomeCliente.trim() === "") {
       console.log("⚠️ Nome do cliente vazio, buscando dados completos da proposta...")
 
-      const { data: proposta, error } = await supabase.from(TABELA_PROPOSTAS).select("*").eq("id", propostaId).single()
+      const tenantId = await getCurrentTenantId()
+      
+      const { data: proposta, error } = await supabase
+        .from(TABELA_PROPOSTAS)
+        .select("*")
+        .eq("id", propostaId)
+        .eq("tenant_id", tenantId)
+        .single()
 
       if (error) {
         console.error("❌ Erro ao buscar proposta:", error)
@@ -413,7 +446,13 @@ export async function enviarValidacaoEmail(propostaId: string, emailCliente: str
         ultimo_erro_email: null,
       }
 
-      const { error } = await supabase.from(TABELA_PROPOSTAS).update(updateData).eq("id", propostaId)
+      const tenantId = await getCurrentTenantId()
+      
+      const { error } = await supabase
+        .from(TABELA_PROPOSTAS)
+        .update(updateData)
+        .eq("id", propostaId)
+        .eq("tenant_id", tenantId) // Garantir que só atualiza do tenant correto
 
       if (error) {
         console.error("❌ Erro ao atualizar status da proposta:", error)

@@ -159,7 +159,7 @@ export default function LeadsPage() {
             <h1 className="text-2xl font-bold text-gray-900 tracking-tight font-sans">Gerenciamento de Leads</h1>
             <p className="text-gray-600 mt-1 font-medium">Gerencie e acompanhe todos os leads</p>
           </div>
-          <Button onClick={exportarParaExcel} className="bg-[#168979] hover:bg-[#13786a] text-white font-bold px-6 py-2 btn-corporate shadow-corporate">
+          <Button onClick={exportarParaExcel} className="bg-[#0F172A] hover:bg-[#1E293B] text-white font-bold px-6 py-2 btn-corporate shadow-corporate">
             <Download className="h-4 w-4 mr-2" />
             Exportar Excel
           </Button>
@@ -175,7 +175,7 @@ export default function LeadsPage() {
                 <Users className="h-3 w-3 sm:h-4 sm:w-4 text-gray-400 opacity-60" />
                 <h3 className="text-xs sm:text-sm font-bold text-gray-600 uppercase tracking-wider font-sans">Total de Leads</h3>
               </div>
-              <div className="text-xl sm:text-3xl font-bold text-[#168979] mt-1 sm:mt-2">{leads.length}</div>
+              <div className="text-xl sm:text-3xl font-bold text-[#0F172A] mt-1 sm:mt-2">{leads.length}</div>
             </div>
           </div>
           <div className="pb-4 sm:pb-6 px-3 sm:px-6">
@@ -190,7 +190,7 @@ export default function LeadsPage() {
                 <Mail className="h-3 w-3 sm:h-4 sm:w-4 text-gray-400 opacity-60" />
                 <h3 className="text-xs sm:text-sm font-bold text-gray-600 uppercase tracking-wider font-sans">Novos</h3>
               </div>
-              <div className="text-xl sm:text-3xl font-bold text-[#168979] mt-1 sm:mt-2">{leads.filter((l) => l.status === "Novo").length}</div>
+              <div className="text-xl sm:text-3xl font-bold text-[#0F172A] mt-1 sm:mt-2">{leads.filter((l) => l.status === "Novo").length}</div>
             </div>
           </div>
           <div className="pb-4 sm:pb-6 px-3 sm:px-6">
@@ -205,7 +205,7 @@ export default function LeadsPage() {
                 <Phone className="h-3 w-3 sm:h-4 sm:w-4 text-gray-400 opacity-60" />
                 <h3 className="text-xs sm:text-sm font-bold text-gray-600 uppercase tracking-wider font-sans">Em Contato</h3>
               </div>
-              <div className="text-xl sm:text-3xl font-bold text-[#168979] mt-1 sm:mt-2">{leads.filter((l) => l.status === "Em contato").length}</div>
+              <div className="text-xl sm:text-3xl font-bold text-[#0F172A] mt-1 sm:mt-2">{leads.filter((l) => l.status === "Em contato").length}</div>
             </div>
           </div>
           <div className="pb-4 sm:pb-6 px-3 sm:px-6">
@@ -220,7 +220,7 @@ export default function LeadsPage() {
                 <CheckCircle className="h-3 w-3 sm:h-4 sm:w-4 text-gray-400 opacity-60" />
                 <h3 className="text-xs sm:text-sm font-bold text-gray-600 uppercase tracking-wider font-sans">Convertidos</h3>
               </div>
-              <div className="text-xl sm:text-3xl font-bold text-[#168979] mt-1 sm:mt-2">{leads.filter((l) => l.status === "Convertido").length}</div>
+              <div className="text-xl sm:text-3xl font-bold text-[#0F172A] mt-1 sm:mt-2">{leads.filter((l) => l.status === "Convertido").length}</div>
             </div>
           </div>
           <div className="pb-4 sm:pb-6 px-3 sm:px-6">
@@ -448,21 +448,21 @@ export default function LeadsPage() {
 
         {/* Paginação */}
         {totalPaginas > 1 && (
-          <div className="px-4 py-3 border-t border-gray-200 bg-gray-50">
-            <div className="flex items-center justify-between">
-              <div className="text-sm text-gray-700">
+          <div className="px-3 sm:px-4 py-3 border-t border-gray-200 bg-gray-50">
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+              <div className="text-xs sm:text-sm text-gray-700">
                 Página {paginaAtual} de {totalPaginas}
               </div>
-              <div className="flex items-center space-x-2">
+              <div className="flex items-center space-x-1 sm:space-x-2 w-full sm:w-auto justify-center">
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={() => setPaginaAtual(Math.max(1, paginaAtual - 1))}
                   disabled={paginaAtual === 1}
-                  className="h-8"
+                  className="h-8 sm:h-9 text-xs sm:text-sm rounded-none"
                 >
-                  <ChevronLeft className="h-4 w-4" />
-                  Anterior
+                  <ChevronLeft className="h-3 w-3 sm:h-4 sm:w-4" />
+                  <span className="ml-1">Anterior</span>
                 </Button>
 
                 <div className="flex space-x-1">
@@ -484,7 +484,7 @@ export default function LeadsPage() {
                         variant={paginaAtual === pageNum ? "default" : "outline"}
                         size="sm"
                         onClick={() => setPaginaAtual(pageNum)}
-                        className="h-8 w-8 p-0"
+                        className="h-8 sm:h-9 w-8 sm:w-9 p-0 text-xs sm:text-sm rounded-none"
                       >
                         {pageNum}
                       </Button>
@@ -497,10 +497,10 @@ export default function LeadsPage() {
                   size="sm"
                   onClick={() => setPaginaAtual(Math.min(totalPaginas, paginaAtual + 1))}
                   disabled={paginaAtual === totalPaginas}
-                  className="h-8"
+                  className="h-8 sm:h-9 text-xs sm:text-sm rounded-none"
                 >
-                  Próxima
-                  <ChevronRight className="h-4 w-4" />
+                  <span className="mr-1">Próxima</span>
+                  <ChevronRight className="h-3 w-3 sm:h-4 sm:w-4" />
                 </Button>
               </div>
             </div>
@@ -532,7 +532,7 @@ export default function LeadsPage() {
                           : leadSelecionado.status === "Em contato"
                             ? "bg-yellow-100 text-yellow-800"
                             : leadSelecionado.status === "Convertido"
-                              ? "bg-green-100 text-green-800"
+                              ? "bg-[#7BD9F6] bg-opacity-30 text-[#0F172A]"
                               : "bg-red-100 text-red-800"
                       }`}
                     >

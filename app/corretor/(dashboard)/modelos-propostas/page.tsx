@@ -85,7 +85,7 @@ export default function ModelosPropostasPage() {
                 <p className="text-sm text-gray-500">Produto: {modelo.produto_nome}</p>
               </CardContent>
               {modelo.arquivo_url && (
-                <Button asChild className="mt-auto bg-[#168979] hover:bg-[#13786a]">
+                <Button asChild className="mt-auto bg-[#0F172A] hover:bg-[#1E293B]">
                   <a href={modelo.arquivo_url} target="_blank" rel="noopener noreferrer">
                     Visualizar Modelo
                   </a>

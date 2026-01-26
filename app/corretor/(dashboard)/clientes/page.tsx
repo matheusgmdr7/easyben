@@ -211,7 +211,7 @@ export default function ClientesPage() {
           </div>
           <Button 
             onClick={() => (window.location.href = "/corretor/propostas/nova")} 
-            className="bg-[#168979] hover:bg-[#13786a] text-white btn-corporate shadow-corporate"
+            className="bg-[#0F172A] hover:bg-[#1E293B] text-white btn-corporate shadow-corporate"
           >
           <PlusCircle className="mr-2 h-4 w-4" />
           Nova Proposta
@@ -225,7 +225,7 @@ export default function ClientesPage() {
           <CardHeader className="flex flex-row items-center justify-between pb-3 pt-6">
             <div>
               <CardTitle className="text-sm font-bold text-gray-600 uppercase tracking-wider font-sans">Total de Clientes</CardTitle>
-              <div className="text-3xl font-bold text-[#168979] mt-2">{clientes.length}</div>
+              <div className="text-3xl font-bold text-[#0F172A] mt-2">{clientes.length}</div>
             </div>
             <div className="w-14 h-14 bg-gray-100 rounded-xl flex items-center justify-center">
               <Users className="h-7 w-7 text-gray-600" />
@@ -240,7 +240,7 @@ export default function ClientesPage() {
           <CardHeader className="flex flex-row items-center justify-between pb-3 pt-6">
             <div>
               <CardTitle className="text-sm font-bold text-gray-600 uppercase tracking-wider font-sans">Clientes Ativos</CardTitle>
-              <div className="text-3xl font-bold text-[#168979] mt-2">
+              <div className="text-3xl font-bold text-[#0F172A] mt-2">
               {clientes.filter((c) => c.status === "ativo").length}
               </div>
             </div>
@@ -257,7 +257,7 @@ export default function ClientesPage() {
           <CardHeader className="flex flex-row items-center justify-between pb-3 pt-6">
             <div>
               <CardTitle className="text-sm font-bold text-gray-600 uppercase tracking-wider font-sans">Propostas Enviadas</CardTitle>
-              <div className="text-3xl font-bold text-[#168979] mt-2">
+              <div className="text-3xl font-bold text-[#0F172A] mt-2">
               {clientes.reduce((acc, cliente) => acc + cliente.propostas_count, 0)}
               </div>
             </div>
@@ -358,7 +358,7 @@ export default function ClientesPage() {
                         <Badge
                           className={`corporate-rounded font-semibold ${
                             cliente.status === "ativo"
-                              ? "bg-green-100 text-green-800 hover:bg-green-100"
+                              ? "bg-[#7BD9F6] bg-opacity-30 text-[#0F172A] hover:bg-[#7BD9F6] bg-opacity-30"
                                 : "bg-yellow-100 text-yellow-800 hover:bg-yellow-100"
                           }`}
                         >
@@ -399,7 +399,7 @@ export default function ClientesPage() {
                         <Badge
                           className={`corporate-rounded font-semibold whitespace-nowrap ${
                             cliente.status === "ativo"
-                              ? "bg-green-100 text-green-800"
+                              ? "bg-[#7BD9F6] bg-opacity-30 text-[#0F172A]"
                               : "bg-yellow-100 text-yellow-800"
                           }`}
                         >
@@ -433,7 +433,7 @@ export default function ClientesPage() {
                           <FileText className="h-4 w-4 text-gray-400" />
                           <span className="text-xs text-gray-500 font-medium">PROPOSTAS ENVIADAS</span>
                         </div>
-                        <div className="text-2xl font-bold text-[#168979]">
+                        <div className="text-2xl font-bold text-[#0F172A]">
                           {cliente.propostas_aprovadas} / {cliente.propostas_count}
                         </div>
                         <p className="text-xs text-gray-400 mt-1">Aprovadas / Total</p>

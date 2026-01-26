@@ -25,7 +25,9 @@ import {
   Calendar,
   XCircle,
   Building,
-  ArrowUpDown
+  ArrowUpDown,
+  ChevronLeft,
+  ChevronRight
 } from "lucide-react"
 import {
   Select,
@@ -325,7 +327,7 @@ export default function FinanceiroPage() {
   const getStatusBadge = (status: string) => {
     const badges = {
       pendente: { bg: "bg-yellow-100 text-yellow-800", icon: Clock },
-      paga: { bg: "bg-green-100 text-green-800", icon: CheckCircle },
+      paga: { bg: "bg-[#7BD9F6] bg-opacity-30 text-[#0F172A]", icon: CheckCircle },
       atrasada: { bg: "bg-red-100 text-red-800", icon: AlertCircle },
       cancelada: { bg: "bg-gray-100 text-gray-800", icon: FileText },
       parcialmente_paga: { bg: "bg-blue-100 text-blue-800", icon: DollarSign },
@@ -348,7 +350,7 @@ export default function FinanceiroPage() {
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold text-gray-900 tracking-tight font-sans flex items-center gap-2">
-              <Wallet className="h-6 w-6 text-[#168979]" />
+              <Wallet className="h-6 w-6 text-[#0F172A]" />
               Financeiro
             </h1>
             <p className="text-gray-600 mt-1 font-medium">
@@ -358,7 +360,7 @@ export default function FinanceiroPage() {
           <div className="flex flex-wrap gap-2">
             <Button
               onClick={() => setShowModalGerar(true)}
-              className="bg-[#168979] hover:bg-[#13786a] text-white font-bold btn-corporate shadow-corporate flex items-center gap-2"
+              className="bg-[#0F172A] hover:bg-[#1E293B] text-white font-bold btn-corporate shadow-corporate flex items-center gap-2"
             >
               <Plus className="h-4 w-4" />
               Gerar Faturas
@@ -435,7 +437,7 @@ export default function FinanceiroPage() {
                     <CheckCircle className="h-3 w-3 sm:h-4 sm:w-4 text-gray-400 opacity-60" />
                     <h3 className="text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide">Pagas</h3>
                   </div>
-                  <p className="text-2xl sm:text-3xl font-bold text-green-600 mb-1">
+                  <p className="text-2xl sm:text-3xl font-bold text-[#0F172A] mb-1">
                     {estatisticas.total_pagas}
                   </p>
                   <p className="text-xs sm:text-sm text-gray-600">
@@ -455,7 +457,7 @@ export default function FinanceiroPage() {
                     <DollarSign className="h-3 w-3 sm:h-4 sm:w-4 text-gray-400 opacity-60" />
                     <h3 className="text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide">Em Aberto</h3>
                   </div>
-                  <p className="text-xl sm:text-2xl font-bold text-[#168979] mb-1">
+                  <p className="text-xl sm:text-2xl font-bold text-[#0F172A] mb-1">
                     R$ {estatisticas.valor_em_aberto.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
                   </p>
                   <p className="text-xs sm:text-sm text-gray-600">
@@ -487,7 +489,7 @@ export default function FinanceiroPage() {
                 setDataInicioFiltro(primeiroDia.toISOString().split('T')[0])
                 setDataFimFiltro(ultimoDia.toISOString().split('T')[0])
               }}
-              className="h-8 text-xs px-2 sm:px-3 border-[#168979] text-[#168979] hover:bg-[#168979] hover:text-white"
+              className="h-8 text-xs px-2 sm:px-3 border-[#0F172A] text-[#0F172A] hover:bg-[#0F172A] hover:text-white"
             >
               Este Mês
             </Button>
@@ -501,7 +503,7 @@ export default function FinanceiroPage() {
                 setDataInicioFiltro(mesAnterior.toISOString().split('T')[0])
                 setDataFimFiltro(ultimoDiaMesAnterior.toISOString().split('T')[0])
               }}
-              className="h-8 text-xs px-2 sm:px-3 border-[#168979] text-[#168979] hover:bg-[#168979] hover:text-white"
+              className="h-8 text-xs px-2 sm:px-3 border-[#0F172A] text-[#0F172A] hover:bg-[#0F172A] hover:text-white"
             >
               Mês Anterior
             </Button>
@@ -514,7 +516,7 @@ export default function FinanceiroPage() {
                 setDataInicioFiltro(primeiroDiaAno.toISOString().split('T')[0])
                 setDataFimFiltro(hoje.toISOString().split('T')[0])
               }}
-              className="h-8 text-xs px-2 sm:px-3 border-[#168979] text-[#168979] hover:bg-[#168979] hover:text-white"
+              className="h-8 text-xs px-2 sm:px-3 border-[#0F172A] text-[#0F172A] hover:bg-[#0F172A] hover:text-white"
             >
               Ano Atual
             </Button>
@@ -541,7 +543,7 @@ export default function FinanceiroPage() {
               value={administradoraSelecionada}
               onValueChange={setAdministradoraSelecionada}
             >
-              <SelectTrigger className="h-9 text-sm border-2 border-gray-300 focus:border-[#168979]">
+              <SelectTrigger className="h-9 text-sm border-2 border-gray-300 focus:border-[#0F172A]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -563,7 +565,7 @@ export default function FinanceiroPage() {
                 type="date"
                 value={dataInicioFiltro}
                 onChange={(e) => setDataInicioFiltro(e.target.value)}
-                className="h-9 text-sm pl-8 border-2 border-gray-300 focus:border-[#168979]"
+                className="h-9 text-sm pl-8 border-2 border-gray-300 focus:border-[#0F172A]"
               />
             </div>
           </div>
@@ -577,7 +579,7 @@ export default function FinanceiroPage() {
                 type="date"
                 value={dataFimFiltro}
                 onChange={(e) => setDataFimFiltro(e.target.value)}
-                className="h-9 text-sm pl-8 border-2 border-gray-300 focus:border-[#168979]"
+                className="h-9 text-sm pl-8 border-2 border-gray-300 focus:border-[#0F172A]"
               />
             </div>
           </div>
@@ -586,7 +588,7 @@ export default function FinanceiroPage() {
               Status
             </label>
             <Select value={statusFiltro} onValueChange={setStatusFiltro}>
-              <SelectTrigger className="h-9 text-sm border-2 border-gray-300 focus:border-[#168979]">
+              <SelectTrigger className="h-9 text-sm border-2 border-gray-300 focus:border-[#0F172A]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -617,7 +619,7 @@ export default function FinanceiroPage() {
                   setCurrentPage(1) // Reset para primeira página ao mudar ordenação
                 }}
               >
-                <SelectTrigger className="h-9 w-[200px] text-sm border-2 border-gray-300 focus:border-[#168979]">
+                <SelectTrigger className="h-9 w-[200px] text-sm border-2 border-gray-300 focus:border-[#0F172A]">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -692,7 +694,7 @@ export default function FinanceiroPage() {
                           </div>
                           <div>
                             <p className="text-gray-600">Valor Pago</p>
-                            <p className="font-medium text-green-600">
+                            <p className="font-medium text-[#0F172A]">
                               R$ {fatura.pagamento_valor?.toLocaleString("pt-BR", { minimumFractionDigits: 2 }) || "0,00"}
                             </p>
                           </div>
@@ -717,7 +719,7 @@ export default function FinanceiroPage() {
                         <Button
                           onClick={() => handleRegistrarPagamento(fatura.id)}
                           size="sm"
-                          className="bg-green-600 hover:bg-green-700 text-white"
+                          className="bg-[#0F172A] hover:bg-[#0F172A] text-white"
                         >
                           <CheckCircle className="h-4 w-4 mr-1" />
                           Registrar Pagamento
@@ -740,116 +742,65 @@ export default function FinanceiroPage() {
             </div>
 
             {/* Paginação */}
-            {totalPages > 1 && (() => {
-              const paginaAtual = currentPage
-              const totalPaginas = totalPages
-              const paginasParaMostrar: (number | string)[] = []
-              
-              // Sempre mostrar primeira página
-              paginasParaMostrar.push(1)
-              
-              if (totalPaginas <= 7) {
-                // Se tiver 7 ou menos páginas, mostrar todas
-                for (let i = 2; i <= totalPaginas; i++) {
-                  paginasParaMostrar.push(i)
-                }
-              } else {
-                // Lógica para mostrar páginas dinamicamente
-                if (paginaAtual <= 4) {
-                  // Páginas iniciais: 1, 2, 3, 4, ..., última
-                  for (let i = 2; i <= 4; i++) {
-                    paginasParaMostrar.push(i)
-                  }
-                  paginasParaMostrar.push('...')
-                  paginasParaMostrar.push(totalPaginas)
-                } else if (paginaAtual >= totalPaginas - 2) {
-                  // Páginas finais: 1, ..., penúltima-2, penúltima-1, penúltima, última
-                  paginasParaMostrar.push('...')
-                  for (let i = totalPaginas - 3; i <= totalPaginas; i++) {
-                    paginasParaMostrar.push(i)
-                  }
-                } else {
-                  // Páginas do meio: 1, ..., atual-1, atual, atual+1, ..., última
-                  paginasParaMostrar.push('...')
-                  for (let i = paginaAtual - 1; i <= paginaAtual + 1; i++) {
-                    paginasParaMostrar.push(i)
-                  }
-                  paginasParaMostrar.push('...')
-                  paginasParaMostrar.push(totalPaginas)
-                }
-              }
-              
-              return (
-                <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mt-6 pt-4 border-t border-gray-200">
-                  <div className="text-xs sm:text-sm text-gray-600 text-center sm:text-left">
-                    Mostrando <span className="font-semibold text-gray-800">
-                      {((currentPage - 1) * itemsPerPage) + 1}
-                    </span>
-                    {' '}a{' '}
-                    <span className="font-semibold text-gray-800">
-                      {Math.min(currentPage * itemsPerPage, totalFaturas)}
-                    </span>
-                    {' '}de{' '}
-                    <span className="font-semibold text-gray-800">
-                      {totalFaturas}
-                    </span>
-                    {' '}faturas
+            {totalPages > 1 && (
+              <div className="px-3 sm:px-4 py-3 border-t border-gray-200 bg-gray-50 mt-6">
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+                  <div className="text-xs sm:text-sm text-gray-700">
+                    Página {currentPage} de {totalPages}
                   </div>
-                  
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center space-x-1 sm:space-x-2 w-full sm:w-auto justify-center">
                     <Button
-                      onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                      disabled={currentPage === 1}
                       variant="outline"
                       size="sm"
-                      className="h-8 px-3 text-xs sm:text-sm"
+                      onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                      disabled={currentPage === 1}
+                      className="h-8 sm:h-9 text-xs sm:text-sm rounded-none"
                     >
-                      <span className="hidden sm:inline">Anterior</span>
-                      <span className="sm:hidden">Ant</span>
+                      <ChevronLeft className="h-3 w-3 sm:h-4 sm:w-4" />
+                      <span className="ml-1">Anterior</span>
                     </Button>
-                    
-                    <div className="flex items-center gap-1">
-                      {paginasParaMostrar.map((page, index) => {
-                        if (page === '...') {
-                          return (
-                            <span key={`ellipsis-${index}`} className="px-2 text-gray-500">
-                              ...
-                            </span>
-                          )
+
+                    <div className="flex space-x-1">
+                      {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                        let pageNum
+                        if (totalPages <= 5) {
+                          pageNum = i + 1
+                        } else if (currentPage <= 3) {
+                          pageNum = i + 1
+                        } else if (currentPage >= totalPages - 2) {
+                          pageNum = totalPages - 4 + i
+                        } else {
+                          pageNum = currentPage - 2 + i
                         }
-                        
+
                         return (
                           <Button
-                            key={page}
-                            onClick={() => setCurrentPage(page as number)}
-                            variant={currentPage === page ? "default" : "outline"}
+                            key={pageNum}
+                            variant={currentPage === pageNum ? "default" : "outline"}
                             size="sm"
-                            className={`w-8 h-8 p-0 text-xs sm:text-sm ${
-                              currentPage === page 
-                                ? "bg-[#168979] hover:bg-[#13786a] text-white border-[#168979]" 
-                                : ""
-                            }`}
+                            onClick={() => setCurrentPage(pageNum)}
+                            className="h-8 sm:h-9 w-8 sm:w-9 p-0 text-xs sm:text-sm rounded-none"
                           >
-                            {page}
+                            {pageNum}
                           </Button>
                         )
                       })}
                     </div>
-                    
+
                     <Button
-                      onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                      disabled={currentPage === totalPages}
                       variant="outline"
                       size="sm"
-                      className="h-8 px-3 text-xs sm:text-sm"
+                      onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                      disabled={currentPage === totalPages}
+                      className="h-8 sm:h-9 text-xs sm:text-sm rounded-none"
                     >
-                      <span className="hidden sm:inline">Próxima</span>
-                      <span className="sm:hidden">Próx</span>
+                      <span className="mr-1">Próxima</span>
+                      <ChevronRight className="h-3 w-3 sm:h-4 sm:w-4" />
                     </Button>
                   </div>
                 </div>
-              )
-            })()}
+              </div>
+            )}
 
           {faturas.length === 0 && (
             <div className="py-12 text-center">
@@ -869,7 +820,7 @@ export default function FinanceiroPage() {
         <div className="fixed inset-0 flex items-center justify-center z-[100] p-4">
           <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col">
             {/* Header */}
-            <div className="bg-gradient-to-r from-[#168979] to-[#13786a] px-6 py-4">
+            <div className="bg-gradient-to-r from-[#0F172A] to-[#1E293B] px-6 py-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <div className="p-2 bg-white/20 rounded-lg">
@@ -906,7 +857,7 @@ export default function FinanceiroPage() {
                     Administradora <span className="text-red-500">*</span>
                   </label>
                   <Select value={admGerarFaturas} onValueChange={setAdmGerarFaturas}>
-                    <SelectTrigger className="h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg">
+                    <SelectTrigger className="h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg">
                       <SelectValue placeholder="Selecione a administradora..." />
                     </SelectTrigger>
                     <SelectContent>
@@ -933,7 +884,7 @@ export default function FinanceiroPage() {
                       type="month"
                       value={referenciaGerar}
                       onChange={(e) => setReferenciaGerar(e.target.value)}
-                      className="h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg"
+                      className="h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg"
                       placeholder="2025-01"
                     />
                     <p className="text-xs text-gray-500 flex items-center gap-1">
@@ -953,7 +904,7 @@ export default function FinanceiroPage() {
                       max="31"
                       value={diaVencimento}
                       onChange={(e) => setDiaVencimento(e.target.value)}
-                      className="h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg"
+                      className="h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg"
                       placeholder="10"
                     />
                     <p className="text-xs text-gray-500 flex items-center gap-1">
@@ -969,7 +920,7 @@ export default function FinanceiroPage() {
                     Tipo de Cobrança <span className="text-red-500">*</span>
                   </label>
                   <Select value={tipoCobranca} onValueChange={(value: any) => setTipoCobranca(value)}>
-                    <SelectTrigger className="h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg">
+                    <SelectTrigger className="h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -982,7 +933,7 @@ export default function FinanceiroPage() {
                       </SelectItem>
                       <SelectItem value="PIX" className="py-3">
                         <div className="flex items-center gap-3">
-                          <CheckCircle className="h-4 w-4 text-green-600" />
+                          <CheckCircle className="h-4 w-4 text-[#0F172A]" />
                           <span className="font-medium">PIX</span>
                           <span className="text-xs text-gray-500 ml-auto">Instantâneo</span>
                         </div>
@@ -1007,7 +958,7 @@ export default function FinanceiroPage() {
                   <Input
                     value={descricaoFatura}
                     onChange={(e) => setDescricaoFatura(e.target.value)}
-                    className="h-12 border-2 border-gray-200 focus:border-[#168979] rounded-lg"
+                    className="h-12 border-2 border-gray-200 focus:border-[#0F172A] rounded-lg"
                     placeholder="Ex: Mensalidade do plano de saúde - Janeiro 2025"
                   />
                   <p className="text-xs text-gray-500 flex items-center gap-1">
@@ -1050,31 +1001,31 @@ export default function FinanceiroPage() {
 
                 {/* Preview da operação */}
                 {admGerarFaturas && referenciaGerar && (
-                  <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-xl p-6">
+                  <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-[#7BD9F6] border-opacity-30 rounded-xl p-6">
                     <div className="flex items-center gap-3 mb-3">
-                      <div className="p-2 bg-green-100 rounded-lg">
-                        <Users className="h-5 w-5 text-green-600" />
+                      <div className="p-2 bg-[#7BD9F6] bg-opacity-30 rounded-lg">
+                        <Users className="h-5 w-5 text-[#0F172A]" />
                       </div>
-                      <h4 className="text-sm font-bold text-green-900">
+                      <h4 className="text-sm font-bold text-[#0F172A]">
                         📊 Resumo da Operação
                       </h4>
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
                       <div className="bg-white/60 rounded-lg p-3">
-                        <div className="font-semibold text-green-800">Administradora</div>
-                        <div className="text-green-700 mt-1">
+                        <div className="font-semibold text-[#0F172A]">Administradora</div>
+                        <div className="text-[#0F172A] mt-1">
                           {administradoras.find(a => a.id === admGerarFaturas)?.nome}
                         </div>
                       </div>
                       <div className="bg-white/60 rounded-lg p-3">
-                        <div className="font-semibold text-green-800">Referência</div>
-                        <div className="text-green-700 mt-1">
+                        <div className="font-semibold text-[#0F172A]">Referência</div>
+                        <div className="text-[#0F172A] mt-1">
                           {referenciaGerar ? new Date(referenciaGerar + '-01').toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }) : 'Não selecionado'}
                         </div>
                       </div>
                       <div className="bg-white/60 rounded-lg p-3">
-                        <div className="font-semibold text-green-800">Vencimento</div>
-                        <div className="text-green-700 mt-1">
+                        <div className="font-semibold text-[#0F172A]">Vencimento</div>
+                        <div className="text-[#0F172A] mt-1">
                           Dia {diaVencimento || 'não definido'}
                         </div>
                       </div>
@@ -1103,7 +1054,7 @@ export default function FinanceiroPage() {
                 <Button
                   onClick={handleGerarFaturas}
                   disabled={gerandoFaturas || !admGerarFaturas || !referenciaGerar}
-                  className="h-12 px-8 bg-gradient-to-r from-[#168979] to-[#13786a] hover:from-[#13786a] hover:to-[#0f6b5c] text-white font-bold shadow-lg"
+                  className="h-12 px-8 bg-gradient-to-r from-[#0F172A] to-[#1E293B] hover:from-[#1E293B] hover:to-[#0f6b5c] text-white font-bold shadow-lg"
                 >
                   {gerandoFaturas ? (
                     <div className="flex items-center gap-2">

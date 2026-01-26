@@ -308,7 +308,7 @@ export default function ProdutosCorretoresPage() {
         </Card>
         <Card className="border-gray-200">
           <CardContent className="p-4">
-            <div className="text-2xl font-bold text-green-700">{estatisticas.ativos}</div>
+            <div className="text-2xl font-bold text-[#0F172A]">{estatisticas.ativos}</div>
             <p className="text-xs text-gray-600">Produtos Ativos</p>
           </CardContent>
         </Card>
@@ -445,7 +445,7 @@ export default function ProdutosCorretoresPage() {
                       </TableCell>
                       <TableCell>
                         {produto.disponivel ? (
-                          <Badge variant="default" className="bg-green-100 text-green-800 hover:bg-green-100">
+                          <Badge variant="default" className="bg-[#7BD9F6] bg-opacity-30 text-[#0F172A] hover:bg-[#7BD9F6] bg-opacity-30">
                             Ativo
                           </Badge>
                         ) : (
@@ -484,7 +484,7 @@ export default function ProdutosCorretoresPage() {
                             {produto.disponivel ? (
                               <XCircle className="h-4 w-4 text-red-600" />
                             ) : (
-                              <CheckCircle className="h-4 w-4 text-green-600" />
+                              <CheckCircle className="h-4 w-4 text-[#0F172A]" />
                             )}
                           </Button>
                           <Button

@@ -100,7 +100,7 @@ export default function AguardandoAprovacaoPage() {
             ) : corretor.status === "rejeitado" ? (
               <XCircle className="h-24 w-24 text-red-500" />
             ) : (
-              <CheckCircle className="h-24 w-24 text-green-500" />
+              <CheckCircle className="h-24 w-24 text-[#0F172A]" />
             )}
           </div>
 
@@ -126,7 +126,7 @@ export default function AguardandoAprovacaoPage() {
                 </div>
               </div>
             ) : (
-              <p className="text-green-600">Seu cadastro foi aprovado! Você já pode acessar a plataforma.</p>
+              <p className="text-[#0F172A]">Seu cadastro foi aprovado! Você já pode acessar a plataforma.</p>
             )}
           </div>
         </CardContent>

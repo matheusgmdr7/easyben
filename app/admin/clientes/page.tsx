@@ -161,7 +161,7 @@ export default function ClientesPage() {
                         <span
                           className={`px-2 py-1 rounded-full text-xs ${
                             cliente.status === "Ativo"
-                              ? "bg-green-100 text-green-800"
+                              ? "bg-[#7BD9F6] bg-opacity-30 text-[#0F172A]"
                               : cliente.status === "Pendente"
                                 ? "bg-yellow-100 text-yellow-800"
                                 : "bg-red-100 text-red-800"
@@ -211,7 +211,7 @@ export default function ClientesPage() {
                     <span
                       className={`px-2 py-1 rounded-full text-xs ${
                         clienteSelecionado.status === "Ativo"
-                          ? "bg-green-100 text-green-800"
+                          ? "bg-[#7BD9F6] bg-opacity-30 text-[#0F172A]"
                           : clienteSelecionado.status === "Pendente"
                             ? "bg-yellow-100 text-yellow-800"
                             : "bg-red-100 text-red-800"

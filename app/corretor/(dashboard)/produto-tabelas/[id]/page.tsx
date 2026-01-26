@@ -189,7 +189,7 @@ export default function ProdutoTabelasPage() {
                         <CardFooter>
                           <Button
                             onClick={() => router.push(`/corretor/tabelas/${tabela.tabela_id}`)}
-                            className="w-full bg-[#168979] hover:bg-[#13786a]"
+                            className="w-full bg-[#0F172A] hover:bg-[#1E293B]"
                           >
                             Visualizar Tabela
                           </Button>
@@ -217,7 +217,7 @@ export default function ProdutoTabelasPage() {
                   <CardFooter>
                     <Button
                       onClick={() => router.push(`/corretor/tabelas/${tabela.tabela_id}`)}
-                      className="w-full bg-[#168979] hover:bg-[#13786a]"
+                      className="w-full bg-[#0F172A] hover:bg-[#1E293B]"
                     >
                       Visualizar Tabela
                     </Button>

@@ -1,10 +1,17 @@
 import { supabase } from "@/lib/supabase"
+import { getCurrentTenantId } from "@/lib/tenant-query-helper"
 
 // Modificar a função buscarProdutosCorretoresAtivos para usar a consulta mais simples e direta
 export async function obterProdutosCorretores() {
   try {
-    // Simplificar a consulta para garantir que estamos obtendo os produtos
-    const { data, error } = await supabase.from("produtos_corretores").select("*").order("nome", { ascending: true })
+    const tenantId = await getCurrentTenantId()
+    
+    // Simplificar a consulta para garantir que estamos obtendo os produtos, filtrando por tenant
+    const { data, error } = await supabase
+      .from("produtos_corretores")
+      .select("*")
+      .eq("tenant_id", tenantId)
+      .order("nome", { ascending: true })
 
     if (error) {
       console.error("Erro ao buscar produtos corretores:", error)
@@ -142,7 +149,14 @@ export async function obterValorProdutoPorIdade(produtoId: string, idade: number
 
 export async function obterProdutoCorretor(produtoId: string) {
   try {
-    const { data, error } = await supabase.from("produtos_corretores").select("*").eq("id", produtoId).single()
+    const tenantId = await getCurrentTenantId()
+    
+    const { data, error } = await supabase
+      .from("produtos_corretores")
+      .select("*")
+      .eq("id", produtoId)
+      .eq("tenant_id", tenantId)
+      .single()
 
     if (error) {
       console.error("Erro ao buscar produto corretor:", error)
@@ -159,7 +173,16 @@ export async function obterProdutoCorretor(produtoId: string) {
 // Adicionar as funções que estão faltando
 export async function criarProdutoCorretor(produto: any) {
   try {
-    const { data, error } = await supabase.from("produtos_corretores").insert([produto]).select().single()
+    const tenantId = await getCurrentTenantId()
+    
+    const { data, error } = await supabase
+      .from("produtos_corretores")
+      .insert([{
+        ...produto,
+        tenant_id: tenantId, // Adicionar tenant_id automaticamente
+      }])
+      .select()
+      .single()
 
     if (error) {
       console.error("Erro ao criar produto corretor:", error)
@@ -175,10 +198,13 @@ export async function criarProdutoCorretor(produto: any) {
 
 export async function atualizarStatusProdutoCorretor(id: string | number, disponivel: boolean) {
   try {
+    const tenantId = await getCurrentTenantId()
+    
     const { data, error } = await supabase
       .from("produtos_corretores")
       .update({ disponivel })
       .eq("id", id)
+      .eq("tenant_id", tenantId) // Garantir que só atualiza do tenant correto
       .select()
       .single()
 
@@ -196,7 +222,13 @@ export async function atualizarStatusProdutoCorretor(id: string | number, dispon
 
 export async function excluirProdutoCorretor(id: string | number) {
   try {
-    const { error } = await supabase.from("produtos_corretores").delete().eq("id", id)
+    const tenantId = await getCurrentTenantId()
+    
+    const { error } = await supabase
+      .from("produtos_corretores")
+      .delete()
+      .eq("id", id)
+      .eq("tenant_id", tenantId) // Garantir que só deleta do tenant correto
 
     if (error) {
       console.error("Erro ao excluir produto corretor:", error)
@@ -212,7 +244,18 @@ export async function excluirProdutoCorretor(id: string | number) {
 
 export async function atualizarProdutoCorretor(id: string | number, produto: any) {
   try {
-    const { data, error } = await supabase.from("produtos_corretores").update(produto).eq("id", id).select().single()
+    const tenantId = await getCurrentTenantId()
+    
+    // Remover tenant_id dos dados de atualização (não deve ser alterado)
+    const { tenant_id, ...dadosAtualizacao } = produto
+    
+    const { data, error } = await supabase
+      .from("produtos_corretores")
+      .update(dadosAtualizacao)
+      .eq("id", id)
+      .eq("tenant_id", tenantId) // Garantir que só atualiza do tenant correto
+      .select()
+      .single()
 
     if (error) {
       console.error("Erro ao atualizar produto corretor:", error)
@@ -235,11 +278,14 @@ export async function buscarProdutosPorFaixaEtaria(faixaEtaria: string) {
   try {
     console.log(`🔍 Buscando produtos para faixa etária: ${faixaEtaria}`)
     
-    // Buscar produtos disponíveis
+    const tenantId = await getCurrentTenantId()
+    
+    // Buscar produtos disponíveis, filtrando por tenant
     const { data: produtos, error: produtosError } = await supabase
       .from("produtos_corretores")
       .select("*")
       .eq("disponivel", true)
+      .eq("tenant_id", tenantId)
       .order("operadora", { ascending: true })
       .order("nome", { ascending: true })
 

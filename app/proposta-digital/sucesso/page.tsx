@@ -160,13 +160,13 @@ export default function SucessoPage() {
       <div className="container mx-auto px-3 sm:px-4 py-4 sm:py-8">
         <div className="max-w-2xl mx-auto">
           {/* Header de Sucesso - Mobile Optimized */}
-          <Card className="mb-4 sm:mb-6 border-green-200 bg-green-50">
+          <Card className="mb-4 sm:mb-6 border-[#7BD9F6] border-opacity-30 bg-[#7BD9F6] bg-opacity-20">
             <CardContent className="text-center p-4 sm:p-6 lg:p-8">
-              <div className="text-green-600 mb-3 sm:mb-4">
+              <div className="text-[#0F172A] mb-3 sm:mb-4">
                 <CheckCircle className="h-16 w-16 sm:h-20 sm:w-20 mx-auto" />
               </div>
-              <h1 className="text-2xl sm:text-3xl font-bold text-green-800 mb-2">Proposta Finalizada!</h1>
-              <p className="text-green-700 text-base sm:text-lg">Sua proposta foi enviada com sucesso e está sendo analisada.</p>
+              <h1 className="text-2xl sm:text-3xl font-bold text-[#0F172A] mb-2">Proposta Finalizada!</h1>
+              <p className="text-[#0F172A] text-base sm:text-lg">Sua proposta foi enviada com sucesso e está sendo analisada.</p>
             </CardContent>
           </Card>
 
@@ -200,7 +200,7 @@ export default function SucessoPage() {
                   <DollarSign className="h-4 w-4 sm:h-5 sm:w-5 text-gray-500 flex-shrink-0" />
                   <div className="min-w-0 flex-1">
                     <p className="text-xs sm:text-sm text-gray-600">Valor Mensal</p>
-                    <p className="font-semibold text-sm sm:text-base lg:text-lg text-green-600">
+                    <p className="font-semibold text-sm sm:text-base lg:text-lg text-[#0F172A]">
                       R$ {valorTotalMensal.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
                     </p>
                   </div>
@@ -224,12 +224,12 @@ export default function SucessoPage() {
 
               {/* Exibir detalhamento dos valores se houver dependentes - Mobile Optimized */}
               {detalhesValores.length > 1 && (
-                <div className="mt-3 sm:mt-4 p-3 sm:p-4 bg-green-50 rounded-lg">
-                  <p className="text-xs sm:text-sm text-green-700 font-semibold mb-2 flex items-center">
+                <div className="mt-3 sm:mt-4 p-3 sm:p-4 bg-[#7BD9F6] bg-opacity-20 rounded-lg">
+                  <p className="text-xs sm:text-sm text-[#0F172A] font-semibold mb-2 flex items-center">
                     <Users className="h-3 w-3 sm:h-4 sm:w-4 mr-1" /> 
                     Detalhamento dos valores
                   </p>
-                  <ul className="text-xs sm:text-sm text-green-800 space-y-1">
+                  <ul className="text-xs sm:text-sm text-[#0F172A] space-y-1">
                     {detalhesValores.map((item, idx) => (
                       <li key={idx} className="flex justify-between items-start gap-2">
                         <span className="flex-1 min-w-0">
@@ -273,7 +273,7 @@ export default function SucessoPage() {
                 <div className="flex gap-3">
                   <Button 
                     onClick={handleDownloadPDF} 
-                    className="flex-1 bg-green-600 hover:bg-green-700 min-h-[44px] sm:min-h-[40px] text-sm sm:text-base"
+                    className="flex-1 bg-[#0F172A] hover:bg-[#0F172A] min-h-[44px] sm:min-h-[40px] text-sm sm:text-base"
                   >
                     <Download className="mr-2 h-4 w-4 flex-shrink-0" />
                     <span className="truncate">Visualizar PDF da Proposta</span>

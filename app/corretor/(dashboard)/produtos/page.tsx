@@ -62,7 +62,7 @@ export default function CorretorProdutosPage() {
           <CardContent className="flex flex-col items-center justify-center p-6">
             <div className="text-center space-y-4">
               <p className="text-red-500">{erro}</p>
-              <Button onClick={() => window.location.reload()} className="bg-[#168979] hover:bg-[#13786a]">
+              <Button onClick={() => window.location.reload()} className="bg-[#0F172A] hover:bg-[#1E293B]">
                 Tentar novamente
               </Button>
             </div>
@@ -168,11 +168,18 @@ export default function CorretorProdutosPage() {
                   <p className="text-sm text-gray-400 italic mb-4">Sem descrição disponível</p>
                 )}
 
+                {produto.area_comercializacao && (
+                  <div className="mb-4">
+                    <Badge variant="secondary" className="text-xs">
+                      Área: {produto.area_comercializacao}
+                    </Badge>
+                  </div>
+                )}
               </CardContent>
               <CardFooter className="pt-2">
                 <Button
                   onClick={() => router.push(`/corretor/produto-tabelas/${produto.id}`)}
-                  className="w-full bg-[#168979] hover:bg-[#13786a] h-9 text-sm"
+                  className="w-full bg-[#0F172A] hover:bg-[#1E293B] h-9 text-sm"
                   disabled={produto.tabelas_count === 0}
                 >
                   <Table2 className="mr-2 h-4 w-4" />

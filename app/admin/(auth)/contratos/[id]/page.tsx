@@ -150,7 +150,7 @@ export default function ContratoDetalhesPage() {
   const getStatusBadgeClass = (status) => {
     switch (status) {
       case "ativo":
-        return "bg-gray-100 text-green-600"
+        return "bg-gray-100 text-[#0F172A]"
       case "pendente":
         return "bg-gray-100 text-yellow-600"
       case "cancelado":
@@ -191,7 +191,7 @@ export default function ContratoDetalhesPage() {
         <AlertCircle className="h-12 w-12 text-red-500 mb-4" />
         <h2 className="text-xl font-semibold mb-2">Erro ao carregar contrato</h2>
         <p className="text-gray-500 mb-4">{error || "Contrato não encontrado"}</p>
-        <Button onClick={() => router.push("/admin/contratos")} className="bg-[#168979] hover:bg-[#13786a]">
+        <Button onClick={() => router.push("/admin/contratos")} className="bg-[#0F172A] hover:bg-[#1E293B]">
           <ArrowLeft className="h-4 w-4 mr-2" />
           Voltar para Contratos
         </Button>
@@ -210,7 +210,7 @@ export default function ContratoDetalhesPage() {
               <ArrowLeft className="h-4 w-4 mr-2" />
               Voltar
             </Button>
-            <Button className="bg-[#168979] hover:bg-[#13786a] w-full md:w-auto">
+            <Button className="bg-[#0F172A] hover:bg-[#1E293B] w-full md:w-auto">
               <Pencil className="h-4 w-4 mr-2" />
               Editar
             </Button>
@@ -341,7 +341,7 @@ export default function ContratoDetalhesPage() {
                 </div>
                 <Button
                   onClick={() => window.open(contrato.documento_url, "_blank")}
-                  className="bg-[#168979] hover:bg-[#13786a] w-full"
+                  className="bg-[#0F172A] hover:bg-[#1E293B] w-full"
                 >
                   <Download className="h-4 w-4 mr-2" />
                   Baixar Contrato

@@ -130,7 +130,7 @@ export default function ConfiguracoesAdministradoraPage() {
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold text-gray-900 tracking-tight font-sans flex items-center gap-2">
-              <Settings className="h-6 w-6 text-[#168979]" />
+              <Settings className="h-6 w-6 text-[#0F172A]" />
               Configurações - {administradora.nome}
             </h1>
             <p className="text-gray-600 mt-1 font-medium">
@@ -227,8 +227,8 @@ export default function ConfiguracoesAdministradoraPage() {
               <div className="flex items-center gap-2">
                 {config.status_integracao === "ativa" ? (
                   <>
-                    <CheckCircle className="h-5 w-5 text-green-600" />
-                    <span className="text-sm font-semibold text-green-700">Integração Ativa</span>
+                    <CheckCircle className="h-5 w-5 text-[#0F172A]" />
+                    <span className="text-sm font-semibold text-[#0F172A]">Integração Ativa</span>
                   </>
                 ) : (
                   <>
@@ -250,7 +250,7 @@ export default function ConfiguracoesAdministradoraPage() {
           <Button
             onClick={handleSalvar}
             disabled={saving}
-            className="bg-[#168979] hover:bg-[#13786a] text-white font-bold btn-corporate shadow-corporate"
+            className="bg-[#0F172A] hover:bg-[#1E293B] text-white font-bold btn-corporate shadow-corporate"
           >
             {saving ? (
               <>

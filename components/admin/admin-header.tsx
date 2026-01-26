@@ -4,7 +4,7 @@ import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { supabase } from "@/lib/supabase-auth"
 import Link from "next/link"
-import { Settings, User, LogOut } from "lucide-react"
+import { Settings, User, LogOut, ClipboardCheck } from "lucide-react"
 import { signOutAdmin } from "@/lib/supabase-auth"
 import { Button } from "@/components/ui/button"
 import type React from "react"
@@ -16,6 +16,7 @@ interface AdminHeaderProps {
 export default function AdminHeader({ sidebarCollapsed = false }: AdminHeaderProps) {
   const [userEmail, setUserEmail] = useState<string | null>(null)
   const [userName, setUserName] = useState<string | null>(null)
+  const [tenantName, setTenantName] = useState<string | null>(null)
   const [showMobileMenu, setShowMobileMenu] = useState(false)
   const router = useRouter()
 
@@ -40,6 +41,31 @@ export default function AdminHeader({ sidebarCollapsed = false }: AdminHeaderPro
           .join(" ")
         setUserName(formattedName)
       }
+
+      // Buscar nome do tenant
+      try {
+        const { data: usuarioAdmin } = await supabase
+          .from('usuarios_admin')
+          .select('tenant_id')
+          .eq('email', session.user.email)
+          .single()
+        
+        if (usuarioAdmin?.tenant_id) {
+          const { data: tenant } = await supabase
+            .from('tenants')
+            .select('nome, nome_marca')
+            .eq('id', usuarioAdmin.tenant_id)
+            .single()
+          
+          if (tenant) {
+            // Usar nome_marca se disponível, senão usar nome
+            setTenantName(tenant.nome_marca || tenant.nome || 'Contratandoplanos')
+          }
+        }
+      } catch (error) {
+        console.log("Erro ao carregar nome do tenant:", error)
+        setTenantName('Contratandoplanos') // Fallback
+      }
     }
     getUserInfo()
   }, [router])
@@ -59,11 +85,9 @@ export default function AdminHeader({ sidebarCollapsed = false }: AdminHeaderPro
     : '16rem' // md:ml-64 = 16rem (256px) quando expandido
 
   const headerStyle: React.CSSProperties = {
-    background: '#168979',
-    backgroundImage: 'linear-gradient(to right, #168979, #13786a)',
-    borderBottom: '1px solid rgba(255, 255, 255, 0.04)',
-    borderLeft: '1px solid rgba(255, 255, 255, 0.06)',
-    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)'
+    background: '#ffffff',
+    borderBottom: '1px solid rgba(0, 0, 0, 0.1)',
+    boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06)'
   }
 
   return (
@@ -71,15 +95,15 @@ export default function AdminHeader({ sidebarCollapsed = false }: AdminHeaderPro
       className={`admin-header h-16 px-2 sm:px-3 md:px-4 flex items-center justify-between fixed top-0 z-20 shadow-lg transition-all duration-300 ${
         sidebarCollapsed ? 'md:left-16 lg:left-20' : 'md:left-64 lg:left-72'
       } left-0 right-0`}
-      style={headerStyle}
+      style={{ ...headerStyle, fontFamily: "'Inter', sans-serif" }}
     >
       {/* Logo/Título */}
       <div className="flex items-center h-full">
-        <Link href="/admin" className="text-sm sm:text-base md:text-lg font-semibold text-white block md:hidden hover:opacity-90 transition-opacity">
+        <Link href="/admin" className="text-sm sm:text-base md:text-lg font-semibold text-[#0F172A] block md:hidden hover:opacity-90 transition-opacity">
           Portal<span className="hidden sm:inline"> Admin</span>
         </Link>
-        <Link href="/admin" className="text-base md:text-lg font-semibold text-white hidden md:block hover:opacity-90 transition-opacity">
-          Contratandoplanos <span className="text-white/80 font-normal">Admin</span>
+        <Link href="/admin" className="text-base md:text-lg font-semibold text-[#0F172A] hidden md:block hover:opacity-90 transition-opacity">
+          {tenantName || 'Contratandoplanos'} <span className="text-gray-600 font-normal">Admin</span>
         </Link>
       </div>
 
@@ -89,7 +113,15 @@ export default function AdminHeader({ sidebarCollapsed = false }: AdminHeaderPro
       {/* Desktop menu */}
       <div className="hidden md:flex items-center gap-1 sm:gap-2 h-full">
         <button 
-          className="p-1.5 sm:p-2 rounded-lg hover:bg-white/20 text-white transition-colors flex items-center justify-center" 
+          className="p-1.5 sm:p-2 rounded-lg hover:bg-gray-100 text-gray-700 transition-colors flex items-center justify-center" 
+          onClick={() => router.push("/analista")}
+          title="Portal do Analista"
+        >
+          <ClipboardCheck className="h-4 w-4 sm:h-5 sm:w-5" />
+        </button>
+        
+        <button 
+          className="p-1.5 sm:p-2 rounded-lg hover:bg-gray-100 text-gray-700 transition-colors flex items-center justify-center" 
           onClick={handleLogout}
           title="Sair"
         >
@@ -97,25 +129,25 @@ export default function AdminHeader({ sidebarCollapsed = false }: AdminHeaderPro
         </button>
 
         <button 
-          className="p-1.5 sm:p-2 rounded-lg hover:bg-white/20 text-white transition-colors flex items-center justify-center"
+          className="p-1.5 sm:p-2 rounded-lg hover:bg-gray-100 text-gray-700 transition-colors flex items-center justify-center"
           title="Configurações"
         >
           <Settings className="h-4 w-4 sm:h-5 sm:w-5" />
         </button>
 
         {/* User Info */}
-        <div className="flex items-center gap-2 sm:gap-3 ml-2 pl-3 border-l border-white/20 h-full">
-          <div className="h-8 w-8 sm:h-9 sm:w-9 rounded-lg bg-white/20 text-white flex items-center justify-center flex-shrink-0">
+        <div className="flex items-center gap-2 sm:gap-3 ml-2 pl-3 border-l border-gray-200 h-full">
+          <div className="h-8 w-8 sm:h-9 sm:w-9 rounded-lg bg-[#0F172A] text-white flex items-center justify-center flex-shrink-0">
             <User className="h-4 w-4 sm:h-5 sm:w-5" />
           </div>
           <div className="min-w-0 hidden lg:block">
             {userName && (
-              <p className="text-xs sm:text-sm font-semibold text-white truncate max-w-[120px] xl:max-w-[150px]">
+              <p className="text-xs sm:text-sm font-semibold text-gray-900 truncate max-w-[120px] xl:max-w-[150px]">
                 {userName}
               </p>
             )}
             {userEmail && (
-              <p className="text-[10px] sm:text-xs text-white/80 truncate max-w-[120px] xl:max-w-[150px]">
+              <p className="text-[10px] sm:text-xs text-gray-600 truncate max-w-[120px] xl:max-w-[150px]">
                 {userEmail}
               </p>
             )}
@@ -128,7 +160,7 @@ export default function AdminHeader({ sidebarCollapsed = false }: AdminHeaderPro
         <Button 
           variant="ghost" 
           size="sm" 
-          className="p-2 h-auto rounded-lg hover:bg-white/20 text-white" 
+          className="p-2 h-auto rounded-lg hover:bg-gray-100 text-gray-700" 
           onClick={() => setShowMobileMenu(!showMobileMenu)}
         >
           <User className="h-5 w-5" />
@@ -143,7 +175,7 @@ export default function AdminHeader({ sidebarCollapsed = false }: AdminHeaderPro
             onClick={() => setShowMobileMenu(false)}
           />
           <div className="absolute top-full right-0 mt-2 w-56 bg-white rounded-xl shadow-2xl py-2 z-50 border border-gray-200 md:hidden overflow-hidden">
-            <div className="px-4 py-3 border-b border-gray-100 bg-gradient-to-r from-[#168979] to-[#13786a]">
+            <div className="px-4 py-3 border-b border-gray-100 bg-gradient-to-r from-[#0F172A] to-[#1E293B]">
               <div className="flex items-center gap-3">
                 <div className="h-10 w-10 rounded-lg bg-white/20 text-white flex items-center justify-center flex-shrink-0">
                   <User className="h-5 w-5" />
@@ -162,6 +194,16 @@ export default function AdminHeader({ sidebarCollapsed = false }: AdminHeaderPro
                 </div>
               </div>
             </div>
+            <button
+              className="w-full text-left px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-3 transition-colors"
+              onClick={() => {
+                router.push("/analista")
+                setShowMobileMenu(false)
+              }}
+            >
+              <ClipboardCheck className="h-4 w-4 text-gray-500" />
+              Portal do Analista
+            </button>
             <button
               className="w-full text-left px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-3 transition-colors"
               onClick={() => {
