@@ -8,15 +8,46 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
-import { Search, Check } from "lucide-react"
-import { OperadorasService, type Operadora } from "@/services/operadoras-service"
+import { Search, Check, Plus, Trash2, Package, ImagePlus, X } from "lucide-react"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+
+// --- Tipos e constantes da aba Produtos ---
+interface FaixaEtaria {
+  faixa_etaria: string
+  valor: string
+}
+
+interface ProdutoContrato {
+  id: string
+  nome: string
+  segmentacao: string
+  acomodacao: string
+  faixas: FaixaEtaria[]
+}
+
+const SEGMENTACOES = [
+  { value: "Padrão", label: "Padrão" },
+  { value: "Adesão", label: "Adesão" },
+  { value: "Individual", label: "Individual" },
+  { value: "Familiar", label: "Familiar" },
+  { value: "Empresarial", label: "Empresarial" },
+  { value: "Coletivo", label: "Coletivo" },
+]
+
+const ACOMODACOES = [
+  { value: "Enfermaria", label: "Enfermaria" },
+  { value: "Apartamento", label: "Apartamento" },
+  { value: "Coletivo", label: "Coletivo" },
+]
+
+const FAIXAS_PADRAO = ["0-18", "19-23", "24-28", "29-33", "34-38", "39-43", "44-48", "49-53", "54-58", "59+"]
 
 export default function NovoContratoPage() {
   const router = useRouter()
   const [activeTab, setActiveTab] = useState("dados")
   const [loading, setLoading] = useState(false)
-  const [operadoras, setOperadoras] = useState<Operadora[]>([])
   const [cnpjBusca, setCnpjBusca] = useState("")
+  const [buscandoOperadora, setBuscandoOperadora] = useState(false)
 
   // Formulário
   const [formData, setFormData] = useState({
@@ -25,50 +56,122 @@ export default function NovoContratoPage() {
     nome_fantasia: "",
     logo: "",
     descricao: "",
-    porcentagem_multa: "0,00",
-    validade_carteira: "",
     numero: "",
     observacao: "",
   })
 
-  useEffect(() => {
-    carregarOperadoras()
-  }, [])
+  const [uploadLogoLoading, setUploadLogoLoading] = useState(false)
+  const [produtos, setProdutos] = useState<ProdutoContrato[]>([])
 
-  async function carregarOperadoras() {
+  async function handleLogoChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploadLogoLoading(true)
     try {
-      const data = await OperadorasService.buscarTodas()
-      setOperadoras(data)
-    } catch (error) {
-      console.error("Erro ao carregar operadoras:", error)
+      const fd = new FormData()
+      fd.append("logo", file)
+      const res = await fetch("/api/administradora/upload-logo", { method: "POST", body: fd })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json?.error || "Erro no upload")
+      setFormData((prev) => ({ ...prev, logo: json.url }))
+      toast.success("Logo enviado.")
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Erro ao enviar logo")
+    } finally {
+      setUploadLogoLoading(false)
+      e.target.value = ""
     }
   }
 
   async function buscarOperadoraPorCNPJ() {
-    if (!cnpjBusca) {
+    const cnpj = cnpjBusca?.trim() || ""
+    if (!cnpj) {
       toast.error("Digite um CNPJ para buscar")
       return
     }
+    const cnpjLimpo = cnpj.replace(/\D/g, "")
+    if (cnpjLimpo.length !== 14) {
+      toast.error("CNPJ deve conter 14 dígitos")
+      return
+    }
 
+    setBuscandoOperadora(true)
     try {
-      const cnpjLimpo = cnpjBusca.replace(/\D/g, "")
-      const operadora = operadoras.find((op) => op.cnpj.replace(/\D/g, "") === cnpjLimpo)
-      
-      if (operadora) {
-        setFormData({
-          ...formData,
-          cnpj_operadora: operadora.cnpj,
-          razao_social: operadora.nome,
-          nome_fantasia: operadora.fantasia,
-        })
+      const res = await fetch(
+        "/api/administradora/buscar-operadora-por-cnpj?cnpj=" + encodeURIComponent(cnpj)
+      )
+      const json = await res.json().catch(() => ({}))
+      if (res.ok) {
+        setFormData((prev) => ({
+          ...prev,
+          cnpj_operadora: json.cnpj ?? cnpjLimpo,
+          razao_social: json.nome ?? "",
+          nome_fantasia: json.fantasia ?? "",
+        }))
         toast.success("Operadora encontrada")
       } else {
-        toast.error("Operadora não encontrada")
+        // 404: operadora não existe; preenche o CNPJ, limpa nome/fantasia e orienta a cadastrar na própria página
+        setFormData((prev) => ({
+          ...prev,
+          cnpj_operadora: cnpjLimpo,
+          razao_social: "",
+          nome_fantasia: "",
+        }))
+        toast.info(json?.error || "Operadora não encontrada. Preencha os dados e salve para cadastrar.")
       }
     } catch (error) {
       console.error("Erro ao buscar operadora:", error)
-      toast.error("Erro ao buscar operadora")
+      toast.error("Erro ao buscar operadora. Tente novamente.")
+    } finally {
+      setBuscandoOperadora(false)
     }
+  }
+
+  function adicionarProduto() {
+    setProdutos((prev) => [
+      ...prev,
+      { id: crypto.randomUUID(), nome: "", segmentacao: "Padrão", acomodacao: "Enfermaria", faixas: [] },
+    ])
+  }
+
+  function removerProduto(id: string) {
+    setProdutos((prev) => prev.filter((p) => p.id !== id))
+  }
+
+  function atualizarProduto(id: string, dados: Partial<Pick<ProdutoContrato, "nome" | "segmentacao" | "acomodacao">>) {
+    setProdutos((prev) => prev.map((p) => (p.id === id ? { ...p, ...dados } : p)))
+  }
+
+  function adicionarFaixa(produtoId: string) {
+    setProdutos((prev) =>
+      prev.map((p) => (p.id === produtoId ? { ...p, faixas: [...p.faixas, { faixa_etaria: "", valor: "" }] } : p))
+    )
+  }
+
+  function adicionarFaixasPadrao(produtoId: string) {
+    setProdutos((prev) =>
+      prev.map((p) =>
+        p.id === produtoId
+          ? { ...p, faixas: FAIXAS_PADRAO.map((f) => ({ faixa_etaria: f, valor: "" })) }
+          : p
+      )
+    )
+  }
+
+  function removerFaixa(produtoId: string, index: number) {
+    setProdutos((prev) =>
+      prev.map((p) => (p.id === produtoId ? { ...p, faixas: p.faixas.filter((_, i) => i !== index) } : p))
+    )
+  }
+
+  function atualizarFaixa(produtoId: string, index: number, dados: Partial<FaixaEtaria>) {
+    setProdutos((prev) =>
+      prev.map((p) =>
+        p.id === produtoId
+          ? { ...p, faixas: p.faixas.map((f, i) => (i === index ? { ...f, ...dados } : f)) }
+          : p
+      )
+    )
   }
 
   async function salvarContrato() {
@@ -92,16 +195,12 @@ export default function NovoContratoPage() {
         toast.error("Descrição é obrigatória")
         return
       }
-      if (!formData.validade_carteira) {
-        toast.error("Validade Carteira é obrigatória")
-        return
-      }
       if (!formData.numero) {
         toast.error("Número é obrigatório")
         return
       }
 
-      // TODO: Implementar criação do contrato
+      // TODO: Implementar criação do contrato; incluir produtos (faixas com valor numérico) no payload
       toast.success("Contrato criado com sucesso!")
       router.push("/administradora/contrato/pesquisar")
     } catch (error: any) {
@@ -156,18 +255,6 @@ export default function NovoContratoPage() {
 
           <TabsContent value="dados" className="space-y-4">
             <div className="bg-white border border-gray-200 rounded-sm p-6 space-y-4">
-              {/* Botão Salvar no topo */}
-              <div className="flex justify-end">
-                <Button
-                  onClick={salvarContrato}
-                  disabled={loading}
-                  className="h-9 px-4 text-sm bg-gray-700 hover:bg-gray-800 text-white rounded-sm"
-                >
-                  <Check className="h-4 w-4 mr-1" />
-                  Salvar
-                </Button>
-              </div>
-
               {/* Campos do formulário */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
@@ -217,18 +304,48 @@ export default function NovoContratoPage() {
                 </div>
 
                 <div>
-                  <label className="block text-xs text-gray-600 mb-1">
-                    Logo <span className="text-red-500">*</span>
-                  </label>
-                  <Select value={formData.logo} onValueChange={(value) => setFormData({ ...formData, logo: value })}>
-                    <SelectTrigger className="h-9 text-sm border-gray-300 rounded-sm">
-                      <SelectValue placeholder="Selecione" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="">Nenhuma</SelectItem>
-                      {/* TODO: Listar logos disponíveis */}
-                    </SelectContent>
-                  </Select>
+                  <label className="block text-xs text-gray-600 mb-1">Logo da operadora</label>
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <input
+                        id="logo-upload"
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={handleLogoChange}
+                        disabled={uploadLogoLoading}
+                      />
+                      <label
+                        htmlFor="logo-upload"
+                        className="inline-flex items-center gap-1.5 h-9 px-3 text-sm border border-gray-300 rounded-sm cursor-pointer hover:bg-gray-50"
+                      >
+                        <ImagePlus className="h-4 w-4 text-gray-500" />
+                        {uploadLogoLoading ? "Enviando..." : "Enviar imagem"}
+                      </label>
+                      {formData.logo && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-9 px-2 text-red-600 hover:text-red-700 hover:bg-red-50"
+                          onClick={() => setFormData((p) => ({ ...p, logo: "" }))}
+                        >
+                          <X className="h-4 w-4 mr-1" />
+                          Remover
+                        </Button>
+                      )}
+                    </div>
+                    {formData.logo && (
+                      <div className="mt-1">
+                        <img
+                          src={formData.logo}
+                          alt="Preview do logo"
+                          className="h-16 object-contain border border-gray-200 rounded-sm"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">A URL da imagem será salva ao cadastrar o contrato.</p>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 <div className="md:col-span-2">
@@ -239,28 +356,6 @@ export default function NovoContratoPage() {
                     value={formData.descricao}
                     onChange={(e) => setFormData({ ...formData, descricao: e.target.value.toUpperCase() })}
                     placeholder="Descrição"
-                    className="h-9 text-sm border-gray-300 rounded-sm"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs text-gray-600 mb-1">Porcentagem Multa</label>
-                  <Input
-                    value={formData.porcentagem_multa}
-                    onChange={(e) => setFormData({ ...formData, porcentagem_multa: e.target.value })}
-                    placeholder="0,00%"
-                    className="h-9 text-sm border-gray-300 rounded-sm"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs text-gray-600 mb-1">
-                    Validade Carteira <span className="text-red-500">*</span>
-                  </label>
-                  <Input
-                    value={formData.validade_carteira}
-                    onChange={(e) => setFormData({ ...formData, validade_carteira: e.target.value.toUpperCase() })}
-                    placeholder="Validade Carteira"
                     className="h-9 text-sm border-gray-300 rounded-sm"
                   />
                 </div>
@@ -312,9 +407,166 @@ export default function NovoContratoPage() {
           </TabsContent>
 
           <TabsContent value="produtos" className="space-y-4">
-            <div className="bg-white border border-gray-200 rounded-sm p-6">
-              <p className="text-sm text-gray-600">Conteúdo da aba Produtos em desenvolvimento</p>
-              {/* TODO: Implementar aba de produtos */}
+            <div className="bg-white border border-gray-200 rounded-sm p-6 space-y-4">
+              <div className="flex items-center justify-between">
+                <p className="text-sm text-gray-600">Produtos vinculados ao contrato com nome, segmentação, acomodação e preços por faixa etária.</p>
+                <Button
+                  onClick={adicionarProduto}
+                  className="h-9 px-4 text-sm bg-gray-700 hover:bg-gray-800 text-white rounded-sm"
+                >
+                  <Plus className="h-4 w-4 mr-1" />
+                  Adicionar produto
+                </Button>
+              </div>
+
+              {produtos.length === 0 ? (
+                <div className="border border-dashed border-gray-300 rounded-sm p-8 text-center">
+                  <Package className="h-10 w-10 mx-auto text-gray-400 mb-2" />
+                  <p className="text-sm text-gray-500">Nenhum produto adicionado.</p>
+                  <p className="text-xs text-gray-400 mt-1">Clique em &quot;Adicionar produto&quot; para começar.</p>
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  {produtos.map((prod) => (
+                    <div
+                      key={prod.id}
+                      className="border border-gray-200 rounded-sm p-4 bg-gray-50/50 space-y-4"
+                    >
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 flex-1">
+                          <div>
+                            <label className="block text-xs text-gray-600 mb-1">Nome do produto</label>
+                            <Input
+                              value={prod.nome}
+                              onChange={(e) => atualizarProduto(prod.id, { nome: e.target.value.toUpperCase() })}
+                              placeholder="Ex: Plano Básico"
+                              className="h-9 text-sm border-gray-300 rounded-sm"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs text-gray-600 mb-1">Segmentação</label>
+                            <Select
+                              value={prod.segmentacao}
+                              onValueChange={(v) => atualizarProduto(prod.id, { segmentacao: v })}
+                            >
+                              <SelectTrigger className="h-9 text-sm border-gray-300 rounded-sm">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {SEGMENTACOES.map((s) => (
+                                  <SelectItem key={s.value} value={s.value}>
+                                    {s.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div>
+                            <label className="block text-xs text-gray-600 mb-1">Acomodação</label>
+                            <Select
+                              value={prod.acomodacao}
+                              onValueChange={(v) => atualizarProduto(prod.id, { acomodacao: v })}
+                            >
+                              <SelectTrigger className="h-9 text-sm border-gray-300 rounded-sm">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {ACOMODACOES.map((a) => (
+                                  <SelectItem key={a.value} value={a.value}>
+                                    {a.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => removerProduto(prod.id)}
+                          className="h-9 px-2 border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300 shrink-0"
+                          title="Remover produto"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-xs font-medium text-gray-600">Preços por faixa etária</span>
+                          <div className="flex gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => adicionarFaixasPadrao(prod.id)}
+                              className="h-8 text-xs border-gray-300 rounded-sm"
+                            >
+                              Preencher faixas padrão
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => adicionarFaixa(prod.id)}
+                              className="h-8 text-xs border-gray-300 rounded-sm"
+                            >
+                              <Plus className="h-3 w-3 mr-1" />
+                              Adicionar faixa
+                            </Button>
+                          </div>
+                        </div>
+                        {prod.faixas.length === 0 ? (
+                          <p className="text-xs text-gray-500 py-2">Nenhuma faixa. Use &quot;Preencher faixas padrão&quot; ou &quot;Adicionar faixa&quot;.</p>
+                        ) : (
+                          <div className="border border-gray-200 rounded-sm overflow-hidden">
+                            <Table>
+                              <TableHeader>
+                                <TableRow className="border-gray-200 bg-gray-100/80">
+                                  <TableHead className="h-9 text-xs font-medium">Faixa etária</TableHead>
+                                  <TableHead className="h-9 text-xs font-medium">Valor (R$)</TableHead>
+                                  <TableHead className="h-9 text-xs font-medium w-[80px]">Ações</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {prod.faixas.map((f, idx) => (
+                                  <TableRow key={idx} className="border-gray-200">
+                                    <TableCell className="py-1">
+                                      <Input
+                                        value={f.faixa_etaria}
+                                        onChange={(e) => atualizarFaixa(prod.id, idx, { faixa_etaria: e.target.value })}
+                                        placeholder="Ex: 0-18 ou 59+"
+                                        className="h-8 text-sm border-gray-300 rounded-sm"
+                                      />
+                                    </TableCell>
+                                    <TableCell className="py-1">
+                                      <Input
+                                        value={f.valor}
+                                        onChange={(e) => atualizarFaixa(prod.id, idx, { valor: e.target.value })}
+                                        placeholder="0,00"
+                                        className="h-8 text-sm border-gray-300 rounded-sm"
+                                      />
+                                    </TableCell>
+                                    <TableCell className="py-1">
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => removerFaixa(prod.id, idx)}
+                                        className="h-8 w-8 p-0 text-red-500 hover:text-red-700 hover:bg-red-50"
+                                        title="Remover faixa"
+                                      >
+                                        <Trash2 className="h-4 w-4" />
+                                      </Button>
+                                    </TableCell>
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </TabsContent>
         </Tabs>
