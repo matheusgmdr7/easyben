@@ -40,7 +40,7 @@ export default function AguardandoAprovacaoPage() {
           localStorage.setItem("administradoraLogada", JSON.stringify(administradoraAtualizada))
           
           // Redirecionar para dashboard
-          router.push("/administradora")
+          router.push("/administradora/dashboard")
         }
       } catch (error) {
         console.error("Erro ao verificar status:", error)

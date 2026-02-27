@@ -857,7 +857,7 @@ export default function NovaPropostaPage() {
         dependentes: (data.dependentes || []).map((dep) => ({
           ...dep,
           uf_nascimento: dep.uf_nascimento || "",
-          idade: dep.idade || (dep.data_nascimento ? calculateAge(dep.data_nascimento) : ""),
+          idade: dep.idade || (dep.data_nascimento ? (calculateAge(dep.data_nascimento) ?? "") : ""),
           cns_cliente: dep.cns,
           nome_mae_cliente: dep.nome_mae,
         })),
@@ -1205,7 +1205,7 @@ export default function NovaPropostaPage() {
 
   // Calculate age from birth date
   const calculateAge = (birthDate: string) => {
-    if (!birthDate) return undefined;
+    if (!birthDate) return null;
     const today = new Date();
     const birth = new Date(birthDate);
     let age = today.getFullYear() - birth.getFullYear();
@@ -2195,7 +2195,7 @@ export default function NovaPropostaPage() {
                                       onChange={async (e) => {
                                         field.onChange(e);
                                         const age = calculateAge(e.target.value);
-                                        form.setValue(`dependentes.${index}.idade`, age !== undefined ? age.toString() : "");
+                                        form.setValue(`dependentes.${index}.idade`, age !== null && age !== undefined ? age.toString() : "");
                                         const produtoId = form.getValues("produto_id");
                                         const tabelaId = form.getValues("tabela_id");
                                         if (produtoId && age && !isNaN(Number(age))) {

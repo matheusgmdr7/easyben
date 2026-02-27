@@ -8,19 +8,14 @@ import { toast } from "sonner"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import {
   Users,
   Search,
-  Eye,
+  FileSearch,
   Filter,
   ChevronLeft,
   ChevronRight,
-  CheckCircle,
-  AlertCircle,
-  XCircle,
-  Clock,
   Download,
   User,
 } from "lucide-react"
@@ -49,6 +44,10 @@ export default function ClientesPage() {
   const [filtroCpf, setFiltroCpf] = useState("")
   const [filtroStatus, setFiltroStatus] = useState("todos")
 
+  // Corretores (para vincular cliente)
+  const [corretores, setCorretores] = useState<{ id: string; nome: string }[]>([])
+  const [atualizandoCorretor, setAtualizandoCorretor] = useState<string | null>(null)
+
   useEffect(() => {
     const administradoraLogada = getAdministradoraLogada()
     if (!administradoraLogada) {
@@ -58,6 +57,14 @@ export default function ClientesPage() {
     setAdministradora(administradoraLogada)
     carregarDados()
   }, [router, filtros, paginacao])
+
+  useEffect(() => {
+    if (!administradora?.id) return
+    fetch(`/api/administradora/corretores?administradora_id=${encodeURIComponent(administradora.id)}`)
+      .then((r) => r.json())
+      .then((d) => setCorretores(Array.isArray(d) ? d.map((c: { id: string; nome: string }) => ({ id: c.id, nome: c.nome })) : []))
+      .catch(() => setCorretores([]))
+  }, [administradora?.id])
 
   async function carregarDados() {
     if (!administradora) return
@@ -165,40 +172,56 @@ export default function ClientesPage() {
     router.push(`/administradora/clientes/${clienteId}`)
   }
 
+  async function atualizarCorretor(clienteId: string, corretorId: string | null) {
+    if (!administradora?.id) return
+    setAtualizandoCorretor(clienteId)
+    try {
+      const res = await fetch(`/api/administradora/clientes/${clienteId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          administradora_id: administradora.id,
+          corretor_id: corretorId || null,
+        }),
+      })
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err?.error || "Erro ao atualizar")
+      }
+      toast.success("Corretor atualizado")
+      carregarDados()
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Erro ao vincular corretor")
+    } finally {
+      setAtualizandoCorretor(null)
+    }
+  }
+
   const getStatusBadge = (cliente: ClienteAdministradoraCompleto) => {
+    const baseClass = "inline-flex items-center px-2 py-0.5 text-xs font-semibold rounded-sm border"
     if (cliente.implantado === true) {
-      return (
-        <Badge className="bg-[#7BD9F6] bg-opacity-20 text-[#0F172A] border border-[#7BD9F6] border-opacity-30 flex items-center gap-1">
-          <CheckCircle className="h-3 w-3" />
-          Implantado
-        </Badge>
-      )
-    } else if (cliente.implantado === false) {
-      return (
-        <Badge className="bg-blue-50 text-blue-700 border border-blue-200 flex items-center gap-1">
-          <Clock className="h-3 w-3" />
-          Aguardando Implantação
-        </Badge>
-      )
+      return <span className={`${baseClass} bg-slate-100 text-slate-800 border-slate-300`}>Implantado</span>
     }
-    
-    const badges = {
-      ativo: { bg: "bg-[#7BD9F6] bg-opacity-20 text-[#0F172A] border border-[#7BD9F6] border-opacity-30", icon: CheckCircle, label: "Ativo" },
-      suspenso: { bg: "bg-yellow-50 text-yellow-700 border border-yellow-200", icon: AlertCircle, label: "Suspenso" },
-      cancelado: { bg: "bg-red-50 text-red-700 border border-red-200", icon: XCircle, label: "Cancelado" },
-      inadimplente: { bg: "bg-orange-50 text-orange-700 border border-orange-200", icon: Clock, label: "Inadimplente" },
-      aguardando_implantacao: { bg: "bg-blue-50 text-blue-700 border border-blue-200", icon: Clock, label: "Aguardando Implantação" }
+    if (cliente.implantado === false) {
+      return <span className={`${baseClass} bg-gray-100 text-gray-600 border-gray-300`}>Aguardando Implantação</span>
     }
-    
-    const badge = badges[cliente.status as keyof typeof badges] || badges.ativo
-    const Icon = badge.icon
-    
-    return (
-      <Badge className={`${badge.bg} flex items-center gap-1`}>
-        <Icon className="h-3 w-3" />
-        {badge.label}
-      </Badge>
-    )
+    const statusStyles: Record<string, string> = {
+      ativo: "bg-slate-100 text-slate-800 border-slate-300",
+      suspenso: "bg-amber-50 text-amber-800 border-amber-200",
+      cancelado: "bg-gray-100 text-gray-600 border-gray-300",
+      inadimplente: "bg-amber-50 text-amber-800 border-amber-200",
+      aguardando_implantacao: "bg-gray-100 text-gray-600 border-gray-300",
+    }
+    const labels: Record<string, string> = {
+      ativo: "Ativo",
+      suspenso: "Suspenso",
+      cancelado: "Cancelado",
+      inadimplente: "Inadimplente",
+      aguardando_implantacao: "Aguardando Implantação",
+    }
+    const style = statusStyles[cliente.status as string] || statusStyles.ativo
+    const label = labels[cliente.status as string] || "Ativo"
+    return <span className={`${baseClass} ${style}`}>{label}</span>
   }
 
   const formatarData = (data: string) => {
@@ -283,7 +306,7 @@ export default function ClientesPage() {
                 Status
               </label>
               <Select value={filtroStatus} onValueChange={setFiltroStatus}>
-                <SelectTrigger className="h-10 text-sm">
+                <SelectTrigger className="h-10 w-full rounded-md border border-gray-300 bg-background px-3 py-2 text-sm">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -335,6 +358,7 @@ export default function ClientesPage() {
                       <th className="text-left py-3 px-4 text-xs font-bold text-gray-700 uppercase tracking-wider">Produto</th>
                       <th className="text-left py-3 px-4 text-xs font-bold text-gray-700 uppercase tracking-wider">Valor Mensal</th>
                       <th className="text-left py-3 px-4 text-xs font-bold text-gray-700 uppercase tracking-wider">Status</th>
+                      <th className="text-left py-3 px-4 text-xs font-bold text-gray-700 uppercase tracking-wider">Corretor</th>
                       <th className="text-left py-3 px-4 text-xs font-bold text-gray-700 uppercase tracking-wider">Data Vinculação</th>
                       <th className="text-left py-3 px-4 text-xs font-bold text-gray-700 uppercase tracking-wider">Ações</th>
                     </tr>
@@ -357,6 +381,23 @@ export default function ClientesPage() {
                         <td className="py-3 px-4">
                           {getStatusBadge(cliente)}
                         </td>
+                        <td className="py-3 px-4">
+                          <Select
+                            value={cliente.corretor_id ?? "__nenhum__"}
+                            onValueChange={(v) => atualizarCorretor(cliente.id, v === "__nenhum__" ? null : v)}
+                            disabled={atualizandoCorretor === cliente.id}
+                          >
+                            <SelectTrigger className="h-9 w-[180px] border-gray-200 text-sm">
+                              <SelectValue placeholder="Nenhum" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="__nenhum__">— Nenhum</SelectItem>
+                              {corretores.map((c) => (
+                                <SelectItem key={c.id} value={c.id}>{c.nome}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </td>
                         <td className="py-3 px-4 text-sm text-gray-600">
                           {formatarData(cliente.data_vinculacao)}
                         </td>
@@ -365,10 +406,10 @@ export default function ClientesPage() {
                             onClick={() => verCliente(cliente.id)}
                             variant="outline"
                             size="sm"
-                            className="border-[#0F172A] text-[#0F172A] hover:bg-[#0F172A] hover:text-white"
+                            className="h-8 w-8 p-0 border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-800 hover:border-slate-300 rounded-md"
+                            title="Ver detalhes"
                           >
-                            <Eye className="h-4 w-4 mr-1" />
-                            Ver
+                            <FileSearch className="h-4 w-4" />
                           </Button>
                         </td>
                       </tr>

@@ -336,7 +336,7 @@ export const analistaRoutes: Route[] = [
  */
 export const administradoraRoutes: Route[] = [
   {
-    path: '/administradora',
+    path: '/administradora/dashboard',
     label: 'Dashboard',
     description: 'Dashboard principal da administradora',
     requiresAuth: true,

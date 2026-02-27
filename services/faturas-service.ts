@@ -1,3 +1,4 @@
+import type { SupabaseClient } from "@supabase/supabase-js"
 import { supabase } from "@/lib/supabase"
 import { getCurrentTenantId } from "@/lib/tenant-query-helper"
 
@@ -46,7 +47,13 @@ export interface Fatura {
 export interface CriarFaturaData {
   cliente_administradora_id: string
   administradora_id: string
-  proposta_id: string
+  /** Schema legado: coluna cliente_id NOT NULL (CPF ou id do cliente) */
+  cliente_id?: string
+  /** Schema legado: cliente_nome, cliente_email, cliente_telefone NOT NULL */
+  cliente_nome?: string
+  cliente_email?: string
+  cliente_telefone?: string
+  proposta_id?: string | null
   referencia?: string
   valor_original: number
   valor_desconto?: number
@@ -136,14 +143,14 @@ export class FaturasService {
   }
 
   /**
-   * Criar nova fatura
+   * Criar nova fatura.
+   * @param client Opcional: use supabaseAdmin nas API routes para garantir gravação de todos os campos (cliente_nome, numero_fatura, etc.)
    */
-  static async criar(dados: CriarFaturaData): Promise<Fatura> {
+  static async criar(dados: CriarFaturaData, client?: SupabaseClient): Promise<Fatura> {
     try {
-      const { data: userData } = await supabase.auth.getUser()
-
       const tenantId = await getCurrentTenantId()
-      
+      const db = client ?? supabase
+
       // Gerar número da fatura
       const numeroFatura = await this.gerarNumeroFatura(dados.administradora_id)
 
@@ -152,26 +159,28 @@ export class FaturasService {
       const valorAcrescimo = dados.valor_acrescimo || 0
       const valorTotal = dados.valor_original - valorDesconto + valorAcrescimo
 
-      const { data, error } = await supabase
+      // Compatível com schema legado (vencimento, valor, cliente_id, cliente_nome, etc. NOT NULL)
+      const dataVencimento = String(dados.data_vencimento).slice(0, 10)
+      const payload: Record<string, unknown> = {
+        cliente_administradora_id: dados.cliente_administradora_id,
+        administradora_id: dados.administradora_id,
+        cliente_id: dados.cliente_id ?? dados.cliente_administradora_id,
+        cliente_nome: dados.cliente_nome ?? "Cliente",
+        cliente_email: dados.cliente_email ?? "",
+        cliente_telefone: dados.cliente_telefone ?? "",
+        valor: valorTotal,
+        vencimento: dataVencimento,
+        status: "pendente",
+        tenant_id: tenantId,
+        numero_fatura: numeroFatura,
+        observacoes: dados.observacoes ?? "",
+      }
+      if (dados.proposta_id != null && dados.proposta_id !== "") payload.proposta_id = dados.proposta_id
+      if (dados.referencia != null) payload.referencia = dados.referencia
+
+      const { data, error } = await db
         .from("faturas")
-        .insert([
-          {
-            ...dados,
-            numero_fatura: numeroFatura,
-            valor_desconto: valorDesconto,
-            valor_acrescimo: valorAcrescimo,
-            valor_multa: 0,
-            valor_juros: 0,
-            valor_total: valorTotal,
-            valor_pago: 0,
-            data_emissao: new Date().toISOString(),
-            status: "pendente",
-            notificacao_enviada: false,
-            tentativas_notificacao: 0,
-            created_by: userData?.user?.id,
-            tenant_id: tenantId, // Adicionar tenant_id automaticamente
-          },
-        ])
+        .insert([payload])
         .select()
         .single()
 

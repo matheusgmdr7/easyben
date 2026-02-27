@@ -226,13 +226,12 @@ export async function atualizarRecursosTenant(
         }
       }
     } else {
-      const response = await fetch('/api/admin/recursos/tenant', {
+      const response = await fetch(`/api/admin/recursos/tenant/${tenantId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          tenantId,
           recursos: recursosHabilitados,
         }),
       })

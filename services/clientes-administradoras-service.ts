@@ -6,6 +6,7 @@ export interface ClienteAdministradora {
   id: string
   administradora_id: string
   proposta_id: string
+  corretor_id?: string | null
   numero_contrato?: string
   data_vinculacao: string
   data_vencimento: string
@@ -25,6 +26,7 @@ export interface ClienteAdministradora {
 export interface ClienteAdministradoraCompleto extends ClienteAdministradora {
   administradora_nome?: string
   administradora_cnpj?: string
+  corretor_nome?: string | null
   cliente_nome?: string
   cliente_email?: string
   cliente_telefone?: string

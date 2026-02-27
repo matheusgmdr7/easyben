@@ -14,12 +14,13 @@ import { getCorretorLogado } from "@/services/auth-corretores-simples"
 import { Spinner } from "@/components/ui/spinner"
 import { formatarMoeda } from "@/utils/formatters"
 import { useRouter } from "next/navigation"
+import { formatarCNPJ } from "@/lib/formatters"
 
 interface CorretorEquipe {
   id: string
   nome: string
   email: string
-  telefone?: string
+  whatsapp?: string
   status: string
   created_at: string
   total_propostas?: number
@@ -34,6 +35,7 @@ export default function MinhaEquipePage() {
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState("")
   const [gestorId, setGestorId] = useState<string | null>(null)
+  const [corretoraInfo, setCorretoraInfo] = useState<{ razao_social?: string | null; nome_fantasia?: string | null; cnpj?: string | null } | null>(null)
 
   useEffect(() => {
     carregarDados()
@@ -53,7 +55,7 @@ export default function MinhaEquipePage() {
       
       const { data: gestor, error: gestorError } = await supabase
         .from("corretores")
-        .select("id")
+        .select("id, razao_social, nome_fantasia, cnpj")
         .eq("id", corretorLocal.id)
         .eq("tenant_id", tenantId)
         .eq("is_gestor", true)
@@ -65,11 +67,12 @@ export default function MinhaEquipePage() {
       }
 
       setGestorId(gestor.id)
+      setCorretoraInfo({ razao_social: gestor.razao_social, nome_fantasia: gestor.nome_fantasia, cnpj: gestor.cnpj })
 
       // Buscar corretores da equipe
       const { data: corretores, error: corretoresError } = await supabase
         .from("corretores")
-        .select("id, nome, email, telefone, status, created_at")
+        .select("id, nome, email, whatsapp, status, created_at")
         .eq("gestor_id", gestor.id)
         .eq("tenant_id", tenantId)
         .order("created_at", { ascending: false })
@@ -115,7 +118,7 @@ export default function MinhaEquipePage() {
     return (
       corretor.nome?.toLowerCase().includes(searchLower) ||
       corretor.email?.toLowerCase().includes(searchLower) ||
-      corretor.telefone?.toLowerCase().includes(searchLower)
+      corretor.whatsapp?.toLowerCase().includes(searchLower)
     )
   })
 
@@ -143,10 +146,16 @@ export default function MinhaEquipePage() {
           <div>
             <h1 className="text-2xl font-bold text-gray-900 tracking-tight font-sans">Minha Equipe</h1>
             <p className="text-gray-600 mt-1 font-medium">Gerencie e acompanhe o desempenho dos corretores da sua equipe</p>
+            {(corretoraInfo?.razao_social || corretoraInfo?.nome_fantasia || corretoraInfo?.cnpj) && (
+              <p className="text-sm text-gray-500 mt-2">
+                {corretoraInfo.razao_social || corretoraInfo.nome_fantasia}
+                {corretoraInfo.cnpj && <><span className="mx-1">·</span>CNPJ: {formatarCNPJ(corretoraInfo.cnpj)}</>}
+              </p>
+            )}
           </div>
           <Button 
             className="bg-[#0F172A] hover:bg-[#1E293B] text-white font-bold px-6 py-2 btn-corporate shadow-corporate"
-            onClick={() => router.push('/gestor/equipe/novo')}
+            onClick={() => router.push('/gestor/link-cadastro')}
           >
             <Users className="h-4 w-4 mr-2" />
             Adicionar Corretor
@@ -224,7 +233,7 @@ export default function MinhaEquipePage() {
             <div className="relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
               <Input
-                placeholder="Buscar por nome, email ou telefone..."
+                placeholder="Buscar por nome, email ou WhatsApp..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="pl-10"
@@ -262,10 +271,10 @@ export default function MinhaEquipePage() {
                           <Mail className="h-3 w-3" />
                           {corretor.email}
                         </span>
-                        {corretor.telefone && (
+                        {corretor.whatsapp && (
                           <span className="text-xs text-gray-500 flex items-center gap-1">
                             <Phone className="h-3 w-3" />
-                            {corretor.telefone}
+                            {corretor.whatsapp}
                           </span>
                         )}
                       </div>

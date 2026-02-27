@@ -14,14 +14,12 @@ export default function AnalistaLoginPage() {
   const [email, setEmail] = useState("")
   const [senha, setSenha] = useState("")
   const [loading, setLoading] = useState(false)
-  const [erro, setErro] = useState("")
   const [mostrarSenha, setMostrarSenha] = useState(false)
   // Logo será carregada da configuração do sistema/tenant (configurada no painel EasyBen)
   const [logoUrl] = useState<string | null>(null)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setErro("")
     setLoading(true)
 
     try {
@@ -42,7 +40,7 @@ export default function AnalistaLoginPage() {
           usuario.permissoes?.includes("cadastrado")
 
         if (!temPermissaoAnalista) {
-          setErro("Você não tem permissão para acessar o Portal do Analista.")
+          toast.error("Você não tem permissão para acessar o Portal do Analista.")
           setLoading(false)
           return
         }
@@ -64,12 +62,11 @@ export default function AnalistaLoginPage() {
         toast.success("Login realizado com sucesso!")
         router.push("/analista")
       } else {
-        setErro("Erro ao carregar dados do usuário. Tente novamente.")
+        toast.error("Erro ao carregar dados do usuário. Tente novamente.")
       }
     } catch (error: any) {
       console.error("❌ Erro ao fazer login:", error)
-      setErro(error.message || "Erro ao fazer login. Verifique suas credenciais.")
-      toast.error(error.message || "Erro ao fazer login")
+      toast.error(error.message || "Erro ao fazer login. Verifique suas credenciais.")
     } finally {
       setLoading(false)
     }
@@ -95,10 +92,6 @@ export default function AnalistaLoginPage() {
         </div>
 
         <div className="bg-white rounded-lg shadow-md p-6">
-          {erro && (
-            <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-md text-sm">{erro}</div>
-          )}
-
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
@@ -153,6 +146,12 @@ export default function AnalistaLoginPage() {
                 "Entrar"
               )}
             </button>
+
+            <div className="text-center">
+              <Link href="/analista/recuperar-senha" className="text-sm text-[#0F172A] hover:underline">
+                Esqueceu sua senha?
+              </Link>
+            </div>
           </form>
 
           <div className="mt-6 text-center">

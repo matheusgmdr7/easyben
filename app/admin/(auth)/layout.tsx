@@ -5,69 +5,33 @@ import { useState, useEffect } from "react"
 import AdminHeader from "@/components/admin/admin-header"
 import AdminSidebar from "@/components/admin/admin-sidebar"
 import AuthGuard from "@/components/admin/auth-guard"
+// RecursoGuard temporariamente desabilitado para isolar "Unsupported Server Component type: undefined"
+// import { RecursoGuard } from "@/components/tenant/recurso-guard"
 
 export default function AdminLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('admin-sidebar-collapsed')
-      return saved === 'true'
-    }
-    return true // Iniciar colapsado por padrão
-  })
-  
   const [sidebarHovered, setSidebarHovered] = useState(false)
-  
-  // Estado visual (colapsado quando não está com hover)
-  const isVisuallyCollapsed = sidebarCollapsed && !sidebarHovered
+  // Colapsado quando não há hover; expande ao passar o mouse
+  const isVisuallyCollapsed = !sidebarHovered
 
-  // Sincronizar estado do sidebar com o layout
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      // Função para atualizar estado
-      const updateSidebarState = () => {
-        const current = localStorage.getItem('admin-sidebar-collapsed')
-        const isCollapsed = current === 'true'
-        setSidebarCollapsed(isCollapsed)
-      }
-      
-      // Listener para eventos customizados do sidebar
-      const handleSidebarToggle = () => {
-        requestAnimationFrame(() => {
-          updateSidebarState()
-        })
-      }
-      
-      // Detectar hover no sidebar via eventos customizados
-      const handleSidebarHover = () => {
-        setSidebarHovered(true)
-      }
-      
-      const handleSidebarLeave = () => {
-        setSidebarHovered(false)
-      }
-      
-      // Verificar periodicamente (fallback)
-      const interval = setInterval(updateSidebarState, 100)
-      
-      window.addEventListener('sidebar-toggle', handleSidebarToggle)
-      window.addEventListener('sidebar-hover', handleSidebarHover)
-      window.addEventListener('sidebar-leave', handleSidebarLeave)
-      
-      return () => {
-        window.removeEventListener('sidebar-toggle', handleSidebarToggle)
-        window.removeEventListener('sidebar-hover', handleSidebarHover)
-        window.removeEventListener('sidebar-leave', handleSidebarLeave)
-        clearInterval(interval)
-      }
+    if (typeof window === 'undefined') return
+    const onHover = () => setSidebarHovered(true)
+    const onLeave = () => setSidebarHovered(false)
+    window.addEventListener('sidebar-hover', onHover)
+    window.addEventListener('sidebar-leave', onLeave)
+    return () => {
+      window.removeEventListener('sidebar-hover', onHover)
+      window.removeEventListener('sidebar-leave', onLeave)
     }
   }, [])
 
   return (
     <AuthGuard>
+      {/* RecursoGuard bypassado temporariamente para isolar erro RSC undefined */}
       <div className="min-h-screen bg-gray-100" style={{ fontFamily: "'Inter', sans-serif" }}>
         <AdminSidebar />
         <div 

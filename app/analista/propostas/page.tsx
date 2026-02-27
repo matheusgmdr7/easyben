@@ -19,7 +19,7 @@ import { downloadPropostaComDocumentos } from "@/services/download-service"
 import { buscarCorretores } from "@/services/corretores-service"
 import { gerarPDFCompleto, gerarPDFSimples } from "@/services/pdf-completo-service"
 import { toast } from "sonner"
-import { ChevronLeft, ChevronRight, Download, Eye, FileText, Heart, Clock, Search, User, UserCheck, Edit, Save, CheckCircle, X, XCircle, Building, Camera, Filter, RefreshCw, Mail } from "lucide-react"
+import { ChevronLeft, ChevronRight, Download, Eye, FileText, Heart, Clock, Search, User, UserCheck, Edit, Save, CheckCircle, X, XCircle, Building, Camera, Filter, RefreshCw, Mail, RotateCcw } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
@@ -1177,61 +1177,29 @@ export default function PropostasPage() {
   }
 
   function getStatusBadge(status: any) {
-    if (status === "parcial") {
-      return {
-        label: "AGUARDANDO VALIDAÇÃO",
-        color: "bg-gray-50 text-gray-500",
-        icon: Clock
-      }
-    } else if (status === "aguardando_cliente") {
-      return {
-        label: "AGUARDANDO CLIENTE",
-        color: "bg-gray-50 text-gray-500",
-        icon: Clock
-      }
-    } else if (status === "pendente") {
-      return {
-        label: "AGUARDANDO ANÁLISE",
-        color: "bg-gray-50 text-gray-500",
-        icon: Clock
-      }
-    } else if (status === "aprovada") {
-      return {
-        label: "APROVADA",
-        color: "bg-gray-100 text-[#0F172A]",
-        icon: CheckCircle
-      }
-    } else if (status === "rejeitada") {
-      return {
-        label: "REJEITADA",
-        color: "bg-gray-50 text-gray-500",
-        icon: X
-      }
-    } else if (status === "cancelada") {
-      return {
-        label: "CANCELADA",
-        color: "bg-gray-50 text-gray-500",
-        icon: X
-      }
-    } else if (status === "cadastrado" || status === "cadastrada") {
-      return {
-        label: "CADASTRADO",
-        color: "bg-gray-100 text-[#0F172A]",
-        icon: CheckCircle
-      }
-    } else if (status === "transmitida") {
-      return {
-        label: "TRANSMITIDA",
-        color: "bg-gray-100 text-[#0F172A]",
-        icon: CheckCircle
-      }
-    } else {
-      return {
-        label: status || "INDEFINIDO",
-        color: "bg-gray-50 text-gray-500",
-        icon: CheckCircle
-      }
+    const s = (status || "").toLowerCase()
+    if (s === "parcial" || s === "aguardando_validacao") {
+      return { label: "AGUARDANDO VALIDAÇÃO", color: "bg-gray-50 text-gray-600 border border-gray-200", icon: Clock }
     }
+    if (s === "aguardando_cliente") {
+      return { label: "AGUARDANDO CLIENTE", color: "bg-gray-50 text-gray-600 border border-gray-200", icon: Clock }
+    }
+    if (s === "pendente" || s === "em_analise") {
+      return { label: "AGUARDANDO ANÁLISE", color: "bg-gray-50 text-gray-600 border border-gray-200", icon: Clock }
+    }
+    if (["aprovada", "aprovado", "cadastrado", "cadastrada", "transmitida"].includes(s)) {
+      return { label: s === "transmitida" ? "TRANSMITIDA" : ["cadastrado", "cadastrada"].includes(s) ? "CADASTRADO" : "APROVADA", color: "bg-gray-100 text-gray-800 border border-gray-200", icon: CheckCircle }
+    }
+    if (s === "rejeitada" || s === "rejeitado") {
+      return { label: "REJEITADA", color: "bg-gray-50 text-gray-500 border border-gray-200", icon: XCircle }
+    }
+    if (s === "cancelada" || s === "cancelado") {
+      return { label: "CANCELADA", color: "bg-gray-50 text-gray-500 border border-gray-200", icon: XCircle }
+    }
+    if (s === "devolvida") {
+      return { label: "DEVOLVIDA", color: "bg-gray-50 text-gray-600 border border-gray-200", icon: RotateCcw }
+    }
+    return { label: (status || "INDEFINIDO").toString().toUpperCase(), color: "bg-gray-100 text-gray-600 border border-gray-200", icon: CheckCircle }
   }
 
 
@@ -1821,6 +1789,7 @@ export default function PropostasPage() {
             <tbody className="bg-white divide-y divide-gray-200">
               {propostasExibidas.map((proposta, index) => {
                 const statusConfig = getStatusBadge(proposta.status)
+                const StatusIcon = statusConfig.icon
                 const bgColor = index % 2 === 0 ? "bg-white" : "bg-gray-50"
                 return (
                   <tr key={`${proposta.origem}-${proposta.id}`} className={`${bgColor} hover:bg-gray-100`}>
@@ -1844,8 +1813,9 @@ export default function PropostasPage() {
                     <td className="px-4 py-4">
                       <div className="space-y-1">
                         <span
-                          className={`inline-flex items-center px-2 py-1 text-xs font-semibold rounded ${statusConfig.color}`}
+                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg shadow-sm ${statusConfig.color}`}
                         >
+                          <StatusIcon className="w-3.5 h-3.5 flex-shrink-0" />
                           {statusConfig.label}
                         </span>
                       </div>
@@ -1927,6 +1897,7 @@ export default function PropostasPage() {
         <div className="md:hidden divide-y divide-gray-200">
           {propostasExibidas.map((proposta, index) => {
             const statusConfig = getStatusBadge(proposta.status)
+            const StatusIcon = statusConfig.icon
             const bgColor = index % 2 === 0 ? "bg-white" : "bg-gray-50"
             return (
               <div key={`${proposta.origem}-${proposta.id}`} className={`p-4 ${bgColor} hover:bg-gray-100`}>
@@ -1957,8 +1928,9 @@ export default function PropostasPage() {
                   {/* Status e Origem */}
                   <div className="space-y-1">
                     <span
-                      className={`inline-flex items-center px-2 py-1 text-xs font-semibold rounded ${statusConfig.color}`}
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg shadow-sm ${statusConfig.color}`}
                     >
+                      <StatusIcon className="w-3.5 h-3.5 flex-shrink-0" />
                       {statusConfig.label}
                     </span>
                     {proposta.origem === "propostas_corretores" && proposta.corretor_id ? (() => {
@@ -2539,11 +2511,11 @@ export default function PropostasPage() {
                           </div>
                           <div>
                             <label className="block text-xs sm:text-sm font-bold text-gray-900 uppercase tracking-wide mb-2">Status</label>
-                            <Badge className={`${getStatusBadge(propostaDetalhada.status).color} inline-flex items-center gap-1`}>
+                            <Badge className={`${getStatusBadge(propostaDetalhada.status).color} inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg shadow-sm font-bold text-xs`}>
                               {(() => {
                                 const statusInfo = getStatusBadge(propostaDetalhada.status)
                                 const IconComponent = statusInfo.icon
-                                return <IconComponent className="w-3 h-3" />
+                                return <IconComponent className="w-4 h-4 flex-shrink-0" />
                               })()}
                               {getStatusBadge(propostaDetalhada.status).label}
                             </Badge>

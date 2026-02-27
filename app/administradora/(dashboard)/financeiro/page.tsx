@@ -371,7 +371,7 @@ export default function FinanceiroPage() {
                 Status
               </label>
               <Select value={statusFiltro} onValueChange={setStatusFiltro}>
-                <SelectTrigger className="h-10 text-sm">
+                <SelectTrigger className="h-10 w-full rounded-md border border-gray-300 bg-background px-3 py-2 text-sm">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -433,7 +433,7 @@ export default function FinanceiroPage() {
                 value={ordenacao.campo}
                 onValueChange={(value) => setOrdenacao(prev => ({ ...prev, campo: value }))}
               >
-                <SelectTrigger className="w-40 h-9 text-sm">
+                <SelectTrigger className="w-40 h-10 rounded-md border border-gray-300 bg-background px-3 py-2 text-sm">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>

@@ -14,6 +14,7 @@ import { getCorretorLogado } from "@/services/auth-corretores-simples"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Spinner } from "@/components/ui/spinner"
+import { formatarCNPJ } from "@/lib/formatters"
 
 interface CorretorEquipe {
   id: string
@@ -30,6 +31,7 @@ export default function GestorDashboard() {
   const [loading, setLoading] = useState(true)
   const [gestorId, setGestorId] = useState<string | null>(null)
   const [linkCadastro, setLinkCadastro] = useState<string>("")
+  const [corretoraInfo, setCorretoraInfo] = useState<{ razao_social?: string | null; nome_fantasia?: string | null; cnpj?: string | null } | null>(null)
   const [stats, setStats] = useState({
     totalCorretores: 0,
     totalPropostas: 0,
@@ -80,10 +82,10 @@ export default function GestorDashboard() {
 
       const tenantId = await getCurrentTenantId()
       
-      // Buscar dados atualizados do gestor
+      // Buscar dados atualizados do gestor (incluindo dados da corretora)
       const { data: gestor, error: gestorError } = await supabase
         .from("corretores")
-        .select("id, link_cadastro_equipe")
+        .select("id, link_cadastro_equipe, razao_social, nome_fantasia, cnpj")
         .eq("id", corretorLocal.id)
         .eq("tenant_id", tenantId)
         .eq("is_gestor", true)
@@ -95,7 +97,8 @@ export default function GestorDashboard() {
       }
 
       setGestorId(gestor.id)
-      
+      setCorretoraInfo({ razao_social: gestor.razao_social, nome_fantasia: gestor.nome_fantasia, cnpj: gestor.cnpj })
+
       // Gerar ou usar link existente
       if (gestor.link_cadastro_equipe) {
         const { data: tenant } = await supabase
@@ -261,6 +264,12 @@ export default function GestorDashboard() {
           <div>
             <h1 className="text-2xl font-bold text-gray-900 tracking-tight font-sans">Dashboard</h1>
             <p className="text-gray-600 mt-1 font-medium">Gerencie sua equipe de corretores</p>
+            {(corretoraInfo?.razao_social || corretoraInfo?.nome_fantasia || corretoraInfo?.cnpj) && (
+              <p className="text-sm text-gray-500 mt-2">
+                {corretoraInfo.razao_social || corretoraInfo.nome_fantasia}
+                {corretoraInfo.cnpj && <><span className="mx-1">·</span>CNPJ: {formatarCNPJ(corretoraInfo.cnpj)}</>}
+                </p>
+            )}
           </div>
 
           <div className="flex flex-col lg:flex-row lg:items-center gap-4">
@@ -287,7 +296,7 @@ export default function GestorDashboard() {
             </Tabs>
             <Button 
               className="bg-[#0F172A] hover:bg-[#1E293B] text-white font-bold px-6 py-2 btn-corporate shadow-corporate"
-              onClick={() => window.location.href = '/gestor/equipe/novo'}
+              onClick={() => window.location.href = '/gestor/link-cadastro'}
             >
               <UserPlus className="h-4 w-4 mr-2" />
               Adicionar Corretor

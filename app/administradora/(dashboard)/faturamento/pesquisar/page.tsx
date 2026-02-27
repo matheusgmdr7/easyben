@@ -162,7 +162,7 @@ export default function PesquisarFaturamentoPage() {
           <div>
             <label className="block text-xs text-gray-600 mb-1">Grupo Beneficiário</label>
             <Select value={grupoFiltro} onValueChange={setGrupoFiltro}>
-              <SelectTrigger className="h-9 text-sm border-gray-300 rounded-sm">
+              <SelectTrigger className="h-10 w-full rounded-md border border-gray-300 bg-background px-3 py-2 text-sm">
                 <SelectValue placeholder="Selecione" />
               </SelectTrigger>
               <SelectContent>
@@ -188,7 +188,7 @@ export default function PesquisarFaturamentoPage() {
           <div>
             <label className="block text-xs text-gray-600 mb-1">Status de Faturamento</label>
             <Select value={statusFaturamentoFiltro} onValueChange={setStatusFaturamentoFiltro}>
-              <SelectTrigger className="h-9 text-sm border-gray-300 rounded-sm">
+              <SelectTrigger className="h-10 w-full rounded-md border border-gray-300 bg-background px-3 py-2 text-sm">
                 <SelectValue placeholder="Selecione" />
               </SelectTrigger>
               <SelectContent>
@@ -341,7 +341,7 @@ export default function PesquisarFaturamentoPage() {
               </Button>
             </div>
             <Select value={String(itemsPerPage)} onValueChange={(v) => setItemsPerPage(Number(v))}>
-              <SelectTrigger className="w-24 h-8 text-xs border-gray-300">
+              <SelectTrigger className="w-24 h-8 text-xs rounded-md border border-gray-300 bg-background px-3 py-2">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>

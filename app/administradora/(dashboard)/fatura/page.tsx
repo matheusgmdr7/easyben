@@ -9,7 +9,6 @@ import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Search, X, Edit, ChevronDown } from "lucide-react"
@@ -247,24 +246,19 @@ export default function FaturaPage() {
   }
 
   function getStatusBadge(status: string) {
+    const baseClass = "inline-flex items-center px-2 py-0.5 text-xs font-semibold rounded-sm border"
     const statusMap: Record<string, { label: string; className: string }> = {
-      liquidado: { label: "LIQUIDADO", className: "bg-green-100 text-green-800" },
-      cancelado: { label: "CANCELADO", className: "bg-red-100 text-red-800" },
-      faturado: { label: "FATURADO", className: "bg-blue-100 text-blue-800" },
-      processado: { label: "PROCESSADO", className: "bg-yellow-100 text-yellow-800" },
-      baixado: { label: "BAIXADO", className: "bg-purple-100 text-purple-800" },
-      paga: { label: "PAGA", className: "bg-green-100 text-green-800" },
-      pendente: { label: "PENDENTE", className: "bg-yellow-100 text-yellow-800" },
-      atrasada: { label: "ATRASADA", className: "bg-red-100 text-red-800" },
+      liquidado: { label: "Liquidado", className: "bg-slate-100 text-slate-800 border-slate-300" },
+      cancelado: { label: "Cancelado", className: "bg-gray-100 text-gray-600 border-gray-300" },
+      faturado: { label: "Faturado", className: "bg-slate-100 text-slate-800 border-slate-300" },
+      processado: { label: "Processado", className: "bg-amber-50 text-amber-800 border-amber-200" },
+      baixado: { label: "Baixado", className: "bg-slate-100 text-slate-800 border-slate-300" },
+      paga: { label: "Paga", className: "bg-slate-100 text-slate-800 border-slate-300" },
+      pendente: { label: "Pendente", className: "bg-amber-50 text-amber-800 border-amber-200" },
+      atrasada: { label: "Atrasada", className: "bg-gray-100 text-gray-600 border-gray-300" },
     }
-
-    const statusInfo = statusMap[status.toLowerCase()] || { label: status.toUpperCase(), className: "bg-gray-100 text-gray-800" }
-
-    return (
-      <Badge className={cn("font-semibold text-xs", statusInfo.className)}>
-        {statusInfo.label}
-      </Badge>
-    )
+    const statusInfo = statusMap[status.toLowerCase()] || { label: status, className: "bg-gray-100 text-gray-600 border-gray-300" }
+    return <span className={cn(baseClass, statusInfo.className)}>{statusInfo.label}</span>
   }
 
   const faturasPaginadas = faturas.slice(
@@ -286,7 +280,7 @@ export default function FaturaPage() {
             <label className="block text-xs text-gray-600 mb-1">Grupo Beneficiário</label>
             <div className="flex gap-1">
               <Select value={grupoFiltro} onValueChange={setGrupoFiltro}>
-                <SelectTrigger className="h-9 text-sm border-gray-300 rounded-sm flex-1">
+                <SelectTrigger className="h-10 flex-1 rounded-md border border-gray-300 bg-background px-3 py-2 text-sm">
                   <SelectValue placeholder="Selecione" />
                 </SelectTrigger>
                 <SelectContent>
@@ -330,7 +324,7 @@ export default function FaturaPage() {
             <label className="block text-xs text-gray-600 mb-1">Corretor</label>
             <div className="flex gap-1">
               <Select value={corretorFiltro} onValueChange={setCorretorFiltro}>
-                <SelectTrigger className="h-9 text-sm border-gray-300 rounded-sm flex-1">
+                <SelectTrigger className="h-10 flex-1 rounded-md border border-gray-300 bg-background px-3 py-2 text-sm">
                   <SelectValue placeholder="Selecione" />
                 </SelectTrigger>
                 <SelectContent>
@@ -466,7 +460,7 @@ export default function FaturaPage() {
           <div>
             <label className="block text-xs text-gray-600 mb-1">Status Beneficiário</label>
             <Select value={statusBeneficiarioFiltro} onValueChange={setStatusBeneficiarioFiltro}>
-              <SelectTrigger className="h-9 text-sm border-gray-300 rounded-sm">
+              <SelectTrigger className="h-10 w-full rounded-md border border-gray-300 bg-background px-3 py-2 text-sm">
                 <SelectValue placeholder="Selecione" />
               </SelectTrigger>
               <SelectContent>
@@ -599,18 +593,18 @@ export default function FaturaPage() {
                       <td className="px-4 py-2 text-sm text-gray-800 border-r border-gray-200">{formatarData(fatura.data_liquidacao)}</td>
                       <td className="px-4 py-2 border-r border-gray-200">
                         {fatura.dias_atraso && fatura.dias_atraso > 0 ? (
-                          <Badge className="bg-red-100 text-red-800 font-semibold text-xs">
+                          <span className="inline-flex items-center px-2 py-0.5 text-xs font-semibold rounded-sm border bg-gray-100 text-gray-600 border-gray-300">
                             {fatura.dias_atraso} dias
-                          </Badge>
+                          </span>
                         ) : (
                           <span className="text-sm text-gray-500">-</span>
                         )}
                       </td>
                       <td className="px-4 py-2 text-center">
                         <Button
-                          variant="ghost"
+                          variant="outline"
                           size="sm"
-                          className="h-7 w-7 p-0 text-gray-600 hover:text-gray-900 hover:bg-gray-100"
+                          className="h-8 w-8 p-0 border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-800 hover:border-slate-300 rounded-md"
                           title="Editar"
                         >
                           <Edit className="h-4 w-4" />
@@ -671,7 +665,7 @@ export default function FaturaPage() {
               </Button>
             </div>
             <Select value={String(itemsPerPage)} onValueChange={(v) => setItemsPerPage(Number(v))}>
-              <SelectTrigger className="w-24 h-8 text-xs border-gray-300">
+              <SelectTrigger className="w-24 h-8 text-xs rounded-md border border-gray-300 bg-background px-3 py-2">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>

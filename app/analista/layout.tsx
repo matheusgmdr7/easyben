@@ -7,6 +7,8 @@ import AnalistaSidebar from "@/components/analista/analista-sidebar"
 import AnalistaHeader from "@/components/analista/analista-header"
 import { useRouter } from "next/navigation"
 import { usePermissions } from "@/hooks/use-permissions"
+import { RecursoGuard } from "@/components/tenant/recurso-guard"
+import { Spinner } from "@/components/ui/spinner"
 
 export default function AnalistaLayout({
   children,
@@ -99,14 +101,20 @@ export default function AnalistaLayout({
   }
 
   if (!hasAccess) {
-    return null
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Spinner />
+        <span className="ml-2 text-gray-600">Verificando permissões...</span>
+      </div>
+    )
   }
 
   const isVisuallyCollapsed = sidebarCollapsed && !sidebarHovered
 
   return (
     <AuthGuard>
-      <div className="min-h-screen bg-gray-50" style={{ fontFamily: "'Inter', sans-serif" }}>
+      <RecursoGuard codigoRecurso="portal_analista" redirectTo="/admin" showError={true}>
+        <div className="min-h-screen bg-gray-50" style={{ fontFamily: "'Inter', sans-serif" }}>
         <AnalistaSidebar />
         <div 
           className={`flex flex-col transition-all duration-300 ease-in-out bg-gray-50 ${
@@ -123,6 +131,7 @@ export default function AnalistaLayout({
           </main>
         </div>
       </div>
+      </RecursoGuard>
     </AuthGuard>
   )
 }

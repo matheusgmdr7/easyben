@@ -8,9 +8,10 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { Plus, Search, Edit2, Trash2, Eye, Eye as EyeIcon } from "lucide-react"
+import { Plus, Search, FileSearch, Pencil, UserMinus, Power } from "lucide-react"
 import { useRouter } from "next/navigation"
 import ModalNovoGrupo from "@/components/administradora/modals/modal-novo-grupo"
+import { ModalConfirmacaoExclusao } from "@/components/administradora/modal-confirmacao-exclusao"
 
 export default function GruposBeneficiariosPage() {
   const router = useRouter()
@@ -20,6 +21,12 @@ export default function GruposBeneficiariosPage() {
   const [showModalNovo, setShowModalNovo] = useState(false)
   const [grupoEditando, setGrupoEditando] = useState<GrupoBeneficiarios | null>(null)
   const [administradoraId, setAdministradoraId] = useState<string | null>(null)
+  const [confirmExcluirOpen, setConfirmExcluirOpen] = useState(false)
+  const [grupoParaExcluir, setGrupoParaExcluir] = useState<string | null>(null)
+  const [excluindoGrupo, setExcluindoGrupo] = useState(false)
+  const [confirmStatusOpen, setConfirmStatusOpen] = useState(false)
+  const [grupoParaStatus, setGrupoParaStatus] = useState<{ id: string; ativo: boolean; nome: string } | null>(null)
+  const [alterandoStatus, setAlterandoStatus] = useState(false)
 
   useEffect(() => {
     const administradora = getAdministradoraLogada()
@@ -43,17 +50,20 @@ export default function GruposBeneficiariosPage() {
   }
 
   async function handleDeletar(grupoId: string) {
-    if (!confirm("Tem certeza que deseja excluir este grupo?")) return
-
     try {
+      setExcluindoGrupo(true)
       await GruposBeneficiariosService.deletar(grupoId)
       toast.success("Grupo excluído com sucesso!")
+      setConfirmExcluirOpen(false)
+      setGrupoParaExcluir(null)
       if (administradoraId) {
         carregarGrupos(administradoraId)
       }
     } catch (error: any) {
       console.error("❌ Erro ao deletar grupo:", error)
       toast.error("Erro ao deletar grupo: " + error.message)
+    } finally {
+      setExcluindoGrupo(false)
     }
   }
 
@@ -88,11 +98,9 @@ export default function GruposBeneficiariosPage() {
     }
   }
 
-  const gruposFiltrados = grupos.filter((grupo) => {
-    const nomeMatch = grupo.nome.toLowerCase().includes(filtro.toLowerCase())
-    const descricaoMatch = grupo.descricao?.toLowerCase().includes(filtro.toLowerCase())
-    return nomeMatch || descricaoMatch
-  })
+  const gruposFiltrados = grupos.filter((grupo) =>
+    grupo.nome.toLowerCase().includes(filtro.toLowerCase())
+  )
 
   if (loading) {
     return (
@@ -142,9 +150,7 @@ export default function GruposBeneficiariosPage() {
           <TableHeader>
             <TableRow className="bg-gray-50">
               <TableHead className="font-bold">Nome</TableHead>
-              <TableHead className="font-bold">Descrição</TableHead>
-              <TableHead className="font-bold">Configuração de Faturamento</TableHead>
-              <TableHead className="font-bold">Total de Clientes</TableHead>
+              <TableHead className="font-bold">Total de Beneficiários</TableHead>
               <TableHead className="font-bold">Status</TableHead>
               <TableHead className="font-bold text-right">Ações</TableHead>
             </TableRow>
@@ -152,7 +158,7 @@ export default function GruposBeneficiariosPage() {
           <TableBody>
             {gruposFiltrados.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center py-8 text-gray-500">
+                <TableCell colSpan={4} className="text-center py-8 text-gray-500">
                   {filtro ? "Nenhum grupo encontrado com o filtro aplicado" : "Nenhum grupo cadastrado"}
                 </TableCell>
               </TableRow>
@@ -160,75 +166,63 @@ export default function GruposBeneficiariosPage() {
               gruposFiltrados.map((grupo) => (
                 <TableRow key={grupo.id} className="hover:bg-gray-50">
                   <TableCell className="font-medium">{grupo.nome}</TableCell>
-                  <TableCell className="text-gray-600">
-                    {grupo.descricao || "-"}
+                  <TableCell>
+                    <span className="inline-flex items-center px-2 py-0.5 text-xs font-semibold rounded-sm border border-slate-200 bg-slate-50 text-slate-700">
+                      {grupo.total_clientes ?? 0}
+                    </span>
                   </TableCell>
                   <TableCell>
-                    {grupo.configuracao_faturamento ? (
-                      <div className="flex flex-col">
-                        <span className="font-medium">{grupo.configuracao_faturamento.nome}</span>
-                        <span className="text-xs text-gray-500 capitalize">
-                          {grupo.configuracao_faturamento.tipo_faturamento}
-                        </span>
-                      </div>
-                    ) : (
-                      <span className="text-gray-400">Não configurado</span>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="outline" className="font-semibold">
-                      {grupo.total_clientes || 0}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Badge
-                      variant={grupo.ativo ? "default" : "secondary"}
-                      className={grupo.ativo ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-600"}
+                    <span
+                      className={`inline-flex items-center px-2 py-0.5 text-xs font-semibold rounded-sm border ${
+                        grupo.ativo ? "bg-slate-100 text-slate-800 border-slate-300" : "bg-gray-100 text-gray-600 border-gray-300"
+                      }`}
                     >
                       {grupo.ativo ? "Ativo" : "Inativo"}
-                    </Badge>
+                    </span>
                   </TableCell>
                   <TableCell className="text-right">
-                    <div className="flex items-center justify-end gap-2">
+                    <div className="flex items-center justify-end gap-1.5">
                       <Button
-                        variant="ghost"
+                        variant="outline"
                         size="sm"
                         onClick={() => router.push(`/administradora/grupos-beneficiarios/${grupo.id}`)}
-                        className="text-[#0F172A] hover:bg-[#0F172A]/10 p-2 rounded"
-                        title="Ver Detalhes"
+                        className="h-8 w-8 p-0 border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-800 hover:border-slate-300 rounded-md"
+                        title="Ver detalhes"
                       >
-                        <EyeIcon className="h-4 w-4" />
+                        <FileSearch className="h-4 w-4" />
                       </Button>
                       <Button
-                        variant="ghost"
+                        variant="outline"
                         size="sm"
                         onClick={() => handleEditar(grupo)}
-                        className="text-[#0F172A] hover:bg-[#0F172A]/10 p-2 rounded"
+                        className="h-8 w-8 p-0 border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-800 hover:border-slate-300 rounded-md"
                         title="Editar"
                       >
-                        <Edit2 className="h-4 w-4" />
+                        <Pencil className="h-4 w-4" />
                       </Button>
                       <Button
-                        variant="ghost"
+                        variant="outline"
                         size="sm"
-                        onClick={() => handleAlterarStatus(grupo.id, grupo.ativo)}
-                        className="text-[#0F172A] hover:bg-[#0F172A]/10 p-2 rounded"
+                        onClick={() => {
+                          setGrupoParaStatus({ id: grupo.id, ativo: grupo.ativo, nome: grupo.nome })
+                          setConfirmStatusOpen(true)
+                        }}
+                        className="h-8 w-8 p-0 border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-800 hover:border-slate-300 rounded-md"
                         title={grupo.ativo ? "Desativar" : "Ativar"}
                       >
-                        {grupo.ativo ? (
-                          <Eye className="h-4 w-4" />
-                        ) : (
-                          <Eye className="h-4 w-4 opacity-50" />
-                        )}
+                        <Power className="h-4 w-4" />
                       </Button>
                       <Button
-                        variant="ghost"
+                        variant="outline"
                         size="sm"
-                        onClick={() => handleDeletar(grupo.id)}
-                        className="text-red-600 hover:bg-red-50 p-2 rounded"
+                        onClick={() => {
+                          setGrupoParaExcluir(grupo.id)
+                          setConfirmExcluirOpen(true)
+                        }}
+                        className="h-8 w-8 p-0 border-slate-200 text-slate-500 hover:border-red-200 hover:bg-red-50 hover:text-red-700 rounded-md"
                         title="Excluir"
                       >
-                        <Trash2 className="h-4 w-4" />
+                        <UserMinus className="h-4 w-4" />
                       </Button>
                     </div>
                   </TableCell>
@@ -238,6 +232,48 @@ export default function GruposBeneficiariosPage() {
           </TableBody>
         </Table>
       </div>
+
+      {/* Modal Confirmação Excluir Grupo */}
+      <ModalConfirmacaoExclusao
+        open={confirmExcluirOpen}
+        onOpenChange={(open) => {
+          setConfirmExcluirOpen(open)
+          if (!open) setGrupoParaExcluir(null)
+        }}
+        titulo="Excluir grupo"
+        descricao="Tem certeza que deseja excluir este grupo? Esta ação não pode ser desfeita."
+        textoConfirmar="Excluir"
+        onConfirm={() => grupoParaExcluir && handleDeletar(grupoParaExcluir)}
+        carregando={excluindoGrupo}
+      />
+
+      {/* Modal Confirmação Ativar/Desativar Grupo */}
+      <ModalConfirmacaoExclusao
+        open={confirmStatusOpen}
+        onOpenChange={(open) => {
+          setConfirmStatusOpen(open)
+          if (!open) setGrupoParaStatus(null)
+        }}
+        titulo={grupoParaStatus ? (grupoParaStatus.ativo ? "Desativar grupo" : "Ativar grupo") : ""}
+        descricao={grupoParaStatus
+          ? grupoParaStatus.ativo
+            ? `Tem certeza que deseja desativar o grupo "${grupoParaStatus.nome}"? O grupo não aparecerá em listas ativas até ser ativado novamente.`
+            : `Tem certeza que deseja ativar o grupo "${grupoParaStatus.nome}"?`
+          : ""}
+        textoConfirmar={grupoParaStatus?.ativo ? "Desativar" : "Ativar"}
+        onConfirm={async () => {
+          if (!grupoParaStatus) return
+          setAlterandoStatus(true)
+          try {
+            await handleAlterarStatus(grupoParaStatus.id, grupoParaStatus.ativo)
+            setConfirmStatusOpen(false)
+            setGrupoParaStatus(null)
+          } finally {
+            setAlterandoStatus(false)
+          }
+        }}
+        carregando={alterandoStatus}
+      />
 
       {/* Modal Novo/Editar Grupo */}
       {showModalNovo && administradoraId && (

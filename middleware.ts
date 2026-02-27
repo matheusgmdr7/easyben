@@ -55,7 +55,13 @@ export async function middleware(request: NextRequest) {
     // Em caso de erro, usar tenant padrão
     tenantSlug = 'contratando-planos'
   }
-  
+
+  // 3. Rota /[slug]/corretores/equipe/[token]: usar o primeiro segmento da URL como tenant
+  const matchEquipe = pathname.match(/^\/([^/]+)\/corretores\/equipe\/[^/]+$/)
+  if (matchEquipe) {
+    tenantSlug = matchEquipe[1]
+  }
+
   // Adicionar tenant_slug ao header da requisição
   const requestHeaders = new Headers(request.headers)
   requestHeaders.set('x-tenant-slug', tenantSlug)

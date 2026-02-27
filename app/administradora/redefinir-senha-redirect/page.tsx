@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { useRouter, useSearchParams } from "next/navigation"
+import { useRouter } from "next/navigation"
 import { Spinner } from "@/components/ui/spinner"
 
 /**
@@ -15,7 +15,6 @@ import { Spinner } from "@/components/ui/spinner"
  */
 export default function RedefinirSenhaRedirectPage() {
   const router = useRouter()
-  const searchParams = useSearchParams()
   const [loading, setLoading] = useState(true)
   const [erro, setErro] = useState("")
 
@@ -40,7 +39,7 @@ export default function RedefinirSenhaRedirectPage() {
         const protocol = window.location.protocol
 
         // Construir URL de redirecionamento para o mesmo domínio
-        const redirectUrl = `${protocol}//${hostname}/administradora/redefinir-senha?access_token=${accessToken}&refresh_token=${refreshToken || ''}&type=${type}`
+        const redirectUrl = `${protocol}//${hostname}/administradora/redefinir-senha?access_token=${encodeURIComponent(accessToken)}&refresh_token=${encodeURIComponent(refreshToken || "")}&type=${type}`
 
         // Redirecionar para a página de redefinição no mesmo domínio
         router.push(redirectUrl)

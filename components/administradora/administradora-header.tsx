@@ -92,10 +92,10 @@ export default function AdministradoraHeader({ sidebarCollapsed = false }: Admin
     >
       {/* Logo/Título */}
       <div className="flex items-center h-full">
-        <Link href="/administradora" className="text-sm sm:text-base md:text-lg font-semibold text-[#0F172A] block md:hidden hover:opacity-90 transition-opacity">
+        <Link href="/administradora/dashboard" className="text-sm sm:text-base md:text-lg font-semibold text-[#0F172A] block md:hidden hover:opacity-90 transition-opacity">
           Portal
         </Link>
-        <Link href="/administradora" className="text-base md:text-lg font-semibold text-[#0F172A] hidden md:block hover:opacity-90 transition-opacity">
+        <Link href="/administradora/dashboard" className="text-base md:text-lg font-semibold text-[#0F172A] hidden md:block hover:opacity-90 transition-opacity">
           {administradoraNome || 'Administradora'} <span className="text-gray-600 font-normal">Portal</span>
         </Link>
       </div>

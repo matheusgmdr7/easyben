@@ -47,65 +47,70 @@ export async function POST(request: NextRequest) {
     if (administradoras && administradoras.length > 0) {
       const administradora = administradoras[0]
 
-      // Verificar se existe usuário no Supabase Auth
-      const { data: users } = await supabaseAdmin.auth.admin.listUsers()
-      const authUser = users?.users?.find(
-        (u) => u.email?.toLowerCase() === emailNormalizado
+      // Usar cliente Supabase (não admin) para enviar email de redefinição
+      // O método resetPasswordForEmail do cliente envia o email automaticamente
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+      const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+      if (!supabaseUrl || !supabaseAnonKey) {
+        console.error("❌ Variáveis do Supabase não configuradas")
+        return NextResponse.json(
+          { success: false, error: "Configuração do servidor incompleta" },
+          { status: 500 }
+        )
+      }
+
+      // Criar cliente Supabase (não admin) para usar resetPasswordForEmail
+      const supabaseClient = createClient(supabaseUrl, supabaseAnonKey)
+
+      const baseUrl =
+        process.env.NEXT_PUBLIC_APP_URL_RECOVERY ||
+        process.env.NEXT_PUBLIC_APP_URL ||
+        "http://localhost:3000"
+      const redirectTo = `${baseUrl}/administradora/redefinir-senha`
+
+      console.log("📧 Tentando enviar email de redefinição:", {
+        email: emailNormalizado,
+        redirectTo: redirectTo,
+        baseUrl: baseUrl,
+        administradoraId: administradora.id,
+      })
+
+      // URL em Supabase: Settings → Auth → URL Configuration → Redirect URLs. Use apenas domínio EasyBen.
+
+      // Usar resetPasswordForEmail que ENVIA o email automaticamente
+      // O Supabase verifica internamente se o usuário existe, então não precisamos verificar antes
+      const { data: resetData, error: resetError } = await supabaseClient.auth.resetPasswordForEmail(
+        emailNormalizado,
+        {
+          redirectTo: redirectTo,
+        }
       )
 
-      if (authUser) {
-        // Usar cliente Supabase (não admin) para enviar email de redefinição
-        // O método resetPasswordForEmail do cliente envia o email automaticamente
-        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-        const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-
-        if (!supabaseUrl || !supabaseAnonKey) {
-          console.error("❌ Variáveis do Supabase não configuradas")
-          return NextResponse.json(
-            { success: false, error: "Configuração do servidor incompleta" },
-            { status: 500 }
-          )
-        }
-
-        // Criar cliente Supabase (não admin) para usar resetPasswordForEmail
-        const supabaseClient = createClient(supabaseUrl, supabaseAnonKey)
-
-        // Para white-label: usar página intermediária que funciona em qualquer domínio
-        // Esta página detecta o domínio atual e redireciona para a página de redefinição
-        // Isso permite que funcione em qualquer domínio do cliente sem precisar configurar
-        // cada URL individualmente no Supabase
-        const redirectTo = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/administradora/redefinir-senha-redirect`
-
-        console.log("📧 Tentando enviar email de redefinição:", {
-          email: emailNormalizado,
-          redirectTo: redirectTo,
-          authUserId: authUser.id,
+      if (resetError) {
+        console.error("❌ Erro ao enviar email de redefinição:", {
+          message: resetError.message,
+          status: resetError.status,
+          name: resetError.name,
+          code: resetError.code,
         })
-
-        // Usar resetPasswordForEmail que ENVIA o email automaticamente
-        const { data: resetData, error: resetError } = await supabaseClient.auth.resetPasswordForEmail(
-          emailNormalizado,
-          {
-            redirectTo: redirectTo,
-          }
-        )
-
-        if (resetError) {
-          console.error("❌ Erro ao enviar email de redefinição:", {
-            message: resetError.message,
-            status: resetError.status,
-            name: resetError.name,
-          })
-          // Continuar mesmo se falhar (pode ser problema de configuração SMTP)
-        } else {
-          console.log("✅ Email de redefinição enviado para:", administradora.email_login)
-          console.log("📧 Dados da resposta:", resetData)
+        
+        // Se o erro for relacionado a URL não permitida, informar
+        if (resetError.message?.includes("redirect") || resetError.message?.includes("URL") || resetError.message?.includes("not allowed")) {
+          console.error("⚠️ ATENÇÃO: URL de redirecionamento não configurada no Supabase!")
+          console.error("⚠️ Configure em: Supabase Dashboard → Settings → Authentication → URL Configuration")
+          console.error("⚠️ Adicione esta URL:", redirectTo)
+        }
+        
+        // Se o erro for que o usuário não existe, apenas logar (não revelar ao usuário)
+        if (resetError.message?.includes("not found") || resetError.message?.includes("does not exist")) {
+          console.warn("⚠️ Usuário não encontrado no Supabase Auth para:", emailNormalizado)
+          console.warn("⚠️ Configure o login da administradora em /admin/administradoras")
         }
       } else {
-        console.warn("⚠️ Usuário não encontrado no Supabase Auth para:", email)
-        console.warn("⚠️ O usuário precisa ser criado no Supabase Auth primeiro.")
-        console.warn("⚠️ Configure o login da administradora em /admin/administradoras")
-        console.warn("⚠️ OU crie o usuário manualmente no Supabase Auth e vincule à administradora")
+        console.log("✅ Email de redefinição enviado para:", administradora.email_login)
+        console.log("📧 Dados da resposta:", resetData)
+        console.log("✅ Verifique a caixa de entrada e spam do email:", emailNormalizado)
       }
     } else {
       console.warn("⚠️ Administradora não encontrada na tabela administradoras para:", email)

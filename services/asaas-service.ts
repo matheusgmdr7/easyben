@@ -139,9 +139,11 @@ class AsaasService {
   ): Promise<T> {
     this.checkApiKey()
 
-    console.log(`🌐 [ASAAS] Fazendo requisição para: ${this.baseUrl}${endpoint}`)
-    console.log(`🔑 [ASAAS] API Key (primeiros 20 chars): ${this.apiKey?.substring(0, 20)}...`)
-    console.log(`🔑 [ASAAS] API Key (últimos 20 chars): ...${this.apiKey?.substring(this.apiKey.length - 20)}`)
+    const keyPreview = this.apiKey
+      ? `${this.apiKey.substring(0, 8)}...${this.apiKey.substring(this.apiKey.length - 4)} (len=${this.apiKey.length})`
+      : "não configurada"
+    console.log(`[ASAAS] Requisição: ${options.method || "GET"} ${this.baseUrl}${endpoint}`)
+    console.log(`[ASAAS] API Key: ${keyPreview} | Ambiente: ${this.ambiente}`)
 
     const response = await fetch(`${this.baseUrl}${endpoint}`, {
       ...options,
@@ -153,9 +155,18 @@ class AsaasService {
     })
 
     if (!response.ok) {
-      const error = await response.json().catch(() => ({}))
+      const errorBody = await response.text()
+      let errorParsed: unknown = errorBody
+      try {
+        errorParsed = JSON.parse(errorBody)
+      } catch {
+        // mantém como texto
+      }
+      console.error(`[ASAAS] Erro HTTP ${response.status} em ${endpoint}`)
+      console.error(`[ASAAS] Resposta do Asaas:`, errorParsed)
+      console.error(`[ASAAS] URL usada: ${this.baseUrl}${endpoint} (sandbox=${this.ambiente === "sandbox"})`)
       throw new Error(
-        `Erro na requisição Asaas: ${response.status} - ${JSON.stringify(error)}`
+        `Erro na requisição Asaas: ${response.status} - ${typeof errorParsed === "string" ? errorParsed : JSON.stringify(errorParsed)}`
       )
     }
 
@@ -170,6 +181,7 @@ class AsaasService {
    * Cria um novo cliente no Asaas
    */
   async createCustomer(customer: AsaasCustomer): Promise<AsaasCustomer> {
+    console.log(`[ASAAS] createCustomer: nome=${customer.name}, cpfCnpj=${customer.cpfCnpj?.replace(/\d(?=\d{4})/g, "*")}`)
     return this.request<AsaasCustomer>('/customers', {
       method: 'POST',
       body: JSON.stringify(customer),

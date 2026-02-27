@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation"
 import { verificarAutenticacaoAdministradora, getAdministradoraLogada } from "@/services/auth-administradoras-service"
 import AdministradoraSidebar from "@/components/administradora/administradora-sidebar"
 import AdministradoraHeader from "@/components/administradora/administradora-header"
+import { RecursoGuard } from "@/components/tenant/recurso-guard"
 
 export default function AdministradoraLayout({
   children,
@@ -102,7 +103,8 @@ export default function AdministradoraLayout({
   }
 
   return (
-    <div className="min-h-screen bg-gray-100" style={{ fontFamily: "'Inter', sans-serif" }}>
+    <RecursoGuard codigoRecurso="portal_administradora" redirectTo="/" showError={true}>
+      <div className="min-h-screen bg-gray-100" style={{ fontFamily: "'Inter', sans-serif" }}>
       <AdministradoraSidebar />
       <div 
         className={`flex flex-col transition-all duration-300 ease-in-out bg-gray-100 ${
@@ -119,6 +121,7 @@ export default function AdministradoraLayout({
         </main>
       </div>
     </div>
+    </RecursoGuard>
   )
 }
 

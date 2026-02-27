@@ -1,13 +1,13 @@
 "use client"
 
 import type React from "react"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Eye, EyeOff, Key } from "lucide-react"
+import { Eye, EyeOff, Key, Clock } from "lucide-react"
 import { toast } from "sonner"
 import { supabase } from "@/lib/supabase"
 
@@ -21,22 +21,42 @@ export default function RedefinirSenhaAdministradoraPage() {
   const [loading, setLoading] = useState(false)
   const [erro, setErro] = useState("")
   const [logoUrl] = useState<string | null>(null)
+  const [linkInvalido, setLinkInvalido] = useState<boolean | null>(null)
+  const tokensRef = useRef<{ access_token: string; refresh_token: string } | null>(null)
 
   useEffect(() => {
-    // Verificar se há token na URL (Supabase adiciona automaticamente)
     const hashParams = new URLSearchParams(window.location.hash.substring(1))
     const accessToken = hashParams.get("access_token")
+    const refreshToken = hashParams.get("refresh_token")
     const type = hashParams.get("type")
+    const tokenQuery = searchParams.get("access_token")
+    const refreshQuery = searchParams.get("refresh_token")
+    const errorCode = hashParams.get("error_code")
+    const errorDesc = hashParams.get("error_description")
 
     if (type === "recovery" && accessToken) {
-      // Token válido, pode prosseguir
-      console.log("✅ Token de redefinição encontrado")
+      tokensRef.current = { access_token: accessToken, refresh_token: refreshToken || "" }
+      setLinkInvalido(false)
+      return
+    }
+    if (tokenQuery) {
+      tokensRef.current = { access_token: tokenQuery, refresh_token: refreshQuery || "" }
+      setLinkInvalido(false)
+      return
+    }
+
+    tokensRef.current = null
+    setLinkInvalido(true)
+    if (errorCode === "otp_expired" || (errorDesc && errorDesc.toLowerCase().includes("expired"))) {
+      setErro(
+        "Este link expirou. Os links de recuperação são válidos por 1 hora e servem para um único uso. Solicite uma nova redefinição de senha."
+      )
+    } else if (errorCode || hashParams.get("error")) {
+      setErro(
+        "Link inválido ou já utilizado. Cada link serve apenas uma vez. Solicite uma nova redefinição de senha."
+      )
     } else {
-      // Verificar se há token nos query params (fallback)
-      const token = searchParams.get("token")
-      if (!token && !accessToken) {
-        setErro("Link inválido ou expirado. Solicite uma nova redefinição de senha.")
-      }
+      setErro("Link inválido ou expirado. Solicite uma nova redefinição de senha.")
     }
   }, [searchParams])
 
@@ -58,20 +78,22 @@ export default function RedefinirSenhaAdministradoraPage() {
     setLoading(true)
 
     try {
-      // Obter token da URL
-      const hashParams = new URLSearchParams(window.location.hash.substring(1))
-      const accessToken = hashParams.get("access_token")
-      const refreshToken = hashParams.get("refresh_token")
+      let finalAccessToken = tokensRef.current?.access_token
+      let finalRefreshToken = tokensRef.current?.refresh_token ?? ""
 
-      if (!accessToken) {
+      if (!finalAccessToken) {
+        const hashParams = new URLSearchParams(window.location.hash.substring(1))
+        finalAccessToken = hashParams.get("access_token") ?? searchParams.get("access_token")
+        finalRefreshToken = hashParams.get("refresh_token") ?? searchParams.get("refresh_token") ?? ""
+      }
+
+      if (!finalAccessToken) {
         throw new Error("Token não encontrado. Solicite uma nova redefinição de senha.")
       }
 
-      // Usar Supabase para atualizar a senha
-      // Primeiro, fazer login com o token de recuperação
-      const { data: sessionData, error: sessionError } = await supabase.auth.setSession({
-        access_token: accessToken,
-        refresh_token: refreshToken || "",
+      const { error: sessionError } = await supabase.auth.setSession({
+        access_token: finalAccessToken,
+        refresh_token: finalRefreshToken || "",
       })
 
       if (sessionError) {
@@ -107,6 +129,7 @@ export default function RedefinirSenhaAdministradoraPage() {
         }
       }
 
+      tokensRef.current = null
       toast.success("Senha redefinida com sucesso!")
       router.push("/administradora/login")
     } catch (error: any) {
@@ -115,6 +138,43 @@ export default function RedefinirSenhaAdministradoraPage() {
     } finally {
       setLoading(false)
     }
+  }
+
+  if (linkInvalido === null) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+        <div className="text-center">
+          <div className="animate-spin h-8 w-8 border-2 border-[#0F172A] border-t-transparent rounded-full mx-auto mb-3" />
+          <p className="text-gray-600 text-sm">Verificando link...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (linkInvalido === true) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+        <div className="w-full max-w-md">
+          <div className="bg-white rounded-lg shadow-md p-6 text-center">
+            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-amber-100 text-amber-600">
+              <Clock className="h-6 w-6" />
+            </div>
+            <h1 className="text-xl font-bold text-[#0F172A] mb-2">Link expirado ou inválido</h1>
+            <p className="text-gray-600 text-sm mb-6">{erro}</p>
+            <div className="flex flex-col gap-3">
+              <Link href="/administradora/recuperar-senha">
+                <Button className="w-full bg-[#0F172A] hover:bg-[#1E293B]">
+                  Solicitar nova redefinição de senha
+                </Button>
+              </Link>
+              <Link href="/administradora/login" className="text-[#0F172A] hover:underline text-sm font-medium">
+                Voltar para o login
+              </Link>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (

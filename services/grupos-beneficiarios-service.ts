@@ -128,18 +128,26 @@ export class GruposBeneficiariosService {
 
       if (error) throw error
 
-      // Buscar total de clientes para cada grupo
+      // Buscar total de beneficiários: clientes/propostas vinculados (clientes_grupos) + vidas importadas
       const gruposComClientes = await Promise.all(
         (data || []).map(async (grupo) => {
-          const { count } = await supabase
+          const { count: countVinculos } = await supabase
             .from("clientes_grupos")
             .select("*", { count: "exact", head: true })
             .eq("grupo_id", grupo.id)
             .eq("tenant_id", tenantId)
 
+          const { count: countVidas } = await supabase
+            .from("vidas_importadas")
+            .select("*", { count: "exact", head: true })
+            .eq("grupo_id", grupo.id)
+            .eq("tenant_id", tenantId)
+
+          const totalBeneficiarios = (countVinculos || 0) + (countVidas || 0)
+
           return {
             ...grupo,
-            total_clientes: count || 0,
+            total_clientes: totalBeneficiarios,
           }
         })
       )

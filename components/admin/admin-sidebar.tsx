@@ -29,20 +29,11 @@ export default function AdminSidebar() {
   const [isMobile, setIsMobile] = useState(false)
   const [isLoggingOut, setIsLoggingOut] = useState(false)
   
-  // Estado para hover (auto-colapsar)
+  // Hover: expande ao passar o mouse (apenas desktop)
   const [isHovered, setIsHovered] = useState(false)
   
-  // Persistir estado colapsado no localStorage
-  const [isCollapsed, setIsCollapsed] = useState(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('admin-sidebar-collapsed')
-      return saved === 'true'
-    }
-    return true // Iniciar colapsado por padrão
-  })
-  
-  // Estado visual (colapsado quando não está com hover)
-  const isVisuallyCollapsed = isCollapsed && !isHovered
+  // Colapsado quando não há hover; no mobile com menu aberto usa largura total
+  const isVisuallyCollapsed = isMobile && isOpen ? false : !isHovered
   
   // Hook de permissões
   const { podeVisualizar, isMaster } = usePermissions()
@@ -83,26 +74,6 @@ export default function AdminSidebar() {
     
     loadTenantLogo()
   }, [])
-  
-  // Salvar estado colapsado no localStorage e disparar evento
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('admin-sidebar-collapsed', String(isCollapsed))
-      // Disparar evento para sincronizar o layout imediatamente
-      setTimeout(() => {
-        window.dispatchEvent(new Event('sidebar-toggle'))
-      }, 0)
-    }
-  }, [isCollapsed])
-  
-  // Atualizar estado visual quando hover muda
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      setTimeout(() => {
-        window.dispatchEvent(new Event('sidebar-toggle'))
-      }, 0)
-    }
-  }, [isHovered])
   
   // Detectar se é mobile
   useEffect(() => {

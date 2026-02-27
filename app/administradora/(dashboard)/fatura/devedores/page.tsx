@@ -7,7 +7,6 @@ import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Badge } from "@/components/ui/badge"
 import { Search, X } from "lucide-react"
 import { formatarMoeda } from "@/utils/formatters"
 import { format } from "date-fns"
@@ -110,19 +109,14 @@ export default function DevedoresPage() {
   }
 
   function getStatusBadge(status: string) {
+    const baseClass = "inline-flex items-center px-2 py-0.5 text-xs font-semibold rounded-sm border"
     const statusMap: Record<string, { label: string; className: string }> = {
-      atrasada: { label: "ATRASADA", className: "bg-red-100 text-red-800" },
-      pendente: { label: "PENDENTE", className: "bg-yellow-100 text-yellow-800" },
-      cancelada: { label: "CANCELADA", className: "bg-gray-100 text-gray-800" },
+      atrasada: { label: "Atrasada", className: "bg-gray-100 text-gray-600 border-gray-300" },
+      pendente: { label: "Pendente", className: "bg-amber-50 text-amber-800 border-amber-200" },
+      cancelada: { label: "Cancelada", className: "bg-gray-100 text-gray-600 border-gray-300" },
     }
-
-    const statusInfo = statusMap[status.toLowerCase()] || { label: status.toUpperCase(), className: "bg-gray-100 text-gray-800" }
-
-    return (
-      <Badge className={cn("font-semibold text-xs", statusInfo.className)}>
-        {statusInfo.label}
-      </Badge>
-    )
+    const statusInfo = statusMap[status.toLowerCase()] || { label: status, className: "bg-gray-100 text-gray-600 border-gray-300" }
+    return <span className={cn(baseClass, statusInfo.className)}>{statusInfo.label}</span>
   }
 
   const faturasPaginadas = faturas.slice(
@@ -156,7 +150,7 @@ export default function DevedoresPage() {
           <div>
             <label className="block text-xs text-gray-600 mb-1">Status</label>
             <Select value={statusFiltro} onValueChange={setStatusFiltro}>
-              <SelectTrigger className="h-9 text-sm border-gray-300 rounded-sm">
+              <SelectTrigger className="h-10 w-full rounded-md border border-gray-300 bg-background px-3 py-2 text-sm">
                 <SelectValue placeholder="Selecione" />
               </SelectTrigger>
               <SelectContent>
@@ -251,9 +245,9 @@ export default function DevedoresPage() {
                         <td className="px-4 py-2 text-sm text-gray-800 border-r border-gray-200">{formatarData(fatura.data_vencimento)}</td>
                         <td className="px-4 py-2 text-sm font-medium text-gray-800 border-r border-gray-200">{formatarMoeda(fatura.valor_total)}</td>
                         <td className="px-4 py-2">
-                          <Badge className="bg-red-100 text-red-800 font-semibold text-xs">
+                          <span className="inline-flex items-center px-2 py-0.5 text-xs font-semibold rounded-sm border bg-gray-100 text-gray-600 border-gray-300">
                             {diasAtraso} dias
-                          </Badge>
+                          </span>
                         </td>
                       </tr>
                     )
@@ -311,7 +305,7 @@ export default function DevedoresPage() {
               </Button>
             </div>
             <Select value={String(itemsPerPage)} onValueChange={(v) => setItemsPerPage(Number(v))}>
-              <SelectTrigger className="w-24 h-8 text-xs border-gray-300">
+              <SelectTrigger className="w-24 h-8 text-xs rounded-md border border-gray-300 bg-background px-3 py-2">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>

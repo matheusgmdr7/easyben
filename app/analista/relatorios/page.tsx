@@ -449,6 +449,23 @@ export default function RelatoriosPage() {
     setLinhasRelatorio(linhas)
   }
 
+  // Relação entre valor do filtro e status no banco (alinhado à página de propostas)
+  function statusMatchFiltro(propostaStatus: string | undefined, statusFiltro: string): boolean {
+    const s = (propostaStatus || "").toLowerCase()
+    switch (statusFiltro) {
+      case "parcial": return ["parcial", "aguardando_validacao"].includes(s)
+      case "aguardando_cliente": return s === "aguardando_cliente"
+      case "pendente": return ["pendente", "em_analise"].includes(s)
+      case "aprovada": return ["aprovada", "aprovado"].includes(s)
+      case "cadastrado": return ["cadastrado", "cadastrada"].includes(s)
+      case "transmitida": return s === "transmitida"
+      case "rejeitada": return ["rejeitada", "rejeitado"].includes(s)
+      case "cancelada": return ["cancelada", "cancelado"].includes(s)
+      case "devolvida": return s === "devolvida"
+      default: return false
+    }
+  }
+
   // Filtrar linhas do relatório
   const linhasFiltradas = linhasRelatorio.filter((linha) => {
     // Filtro de busca (nome do titular ou dependente)
@@ -520,10 +537,10 @@ export default function RelatoriosPage() {
       }
     }
     
-    // Filtro de status
+    // Filtro de status (mesmos valores e agrupamentos da página de propostas)
     if (statusFiltro !== "todos") {
       const proposta = propostas.find(p => p.id === linha.proposta_id)
-      if (proposta && proposta.status !== statusFiltro) {
+      if (proposta && !statusMatchFiltro(proposta.status, statusFiltro)) {
         return false
       }
     }
@@ -918,10 +935,15 @@ export default function RelatoriosPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="todos">Todos</SelectItem>
-                <SelectItem value="pendente">Pendente</SelectItem>
-                <SelectItem value="aprovado">Aprovado</SelectItem>
-                <SelectItem value="rejeitado">Rejeitado</SelectItem>
-                <SelectItem value="em_analise">Em Análise</SelectItem>
+                <SelectItem value="parcial">Aguardando validação</SelectItem>
+                <SelectItem value="aguardando_cliente">Aguardando cliente</SelectItem>
+                <SelectItem value="pendente">Aguardando análise</SelectItem>
+                <SelectItem value="aprovada">Aprovada</SelectItem>
+                <SelectItem value="cadastrado">Cadastrado</SelectItem>
+                <SelectItem value="transmitida">Transmitida</SelectItem>
+                <SelectItem value="rejeitada">Rejeitada</SelectItem>
+                <SelectItem value="cancelada">Cancelada</SelectItem>
+                <SelectItem value="devolvida">Devolvida</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -1043,7 +1065,7 @@ export default function RelatoriosPage() {
                 </tr>
               ) : (
                 linhasFiltradas.map((linha, index) => (
-                  <tr key={`${linha.proposta_id}-${linha.tipo}-${index}`} className="hover:bg-gray-50">
+                  <tr key={`${linha.proposta_id}-${linha.tipo}-${index}`} className={`${index % 2 === 0 ? "bg-white" : "bg-gray-50"} hover:bg-gray-100`}>
                     <td className="px-3 py-2 text-xs text-gray-900">{linha.proposta_numero}</td>
                     <td className="px-3 py-2 text-xs text-gray-900">{linha.tipo}</td>
                     <td className="px-3 py-2 text-xs text-gray-900">{linha.operadora}</td>

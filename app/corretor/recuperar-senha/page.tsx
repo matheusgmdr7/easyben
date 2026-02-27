@@ -7,29 +7,48 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import Header from "@/components/header"
 import Footer from "@/components/footer"
 import Link from "next/link"
 import { toast } from "sonner"
+import { CheckCircle2 } from "lucide-react"
 
 export default function RecuperarSenhaPage() {
   const [email, setEmail] = useState("")
   const [enviado, setEnviado] = useState(false)
   const [carregando, setCarregando] = useState(false)
+  const [erro, setErro] = useState("")
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setCarregando(true)
+    setErro("")
 
     try {
-      // Simulando o envio de email de recuperação
-      await new Promise((resolve) => setTimeout(resolve, 1500))
+      const response = await fetch("/api/corretor/recuperar-senha", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ email }),
+      })
 
-      setEnviado(true)
-      toast.success("Email de recuperação enviado com sucesso!")
+      const data = await response.json().catch(() => ({ success: false, error: "Resposta inválida" }))
+
+      if (response.ok && data?.success) {
+        setEnviado(true)
+        toast.success("Email de recuperação enviado com sucesso!")
+      } else {
+        const msg = data?.error || "Erro ao enviar email. Tente novamente."
+        setErro(msg)
+        toast.error(msg)
+      }
     } catch (error) {
       console.error("Erro ao enviar email de recuperação:", error)
-      toast.error("Erro ao enviar email. Tente novamente.")
+      const msg = "Erro ao enviar email. Tente novamente."
+      setErro(msg)
+      toast.error(msg)
     } finally {
       setCarregando(false)
     }
@@ -44,6 +63,13 @@ export default function RecuperarSenhaPage() {
           <div className="max-w-md mx-auto">
             <h1 className="text-2xl md:text-3xl font-bold text-center mb-6 md:mb-8 text-[#0F172A]">Recuperar Senha</h1>
 
+            {erro && (
+              <Alert variant="destructive" className="mb-4">
+                <AlertTitle>Erro</AlertTitle>
+                <AlertDescription>{erro}</AlertDescription>
+              </Alert>
+            )}
+
             <Card>
               <CardHeader>
                 <CardTitle className="text-xl md:text-2xl">Esqueceu sua senha?</CardTitle>
@@ -56,12 +82,16 @@ export default function RecuperarSenhaPage() {
               <CardContent>
                 {enviado ? (
                   <div className="space-y-4">
-                    <p className="text-center text-sm text-gray-600">
-                      Verifique sua caixa de entrada e siga as instruções enviadas para o email:{" "}
-                      <strong>{email}</strong>
-                    </p>
+                    <Alert className="border-green-200 bg-green-50 text-green-800 [&>svg]:text-green-600">
+                      <CheckCircle2 className="h-4 w-4" />
+                      <AlertTitle className="text-green-800">Email enviado com sucesso!</AlertTitle>
+                      <AlertDescription>
+                        Verifique sua caixa de entrada e a pasta de spam. O link para redefinir a senha foi enviado
+                        para <strong>{email}</strong>.
+                      </AlertDescription>
+                    </Alert>
                     <div className="flex flex-col space-y-2">
-                      <Button onClick={() => setEnviado(false)} variant="outline">
+                      <Button onClick={() => { setEnviado(false); setErro(""); }} variant="outline">
                         Tentar com outro email
                       </Button>
                       <Link href="/corretor/login">

@@ -4,6 +4,7 @@ import "./globals.css"
 import MetaPixel from "@/components/meta-pixel"
 import { TenantProvider } from "@/lib/tenant-context"
 import { TenantThemeProvider } from "@/components/theme-provider-tenant"
+import { ToasterRoot } from "@/components/toaster-root"
 
 export const metadata: Metadata = {
   title: "Contratando Planos",
@@ -56,10 +57,11 @@ export default function RootLayout({
       <body>
         <TenantProvider>
           <TenantThemeProvider>
-            {process.env.NEXT_PUBLIC_META_PIXEL_ID && (
+            {process.env.NEXT_PUBLIC_META_PIXEL_ID ? (
               <MetaPixel pixelId={process.env.NEXT_PUBLIC_META_PIXEL_ID} />
-            )}
+            ) : null}
             {children}
+            <ToasterRoot />
           </TenantThemeProvider>
         </TenantProvider>
       </body>

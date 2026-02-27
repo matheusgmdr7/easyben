@@ -20,14 +20,24 @@ export function formatarMoeda(valor: number): string {
 }
 
 /**
- * Formata uma data para o formato brasileiro (DD/MM/YYYY)
- * @param data Data a ser formatada
- * @returns String formatada como data brasileira
+ * Formata uma data para o formato brasileiro (DD/MM/YYYY).
+ * Strings YYYY-MM-DD são interpretadas como data local (evita ficar um dia antes por timezone).
  */
 export function formatarData(data: Date | string): string {
   if (!data) return ""
 
-  const dataObj = typeof data === "string" ? new Date(data) : data
+  let dataObj: Date
+  if (typeof data === "string") {
+    const match = String(data).trim().match(/^(\d{4})-(\d{2})-(\d{2})/)
+    if (match) {
+      const [, y, m, d] = match
+      dataObj = new Date(Number(y), Number(m) - 1, Number(d))
+    } else {
+      dataObj = new Date(data)
+    }
+  } else {
+    dataObj = data
+  }
 
   return dataObj.toLocaleDateString("pt-BR", {
     day: "2-digit",

@@ -20,6 +20,10 @@ import {
   DocumentDuplicateIcon,
   ExclamationTriangleIcon,
   PlusIcon,
+  ArrowUpTrayIcon,
+  BuildingOffice2Icon,
+  BanknotesIcon,
+  BriefcaseIcon,
 } from "@heroicons/react/24/outline"
 import { supabase } from "@/lib/supabase-auth"
 
@@ -31,8 +35,10 @@ export default function AdministradoraSidebar() {
   const [isLoggingOut, setIsLoggingOut] = useState(false)
   const [faturamentoMenuOpen, setFaturamentoMenuOpen] = useState(false)
   const [faturaMenuOpen, setFaturaMenuOpen] = useState(false)
+  const [financeirasMenuOpen, setFinanceirasMenuOpen] = useState(false)
   const [financeiroMenuOpen, setFinanceiroMenuOpen] = useState(false)
   const [contratoMenuOpen, setContratoMenuOpen] = useState(false)
+  const [beneficiariosMenuOpen, setBeneficiariosMenuOpen] = useState(false)
   
   // Estado para hover (auto-colapsar)
   const [isHovered, setIsHovered] = useState(false)
@@ -173,11 +179,17 @@ export default function AdministradoraSidebar() {
     if (pathname?.startsWith('/administradora/fatura')) {
       setFaturaMenuOpen(true)
     }
+    if (pathname?.startsWith('/administradora/financeiras')) {
+      setFinanceirasMenuOpen(true)
+    }
     if (pathname?.startsWith('/administradora/financeiro')) {
       setFinanceiroMenuOpen(true)
     }
     if (pathname?.startsWith('/administradora/contrato')) {
       setContratoMenuOpen(true)
+    }
+    if (pathname?.startsWith('/administradora/beneficiarios')) {
+      setBeneficiariosMenuOpen(true)
     }
   }, [pathname])
   
@@ -281,7 +293,7 @@ export default function AdministradoraSidebar() {
           >
             {!isVisuallyCollapsed ? (
               <Link
-                href="/administradora"
+                href="/administradora/dashboard"
                 className="flex items-center gap-2 sm:gap-3 font-bold transition-colors hover:opacity-90 text-[#0F172A] min-w-0 flex-1"
               >
                 {administradoraInfo.logo && (
@@ -297,7 +309,7 @@ export default function AdministradoraSidebar() {
               </Link>
             ) : (
               <Link
-                href="/administradora"
+                href="/administradora/dashboard"
                 className="flex items-center justify-center w-full h-full"
               >
                 {administradoraInfo.logo ? (
@@ -340,8 +352,8 @@ export default function AdministradoraSidebar() {
               {/* Dashboard - Primeiro item */}
               <li>
                 <Link
-                  href="/administradora"
-                  className={getMenuItemClasses("/administradora")}
+                  href="/administradora/dashboard"
+                  className={getMenuItemClasses("/administradora/dashboard")}
                   onClick={closeSidebar}
                   title={isVisuallyCollapsed ? "Dashboard" : ""}
                 >
@@ -377,6 +389,21 @@ export default function AdministradoraSidebar() {
                 </button>
                 {!isVisuallyCollapsed && faturamentoMenuOpen && (
                   <ul className="ml-4 mt-1 space-y-0.5">
+                    <li>
+                      <Link
+                        href="/administradora/faturamento"
+                        className={cn(
+                          "flex items-center gap-2 px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm rounded-md transition-all duration-300",
+                          isActive("/administradora/faturamento") && !pathname?.includes("/pesquisar") && !pathname?.includes("/agendamento")
+                            ? "bg-[#1E293B]/80 text-white"
+                            : "text-gray-300 hover:bg-[#1E293B]/50 hover:text-white"
+                        )}
+                        onClick={closeSidebar}
+                      >
+                        <CurrencyDollarIcon className="h-4 w-4" />
+                        <span>Gerar</span>
+                      </Link>
+                    </li>
                     <li>
                       <Link
                         href="/administradora/faturamento/pesquisar"
@@ -440,10 +467,25 @@ export default function AdministradoraSidebar() {
                   <ul className="ml-4 mt-1 space-y-0.5">
                     <li>
                       <Link
+                        href="/administradora/fatura/gerar"
+                        className={cn(
+                          "flex items-center gap-2 px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm rounded-md transition-all duration-300",
+                          isActive("/administradora/fatura/gerar")
+                            ? "bg-[#1E293B]/80 text-white"
+                            : "text-gray-300 hover:bg-[#1E293B]/50 hover:text-white"
+                        )}
+                        onClick={closeSidebar}
+                      >
+                        <BanknotesIcon className="h-4 w-4" />
+                        <span>Gerar</span>
+                      </Link>
+                    </li>
+                    <li>
+                      <Link
                         href="/administradora/fatura"
                         className={cn(
                           "flex items-center gap-2 px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm rounded-md transition-all duration-300",
-                          isActive("/administradora/fatura") && !isActive("/administradora/fatura/devedores")
+                          isActive("/administradora/fatura") && !pathname?.includes("/devedores") && !pathname?.includes("/gerar")
                             ? "bg-[#1E293B]/80 text-white"
                             : "text-gray-300 hover:bg-[#1E293B]/50 hover:text-white"
                         )}
@@ -470,6 +512,18 @@ export default function AdministradoraSidebar() {
                     </li>
                   </ul>
                 )}
+              </li>
+              {/* Empresas financeiras */}
+              <li>
+                <Link
+                  href="/administradora/financeiras"
+                  className={getMenuItemClasses("/administradora/financeiras")}
+                  onClick={closeSidebar}
+                  title={isVisuallyCollapsed ? "Financeira" : ""}
+                >
+                  {!isVisuallyCollapsed && <span className="truncate flex-1">Financeira</span>}
+                  <BuildingOffice2Icon className="h-5 w-5 flex-shrink-0" />
+                </Link>
               </li>
               {/* Item Financeiro com Submenu - Acima de Grupo de Beneficiários */}
               <li>
@@ -578,6 +632,97 @@ export default function AdministradoraSidebar() {
                   </ul>
                 )}
               </li>
+              {/* Item Beneficiários com Submenu */}
+              <li>
+                <button
+                  onClick={() => setBeneficiariosMenuOpen(!beneficiariosMenuOpen)}
+                  className={cn(
+                    "flex items-center justify-between w-full px-3 sm:px-4 py-2.5 sm:py-3 transition-all duration-300 ease-in-out font-medium text-xs sm:text-sm rounded-md",
+                    isActive("/administradora/beneficiarios")
+                      ? "bg-[#1E293B] text-white shadow-md active-item"
+                      : "text-gray-300 hover:bg-[#1E293B] hover:text-white hover:scale-[1.02] hover:shadow-md",
+                    !isVisuallyCollapsed && !isActive("/administradora/beneficiarios") && "hover:translate-x-1",
+                    isVisuallyCollapsed && "justify-center px-2"
+                  )}
+                  title={isVisuallyCollapsed ? "Beneficiários" : ""}
+                >
+                  {!isVisuallyCollapsed && <span className="truncate flex-1 text-left">Beneficiários</span>}
+                  <div className="flex items-center gap-2">
+                    <UsersIcon className="h-5 w-5 flex-shrink-0" />
+                    {!isVisuallyCollapsed && (
+                      beneficiariosMenuOpen ? (
+                        <ChevronDownIcon className="h-4 w-4 flex-shrink-0" />
+                      ) : (
+                        <ChevronRightIcon className="h-4 w-4 flex-shrink-0" />
+                      )
+                    )}
+                  </div>
+                </button>
+                {!isVisuallyCollapsed && beneficiariosMenuOpen && (
+                  <ul className="ml-4 mt-1 space-y-0.5">
+                    <li>
+                      <Link
+                        href="/administradora/beneficiarios/titular"
+                        className={cn(
+                          "flex items-center gap-2 px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm rounded-md transition-all duration-300",
+                          isActive("/administradora/beneficiarios/titular")
+                            ? "bg-[#1E293B]/80 text-white"
+                            : "text-gray-300 hover:bg-[#1E293B]/50 hover:text-white"
+                        )}
+                        onClick={closeSidebar}
+                      >
+                        <MagnifyingGlassIcon className="h-4 w-4" />
+                        <span>Titular</span>
+                      </Link>
+                    </li>
+                    <li>
+                      <Link
+                        href="/administradora/beneficiarios/dependentes"
+                        className={cn(
+                          "flex items-center gap-2 px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm rounded-md transition-all duration-300",
+                          isActive("/administradora/beneficiarios/dependentes")
+                            ? "bg-[#1E293B]/80 text-white"
+                            : "text-gray-300 hover:bg-[#1E293B]/50 hover:text-white"
+                        )}
+                        onClick={closeSidebar}
+                      >
+                        <MagnifyingGlassIcon className="h-4 w-4" />
+                        <span>Dependentes</span>
+                      </Link>
+                    </li>
+                    <li>
+                      <Link
+                        href="/administradora/beneficiarios/contrato"
+                        className={cn(
+                          "flex items-center gap-2 px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm rounded-md transition-all duration-300",
+                          isActive("/administradora/beneficiarios/contrato")
+                            ? "bg-[#1E293B]/80 text-white"
+                            : "text-gray-300 hover:bg-[#1E293B]/50 hover:text-white"
+                        )}
+                        onClick={closeSidebar}
+                      >
+                        <MagnifyingGlassIcon className="h-4 w-4" />
+                        <span>Contrato</span>
+                      </Link>
+                    </li>
+                    <li>
+                      <Link
+                        href="/administradora/beneficiarios/importacao-vidas"
+                        className={cn(
+                          "flex items-center gap-2 px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm rounded-md transition-all duration-300",
+                          isActive("/administradora/beneficiarios/importacao-vidas")
+                            ? "bg-[#1E293B]/80 text-white"
+                            : "text-gray-300 hover:bg-[#1E293B]/50 hover:text-white"
+                        )}
+                        onClick={closeSidebar}
+                      >
+                        <ArrowUpTrayIcon className="h-4 w-4" />
+                        <span>Importação de vidas</span>
+                      </Link>
+                    </li>
+                  </ul>
+                )}
+              </li>
               {/* Grupo de Beneficiários */}
               <li>
                 <Link
@@ -613,6 +758,24 @@ export default function AdministradoraSidebar() {
                 >
                   {!isVisuallyCollapsed && <span className="truncate flex-1">Propostas</span>}
                   <DocumentTextIcon className="h-5 w-5 flex-shrink-0" />
+                </Link>
+              </li>
+              <li>
+                <Link
+                  href="/administradora/corretores"
+                  className={cn(
+                    "flex items-center justify-between px-3 sm:px-4 py-2.5 sm:py-3 transition-all duration-300 ease-in-out font-medium text-xs sm:text-sm rounded-md",
+                    isActive("/administradora/corretores") 
+                      ? "bg-[#1E293B] text-white shadow-md active-item" 
+                      : "text-gray-300 hover:bg-[#1E293B] hover:text-white hover:scale-[1.02] hover:shadow-md",
+                    !isVisuallyCollapsed && !isActive("/administradora/corretores") && "hover:translate-x-1",
+                    isVisuallyCollapsed && "justify-center px-2"
+                  )}
+                  onClick={closeSidebar}
+                  title={isVisuallyCollapsed ? "Corretores" : ""}
+                >
+                  {!isVisuallyCollapsed && <span className="truncate flex-1">Corretores</span>}
+                  <BriefcaseIcon className="h-5 w-5 flex-shrink-0" />
                 </Link>
               </li>
               <li>

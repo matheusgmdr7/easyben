@@ -7,13 +7,15 @@ import { useRouter, usePathname } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
-import { LayoutDashboard, Users, UserPlus, Link as LinkIcon, TrendingUp, FileText, LogOut, Menu, X, BarChart3 } from "lucide-react"
+import { LayoutDashboard, Users, Link as LinkIcon, LogOut, Menu, X, BarChart3, FileText } from "lucide-react"
 import { Spinner } from "@/components/ui/spinner"
 import { getCorretorLogado, obterCorretorAutenticado, logout } from "@/services/auth-corretores-simples"
 import { supabase } from "@/lib/supabase"
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
 import { obterUrlAvatar } from "@/services/storage-service"
 import { toast } from "sonner"
+import { RecursoGuard } from "@/components/tenant/recurso-guard"
+import { formatarCNPJ } from "@/lib/formatters"
 
 export default function GestorDashboardLayout({
   children,
@@ -117,9 +119,9 @@ export default function GestorDashboardLayout({
       icon: Users,
     },
     {
-      href: "/gestor/equipe/novo",
-      label: "Adicionar Corretor",
-      icon: UserPlus,
+      href: "/gestor/producao",
+      label: "Produção",
+      icon: FileText,
     },
     {
       href: "/gestor/link-cadastro",
@@ -138,11 +140,17 @@ export default function GestorDashboardLayout({
   }
 
   if (!gestor) {
-    return null
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Spinner />
+        <span className="ml-2 text-gray-600">Carregando...</span>
+      </div>
+    )
   }
 
   return (
-    <div className="flex min-h-screen flex-col">
+    <RecursoGuard codigoRecurso="portal_gestor" showError={true}>
+      <div className="flex min-h-screen flex-col">
       {/* Header */}
       <header className="bg-gradient-to-r from-gray-50 to-white border-b border-gray-200 shadow-sm">
         <div className="flex items-center justify-between px-4 py-3 md:px-6 md:py-4">
@@ -166,6 +174,12 @@ export default function GestorDashboardLayout({
             <div className="hidden lg:flex flex-col items-end bg-white px-3 py-2 rounded-lg border border-gray-200">
               <span className="text-sm font-bold text-gray-900 font-sans">{gestor.nome}</span>
               <span className="text-xs text-gray-600 font-medium">{gestor.email}</span>
+              {(gestor.razao_social || gestor.nome_fantasia || gestor.cnpj) && (
+                <span className="text-xs text-gray-500 mt-1 text-right">
+                  {gestor.razao_social || gestor.nome_fantasia}
+                  {gestor.cnpj && <><br />CNPJ: {formatarCNPJ(gestor.cnpj)}</>}
+                </span>
+              )}
             </div>
             <Button 
               variant="ghost" 
@@ -210,6 +224,12 @@ export default function GestorDashboardLayout({
                   <div className="flex flex-col min-w-0 flex-1">
                     <span className="text-sm font-bold text-gray-900 truncate font-sans">{gestor.nome || "Gestor"}</span>
                     <span className="text-xs text-gray-600 truncate font-medium">{gestor.email}</span>
+                    {(gestor.razao_social || gestor.nome_fantasia || gestor.cnpj) && (
+                      <span className="text-xs text-gray-500 mt-1 truncate" title={[gestor.razao_social || gestor.nome_fantasia, gestor.cnpj && `CNPJ: ${formatarCNPJ(gestor.cnpj)}`].filter(Boolean).join(" · ")}>
+                        {gestor.razao_social || gestor.nome_fantasia}
+                        {gestor.cnpj && ` · CNPJ: ${formatarCNPJ(gestor.cnpj)}`}
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -276,10 +296,16 @@ export default function GestorDashboardLayout({
                   <span className="text-xs text-gray-600 truncate font-medium" title={gestor.email}>
                     {gestor.email}
                   </span>
+                  {(gestor.razao_social || gestor.nome_fantasia || gestor.cnpj) && (
+                    <span className="text-xs text-gray-500 mt-1 truncate" title={[gestor.razao_social || gestor.nome_fantasia, gestor.cnpj && `CNPJ: ${formatarCNPJ(gestor.cnpj)}`].filter(Boolean).join(" · ")}>
+                      {gestor.razao_social || gestor.nome_fantasia}
+                      {gestor.cnpj && ` · CNPJ: ${formatarCNPJ(gestor.cnpj)}`}
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
-            
+
             <nav className="flex-1 p-4 space-y-1">
               {menuItems.map((item) => {
                 const Icon = item.icon
@@ -328,6 +354,7 @@ export default function GestorDashboardLayout({
         <main className="flex-1 p-4 md:p-6 lg:p-8 overflow-x-auto bg-gray-100">{children}</main>
       </div>
     </div>
+    </RecursoGuard>
   )
 }
 

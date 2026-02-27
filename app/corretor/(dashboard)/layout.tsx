@@ -143,7 +143,12 @@ export default function CorretorDashboardLayout({
   }
 
   if (!corretor) {
-    return null
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Spinner />
+        <span className="ml-2 text-gray-600">Carregando...</span>
+      </div>
+    )
   }
 
   return (

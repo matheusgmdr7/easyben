@@ -129,7 +129,7 @@ export default function AgendamentoPage() {
             <label className="block text-xs text-gray-600 mb-1">Grupo Beneficiário</label>
             <div className="flex gap-1">
               <Select value={grupoFiltro} onValueChange={setGrupoFiltro}>
-                <SelectTrigger className="h-9 text-sm border-gray-300 rounded-sm flex-1">
+                <SelectTrigger className="h-10 flex-1 rounded-md border border-gray-300 bg-background px-3 py-2 text-sm">
                   <SelectValue placeholder="Selecione" />
                 </SelectTrigger>
                 <SelectContent>
@@ -305,7 +305,7 @@ export default function AgendamentoPage() {
               </Button>
             </div>
             <Select value={String(itemsPerPage)} onValueChange={(v) => setItemsPerPage(Number(v))}>
-              <SelectTrigger className="w-24 h-8 text-xs border-gray-300">
+              <SelectTrigger className="w-24 h-8 text-xs rounded-md border border-gray-300 bg-background px-3 py-2">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>

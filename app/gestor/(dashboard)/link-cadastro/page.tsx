@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Link as LinkIcon, Copy, CheckCircle, AlertCircle, RefreshCw } from "lucide-react"
 import { toast } from "sonner"
+import { formatarCNPJ } from "@/lib/formatters"
 import { getCorretorLogado } from "@/services/auth-corretores-simples"
 import { getCurrentTenantId } from "@/lib/tenant-query-helper"
 import { supabase } from "@/lib/supabase"
@@ -35,7 +36,7 @@ export default function LinkCadastroPage() {
       
       const { data: gestor, error: gestorError } = await supabase
         .from("corretores")
-        .select("id, link_cadastro_equipe")
+        .select("id, link_cadastro_equipe, razao_social, nome_fantasia, cnpj")
         .eq("id", corretorLocal.id)
         .eq("tenant_id", tenantId)
         .eq("is_gestor", true)
@@ -45,6 +46,8 @@ export default function LinkCadastroPage() {
         toast.error("Gestor não encontrado")
         return
       }
+
+      setCorretoraInfo({ razao_social: gestor.razao_social, nome_fantasia: gestor.nome_fantasia, cnpj: gestor.cnpj })
 
       if (gestor.link_cadastro_equipe) {
         const { data: tenant } = await supabase
@@ -130,6 +133,12 @@ export default function LinkCadastroPage() {
           <div>
             <h1 className="text-2xl font-bold text-gray-900 tracking-tight font-sans">Link de Cadastro</h1>
             <p className="text-gray-600 mt-1 font-medium">Gerencie o link de cadastro da sua equipe</p>
+            {(corretoraInfo?.razao_social || corretoraInfo?.nome_fantasia || corretoraInfo?.cnpj) && (
+              <p className="text-sm text-gray-500 mt-2">
+                {corretoraInfo.razao_social || corretoraInfo.nome_fantasia}
+                {corretoraInfo.cnpj && <><span className="mx-1">·</span>CNPJ: {formatarCNPJ(corretoraInfo.cnpj)}</>}
+              </p>
+            )}
           </div>
         </div>
       </div>

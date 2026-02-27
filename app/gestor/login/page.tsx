@@ -15,14 +15,12 @@ export default function GestorLoginPage() {
   const [email, setEmail] = useState("")
   const [senha, setSenha] = useState("")
   const [loading, setLoading] = useState(false)
-  const [erro, setErro] = useState("")
   const [mostrarSenha, setMostrarSenha] = useState(false)
   // Logo será carregada da configuração do sistema/tenant (configurada no painel EasyBen)
   const [logoUrl] = useState<string | null>(null)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setErro("")
     setLoading(true)
 
     try {
@@ -40,19 +38,19 @@ export default function GestorLoginPage() {
           .single()
 
         if (error || !corretorData) {
-          setErro("Erro ao verificar dados do gestor")
+          toast.error("Erro ao verificar dados do gestor")
           setLoading(false)
           return
         }
 
         if (!corretorData.is_gestor) {
-          setErro("Você não tem permissão para acessar o Portal do Gestor")
+          toast.error("Você não tem permissão para acessar o Portal do Gestor")
           setLoading(false)
           return
         }
 
         if (corretorData.status !== "aprovado") {
-          setErro("Seu cadastro ainda está aguardando aprovação")
+          toast.error("Seu cadastro ainda está aguardando aprovação")
           setLoading(false)
           return
         }
@@ -62,11 +60,11 @@ export default function GestorLoginPage() {
         toast.success("Login realizado com sucesso!")
         router.push("/gestor")
       } else {
-        setErro(result.message || "Erro ao fazer login. Verifique suas credenciais.")
+        toast.error(result.message || "Erro ao fazer login. Verifique suas credenciais.")
       }
     } catch (error: any) {
       console.error("❌ Erro ao fazer login:", error)
-      setErro(error.message || "Ocorreu um erro ao fazer login. Tente novamente.")
+      toast.error(error.message || "Ocorreu um erro ao fazer login. Tente novamente.")
     } finally {
       setLoading(false)
     }
@@ -92,10 +90,6 @@ export default function GestorLoginPage() {
         </div>
 
         <div className="bg-white rounded-lg shadow-md p-6">
-          {erro && (
-            <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-md text-sm">{erro}</div>
-          )}
-
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
@@ -137,7 +131,7 @@ export default function GestorLoginPage() {
             </div>
 
             <div className="flex items-center justify-between">
-              <Link href="/corretor/recuperar-senha" className="text-sm text-[#0F172A] hover:underline">
+              <Link href="/gestor/recuperar-senha" className="text-sm text-[#0F172A] hover:underline">
                 Esqueceu a senha?
               </Link>
             </div>

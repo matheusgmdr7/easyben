@@ -1,8 +1,9 @@
 "use client"
 
 import React, { useState, useEffect } from "react"
+import { usePathname } from "next/navigation"
 import EasyBenSidebar from "@/components/admin/easyben-sidebar"
-import AuthGuard from "@/components/admin/auth-guard"
+import EasyBenAuthGuard from "@/components/easyben-admin/auth-guard"
 import { usePermissions } from "@/hooks/use-permissions"
 
 export default function EasyBenLayout({
@@ -10,6 +11,9 @@ export default function EasyBenLayout({
 }: {
   children: React.ReactNode
 }) {
+  const pathname = usePathname()
+  const isLoginPage = pathname === "/easyben-admin/login"
+  
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('easyben-sidebar-collapsed')
@@ -18,12 +22,14 @@ export default function EasyBenLayout({
     return false
   })
 
-  // Chamar hook no nível superior
+  // Chamar hook no nível superior (sempre chamar para manter ordem dos hooks)
   const permissions = usePermissions()
-  const isMaster = permissions?.isMaster ?? false
+  const isMaster = isLoginPage ? false : (permissions?.isMaster ?? false)
 
-  // Sincronizar estado do sidebar com o layout
+  // Sincronizar estado do sidebar com o layout (sempre chamar, mas só executar se não for login)
   useEffect(() => {
+    if (isLoginPage) return // Não executar na página de login
+    
     if (typeof window !== 'undefined') {
       const updateSidebarState = () => {
         const current = localStorage.getItem('easyben-sidebar-collapsed')
@@ -46,24 +52,29 @@ export default function EasyBenLayout({
         clearInterval(interval)
       }
     }
-  }, [])
+  }, [isLoginPage])
+
+  // Se for a página de login, renderizar sem sidebar e sem guard
+  if (isLoginPage) {
+    return <div>{children}</div>
+  }
 
   // Verificar se é master (apenas masters podem acessar EasyBen Admin)
   if (!isMaster) {
     return (
-      <AuthGuard>
+      <EasyBenAuthGuard>
         <div className="flex h-screen w-full items-center justify-center">
           <div className="text-center">
             <h1 className="text-2xl font-bold text-gray-900 mb-2">Acesso Negado</h1>
             <p className="text-gray-600">Você não tem permissão para acessar a administração da EasyBen.</p>
           </div>
         </div>
-      </AuthGuard>
+      </EasyBenAuthGuard>
     )
   }
 
   return (
-    <AuthGuard>
+    <EasyBenAuthGuard>
       <div className="min-h-screen bg-gray-100">
         <EasyBenSidebar />
         <div 
@@ -80,7 +91,7 @@ export default function EasyBenLayout({
           </main>
         </div>
       </div>
-    </AuthGuard>
+    </EasyBenAuthGuard>
   )
 }
 

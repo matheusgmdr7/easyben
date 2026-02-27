@@ -3,11 +3,13 @@
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
+import { getAdministradoraLogada } from "@/services/auth-administradoras-service"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
+import { ModalConfirmacaoExclusao } from "@/components/administradora/modal-confirmacao-exclusao"
 import { Search, Check, Plus, Trash2, Package, ImagePlus, X } from "lucide-react"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 
@@ -51,6 +53,7 @@ export default function NovoContratoPage() {
 
   // Formulário
   const [formData, setFormData] = useState({
+    operadora_id: "" as string,
     cnpj_operadora: "",
     razao_social: "",
     nome_fantasia: "",
@@ -62,6 +65,8 @@ export default function NovoContratoPage() {
 
   const [uploadLogoLoading, setUploadLogoLoading] = useState(false)
   const [produtos, setProdutos] = useState<ProdutoContrato[]>([])
+  const [confirmExcluirOpen, setConfirmExcluirOpen] = useState(false)
+  const [excluirContexto, setExcluirContexto] = useState<{ tipo: "produto"; id: string; nome?: string } | { tipo: "faixa"; produtoId: string; produtoNome?: string; index: number } | null>(null)
 
   async function handleLogoChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -104,6 +109,7 @@ export default function NovoContratoPage() {
       if (res.ok) {
         setFormData((prev) => ({
           ...prev,
+          operadora_id: json.id ?? "",
           cnpj_operadora: json.cnpj ?? cnpjLimpo,
           razao_social: json.nome ?? "",
           nome_fantasia: json.fantasia ?? "",
@@ -113,6 +119,7 @@ export default function NovoContratoPage() {
         // 404: operadora não existe; preenche o CNPJ, limpa nome/fantasia e orienta a cadastrar na própria página
         setFormData((prev) => ({
           ...prev,
+          operadora_id: "",
           cnpj_operadora: cnpjLimpo,
           razao_social: "",
           nome_fantasia: "",
@@ -136,6 +143,24 @@ export default function NovoContratoPage() {
 
   function removerProduto(id: string) {
     setProdutos((prev) => prev.filter((p) => p.id !== id))
+  }
+
+  function abrirConfirmExcluirProduto(prod: ProdutoContrato) {
+    setExcluirContexto({ tipo: "produto", id: prod.id, nome: prod.nome || undefined })
+    setConfirmExcluirOpen(true)
+  }
+
+  function abrirConfirmExcluirFaixa(prod: ProdutoContrato, index: number) {
+    setExcluirContexto({ tipo: "faixa", produtoId: prod.id, produtoNome: prod.nome || undefined, index })
+    setConfirmExcluirOpen(true)
+  }
+
+  function confirmarExclusao() {
+    if (!excluirContexto) return
+    if (excluirContexto.tipo === "produto") removerProduto(excluirContexto.id)
+    else removerFaixa(excluirContexto.produtoId, excluirContexto.index)
+    setConfirmExcluirOpen(false)
+    setExcluirContexto(null)
   }
 
   function atualizarProduto(id: string, dados: Partial<Pick<ProdutoContrato, "nome" | "segmentacao" | "acomodacao">>) {
@@ -175,6 +200,13 @@ export default function NovoContratoPage() {
   }
 
   async function salvarContrato() {
+    const adm = getAdministradoraLogada()
+    if (!adm?.id) {
+      toast.error("Faça login como administradora para salvar o contrato")
+      router.push("/administradora/login")
+      return
+    }
+
     try {
       setLoading(true)
 
@@ -200,12 +232,45 @@ export default function NovoContratoPage() {
         return
       }
 
-      // TODO: Implementar criação do contrato; incluir produtos (faixas com valor numérico) no payload
+      const payload = {
+        administradora_id: adm.id,
+        operadora_id: formData.operadora_id || null,
+        cnpj_operadora: formData.cnpj_operadora,
+        razao_social: formData.razao_social,
+        nome_fantasia: formData.nome_fantasia,
+        logo: formData.logo || null,
+        descricao: formData.descricao,
+        numero: formData.numero,
+        observacao: formData.observacao || null,
+        produtos: produtos
+          .filter((p) => (p.nome || "").trim())
+          .map((p) => ({
+            nome: p.nome.trim(),
+            segmentacao: p.segmentacao,
+            acomodacao: p.acomodacao,
+            faixas: p.faixas.map((f) => ({
+              faixa_etaria: f.faixa_etaria,
+              valor: f.valor,
+            })),
+          })),
+      }
+
+      const res = await fetch("/api/administradora/contrato", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      })
+      const json = await res.json().catch(() => ({}))
+
+      if (!res.ok) {
+        throw new Error(json?.error || "Erro ao salvar contrato")
+      }
+
       toast.success("Contrato criado com sucesso!")
       router.push("/administradora/contrato/pesquisar")
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Erro ao salvar contrato:", error)
-      toast.error("Erro ao salvar contrato: " + error.message)
+      toast.error("Erro ao salvar contrato: " + (error instanceof Error ? error.message : "Erro desconhecido"))
     } finally {
       setLoading(false)
     }
@@ -449,7 +514,7 @@ export default function NovoContratoPage() {
                               value={prod.segmentacao}
                               onValueChange={(v) => atualizarProduto(prod.id, { segmentacao: v })}
                             >
-                              <SelectTrigger className="h-9 text-sm border-gray-300 rounded-sm">
+                              <SelectTrigger className="h-10 w-full rounded-md border border-gray-300 bg-background px-3 py-2 text-sm">
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent>
@@ -467,7 +532,7 @@ export default function NovoContratoPage() {
                               value={prod.acomodacao}
                               onValueChange={(v) => atualizarProduto(prod.id, { acomodacao: v })}
                             >
-                              <SelectTrigger className="h-9 text-sm border-gray-300 rounded-sm">
+                              <SelectTrigger className="h-10 w-full rounded-md border border-gray-300 bg-background px-3 py-2 text-sm">
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent>
@@ -483,7 +548,7 @@ export default function NovoContratoPage() {
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => removerProduto(prod.id)}
+                          onClick={() => abrirConfirmExcluirProduto(prod)}
                           className="h-9 px-2 border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300 shrink-0"
                           title="Remover produto"
                         >
@@ -549,7 +614,7 @@ export default function NovoContratoPage() {
                                       <Button
                                         variant="ghost"
                                         size="sm"
-                                        onClick={() => removerFaixa(prod.id, idx)}
+                                        onClick={() => abrirConfirmExcluirFaixa(prod, idx)}
                                         className="h-8 w-8 p-0 text-red-500 hover:text-red-700 hover:bg-red-50"
                                         title="Remover faixa"
                                       >
@@ -571,6 +636,19 @@ export default function NovoContratoPage() {
           </TabsContent>
         </Tabs>
       </div>
+
+      <ModalConfirmacaoExclusao
+        open={confirmExcluirOpen}
+        onOpenChange={(open) => { setConfirmExcluirOpen(open); if (!open) setExcluirContexto(null) }}
+        titulo={excluirContexto?.tipo === "produto" ? "Remover produto" : "Remover faixa etária"}
+        descricao={excluirContexto
+          ? excluirContexto.tipo === "produto"
+            ? `Tem certeza que deseja remover o produto${excluirContexto.nome ? ` "${excluirContexto.nome}"` : ""} da lista?`
+            : `Tem certeza que deseja remover esta faixa etária${excluirContexto.produtoNome ? ` do produto "${excluirContexto.produtoNome}"` : ""}?`
+          : ""}
+        textoConfirmar={excluirContexto?.tipo === "produto" ? "Remover produto" : "Remover faixa"}
+        onConfirm={confirmarExclusao}
+      />
     </div>
   )
 }

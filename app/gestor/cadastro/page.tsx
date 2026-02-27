@@ -4,9 +4,9 @@ import type React from "react"
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
+import { toast } from "sonner"
 import { supabase } from "@/lib/supabase"
 import { Spinner } from "@/components/ui/spinner"
-import { criarCorretor } from "@/services/corretores-service"
 import { getCurrentTenantId } from "@/lib/tenant-query-helper"
 import { Eye, EyeOff } from "lucide-react"
 
@@ -36,7 +36,6 @@ export default function CadastroGestor() {
     cpf_cnpj_titular_conta: "",
   })
   const [loading, setLoading] = useState(false)
-  const [erro, setErro] = useState("")
   const [step, setStep] = useState(1)
   const [mostrarSenha, setMostrarSenha] = useState(false)
   const [mostrarConfirmarSenha, setMostrarConfirmarSenha] = useState(false)
@@ -95,25 +94,24 @@ export default function CadastroGestor() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setErro("")
     setLoading(true)
 
     try {
       // Validações
       if (formData.senha !== formData.confirmarSenha) {
-        setErro("As senhas não coincidem")
+        toast.error("As senhas não coincidem")
         setLoading(false)
         return
       }
 
       if (formData.cpf && !validarCPF(formData.cpf)) {
-        setErro("CPF inválido")
+        toast.error("CPF inválido")
         setLoading(false)
         return
       }
 
       if (formData.cnpj && !validarCNPJ(formData.cnpj)) {
-        setErro("CNPJ inválido")
+        toast.error("CNPJ inválido")
         setLoading(false)
         return
       }
@@ -126,7 +124,7 @@ export default function CadastroGestor() {
         .single()
 
       if (corretorExistente) {
-        setErro("Este email já está cadastrado. Tente fazer login ou recuperar sua senha.")
+        toast.error("Este email já está cadastrado. Tente fazer login ou recuperar sua senha.")
         setLoading(false)
         return
       }
@@ -145,7 +143,7 @@ export default function CadastroGestor() {
 
       if (authError) {
         console.error("Erro ao criar usuário no Auth:", authError)
-        setErro(`Erro ao criar conta: ${authError.message}`)
+        toast.error(`Erro ao criar conta: ${authError.message}`)
         setLoading(false)
         return
       }
@@ -186,7 +184,7 @@ export default function CadastroGestor() {
 
       if (gestorError) {
         console.error("Erro ao criar gestor:", gestorError)
-        setErro(`Erro ao criar gestor: ${gestorError.message}`)
+        toast.error(`Erro ao criar gestor: ${gestorError.message}`)
         setLoading(false)
         return
       }
@@ -195,7 +193,7 @@ export default function CadastroGestor() {
       router.push("/gestor/aguardando-aprovacao")
     } catch (error) {
       console.error("Erro ao cadastrar:", error)
-      setErro("Ocorreu um erro ao cadastrar. Tente novamente.")
+      toast.error("Ocorreu um erro ao cadastrar. Tente novamente.")
       setLoading(false)
     }
   }
@@ -246,28 +244,25 @@ export default function CadastroGestor() {
   const nextStep = () => {
     if (step === 1) {
       if (!formData.nome || !formData.email || !formData.senha || !formData.confirmarSenha || !formData.whatsapp || !formData.estado) {
-        setErro("Por favor, preencha todos os campos obrigatórios")
+        toast.error("Por favor, preencha todos os campos obrigatórios")
         return
       }
       if (formData.senha !== formData.confirmarSenha) {
-        setErro("As senhas não coincidem")
+        toast.error("As senhas não coincidem")
         return
       }
-      setErro("")
       setStep(2)
     } else if (step === 2) {
       if (!formData.cnpj) {
-        setErro("CNPJ é obrigatório para gestores")
+        toast.error("CNPJ é obrigatório para gestores")
         return
       }
-      setErro("")
       setStep(3)
     }
   }
 
   const prevStep = () => {
     setStep(step - 1)
-    setErro(null)
   }
 
   return (
@@ -290,10 +285,6 @@ export default function CadastroGestor() {
         </div>
 
         <div className="bg-white rounded-lg shadow-md p-6">
-          {erro && (
-            <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-md text-sm">{erro}</div>
-          )}
-
           {/* Indicador de progresso */}
           <div className="mb-6">
             <div className="flex justify-between mb-2">

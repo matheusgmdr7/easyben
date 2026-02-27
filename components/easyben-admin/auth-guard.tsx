@@ -2,7 +2,7 @@
 
 import type React from "react"
 import { useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, usePathname } from "next/navigation"
 import { supabase } from "@/lib/supabase-auth"
 import { Spinner } from "@/components/ui/spinner"
 
@@ -15,10 +15,20 @@ export default function EasyBenAuthGuard({ children }: { children: React.ReactNo
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [isMaster, setIsMaster] = useState(false)
   const router = useRouter()
+  const pathname = usePathname()
 
   useEffect(() => {
     const checkAuth = async () => {
       try {
+        // Se estiver na rota de login, permitir acesso sem verificação
+        if (pathname === "/easyben-admin/login") {
+          console.log("🔓 EasyBen AuthGuard: Rota de login detectada - permitindo acesso")
+          setIsLoading(false)
+          setIsAuthenticated(true) // Permitir renderizar a página de login
+          setIsMaster(true) // Não precisa ser master para ver a página de login
+          return
+        }
+
         console.log("🔐 EasyBen AuthGuard: Verificando autenticação...")
         
         const {
@@ -104,7 +114,7 @@ export default function EasyBenAuthGuard({ children }: { children: React.ReactNo
     }
 
     checkAuth()
-  }, [router])
+  }, [router, pathname])
 
   if (isLoading) {
     return (
@@ -118,7 +128,7 @@ export default function EasyBenAuthGuard({ children }: { children: React.ReactNo
   }
 
   if (!isAuthenticated || !isMaster) {
-    return null
+    return <div style={{ display: 'none' }}></div>
   }
 
   return <>{children}</>

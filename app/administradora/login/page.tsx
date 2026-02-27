@@ -7,20 +7,19 @@ import Link from "next/link"
 import { autenticarAdministradora } from "@/services/auth-administradoras-service"
 import { Spinner } from "@/components/ui/spinner"
 import { Eye, EyeOff } from "lucide-react"
+import { toast } from "sonner"
 
 export default function AdministradoraLoginPage() {
   const router = useRouter()
   const [email, setEmail] = useState("")
   const [senha, setSenha] = useState("")
   const [loading, setLoading] = useState(false)
-  const [erro, setErro] = useState("")
   const [mostrarSenha, setMostrarSenha] = useState(false)
   // Logo será carregada da configuração do sistema/tenant (configurada no painel EasyBen)
   const [logoUrl] = useState<string | null>(null)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setErro("")
     setLoading(true)
 
     try {
@@ -39,18 +38,19 @@ export default function AdministradoraLoginPage() {
 
       if (result.success) {
         console.log("✅ Login bem-sucedido!")
+        toast.success("Login realizado com sucesso!")
         
         // Redirecionar com base no status de login
         if (result.administradora?.status_login === "ativo") {
           console.log("✅ Administradora ativa, redirecionando para dashboard")
-          router.push("/administradora")
+          router.push("/administradora/dashboard")
         } else {
           console.log("⚠️ Administradora não ativa, redirecionando para aguardando aprovação")
           router.push("/administradora/aguardando-aprovacao")
         }
       } else {
         console.error("❌ Login falhou:", result.message)
-        setErro(result.message || "Erro ao fazer login. Verifique suas credenciais.")
+        toast.error(result.message || "Erro ao fazer login. Verifique suas credenciais.")
       }
     } catch (error: any) {
       console.error("❌ Erro ao fazer login:", {
@@ -58,7 +58,7 @@ export default function AdministradoraLoginPage() {
         stack: error.stack,
         name: error.name,
       })
-      setErro(error.message || "Ocorreu um erro ao fazer login. Tente novamente.")
+      toast.error(error.message || "Ocorreu um erro ao fazer login. Tente novamente.")
     } finally {
       setLoading(false)
     }
@@ -91,10 +91,6 @@ export default function AdministradoraLoginPage() {
         </div>
 
         <div className="bg-white rounded-lg shadow-md p-6">
-          {erro && (
-            <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-md text-sm">{erro}</div>
-          )}
-
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">

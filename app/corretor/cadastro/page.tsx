@@ -8,6 +8,7 @@ import { supabase } from "@/lib/supabase"
 import { Spinner } from "@/components/ui/spinner"
 import { criarCorretor } from "@/services/corretores-service"
 import { Eye, EyeOff } from "lucide-react"
+import { toast } from "sonner"
 
 export default function CadastroCorretor() {
   const router = useRouter()
@@ -35,7 +36,6 @@ export default function CadastroCorretor() {
     cpf_cnpj_titular_conta: "",
   })
   const [loading, setLoading] = useState(false)
-  const [erro, setErro] = useState("")
   const [step, setStep] = useState(1)
   const [mostrarSenha, setMostrarSenha] = useState(false)
   const [mostrarConfirmarSenha, setMostrarConfirmarSenha] = useState(false)
@@ -108,60 +108,56 @@ export default function CadastroCorretor() {
     if (step === 1) {
       // Validar campos do step 1
       if (!formData.nome || !formData.email || !formData.whatsapp || !formData.estado || !formData.cidade || !formData.cpf || !formData.data_nascimento) {
-        setErro("Por favor, preencha todos os campos obrigatórios")
+        toast.error("Por favor, preencha todos os campos obrigatórios")
         return
       }
       if (formData.cpf && !validarCPF(formData.cpf)) {
-        setErro("CPF inválido. Por favor, verifique o número digitado.")
+        toast.error("CPF inválido. Por favor, verifique o número digitado.")
         return
       }
-      setErro("")
       setStep(2)
     } else if (step === 2) {
       // Validar campos do step 2
       if (!formData.senha || !formData.confirmarSenha) {
-        setErro("Por favor, preencha a senha e confirmação")
+        toast.error("Por favor, preencha a senha e confirmação")
         return
       }
       if (formData.senha.length < 6) {
-        setErro("A senha deve ter no mínimo 6 caracteres")
+        toast.error("A senha deve ter no mínimo 6 caracteres")
         return
       }
       if (formData.senha !== formData.confirmarSenha) {
-        setErro("As senhas não coincidem")
+        toast.error("As senhas não coincidem")
         return
       }
-      setErro("")
       setStep(3)
     }
   }
 
   const prevStep = () => {
     setStep(step - 1)
-    setErro("")
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setErro("")
     setLoading(true)
 
     try {
       // Validar dados financeiros
       if (!formData.chave_pix && !formData.banco) {
-        setErro("Preencha pelo menos uma forma de recebimento: Chave PIX ou Dados Bancários")
+        toast.error("Preencha pelo menos uma forma de recebimento: Chave PIX ou Dados Bancários")
         setLoading(false)
         return
       }
 
       if (formData.chave_pix && !formData.tipo_chave_pix) {
-        setErro("Selecione o tipo de chave PIX")
+        toast.error("Selecione o tipo de chave PIX")
         setLoading(false)
         return
       }
 
       if (formData.banco && (!formData.agencia || !formData.conta || !formData.tipo_conta || !formData.nome_titular_conta)) {
-        setErro("Preencha todos os dados bancários obrigatórios")
+        toast.error("Preencha todos os dados bancários obrigatórios")
         setLoading(false)
         return
       }
@@ -175,13 +171,13 @@ export default function CadastroCorretor() {
 
       if (checkError && checkError.code !== 'PGRST116') {
         console.error("Erro ao verificar email:", checkError)
-        setErro("Erro ao verificar email. Tente novamente.")
+        toast.error("Erro ao verificar email. Tente novamente.")
         setLoading(false)
         return
       }
 
       if (corretorExistente) {
-        setErro("Este email já está cadastrado. Tente fazer login ou recuperar sua senha.")
+        toast.error("Este email já está cadastrado. Tente fazer login ou recuperar sua senha.")
         setLoading(false)
         return
       }
@@ -205,9 +201,9 @@ export default function CadastroCorretor() {
         if (authError.message.includes("already registered") || 
             authError.message.includes("User already registered") ||
             authError.message.includes("already exists")) {
-          setErro("Este email já está cadastrado no sistema. Tente fazer login ou recuperar sua senha.")
+          toast.error("Este email já está cadastrado no sistema. Tente fazer login ou recuperar sua senha.")
         } else {
-          setErro(`Erro ao criar conta: ${authError.message}`)
+          toast.error(`Erro ao criar conta: ${authError.message}`)
         }
         setLoading(false)
         return
@@ -245,10 +241,11 @@ export default function CadastroCorretor() {
       )
 
       // 5. Redirecionar para página de aguardando aprovação
+      toast.success("Cadastro realizado com sucesso! Aguarde a aprovação.")
       router.push("/corretor/aguardando-aprovacao")
     } catch (error) {
       console.error("Erro ao cadastrar:", error)
-      setErro("Ocorreu um erro ao cadastrar. Tente novamente.")
+      toast.error("Ocorreu um erro ao cadastrar. Tente novamente.")
       setLoading(false)
     }
   }
@@ -316,10 +313,6 @@ export default function CadastroCorretor() {
         </div>
 
         <div className="bg-white rounded-lg shadow-md p-6">
-          {erro && (
-            <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-md text-sm">{erro}</div>
-          )}
-
           {/* Indicador de progresso */}
           <div className="mb-6">
             <div className="flex justify-between mb-2">

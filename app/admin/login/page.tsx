@@ -27,7 +27,6 @@ export default function AdminLogin() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
-    setErrorMessage(null)
 
     try {
       console.log("Tentando fazer login com:", formData.email)
@@ -39,7 +38,6 @@ export default function AdminLogin() {
       router.push("/admin")
     } catch (error: any) {
       console.error("Erro de login:", error)
-      setErrorMessage(error.message || "Erro ao fazer login")
       toast.error(error.message || "Erro ao fazer login")
     } finally {
       setLoading(false)
@@ -65,13 +63,6 @@ export default function AdminLogin() {
           <CardDescription>Entre com suas credenciais para acessar o painel</CardDescription>
         </CardHeader>
         <CardContent>
-          {errorMessage && (
-            <Alert variant="destructive" className="mb-4">
-              <AlertCircle className="h-4 w-4" />
-              <AlertTitle>Erro</AlertTitle>
-              <AlertDescription>{errorMessage}</AlertDescription>
-            </Alert>
-          )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">

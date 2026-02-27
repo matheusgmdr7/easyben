@@ -1,17 +1,14 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import PageHeader from "@/components/admin/page-header"
-import StatCard from "@/components/admin/stat-card"
-import { Users, FileText, Package, DollarSign, BarChart3, TrendingUp, Clock, CheckCircle, Send, Target, UserCheck, Calculator } from "lucide-react"
+import dynamic from "next/dynamic"
+import { Users, BarChart3, Send, Target, UserCheck } from "lucide-react"
 import Link from "next/link"
 import { buscarLeads } from "@/services/leads-service"
 import { buscarPropostas } from "@/services/propostas-service-unificado"
 import { buscarCorretores } from "@/services/corretores-service"
-import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, LineElement, PointElement, Title, Tooltip, Legend } from 'chart.js'
-import { Line } from 'react-chartjs-2'
 
-ChartJS.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, Title, Tooltip, Legend)
+const DashboardChart = dynamic(() => import("./dashboard-chart"), { ssr: false })
 
 export default function AdminDashboard() {
   const [isLoading, setIsLoading] = useState(true)
@@ -251,29 +248,7 @@ export default function AdminDashboard() {
           </div>
           <div className="h-64">
             {dadosGrafico ? (
-              <Line
-                data={dadosGrafico}
-                options={{
-                  responsive: true,
-                  maintainAspectRatio: false,
-                  plugins: {
-                    legend: {
-                      position: 'top' as const,
-                    },
-                    title: {
-                      display: false,
-                    },
-                  },
-                  scales: {
-                    y: {
-                      beginAtZero: true,
-                      ticks: {
-                        stepSize: 1,
-                      },
-                    },
-                  },
-                }}
-              />
+              <DashboardChart data={dadosGrafico} />
             ) : (
               <div className="h-full flex items-center justify-center bg-gray-50 rounded-lg border-2 border-dashed border-gray-200">
             <div className="text-center">
