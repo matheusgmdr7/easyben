@@ -28,8 +28,19 @@ export interface AtualizarCorretorData {
 }
 
 export class CorretoresAdministradoraService {
+  private static async resolverTenantId(administradoraId: string): Promise<string> {
+    const { data: admRow } = await supabaseAdmin
+      .from("administradoras")
+      .select("tenant_id")
+      .eq("id", administradoraId)
+      .maybeSingle()
+
+    if (admRow?.tenant_id) return admRow.tenant_id
+    return getCurrentTenantId()
+  }
+
   static async listar(administradoraId: string): Promise<CorretorAdministradora[]> {
-    const tenantId = await getCurrentTenantId()
+    const tenantId = await this.resolverTenantId(administradoraId)
     const { data, error } = await supabaseAdmin
       .from("corretores_administradora")
       .select("*")
@@ -45,7 +56,7 @@ export class CorretoresAdministradoraService {
     id: string,
     administradoraId: string
   ): Promise<CorretorAdministradora | null> {
-    const tenantId = await getCurrentTenantId()
+    const tenantId = await this.resolverTenantId(administradoraId)
     const { data, error } = await supabaseAdmin
       .from("corretores_administradora")
       .select("*")
@@ -59,7 +70,7 @@ export class CorretoresAdministradoraService {
   }
 
   static async criar(payload: CriarCorretorData): Promise<CorretorAdministradora> {
-    const tenantId = await getCurrentTenantId()
+    const tenantId = await this.resolverTenantId(payload.administradora_id)
     const { data, error } = await supabaseAdmin
       .from("corretores_administradora")
       .insert({
@@ -82,7 +93,7 @@ export class CorretoresAdministradoraService {
     administradoraId: string,
     payload: AtualizarCorretorData
   ): Promise<CorretorAdministradora> {
-    const tenantId = await getCurrentTenantId()
+    const tenantId = await this.resolverTenantId(administradoraId)
     const { data, error } = await supabaseAdmin
       .from("corretores_administradora")
       .update({
@@ -102,7 +113,7 @@ export class CorretoresAdministradoraService {
   }
 
   static async excluir(id: string, administradoraId: string): Promise<void> {
-    const tenantId = await getCurrentTenantId()
+    const tenantId = await this.resolverTenantId(administradoraId)
     const { error } = await supabaseAdmin
       .from("corretores_administradora")
       .delete()
@@ -118,11 +129,13 @@ export class CorretoresAdministradoraService {
     corretorId: string,
     administradoraId: string
   ): Promise<{ id: string; cliente_nome: string; cliente_cpf: string | null; cliente_email: string | null; valor_mensal: number; status: string }[]> {
+    const tenantId = await this.resolverTenantId(administradoraId)
     const { data: raw, error } = await supabaseAdmin
       .from("clientes_administradoras")
       .select("id, valor_mensal, status, propostas(nome, cpf, email)")
       .eq("corretor_id", corretorId)
       .eq("administradora_id", administradoraId)
+      .eq("tenant_id", tenantId)
       .order("data_vinculacao", { ascending: false })
 
     if (error) throw error

@@ -1,12 +1,11 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Textarea } from '@/components/ui/textarea'
 import { criarTenant, type CriarTenantData } from '@/services/tenants-service'
 import { toast } from 'sonner'
 
@@ -31,6 +30,38 @@ export function ModalCriarTenant({ isOpen, onClose, onSuccess }: ModalCriarTenan
     nome_remetente: '',
     dominio_personalizado: '',
   })
+
+  const previewAcesso = useMemo(() => {
+    const slug = String(formData.slug || '').trim().toLowerCase()
+    const subdominio = String(formData.subdominio || '').trim().toLowerCase()
+    const dominioPersonalizado = String(formData.dominio_personalizado || '').trim().toLowerCase()
+
+    const protocolo = typeof window !== 'undefined' ? window.location.protocol.replace(':', '') : 'https'
+    const hostAtual = typeof window !== 'undefined' ? window.location.host : 'app.easyben.com.br'
+
+    const hostSemPorta = hostAtual.split(':')[0]
+    const labels = hostSemPorta.split('.').filter(Boolean)
+    const prefixosPainel = new Set(['www', 'app', 'admin', 'easyben-admin'])
+    const dominioNativoBase =
+      labels.length >= 3 && prefixosPainel.has(labels[0]) ? labels.slice(1).join('.') : hostSemPorta
+
+    const toUrl = (dominio: string) => {
+      if (!dominio) return ''
+      const valor = dominio.replace(/^https?:\/\//, '')
+      return `${protocolo}://${valor}`
+    }
+
+    const porDominioPersonalizado = dominioPersonalizado ? toUrl(dominioPersonalizado) : ''
+    const porSubdominio = subdominio ? `${protocolo}://${subdominio}.${dominioNativoBase}` : ''
+    const porSlug = slug ? `${protocolo}://${hostAtual}/${slug}` : ''
+
+    return {
+      principal: porDominioPersonalizado || porSubdominio || porSlug || '-',
+      porDominioPersonalizado: porDominioPersonalizado || '-',
+      porSubdominio: porSubdominio || '-',
+      porSlug: porSlug || '-',
+    }
+  }, [formData.slug, formData.subdominio, formData.dominio_personalizado])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -160,6 +191,9 @@ export function ModalCriarTenant({ isOpen, onClose, onSuccess }: ModalCriarTenan
                   onChange={(e) => setFormData({ ...formData, dominio_principal: e.target.value })}
                   placeholder="Ex: cliente.com.br"
                 />
+                <p className="text-xs text-gray-500 mt-1">
+                  Opcional. Se não informar, o acesso usa o domínio nativo da EasyBen com o slug.
+                </p>
               </div>
               
               <div>
@@ -171,7 +205,7 @@ export function ModalCriarTenant({ isOpen, onClose, onSuccess }: ModalCriarTenan
                   placeholder="Ex: cliente"
                 />
                 <p className="text-xs text-gray-500 mt-1">
-                  Para acesso via: cliente.plataforma.com
+                  Opcional. Se vazio, a plataforma pode ser acessada pelo slug no domínio nativo.
                 </p>
               </div>
             </div>
@@ -187,6 +221,15 @@ export function ModalCriarTenant({ isOpen, onClose, onSuccess }: ModalCriarTenan
               <p className="text-xs text-gray-500 mt-1">
                 Domínio completamente personalizado (requer configuração DNS)
               </p>
+            </div>
+
+            <div className="rounded-md border border-sky-200 bg-sky-50 p-3">
+              <p className="text-xs font-semibold text-sky-900">Preview da URL final de acesso</p>
+              <p className="text-xs text-sky-800 mt-1 break-all">{previewAcesso.principal}</p>
+              <p className="text-[11px] text-sky-700 mt-2">Prioridade aplicada:</p>
+              <p className="text-[11px] text-sky-700 break-all">1) Domínio personalizado: {previewAcesso.porDominioPersonalizado}</p>
+              <p className="text-[11px] text-sky-700 break-all">2) Subdomínio: {previewAcesso.porSubdominio}</p>
+              <p className="text-[11px] text-sky-700 break-all">3) Fallback por slug: {previewAcesso.porSlug}</p>
             </div>
           </div>
 

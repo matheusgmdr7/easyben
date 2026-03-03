@@ -2,9 +2,6 @@
 
 import { useState, useEffect } from "react"
 import { getAdministradoraLogada } from "@/services/auth-administradoras-service"
-import { GruposBeneficiariosService, type GrupoBeneficiarios } from "@/services/grupos-beneficiarios-service"
-import { obterProdutosCorretores } from "@/services/produtos-corretores-service"
-import { buscarCorretores } from "@/services/corretores-service"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -13,15 +10,13 @@ import { Search, X } from "lucide-react"
 
 export default function BeneficiariosContratoPage() {
   const [administradoraId, setAdministradoraId] = useState<string | null>(null)
-  const [grupos, setGrupos] = useState<GrupoBeneficiarios[]>([])
-  const [produtos, setProdutos] = useState<{ id: string; nome?: string }[]>([])
-  const [corretores, setCorretores] = useState<{ id: string; nome?: string }[]>([])
+  const [contratos, setContratos] = useState<{ id: string; numero?: string; descricao?: string }[]>([])
+  const [produtos, setProdutos] = useState<{ id: string; nome?: string; contrato_id?: string }[]>([])
   const [loading, setLoading] = useState(false)
 
   const [cpf, setCpf] = useState("")
-  const [grupoId, setGrupoId] = useState("")
+  const [contratoId, setContratoId] = useState("")
   const [produtoId, setProdutoId] = useState("")
-  const [corretorId, setCorretorId] = useState("")
 
   const [resultados, setResultados] = useState<any[]>([])
 
@@ -29,39 +24,37 @@ export default function BeneficiariosContratoPage() {
     const adm = getAdministradoraLogada()
     if (adm?.id) {
       setAdministradoraId(adm.id)
-      carregarGrupos(adm.id)
+      carregarContratos(adm.id)
     }
-    carregarProdutos()
-    carregarCorretores()
   }, [])
 
-  async function carregarGrupos(adminId: string) {
+  async function carregarContratos(adminId: string) {
     try {
-      const data = await GruposBeneficiariosService.buscarTodos(adminId)
-      setGrupos(data)
+      const res = await fetch(`/api/administradora/contratos?administradora_id=${encodeURIComponent(adminId)}`)
+      const data = await res.json().catch(() => [])
+      if (!res.ok) throw new Error(data?.error || "Erro ao carregar contratos")
+      setContratos(Array.isArray(data) ? data : [])
     } catch (error) {
-      console.error("Erro ao carregar grupos:", error)
-      toast.error("Erro ao carregar grupos de beneficiários")
+      console.error("Erro ao carregar contratos:", error)
+      setContratos([])
     }
   }
 
-  async function carregarProdutos() {
+  async function carregarProdutosPorContrato(contratoIdSelecionado: string) {
+    if (!administradoraId || !contratoIdSelecionado) {
+      setProdutos([])
+      return
+    }
     try {
-      const data = await obterProdutosCorretores()
+      const res = await fetch(
+        `/api/administradora/produtos-contrato?administradora_id=${encodeURIComponent(administradoraId)}&contrato_id=${encodeURIComponent(contratoIdSelecionado)}`
+      )
+      const data = await res.json().catch(() => [])
+      if (!res.ok) throw new Error(data?.error || "Erro ao carregar produtos do contrato")
       setProdutos(Array.isArray(data) ? data : [])
     } catch (error) {
-      console.error("Erro ao carregar produtos:", error)
+      console.error("Erro ao carregar produtos do contrato:", error)
       setProdutos([])
-    }
-  }
-
-  async function carregarCorretores() {
-    try {
-      const data = await buscarCorretores()
-      setCorretores(Array.isArray(data) ? data : [])
-    } catch (error) {
-      console.error("Erro ao carregar corretores:", error)
-      setCorretores([])
     }
   }
 
@@ -70,7 +63,7 @@ export default function BeneficiariosContratoPage() {
       setLoading(true)
       // TODO: Integrar com API de contratos de beneficiários
       setResultados([])
-      toast.info("Pesquisa de contratos em desenvolvimento. Filtros serão aplicados na integração.")
+      toast.info("Pesquisa em desenvolvimento. Filtros de CPF, contrato e produto vinculado já configurados.")
     } catch (e: any) {
       toast.error("Erro: " + (e?.message || "Erro ao pesquisar"))
     } finally {
@@ -80,21 +73,30 @@ export default function BeneficiariosContratoPage() {
 
   function limpar() {
     setCpf("")
-    setGrupoId("")
+    setContratoId("")
     setProdutoId("")
-    setCorretorId("")
+    setProdutos([])
     setResultados([])
   }
+
+  useEffect(() => {
+    setProdutoId("")
+    if (!contratoId) {
+      setProdutos([])
+      return
+    }
+    carregarProdutosPorContrato(contratoId)
+  }, [contratoId, administradoraId])
 
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="bg-white border-b border-gray-200 px-6 py-4">
         <h1 className="text-xl font-semibold text-gray-800">Beneficiários › Contrato</h1>
-        <p className="text-sm text-gray-500 mt-1">Buscar por CPF, grupo de beneficiário, produto e corretor.</p>
+        <p className="text-sm text-gray-500 mt-1">Buscar por CPF, contrato e produto vinculado ao contrato.</p>
       </div>
 
       <div className="bg-white border-b border-gray-200 px-6 py-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 mb-4">
           <div>
             <label className="block text-xs text-gray-600 mb-1">CPF</label>
             <Input
@@ -105,40 +107,29 @@ export default function BeneficiariosContratoPage() {
             />
           </div>
           <div>
-            <label className="block text-xs text-gray-600 mb-1">Grupo de beneficiário</label>
-            <Select value={grupoId} onValueChange={setGrupoId}>
+            <label className="block text-xs text-gray-600 mb-1">Contrato</label>
+            <Select value={contratoId} onValueChange={setContratoId}>
               <SelectTrigger className="h-10 w-full rounded-md border border-gray-300 bg-background px-3 py-2 text-sm">
                 <SelectValue placeholder="Selecione" />
               </SelectTrigger>
               <SelectContent>
-                {grupos.map((g) => (
-                  <SelectItem key={g.id} value={g.id}>{g.nome}</SelectItem>
+                {contratos.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {`${c.numero || "-"} - ${c.descricao || "Sem descrição"}`}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
           <div>
-            <label className="block text-xs text-gray-600 mb-1">Produto</label>
-            <Select value={produtoId} onValueChange={setProdutoId}>
+            <label className="block text-xs text-gray-600 mb-1">Produto vinculado</label>
+            <Select value={produtoId} onValueChange={setProdutoId} disabled={!contratoId}>
               <SelectTrigger className="h-10 w-full rounded-md border border-gray-300 bg-background px-3 py-2 text-sm">
-                <SelectValue placeholder="Selecione" />
+                <SelectValue placeholder={contratoId ? "Selecione" : "Selecione um contrato"} />
               </SelectTrigger>
               <SelectContent>
                 {produtos.map((p) => (
                   <SelectItem key={p.id} value={p.id}>{p.nome || "-"}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div>
-            <label className="block text-xs text-gray-600 mb-1">Corretor</label>
-            <Select value={corretorId} onValueChange={setCorretorId}>
-              <SelectTrigger className="h-10 w-full rounded-md border border-gray-300 bg-background px-3 py-2 text-sm">
-                <SelectValue placeholder="Selecione" />
-              </SelectTrigger>
-              <SelectContent>
-                {corretores.map((c) => (
-                  <SelectItem key={c.id} value={c.id}>{c.nome || "-"}</SelectItem>
                 ))}
               </SelectContent>
             </Select>

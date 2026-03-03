@@ -69,6 +69,13 @@ export const publicRoutes: Route[] = [
     requiresAuth: false,
     requiredRole: 'public',
   },
+  {
+    path: '/[tenant-slug]/cliente',
+    label: 'Dashboard do Cliente (CPF)',
+    description: 'Consulta de cliente e boletos/faturas por CPF no tenant',
+    requiresAuth: false,
+    requiredRole: 'public',
+  },
 ]
 
 /**

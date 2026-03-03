@@ -66,6 +66,33 @@ export async function getCurrentTenantId(): Promise<string> {
   }
   
   // No cliente
+  // Prioridade 1: tenant_id da sessão da administradora logada
+  try {
+    const administradoraLogadaStr = localStorage.getItem("administradoraLogada")
+    if (administradoraLogadaStr) {
+      const administradoraLogada = JSON.parse(administradoraLogadaStr)
+      if (administradoraLogada?.tenant_id) {
+        return administradoraLogada.tenant_id
+      }
+    }
+  } catch (error) {
+    console.error("Erro ao obter tenant_id da administradora logada:", error)
+  }
+
+  // Prioridade 2: tenant_id da sessão admin (easyben-admin/admin)
+  try {
+    const adminUsuarioStr = localStorage.getItem("admin_usuario")
+    if (adminUsuarioStr) {
+      const adminUsuario = JSON.parse(adminUsuarioStr)
+      if (adminUsuario?.tenant_id) {
+        return adminUsuario.tenant_id
+      }
+    }
+  } catch (error) {
+    console.error("Erro ao obter tenant_id do admin_usuario:", error)
+  }
+
+  // Prioridade 3: slug do tenant (cookie/subdomínio)
   const slug = getTenantSlugClient()
   
   // Buscar ID do tenant pelo slug

@@ -23,13 +23,36 @@ export function useTenantRecurso(codigoRecurso: string): UseTenantRecursoResult 
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
+    const extrairTenantSlugDaUrl = (): string | null => {
+      if (typeof window === 'undefined') return null
+      const primeiroSegmento = window.location.pathname.split('/').filter(Boolean)[0] || ''
+      if (!primeiroSegmento) return null
+      const reservado = new Set([
+        'admin',
+        'easyben-admin',
+        'easyben',
+        'administradora',
+        'analista',
+        'corretor',
+        'corretores',
+        'gestor',
+        'api',
+        '_next',
+        'proposta-digital',
+        'cotacao',
+        'sobre',
+        'contato',
+      ])
+      return reservado.has(primeiroSegmento.toLowerCase()) ? null : primeiroSegmento
+    }
+
     const verificarAcesso = async () => {
       try {
         setLoading(true)
         setError(null)
 
         // Obter tenant slug atual
-        const tenantSlug = getTenantSlugClient()
+        const tenantSlug = extrairTenantSlugDaUrl() || getTenantSlugClient()
         
         if (!tenantSlug) {
           setError('Tenant não identificado')

@@ -1,6 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase-admin'
 
+async function garantirRecursoDashboardClienteCpf() {
+  await supabaseAdmin
+    .from('recursos_disponiveis')
+    .upsert(
+      {
+        codigo: 'portal_cliente_cpf',
+        nome: 'Dashboard do Cliente (CPF)',
+        descricao: 'Página whitelabel para consulta de cliente e boletos por CPF',
+        categoria: 'portal',
+        rota_base: '/[tenant-slug]/cliente',
+        icone: 'UserRound',
+        ativo: true,
+        ordem: 31,
+      },
+      { onConflict: 'codigo' }
+    )
+}
+
 /**
  * GET /api/admin/recursos/tenant/[tenantId]
  * Lista recursos de um tenant específico com status de habilitação
@@ -11,6 +29,7 @@ export async function GET(
 ) {
   try {
     const { tenantId } = params
+    await garantirRecursoDashboardClienteCpf()
 
     // Buscar todos os recursos disponíveis
     const { data: recursos, error: recursosError } = await supabaseAdmin

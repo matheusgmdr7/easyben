@@ -11,31 +11,44 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const administradoraId = searchParams.get("administradora_id")
+    const contratoId = searchParams.get("contrato_id")
 
     if (!administradoraId) {
       return NextResponse.json({ error: "administradora_id é obrigatório" }, { status: 400 })
     }
 
     const tenantId = await getCurrentTenantId()
-    const result: { id: string; nome: string }[] = []
+    const result: { id: string; nome: string; contrato_id: string }[] = []
+    let contratoIds: string[] = []
 
-    const { data: contratos } = await supabaseAdmin
-      .from("contratos_administradora")
-      .select("id")
-      .eq("administradora_id", administradoraId)
-      .eq("tenant_id", tenantId)
+    if (contratoId) {
+      const { data: contratoUnico } = await supabaseAdmin
+        .from("contratos_administradora")
+        .select("id")
+        .eq("id", contratoId)
+        .eq("administradora_id", administradoraId)
+        .eq("tenant_id", tenantId)
+        .maybeSingle()
+      if (contratoUnico?.id) contratoIds = [contratoUnico.id]
+    } else {
+      const { data: contratos } = await supabaseAdmin
+        .from("contratos_administradora")
+        .select("id")
+        .eq("administradora_id", administradoraId)
+        .eq("tenant_id", tenantId)
+      contratoIds = (contratos || []).map((c) => c.id).filter(Boolean)
+    }
 
-    const contratoIds = (contratos || []).map((c) => c.id).filter(Boolean)
     if (contratoIds.length > 0) {
       const { data: prodsContrato } = await supabaseAdmin
         .from("produtos_contrato_administradora")
-        .select("id, nome")
+        .select("id, nome, contrato_id")
         .in("contrato_id", contratoIds)
         .eq("tenant_id", tenantId)
         .order("nome", { ascending: true })
 
       ;(prodsContrato || []).forEach((p) => {
-        result.push({ id: p.id, nome: p.nome || "-" })
+        result.push({ id: p.id, nome: p.nome || "-", contrato_id: p.contrato_id })
       })
     }
 

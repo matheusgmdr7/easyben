@@ -8,6 +8,7 @@ import { toast } from "sonner"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { formatarCEP, formatarTelefone } from "@/utils/formatters"
 import * as XLSX from "xlsx"
 
 const CAMPOS_ALVO = [
@@ -47,6 +48,20 @@ const ACOMODACAO_NORMALIZE: Record<string, string> = {
   enfermaria: "Enfermaria", Enfermaria: "Enfermaria", E: "Enfermaria", enf: "Enfermaria",
   apartamento: "Apartamento", Apartamento: "Apartamento", A: "Apartamento", apt: "Apartamento",
 }
+
+const SEXO_OPCOES = [
+  { value: "Masculino", label: "Masculino" },
+  { value: "Feminino", label: "Feminino" },
+]
+
+const ESTADO_CIVIL_OPCOES = [
+  { value: "Solteiro(a)", label: "Solteiro(a)" },
+  { value: "Casado(a)", label: "Casado(a)" },
+  { value: "Divorciado(a)", label: "Divorciado(a)" },
+  { value: "Viúvo(a)", label: "Viúvo(a)" },
+  { value: "União estável", label: "União estável" },
+  { value: "Separado(a)", label: "Separado(a)" },
+]
 
 /**
  * Normaliza data de nascimento para yyyy-MM-dd.
@@ -141,6 +156,20 @@ function parseArquivo(file: File): Promise<{ headers: string[]; rows: Record<str
   })
 }
 
+function aplicarMascaraCepParcial(valor: string): string {
+  const dig = String(valor || "").replace(/\D/g, "").slice(0, 8)
+  if (dig.length <= 5) return dig
+  return `${dig.slice(0, 5)}-${dig.slice(5)}`
+}
+
+function aplicarMascaraTelefoneParcial(valor: string): string {
+  const dig = String(valor || "").replace(/\D/g, "").slice(0, 11)
+  if (dig.length <= 2) return dig
+  if (dig.length <= 6) return `(${dig.slice(0, 2)}) ${dig.slice(2)}`
+  if (dig.length <= 10) return `(${dig.slice(0, 2)}) ${dig.slice(2, 6)}-${dig.slice(6)}`
+  return `(${dig.slice(0, 2)}) ${dig.slice(2, 7)}-${dig.slice(7)}`
+}
+
 type LinhaPreview = {
   nome: string
   cpf: string
@@ -187,6 +216,7 @@ export default function ImportacaoVidasPage() {
   const [administradoraId, setAdministradoraId] = useState<string | null>(null)
   const [grupos, setGrupos] = useState<GrupoBeneficiarios[]>([])
   const [produtos, setProdutos] = useState<{ id: string; nome?: string }[]>([])
+  const [corretores, setCorretores] = useState<{ id: string; nome: string }[]>([])
   const [file, setFile] = useState<File | null>(null)
   const [headers, setHeaders] = useState<string[]>([])
   const [rows, setRows] = useState<Record<string, unknown>[]>([])
@@ -201,6 +231,37 @@ export default function ImportacaoVidasPage() {
   const [editingCell, setEditingCell] = useState<{ i: number; field: keyof LinhaPreview } | null>(null)
   /** Campos adicionais: mapeiam colunas do arquivo para chaves salvas em dados_adicionais (JSONB) */
   const [camposAdicionais, setCamposAdicionais] = useState<{ id: string; label: string; coluna: string }[]>([])
+  const [manualOpen, setManualOpen] = useState(false)
+  const [incluindoManual, setIncluindoManual] = useState(false)
+  const [consultandoCepManual, setConsultandoCepManual] = useState(false)
+  const [manualForm, setManualForm] = useState<Record<string, string>>({
+    nome: "",
+    cpf: "",
+    nome_mae: "",
+    nome_pai: "",
+    tipo: "titular",
+    data_nascimento: "",
+    idade: "",
+    sexo: "",
+    estado_civil: "",
+    parentesco: "",
+    cpf_titular: "",
+    identidade: "",
+    orgao_emissor: "",
+    cns: "",
+    acomodacao: "Enfermaria",
+    cep: "",
+    logradouro: "",
+    numero: "",
+    complemento: "",
+    bairro: "",
+    cidade: "",
+    estado: "",
+    telefone: "",
+    email: "",
+    observacoes: "",
+    corretor: "",
+  })
 
   useEffect(() => {
     const adm = getAdministradoraLogada()
@@ -222,6 +283,14 @@ export default function ImportacaoVidasPage() {
         toast.error("Erro ao carregar produtos dos contratos")
         setProdutos([])
       })
+  }, [administradoraId])
+
+  useEffect(() => {
+    if (!administradoraId) return
+    fetch(`/api/administradora/corretores?administradora_id=${encodeURIComponent(administradoraId)}`)
+      .then((r) => r.json())
+      .then((d) => setCorretores(Array.isArray(d) ? d.map((c: any) => ({ id: String(c.id), nome: String(c.nome || "") })) : []))
+      .catch(() => setCorretores([]))
   }, [administradoraId])
 
   const onFile = useCallback((f: File | null) => {
@@ -416,6 +485,144 @@ export default function ImportacaoVidasPage() {
     }
   }
 
+  const podeIncluirManual =
+    !!administradoraId &&
+    !!grupoId &&
+    !!produtoId &&
+    (manualForm.nome || "").trim().length > 0 &&
+    (manualForm.cpf || "").replace(/\D/g, "").length >= 11 &&
+    ((manualForm.tipo || "titular") !== "dependente" || (manualForm.cpf_titular || "").replace(/\D/g, "").length >= 11)
+
+  const buscarCepManual = async () => {
+    const cepDig = (manualForm.cep || "").replace(/\D/g, "")
+    if (cepDig.length !== 8) return
+    try {
+      setConsultandoCepManual(true)
+      const res = await fetch(`https://viacep.com.br/ws/${cepDig}/json/`)
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || data?.erro) throw new Error("CEP não encontrado")
+      setManualForm((prev) => ({
+        ...prev,
+        cep: formatarCEP(cepDig),
+        logradouro: data?.logradouro || prev.logradouro,
+        bairro: data?.bairro || prev.bairro,
+        cidade: data?.localidade || prev.cidade,
+        estado: String(data?.uf || prev.estado || "").toUpperCase().slice(0, 2),
+      }))
+    } catch {
+      toast.error("Não foi possível buscar o CEP informado.")
+    } finally {
+      setConsultandoCepManual(false)
+    }
+  }
+
+  const handleIncluirManual = async () => {
+    if (!administradoraId) {
+      toast.error("Administradora não identificada.")
+      return
+    }
+    if (!grupoId || !produtoId) {
+      toast.error("Selecione grupo e produto para vincular o beneficiário.")
+      return
+    }
+    const cpfDigitos = (manualForm.cpf || "").replace(/\D/g, "")
+    if (cpfDigitos.length < 11) {
+      toast.error("Informe um CPF válido para o beneficiário.")
+      return
+    }
+    if ((manualForm.tipo || "titular") === "dependente") {
+      const cpfTit = (manualForm.cpf_titular || "").replace(/\D/g, "")
+      if (cpfTit.length < 11) {
+        toast.error("Para dependente, informe o CPF do titular.")
+        return
+      }
+    }
+
+    setIncluindoManual(true)
+    try {
+      const idadeNum = (manualForm.idade || "").trim() ? Number(manualForm.idade) : null
+      const payloadLinha = {
+        nome: (manualForm.nome || "").trim(),
+        cpf: cpfDigitos,
+        nome_mae: (manualForm.nome_mae || "").trim(),
+        nome_pai: (manualForm.nome_pai || "").trim(),
+        tipo: (manualForm.tipo || "titular").toLowerCase() === "dependente" ? "dependente" : "titular",
+        data_nascimento: manualForm.data_nascimento || "",
+        idade: idadeNum != null && !isNaN(idadeNum) ? idadeNum : null,
+        sexo: (manualForm.sexo || "").trim(),
+        estado_civil: (manualForm.estado_civil || "").trim(),
+        parentesco: (manualForm.parentesco || "").trim(),
+        cpf_titular: (manualForm.cpf_titular || "").replace(/\D/g, ""),
+        identidade: (manualForm.identidade || "").trim(),
+        cns: (manualForm.cns || "").trim(),
+        acomodacao: manualForm.acomodacao || "Enfermaria",
+        cep: (manualForm.cep || "").replace(/\D/g, "").slice(0, 9),
+        logradouro: (manualForm.logradouro || "").trim(),
+        numero: (manualForm.numero || "").trim(),
+        complemento: (manualForm.complemento || "").trim(),
+        bairro: (manualForm.bairro || "").trim(),
+        cidade: (manualForm.cidade || "").trim(),
+        estado: (manualForm.estado || "").trim().slice(0, 2).toUpperCase(),
+        telefone: (manualForm.telefone || "").trim(),
+        email: (manualForm.email || "").trim(),
+        observacoes: (manualForm.observacoes || "").trim(),
+        corretor: (manualForm.corretor || "").trim(),
+        dados_adicionais: {
+          ...(manualForm.orgao_emissor?.trim() ? { orgao_emissor: manualForm.orgao_emissor.trim() } : {}),
+        },
+      }
+
+      const res = await fetch("/api/administradora/importacao-vidas", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          administradora_id: administradoraId,
+          grupo_id: grupoId,
+          produto_id: produtoId,
+          linhas: [payloadLinha],
+        }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(json?.error || "Erro ao incluir beneficiário manualmente")
+
+      toast.success("Beneficiário incluído com sucesso.")
+      setManualForm({
+        nome: "",
+        cpf: "",
+        nome_mae: "",
+        nome_pai: "",
+        tipo: "titular",
+        data_nascimento: "",
+        idade: "",
+        sexo: "",
+        estado_civil: "",
+        parentesco: "",
+        cpf_titular: "",
+        identidade: "",
+        orgao_emissor: "",
+        cns: "",
+        acomodacao: "Enfermaria",
+        cep: "",
+        logradouro: "",
+        numero: "",
+        complemento: "",
+        bairro: "",
+        cidade: "",
+        estado: "",
+        telefone: "",
+        email: "",
+        observacoes: "",
+        corretor: "",
+      })
+      setManualOpen(false)
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Erro ao incluir beneficiário manualmente"
+      toast.error(msg)
+    } finally {
+      setIncluindoManual(false)
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="bg-white border-b border-gray-200 px-6 py-4">
@@ -426,6 +633,186 @@ export default function ImportacaoVidasPage() {
       </div>
 
       <div className="p-6 space-y-6">
+        <section className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
+          <div className="px-5 py-3 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
+            <div>
+              <h2 className="text-sm font-semibold text-gray-800">Inclusão manual de beneficiário</h2>
+              <p className="text-xs text-gray-500 mt-0.5">Preencha os mesmos campos da importação e vincule ao grupo/produto.</p>
+            </div>
+            <Button
+              type="button"
+              variant={manualOpen ? "outline" : "default"}
+              className={manualOpen ? "h-9" : "h-9 bg-gray-700 hover:bg-gray-800 text-white"}
+              onClick={() => setManualOpen((v) => !v)}
+            >
+              {manualOpen ? "Fechar inclusão manual" : "Inclusão manual"}
+            </Button>
+          </div>
+          {manualOpen && (
+            <div className="p-6 space-y-5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                {CAMPOS_ALVO.map((campo) => (
+                  <div key={`manual-${campo.id}`} className={campo.id === "observacoes" ? "sm:col-span-2 lg:col-span-4" : ""}>
+                    <label className="block text-xs font-medium text-gray-700 mb-1.5">
+                      {campo.label} {(campo.obrigatorio || (campo.id === "cpf_titular" && (manualForm.tipo || "titular") === "dependente")) && <span className="text-red-500">*</span>}
+                    </label>
+                    {campo.id === "tipo" ? (
+                      <Select
+                        value={manualForm[campo.id] || "titular"}
+                        onValueChange={(v) => setManualForm((p) => ({ ...p, [campo.id]: v }))}
+                      >
+                        <SelectTrigger className="h-10 w-full rounded-md border border-gray-300 bg-background px-3 py-2 text-sm">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="titular">Titular</SelectItem>
+                          <SelectItem value="dependente">Dependente</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    ) : campo.id === "sexo" ? (
+                      <Select
+                        value={manualForm[campo.id] || ""}
+                        onValueChange={(v) => setManualForm((p) => ({ ...p, [campo.id]: v }))}
+                      >
+                        <SelectTrigger className="h-10 w-full rounded-md border border-gray-300 bg-background px-3 py-2 text-sm">
+                          <SelectValue placeholder="Selecione" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {SEXO_OPCOES.map((opt) => (
+                            <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : campo.id === "estado_civil" ? (
+                      <Select
+                        value={manualForm[campo.id] || ""}
+                        onValueChange={(v) => setManualForm((p) => ({ ...p, [campo.id]: v }))}
+                      >
+                        <SelectTrigger className="h-10 w-full rounded-md border border-gray-300 bg-background px-3 py-2 text-sm">
+                          <SelectValue placeholder="Selecione" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {ESTADO_CIVIL_OPCOES.map((opt) => (
+                            <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : campo.id === "corretor" ? (
+                      <Select
+                        value={manualForm[campo.id] || ""}
+                        onValueChange={(v) => setManualForm((p) => ({ ...p, [campo.id]: v }))}
+                      >
+                        <SelectTrigger className="h-10 w-full rounded-md border border-gray-300 bg-background px-3 py-2 text-sm">
+                          <SelectValue placeholder="Selecione o corretor" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {corretores.map((c) => (
+                            <SelectItem key={c.id} value={c.nome}>{c.nome || "-"}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : campo.id === "acomodacao" ? (
+                      <Select
+                        value={manualForm[campo.id] || "Enfermaria"}
+                        onValueChange={(v) => setManualForm((p) => ({ ...p, [campo.id]: v }))}
+                      >
+                        <SelectTrigger className="h-10 w-full rounded-md border border-gray-300 bg-background px-3 py-2 text-sm">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Enfermaria">Enfermaria</SelectItem>
+                          <SelectItem value="Apartamento">Apartamento</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <Input
+                        value={manualForm[campo.id] || ""}
+                        onChange={(e) => {
+                          let v = e.target.value
+                          if (campo.id === "estado") v = v.toUpperCase()
+                          if (campo.id === "cep") v = aplicarMascaraCepParcial(v)
+                          if (campo.id === "telefone") v = aplicarMascaraTelefoneParcial(v)
+                          setManualForm((p) => ({ ...p, [campo.id]: v }))
+                        }}
+                        onBlur={() => {
+                          if (campo.id === "cep") {
+                            buscarCepManual()
+                            setManualForm((p) => ({ ...p, cep: formatarCEP(p.cep || "") || p.cep || "" }))
+                          }
+                          if (campo.id === "telefone") {
+                            setManualForm((p) => ({ ...p, telefone: formatarTelefone(p.telefone || "") || p.telefone || "" }))
+                          }
+                        }}
+                        placeholder={campo.id === "cpf_titular" && (manualForm.tipo || "titular") === "dependente" ? "Obrigatório para dependente" : undefined}
+                        type={campo.id === "data_nascimento" ? "date" : campo.id === "idade" ? "number" : campo.id === "email" ? "email" : "text"}
+                        className="h-10 text-sm border-gray-300 rounded-sm"
+                        maxLength={campo.id === "estado" ? 2 : undefined}
+                        required={campo.id === "cpf_titular" && (manualForm.tipo || "titular") === "dependente"}
+                      />
+                    )}
+                    {campo.id === "cep" && consultandoCepManual && (
+                      <p className="text-[11px] text-gray-500 mt-1">Buscando CEP...</p>
+                    )}
+                    {campo.id === "identidade" && (
+                      <div className="mt-4">
+                        <label className="block text-xs font-medium text-gray-700 mb-1.5">Órgão emissor</label>
+                        <Input
+                          value={manualForm.orgao_emissor || ""}
+                          onChange={(e) => setManualForm((p) => ({ ...p, orgao_emissor: e.target.value }))}
+                          className="h-10 text-sm border-gray-300 rounded-sm"
+                        />
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              <div className="border border-gray-200 rounded-lg bg-gray-50 p-4">
+                <h3 className="text-sm font-semibold text-gray-800 mb-3">Vinculação do beneficiário</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-2xl">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Grupo de clientes <span className="text-red-500">*</span></label>
+                    <Select value={grupoId} onValueChange={setGrupoId}>
+                      <SelectTrigger className="h-10 w-full rounded-md border border-gray-300 bg-background px-3 py-2 text-sm">
+                        <SelectValue placeholder="Selecione o grupo" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {grupos.map((g) => (
+                          <SelectItem key={g.id} value={g.id}>{g.nome}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Produto (planos dos contratos) <span className="text-red-500">*</span></label>
+                    <Select value={produtoId} onValueChange={setProdutoId}>
+                      <SelectTrigger className="h-10 w-full rounded-md border border-gray-300 bg-background px-3 py-2 text-sm">
+                        <SelectValue placeholder="Selecione o produto" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {produtos.map((p) => (
+                          <SelectItem key={p.id} value={p.id}>{p.nome || "-"}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-end">
+                <Button
+                  type="button"
+                  onClick={handleIncluirManual}
+                  disabled={!podeIncluirManual || incluindoManual}
+                  className="h-10 px-5 bg-gray-700 hover:bg-gray-800 text-white"
+                >
+                  {incluindoManual ? "Incluindo..." : "Salvar inclusão manual"}
+                </Button>
+              </div>
+            </div>
+          )}
+        </section>
+
         {/* Step 1: Arquivo */}
         <section className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
           <div className="px-5 py-3 bg-gray-50 border-b border-gray-200">

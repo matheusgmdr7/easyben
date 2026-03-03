@@ -32,7 +32,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
-import { Banknote, Loader2, ExternalLink, Users, ChevronRight, FileCheck, CheckCircle2, FileText, CheckSquare, Square } from "lucide-react"
+import { Banknote, Loader2, ExternalLink, Users, ChevronRight, FileCheck, CheckCircle2, FileText, CheckSquare, Square, Search } from "lucide-react"
 import { formatarMoeda, formatarData } from "@/utils/formatters"
 
 interface ClienteFatura {
@@ -88,7 +88,6 @@ export default function FaturaGerarPage() {
   const [faturaGerada, setFaturaGerada] = useState(false)
   const [boletosGrupo, setBoletosGrupo] = useState<BoletoGrupo[]>([])
   const [loadingBoletos, setLoadingBoletos] = useState(false)
-  const [faturadosNestaSessao, setFaturadosNestaSessao] = useState<Set<string>>(new Set())
   const [selecionadosLote, setSelecionadosLote] = useState<Set<string>>(new Set())
   const [modalLoteOpen, setModalLoteOpen] = useState(false)
   const [gerandoLote, setGerandoLote] = useState(false)
@@ -96,6 +95,12 @@ export default function FaturaGerarPage() {
   const [financeiraLote, setFinanceiraLote] = useState("")
   const [vencimentoLote, setVencimentoLote] = useState("")
   const [taxaLote, setTaxaLote] = useState("")
+  const [buscaBoletos, setBuscaBoletos] = useState("")
+  const [paginaBoletos, setPaginaBoletos] = useState(1)
+  const [itensPorPaginaBoletos] = useState(10)
+  const [buscaClientes, setBuscaClientes] = useState("")
+  const [paginaClientes, setPaginaClientes] = useState(1)
+  const [itensPorPaginaClientes] = useState(10)
 
   useEffect(() => {
     const adm = getAdministradoraLogada()
@@ -155,6 +160,10 @@ export default function FaturaGerarPage() {
 
   async function selecionarGrupo(grupo: GrupoBeneficiarios) {
     setGrupoSelecionado(grupo)
+    setBuscaBoletos("")
+    setBuscaClientes("")
+    setPaginaBoletos(1)
+    setPaginaClientes(1)
     setLoadingBoletos(true)
     await carregarClientesDoGrupo(grupo.id)
     if (administradoraId) {
@@ -236,15 +245,25 @@ export default function FaturaGerarPage() {
       }
       toast.success("Boleto gerado com sucesso")
       const linkBoleto = data.boleto_url || data.invoice_url || data.payment_link
+      const clienteAdministradoraIdAtualizado =
+        data.cliente_administradora_id || clienteSelecionado.cliente_administradora_id
       setUltimoBoletoUrl(linkBoleto || null)
       setUltimoInvoiceUrl(data.invoice_url || data.boleto_url || null)
       setFaturaGerada(true)
-      setFaturadosNestaSessao((prev) => new Set(prev).add(clienteSelecionado.id).add(clienteSelecionado.cliente_administradora_id))
+      if (data.cliente_administradora_id && data.cliente_administradora_id !== clienteSelecionado.cliente_administradora_id) {
+        setClientes((prev) =>
+          prev.map((c) =>
+            c.id === clienteSelecionado.id
+              ? { ...c, cliente_administradora_id: data.cliente_administradora_id }
+              : c
+          )
+        )
+      }
       // Incluir o boleto recém-gerado na lista sem consultar o banco (link já veio na resposta)
       if (grupoSelecionado && linkBoleto) {
         const novoBoleto = {
           id: data.fatura_id,
-          cliente_administradora_id: clienteSelecionado.cliente_administradora_id,
+          cliente_administradora_id: clienteAdministradoraIdAtualizado,
           cliente_nome: clienteSelecionado.cliente_nome || "Cliente",
           numero_fatura: data.numero_fatura,
           valor_total: data.valor ?? valorNum,
@@ -286,21 +305,73 @@ export default function FaturaGerarPage() {
     router.push(url)
   }
 
+  function normalizarTexto(valor?: string | null) {
+    return (valor || "").toLowerCase().trim()
+  }
+
+  function obterAnoMes(data?: string | null) {
+    if (!data) return ""
+    const base = String(data).slice(0, 10)
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(base)) return ""
+    return base.slice(0, 7)
+  }
+
+  const anoMesAtual = new Date().toISOString().slice(0, 7)
+  const clienteFaturadoNoMesAtual = (clienteAdministradoraId: string) =>
+    boletosGrupo.some(
+      (b) =>
+        b.cliente_administradora_id === clienteAdministradoraId &&
+        obterAnoMes(b.data_vencimento) === anoMesAtual
+    )
+
+  const termoBuscaBoletos = normalizarTexto(buscaBoletos)
+  const boletosGrupoFiltrados = boletosGrupo.filter((b) => {
+    if (!termoBuscaBoletos) return true
+    const alvo = [
+      b.cliente_nome,
+      b.numero_fatura,
+      b.status,
+      b.data_vencimento,
+    ]
+      .map((v) => normalizarTexto(v))
+      .join(" ")
+    return alvo.includes(termoBuscaBoletos)
+  })
+  const totalPaginasBoletos = Math.max(1, Math.ceil(boletosGrupoFiltrados.length / itensPorPaginaBoletos))
+  const boletosGrupoPaginados = boletosGrupoFiltrados.slice(
+    (paginaBoletos - 1) * itensPorPaginaBoletos,
+    paginaBoletos * itensPorPaginaBoletos
+  )
+
+  const termoBuscaClientes = normalizarTexto(buscaClientes)
+  const clientesFiltrados = clientes.filter((c) => {
+    if (!termoBuscaClientes) return true
+    const alvo = [
+      c.cliente_nome,
+      c.cliente_email,
+      c.cliente_cpf,
+      c.produto_nome,
+      ...(c.dependentes_nomes || []),
+    ]
+      .map((v) => normalizarTexto(v))
+      .join(" ")
+    return alvo.includes(termoBuscaClientes)
+  })
+  const totalPaginasClientes = Math.max(1, Math.ceil(clientesFiltrados.length / itensPorPaginaClientes))
+  const clientesPaginados = clientesFiltrados.slice(
+    (paginaClientes - 1) * itensPorPaginaClientes,
+    paginaClientes * itensPorPaginaClientes
+  )
+
   const clientesDisponiveisLote = clientes.filter(
-    (c) =>
-      !faturadosNestaSessao.has(c.id) &&
-      !faturadosNestaSessao.has(c.cliente_administradora_id) &&
-      !boletosGrupo.some((b) => b.cliente_administradora_id === c.cliente_administradora_id)
+    (c) => !clienteFaturadoNoMesAtual(c.cliente_administradora_id)
   )
   const selecionadosParaLote = clientesDisponiveisLote.filter(
     (c) => selecionadosLote.has(c.id) || selecionadosLote.has(c.cliente_administradora_id)
   )
 
   function toggleSelecaoLote(c: ClienteFatura) {
-    const isFaturado =
-      faturadosNestaSessao.has(c.id) ||
-      faturadosNestaSessao.has(c.cliente_administradora_id) ||
-      boletosGrupo.some((b) => b.cliente_administradora_id === c.cliente_administradora_id)
+    const isFaturado = clienteFaturadoNoMesAtual(c.cliente_administradora_id)
     if (isFaturado) return
     setSelecionadosLote((prev) => {
       const next = new Set(prev)
@@ -379,11 +450,6 @@ export default function FaturaGerarPage() {
       toast.success(`${resumo.sucesso ?? 0} boleto(s) gerado(s)${resumo.erro > 0 ? `; ${resumo.erro} com erro.` : "."}`)
       const sucessos = (data.results || []).filter((r: { success: boolean }) => r.success)
       if (sucessos.length > 0) {
-        setFaturadosNestaSessao((prev) => {
-          const next = new Set(prev)
-          sucessos.forEach((r: { cliente_administradora_id: string }) => next.add(r.cliente_administradora_id))
-          return next
-        })
         if (grupoSelecionado && administradoraId) {
           const resList = await fetch(
             `/api/administradora/fatura/boletos-grupo?grupo_id=${encodeURIComponent(grupoSelecionado.id)}&administradora_id=${encodeURIComponent(administradoraId)}`
@@ -392,6 +458,7 @@ export default function FaturaGerarPage() {
             const list = await resList.json()
             setBoletosGrupo(Array.isArray(list) ? list : [])
           }
+          await carregarClientesDoGrupo(grupoSelecionado.id)
         }
       }
       setSelecionadosLote(new Set())
@@ -482,63 +549,113 @@ export default function FaturaGerarPage() {
               {loadingBoletos ? (
                 <p className="text-sm text-gray-500 py-4 text-center">Carregando boletos...</p>
               ) : boletosGrupo.length === 0 ? null : (
-                <Table>
-                  <TableHeader>
-                    <TableRow className="bg-gray-100">
-                      <TableHead className="font-semibold">Cliente</TableHead>
-                      <TableHead className="font-semibold">Vencimento</TableHead>
-                      <TableHead className="font-semibold">Valor</TableHead>
-                      <TableHead className="font-semibold">Status</TableHead>
-                      <TableHead className="font-semibold w-28 text-right">Link</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {boletosGrupo.map((b) => (
-                      <TableRow key={b.id}>
-                        <TableCell className="font-medium">{b.cliente_nome || "—"}</TableCell>
-                        <TableCell className="text-gray-600">
-                          {b.data_vencimento
-                            ? formatarData(b.data_vencimento)
-                            : "—"}
-                          {b.data_pagamento && (
-                            <span className="block text-xs text-green-600">
-                              Pago em {formatarData(b.data_pagamento)}
-                            </span>
-                          )}
-                        </TableCell>
-                        <TableCell>{formatarMoeda(b.valor_total)}</TableCell>
-                        <TableCell>
-                          <span
-                            className={`inline-flex px-2 py-0.5 text-xs font-medium rounded ${
-                              b.status === "paga"
-                                ? "bg-green-100 text-green-800"
-                                : b.status === "atrasada"
-                                  ? "bg-amber-100 text-amber-800"
-                                  : "bg-gray-100 text-gray-800"
-                            }`}
+                <div className="space-y-3">
+                  <div className="relative max-w-md">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                    <Input
+                      value={buscaBoletos}
+                      onChange={(e) => {
+                        setBuscaBoletos(e.target.value)
+                        setPaginaBoletos(1)
+                      }}
+                      placeholder="Buscar por cliente, status ou número da fatura..."
+                      className="pl-9"
+                    />
+                  </div>
+
+                  {boletosGrupoFiltrados.length === 0 ? (
+                    <p className="text-sm text-gray-500 py-4 text-center">Nenhum boleto encontrado para a busca informada.</p>
+                  ) : (
+                    <>
+                      <Table>
+                        <TableHeader>
+                          <TableRow className="bg-gray-100">
+                            <TableHead className="font-semibold">Cliente</TableHead>
+                            <TableHead className="font-semibold">Vencimento</TableHead>
+                            <TableHead className="font-semibold">Valor</TableHead>
+                            <TableHead className="font-semibold">Status</TableHead>
+                            <TableHead className="font-semibold w-28 text-right">Link</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {boletosGrupoPaginados.map((b) => (
+                            <TableRow key={b.id}>
+                              <TableCell className="font-medium">{b.cliente_nome || "—"}</TableCell>
+                              <TableCell className="text-gray-600">
+                                {b.data_vencimento
+                                  ? formatarData(b.data_vencimento)
+                                  : "—"}
+                                {b.data_pagamento && (
+                                  <span className="block text-xs text-green-600">
+                                    Pago em {formatarData(b.data_pagamento)}
+                                  </span>
+                                )}
+                              </TableCell>
+                              <TableCell>{formatarMoeda(b.valor_total)}</TableCell>
+                              <TableCell>
+                                <span
+                                  className={`inline-flex px-2 py-0.5 text-xs font-medium rounded ${
+                                    b.status === "paga"
+                                      ? "bg-green-100 text-green-800"
+                                      : b.status === "atrasada"
+                                        ? "bg-amber-100 text-amber-800"
+                                        : "bg-gray-100 text-gray-800"
+                                  }`}
+                                >
+                                  {b.status === "paga" ? "Pago" : b.status === "atrasada" ? "Atrasada" : "Em aberto"}
+                                </span>
+                              </TableCell>
+                              <TableCell className="text-right">
+                                {(b.boleto_url || b.invoice_url) ? (
+                                  <a
+                                    href={b.boleto_url || b.invoice_url || "#"}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-1 text-sm text-blue-600 hover:underline"
+                                  >
+                                    <ExternalLink className="h-4 w-4" />
+                                    Boleto
+                                  </a>
+                                ) : (
+                                  <span className="text-gray-400">—</span>
+                                )}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+
+                      <div className="flex items-center justify-between pt-2">
+                        <p className="text-sm text-gray-500">
+                          Mostrando {boletosGrupoPaginados.length} de {boletosGrupoFiltrados.length} boleto(s)
+                        </p>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setPaginaBoletos((p) => Math.max(1, p - 1))}
+                            disabled={paginaBoletos === 1}
                           >
-                            {b.status === "paga" ? "Pago" : b.status === "atrasada" ? "Atrasada" : "Em aberto"}
+                            Anterior
+                          </Button>
+                          <span className="text-sm text-gray-600">
+                            Página {paginaBoletos} de {totalPaginasBoletos}
                           </span>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {(b.boleto_url || b.invoice_url) ? (
-                            <a
-                              href={b.boleto_url || b.invoice_url || "#"}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1 text-sm text-blue-600 hover:underline"
-                            >
-                              <ExternalLink className="h-4 w-4" />
-                              Boleto
-                            </a>
-                          ) : (
-                            <span className="text-gray-400">—</span>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setPaginaBoletos((p) => Math.min(totalPaginasBoletos, p + 1))}
+                            disabled={paginaBoletos >= totalPaginasBoletos}
+                          >
+                            Próxima
+                          </Button>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
               )}
             </CardContent>
           </Card>
@@ -554,6 +671,7 @@ export default function FaturaGerarPage() {
               </CardTitle>
               <p className="text-sm text-gray-500 font-normal">
                 Lista apenas titulares. O valor já inclui titular e dependentes vinculados. Ao gerar o boleto, a taxa de administração é somada ao valor. Selecione vários e use &quot;Gerar em lote&quot; para mesma financeira, vencimento e taxa.
+                Regra mensal: cada cliente pode ser faturado uma vez por mês (libera novamente ao excluir o boleto/fatura).
               </p>
               {clientesDisponiveisLote.length > 0 && (
                 <div className="flex flex-wrap items-center gap-2 pt-2">
@@ -590,81 +708,131 @@ export default function FaturaGerarPage() {
                   página do grupo.
                 </p>
               ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow className="bg-gray-100">
-                      <TableHead className="font-semibold w-10">Lote</TableHead>
-                      <TableHead className="font-semibold">Titular / Plano</TableHead>
-                      <TableHead className="font-semibold">Valor (titular + dependentes)</TableHead>
-                      <TableHead className="font-semibold w-48 text-right">Ação</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {clientes.map((c) => {
-                      const isFaturado = faturadosNestaSessao.has(c.id) || faturadosNestaSessao.has(c.cliente_administradora_id) || boletosGrupo.some((b) => b.cliente_administradora_id === c.cliente_administradora_id)
-                      const isSelecionado = selecionadosLote.has(c.id) || selecionadosLote.has(c.cliente_administradora_id)
-                      return (
-                        <TableRow key={c.id}>
-                          <TableCell className="w-10">
-                            {!isFaturado ? (
-                              <button
-                                type="button"
-                                onClick={() => toggleSelecaoLote(c)}
-                                className="p-1 rounded hover:bg-gray-100"
-                                aria-label={isSelecionado ? "Desmarcar" : "Selecionar para lote"}
-                              >
-                                {isSelecionado ? <CheckSquare className="h-5 w-5 text-[#0F172A]" /> : <Square className="h-5 w-5 text-gray-400" />}
-                              </button>
-                            ) : (
-                              <span className="text-gray-300">—</span>
-                            )}
-                          </TableCell>
-                          <TableCell className="font-medium">
-                            <span>{c.cliente_nome || "—"}</span>
-                            {c.produto_nome && (
-                              <span className="block text-xs text-gray-500">Plano: {c.produto_nome}</span>
-                            )}
-                            {c.dependentes_nomes && c.dependentes_nomes.length > 0 && (
-                              <span className="block text-xs text-gray-500">Dependentes: {c.dependentes_nomes.join(", ")}</span>
-                            )}
-                            {c.cliente_email && !c.produto_nome && (
-                              <span className="block text-xs text-gray-500">{c.cliente_email}</span>
-                            )}
-                          </TableCell>
-                          <TableCell>{formatarMoeda(c.valor_mensal || 0)}</TableCell>
-                          <TableCell className="text-right">
-                            {isFaturado ? (
-                              <div className="flex items-center justify-end gap-2">
-                                <span className="inline-flex items-center gap-1 text-sm font-medium text-green-700">
-                                  <CheckCircle2 className="h-4 w-4" />
-                                  Faturado
-                                </span>
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => irParaAbaFinanceiroCliente(c)}
-                                  className="border-green-200 text-green-800 hover:bg-green-50"
-                                >
-                                  <FileText className="h-4 w-4 mr-1" />
-                                  Editar fatura
-                                </Button>
-                              </div>
-                            ) : (
-                              <Button
-                                size="sm"
-                                onClick={() => abrirModal(c)}
-                                disabled={financeirasAtivas.length === 0}
-                                className="bg-[#0F172A] hover:bg-[#1E293B] text-white"
-                              >
-                                Gerar boleto
-                              </Button>
-                            )}
-                          </TableCell>
-                        </TableRow>
-                      )
-                    })}
-                  </TableBody>
-                </Table>
+                <div className="space-y-3">
+                  <div className="relative max-w-md">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                    <Input
+                      value={buscaClientes}
+                      onChange={(e) => {
+                        setBuscaClientes(e.target.value)
+                        setPaginaClientes(1)
+                      }}
+                      placeholder="Buscar por titular, plano, email, CPF ou dependente..."
+                      className="pl-9"
+                    />
+                  </div>
+
+                  {clientesFiltrados.length === 0 ? (
+                    <p className="text-sm text-gray-500 py-4 text-center">Nenhum cliente encontrado para a busca informada.</p>
+                  ) : (
+                    <>
+                      <Table>
+                        <TableHeader>
+                          <TableRow className="bg-gray-100">
+                            <TableHead className="font-semibold w-10">Lote</TableHead>
+                            <TableHead className="font-semibold">Titular / Plano</TableHead>
+                            <TableHead className="font-semibold">Valor (titular + dependentes)</TableHead>
+                            <TableHead className="font-semibold w-48 text-right">Ação</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {clientesPaginados.map((c) => {
+                            const isFaturado = clienteFaturadoNoMesAtual(c.cliente_administradora_id)
+                            const isSelecionado = selecionadosLote.has(c.id) || selecionadosLote.has(c.cliente_administradora_id)
+                            return (
+                              <TableRow key={c.id}>
+                                <TableCell className="w-10">
+                                  {!isFaturado ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleSelecaoLote(c)}
+                                      className="p-1 rounded hover:bg-gray-100"
+                                      aria-label={isSelecionado ? "Desmarcar" : "Selecionar para lote"}
+                                    >
+                                      {isSelecionado ? <CheckSquare className="h-5 w-5 text-[#0F172A]" /> : <Square className="h-5 w-5 text-gray-400" />}
+                                    </button>
+                                  ) : (
+                                    <span className="text-gray-300">—</span>
+                                  )}
+                                </TableCell>
+                                <TableCell className="font-medium">
+                                  <span>{c.cliente_nome || "—"}</span>
+                                  {c.produto_nome && (
+                                    <span className="block text-xs text-gray-500">Plano: {c.produto_nome}</span>
+                                  )}
+                                  {c.dependentes_nomes && c.dependentes_nomes.length > 0 && (
+                                    <span className="block text-xs text-gray-500">Dependentes: {c.dependentes_nomes.join(", ")}</span>
+                                  )}
+                                  {c.cliente_email && !c.produto_nome && (
+                                    <span className="block text-xs text-gray-500">{c.cliente_email}</span>
+                                  )}
+                                </TableCell>
+                                <TableCell>{formatarMoeda(c.valor_mensal || 0)}</TableCell>
+                                <TableCell className="text-right">
+                                  {isFaturado ? (
+                                    <div className="flex items-center justify-end gap-2">
+                                      <span className="inline-flex items-center gap-1 text-sm font-medium text-green-700">
+                                        <CheckCircle2 className="h-4 w-4" />
+                                    Faturado no mês
+                                      </span>
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={() => irParaAbaFinanceiroCliente(c)}
+                                        className="border-green-200 text-green-800 hover:bg-green-50"
+                                      >
+                                        <FileText className="h-4 w-4 mr-1" />
+                                        Editar fatura
+                                      </Button>
+                                    </div>
+                                  ) : (
+                                    <Button
+                                      size="sm"
+                                      onClick={() => abrirModal(c)}
+                                      disabled={financeirasAtivas.length === 0}
+                                      className="bg-[#0F172A] hover:bg-[#1E293B] text-white"
+                                    >
+                                      Gerar boleto
+                                    </Button>
+                                  )}
+                                </TableCell>
+                              </TableRow>
+                            )
+                          })}
+                        </TableBody>
+                      </Table>
+
+                      <div className="flex items-center justify-between pt-2">
+                        <p className="text-sm text-gray-500">
+                          Mostrando {clientesPaginados.length} de {clientesFiltrados.length} cliente(s)
+                        </p>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setPaginaClientes((p) => Math.max(1, p - 1))}
+                            disabled={paginaClientes === 1}
+                          >
+                            Anterior
+                          </Button>
+                          <span className="text-sm text-gray-600">
+                            Página {paginaClientes} de {totalPaginasClientes}
+                          </span>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setPaginaClientes((p) => Math.min(totalPaginasClientes, p + 1))}
+                            disabled={paginaClientes >= totalPaginasClientes}
+                          >
+                            Próxima
+                          </Button>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
               )}
             </CardContent>
           </Card>

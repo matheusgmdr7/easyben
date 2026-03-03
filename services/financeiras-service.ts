@@ -37,8 +37,19 @@ export interface AtualizarFinanceiraData {
 }
 
 export class FinanceirasService {
+  private static async resolverTenantId(administradoraId: string): Promise<string> {
+    const { data: admRow } = await supabaseAdmin
+      .from("administradoras")
+      .select("tenant_id")
+      .eq("id", administradoraId)
+      .maybeSingle()
+
+    if (admRow?.tenant_id) return admRow.tenant_id
+    return getCurrentTenantId()
+  }
+
   static async listar(administradoraId: string): Promise<AdministradoraFinanceira[]> {
-    const tenantId = await getCurrentTenantId()
+    const tenantId = await this.resolverTenantId(administradoraId)
     const { data, error } = await supabaseAdmin
       .from("administradora_financeiras")
       .select("*")
@@ -54,7 +65,7 @@ export class FinanceirasService {
     id: string,
     administradoraId: string
   ): Promise<AdministradoraFinanceira | null> {
-    const tenantId = await getCurrentTenantId()
+    const tenantId = await this.resolverTenantId(administradoraId)
     const { data, error } = await supabaseAdmin
       .from("administradora_financeiras")
       .select("*")
@@ -70,7 +81,7 @@ export class FinanceirasService {
   static async criar(
     payload: CriarFinanceiraData
   ): Promise<AdministradoraFinanceira> {
-    const tenantId = await getCurrentTenantId()
+    const tenantId = await this.resolverTenantId(payload.administradora_id)
     const { data, error } = await supabaseAdmin
       .from("administradora_financeiras")
       .insert({
@@ -96,7 +107,7 @@ export class FinanceirasService {
     administradoraId: string,
     payload: AtualizarFinanceiraData
   ): Promise<AdministradoraFinanceira> {
-    const tenantId = await getCurrentTenantId()
+    const tenantId = await this.resolverTenantId(administradoraId)
     const update: Record<string, unknown> = { ...payload }
     if (payload.api_key !== undefined) {
       update.status_integracao = payload.api_key ? "ativa" : "inativa"
@@ -116,7 +127,7 @@ export class FinanceirasService {
   }
 
   static async excluir(id: string, administradoraId: string): Promise<void> {
-    const tenantId = await getCurrentTenantId()
+    const tenantId = await this.resolverTenantId(administradoraId)
     const { error } = await supabaseAdmin
       .from("administradora_financeiras")
       .delete()

@@ -19,6 +19,7 @@ export async function middleware(request: NextRequest) {
   
   // Detectar tenant pelo domínio/subdomínio
   let tenantSlug: string = 'contratando-planos' // Fallback padrão
+  let tenantResolvidoPorHost = false
   
   try {
     // 1. Verificar domínio personalizado
@@ -31,6 +32,7 @@ export async function middleware(request: NextRequest) {
     
     if (!domainError && tenantByDomain) {
       tenantSlug = tenantByDomain.slug
+      tenantResolvidoPorHost = true
     } else {
       // 2. Verificar subdomínio
       const subdomain = hostname.split('.')[0]
@@ -47,6 +49,7 @@ export async function middleware(request: NextRequest) {
         
         if (!subdomainError && tenantBySubdomain) {
           tenantSlug = tenantBySubdomain.slug
+          tenantResolvidoPorHost = true
         }
       }
     }
@@ -56,10 +59,33 @@ export async function middleware(request: NextRequest) {
     tenantSlug = 'contratando-planos'
   }
 
-  // 3. Rota /[slug]/corretores/equipe/[token]: usar o primeiro segmento da URL como tenant
-  const matchEquipe = pathname.match(/^\/([^/]+)\/corretores\/equipe\/[^/]+$/)
-  if (matchEquipe) {
-    tenantSlug = matchEquipe[1]
+  // 3. Fallback por slug no caminho para domínio nativo EasyBen:
+  //    ex.: /alfa-seguros ou /alfa-seguros/corretores/equipe/:token
+  if (!tenantResolvidoPorHost) {
+    const primeiroSegmento = pathname.split('/').filter(Boolean)[0]
+    const rotasReservadas = new Set([
+      'admin',
+      'easyben-admin',
+      'easyben',
+      'administradora',
+      'analista',
+      'api',
+      '_next',
+      'favicon.ico',
+    ])
+
+    if (primeiroSegmento && !rotasReservadas.has(primeiroSegmento.toLowerCase())) {
+      const { data: tenantByPath } = await supabaseAdmin
+        .from('tenants')
+        .select('slug')
+        .eq('slug', primeiroSegmento)
+        .eq('status', 'ativo')
+        .maybeSingle()
+
+      if (tenantByPath?.slug) {
+        tenantSlug = tenantByPath.slug
+      }
+    }
   }
 
   // Adicionar tenant_slug ao header da requisição

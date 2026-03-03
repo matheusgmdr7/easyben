@@ -101,6 +101,7 @@ ON CONFLICT (codigo) DO NOTHING;
 -- Portal da Administradora
 INSERT INTO recursos_disponiveis (codigo, nome, descricao, categoria, rota_base, icone, ordem) VALUES
 ('portal_administradora', 'Portal da Administradora', 'Acesso completo ao portal da administradora (faturamento, fatura, financeiro, contratos, grupos de beneficiários)', 'portal', '/administradora', 'Building2', 30),
+('portal_cliente_cpf', 'Dashboard do Cliente (CPF)', 'Página whitelabel para consulta de cliente e boletos por CPF', 'portal', '/[tenant-slug]/cliente', 'UserRound', 31),
 ('administradora_cadastro', 'Cadastro de Administradora', 'Página pública de cadastro de administradoras', 'publico', '/administradora/cadastro', 'Building2', 7),
 ('administradora_login', 'Login da Administradora', 'Página de login para administradoras', 'publico', '/administradora/login', 'LogIn', 8)
 ON CONFLICT (codigo) DO NOTHING;

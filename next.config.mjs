@@ -4,6 +4,21 @@ const nextConfig = {
   experimental: {
     webpackBuildWorker: true,
   },
+  webpack: (config, { dev }) => {
+    if (dev) {
+      config.watchOptions = {
+        ...config.watchOptions,
+        // Evita estouro de watchers por dados de sessão do WhatsApp.
+        ignored: [
+          "**/sessions/**",
+          "**/.next/**",
+          "**/.git/**",
+          "**/node_modules/**",
+        ],
+      }
+    }
+    return config
+  },
   images: {
     domains: ['images.unsplash.com', 'plus.unsplash.com', 'jtzbuxoslaotpnwsphqv.supabase.co'],
   },

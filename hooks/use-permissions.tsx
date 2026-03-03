@@ -40,9 +40,9 @@ export function usePermissions(): Permissions {
           
           setUsuario(usuarioData)
           
-          // Verificar se é master (comparação case-insensitive)
+          // Verificar se é perfil com acesso master (comparação case-insensitive)
           const perfilLower = String(usuarioData.perfil || "").toLowerCase().trim()
-          const master = perfilLower === "master"
+          const master = perfilLower === "master" || perfilLower === "super_admin"
           
           console.log("🔍 Verificação de master:", {
             perfilOriginal: usuarioData.perfil,
@@ -254,9 +254,9 @@ export function usePermissions(): Permissions {
           
           setUsuario(usuarioParaSalvar)
           
-          // Verificar se é master
+          // Verificar se é perfil com acesso master
           const perfilLower = String(usuarioData.perfil || "").toLowerCase().trim()
-          const master = perfilLower === "master"
+          const master = perfilLower === "master" || perfilLower === "super_admin"
           
           setIsMaster(master)
           

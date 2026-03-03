@@ -1,13 +1,14 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import { getAdministradoraLogada } from "@/services/auth-administradoras-service"
 import { GruposBeneficiariosService, type GrupoBeneficiarios } from "@/services/grupos-beneficiarios-service"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Search, X } from "lucide-react"
+import { Search, X, ArrowUpRight, FileSpreadsheet, FileText, ChevronLeft, ChevronRight } from "lucide-react"
 
 const ESTADOS = [
   "AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA", "MT", "MS",
@@ -22,6 +23,7 @@ const STATUS_OPCOES = [
 ]
 
 export default function BeneficiariosTitularPage() {
+  const router = useRouter()
   const [administradoraId, setAdministradoraId] = useState<string | null>(null)
   const [grupos, setGrupos] = useState<GrupoBeneficiarios[]>([])
   const [cidades, setCidades] = useState<string[]>([])
@@ -38,6 +40,75 @@ export default function BeneficiariosTitularPage() {
   const [status, setStatus] = useState("todos")
 
   const [resultados, setResultados] = useState<any[]>([])
+  const [paginaAtual, setPaginaAtual] = useState(1)
+  const [itensPorPagina, setItensPorPagina] = useState(25)
+
+  function formatarCpf(cpf: string | null | undefined): string {
+    if (!cpf) return "-"
+    const d = String(cpf).replace(/\D/g, "")
+    if (d.length === 11) return d.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4")
+    return String(cpf)
+  }
+
+  function idadePorData(data: string | null | undefined): number | null {
+    if (!data) return null
+    const partes = String(data).slice(0, 10).split("-")
+    if (partes.length !== 3) return null
+    const ano = parseInt(partes[0], 10)
+    const mes = parseInt(partes[1], 10)
+    const dia = parseInt(partes[2], 10)
+    if (isNaN(ano) || isNaN(mes) || isNaN(dia)) return null
+    const hoje = new Date()
+    let idade = hoje.getFullYear() - ano
+    if (hoje.getMonth() + 1 < mes || (hoje.getMonth() + 1 === mes && hoje.getDate() < dia)) idade--
+    return idade >= 0 && idade <= 120 ? idade : null
+  }
+
+  function valorCampo(obj: any, chaves: string[]): string {
+    for (const chave of chaves) {
+      const val = obj?.[chave]
+      if (val != null && String(val).trim() !== "") return String(val)
+    }
+    return ""
+  }
+
+  function normalizarEstadoUF(valor: string | null | undefined): string {
+    if (!valor) return ""
+    const limpo = String(valor).trim().toUpperCase()
+    if (limpo.length === 2) return limpo
+
+    const semAcento = limpo.normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    const mapa: Record<string, string> = {
+      ACRE: "AC",
+      ALAGOAS: "AL",
+      AMAPA: "AP",
+      AMAZONAS: "AM",
+      BAHIA: "BA",
+      CEARA: "CE",
+      "DISTRITO FEDERAL": "DF",
+      "ESPIRITO SANTO": "ES",
+      GOIAS: "GO",
+      MARANHAO: "MA",
+      "MATO GROSSO": "MT",
+      "MATO GROSSO DO SUL": "MS",
+      "MINAS GERAIS": "MG",
+      PARA: "PA",
+      PARAIBA: "PB",
+      PARANA: "PR",
+      PERNAMBUCO: "PE",
+      PIAUI: "PI",
+      "RIO DE JANEIRO": "RJ",
+      "RIO GRANDE DO NORTE": "RN",
+      "RIO GRANDE DO SUL": "RS",
+      RONDONIA: "RO",
+      RORAIMA: "RR",
+      "SANTA CATARINA": "SC",
+      "SAO PAULO": "SP",
+      SERGIPE: "SE",
+      TOCANTINS: "TO",
+    }
+    return mapa[semAcento] || semAcento
+  }
 
   useEffect(() => {
     const adm = getAdministradoraLogada()
@@ -85,10 +156,161 @@ export default function BeneficiariosTitularPage() {
 
   async function pesquisar() {
     try {
+      if (!administradoraId) {
+        toast.error("Administradora não identificada.")
+        return
+      }
       setLoading(true)
-      // TODO: Integrar com API de titulares
-      setResultados([])
-      toast.info("Pesquisa de titulares em desenvolvimento. Filtros serão aplicados na integração.")
+      const { supabase } = await import("@/lib/supabase")
+
+      const filtros = {
+        cpf: cpf.replace(/\D/g, ""),
+        nome: nome.trim().toLowerCase(),
+        estado: normalizarEstadoUF(estado),
+        cidade: cidade.trim().toLowerCase(),
+        idadeDe: idadeDe ? Number(idadeDe) : null,
+        idadeAte: idadeAte ? Number(idadeAte) : null,
+      }
+
+      // 1) Titulares vindos de vidas importadas
+      let queryVidas = supabase
+        .from("vidas_importadas")
+        .select("id, grupo_id, nome, cpf, idade, data_nascimento, cidade, estado, ativo, tipo")
+        .eq("administradora_id", administradoraId)
+        .eq("tipo", "titular")
+      if (grupoId) queryVidas = queryVidas.eq("grupo_id", grupoId)
+      const { data: vidas, error: errVidas } = await queryVidas
+      if (errVidas) throw errVidas
+
+      // 2) Titulares vinculados ao grupo via clientes_grupos
+      let queryVinculos = supabase.from("clientes_grupos").select("id, grupo_id, cliente_id, cliente_tipo")
+      if (grupoId) queryVinculos = queryVinculos.eq("grupo_id", grupoId)
+      const { data: vinculos, error: errVinculos } = await queryVinculos
+      if (errVinculos) throw errVinculos
+
+      const vinculosRelevantes = (vinculos || []).filter((v: any) => v.cliente_tipo === "proposta" || v.cliente_tipo === "cliente_administradora")
+      const idsPropostasDiretas = vinculosRelevantes
+        .filter((v: any) => v.cliente_tipo === "proposta")
+        .map((v: any) => v.cliente_id)
+      const idsClientesAdm = vinculosRelevantes
+        .filter((v: any) => v.cliente_tipo === "cliente_administradora")
+        .map((v: any) => v.cliente_id)
+
+      let clientesAdm: any[] = []
+      if (idsClientesAdm.length > 0) {
+        const { data, error } = await supabase
+          .from("clientes_administradoras")
+          .select("*")
+          .in("id", idsClientesAdm)
+          .eq("administradora_id", administradoraId)
+        if (error) throw error
+        clientesAdm = data || []
+      }
+
+      const proposalIds = Array.from(new Set([
+        ...idsPropostasDiretas,
+        ...clientesAdm.map((c: any) => c.proposta_id).filter(Boolean),
+      ]))
+
+      let propostas: any[] = []
+      if (proposalIds.length > 0) {
+        const { data, error } = await supabase
+          .from("propostas")
+          .select("*")
+          .in("id", proposalIds)
+        if (error) throw error
+        propostas = data || []
+      }
+
+      const gruposMap = new Map(grupos.map((g) => [g.id, g.nome]))
+      const propostasMap = new Map(propostas.map((p: any) => [p.id, p]))
+      const clientesAdmMap = new Map(clientesAdm.map((c: any) => [c.id, c]))
+
+      const resultadosVidas = (vidas || []).map((v: any) => {
+        const idadeCalc = v.idade != null ? Number(v.idade) : idadePorData(v.data_nascimento)
+        return {
+          id: `vida-${v.id}`,
+          origem: "vida_importada",
+          grupo_id: v.grupo_id,
+          grupo_nome: gruposMap.get(v.grupo_id) || "-",
+          nome: v.nome || "-",
+          cpf: v.cpf || "",
+          estado: normalizarEstadoUF(valorCampo(v, ["estado", "uf"])),
+          cidade: valorCampo(v, ["cidade"]),
+          idade: idadeCalc,
+          ativo: v.ativo !== false,
+        }
+      })
+
+      const resultadosVinculos = vinculosRelevantes
+        .map((v: any) => {
+          if (v.cliente_tipo === "proposta") {
+            const p = propostasMap.get(v.cliente_id)
+            if (!p) return null
+            const statusProposta = String(p.status || "").toLowerCase()
+            const ativo = ["aprovada", "assinada", "finalizada"].includes(statusProposta)
+            const idadeCalc = p.idade != null ? Number(p.idade) : idadePorData(p.data_nascimento)
+            return {
+              id: `vinculo-${v.id}`,
+              origem: "proposta",
+              grupo_id: v.grupo_id,
+              grupo_nome: gruposMap.get(v.grupo_id) || "-",
+              nome: p.nome || "-",
+              cpf: p.cpf || "",
+              estado: normalizarEstadoUF(valorCampo(p, ["estado", "uf", "estado_cliente"])),
+              cidade: valorCampo(p, ["cidade", "cidade_cliente"]),
+              idade: idadeCalc,
+              ativo,
+            }
+          }
+
+          const ca = clientesAdmMap.get(v.cliente_id)
+          if (!ca) return null
+          const p = ca.proposta_id ? propostasMap.get(ca.proposta_id) : null
+          const statusCliente = String(ca.status || "").toLowerCase()
+          const ativo = statusCliente === "ativo"
+          const idadeCalc = p?.idade != null ? Number(p.idade) : idadePorData(p?.data_nascimento)
+          return {
+            id: `vinculo-${v.id}`,
+            origem: "cliente_administradora",
+            grupo_id: v.grupo_id,
+            grupo_nome: gruposMap.get(v.grupo_id) || "-",
+            nome: p?.nome || ca.nome || `Cliente ${ca.numero_contrato || ""}`.trim(),
+            cpf: p?.cpf || "",
+            estado: normalizarEstadoUF(valorCampo(p, ["estado", "uf", "estado_cliente"]) || valorCampo(ca, ["estado", "uf", "estado_cliente"])),
+            cidade: valorCampo(p, ["cidade", "cidade_cliente"]),
+            idade: idadeCalc,
+            ativo,
+          }
+        })
+        .filter(Boolean)
+
+      const todos = [...resultadosVidas, ...resultadosVinculos]
+
+      const filtrados = todos.filter((r: any) => {
+        const cpfDigitos = String(r.cpf || "").replace(/\D/g, "")
+        const nomeLower = String(r.nome || "").toLowerCase()
+        const estadoUpper = normalizarEstadoUF(r.estado)
+        const cidadeLower = String(r.cidade || "").toLowerCase()
+
+        if (grupoId && r.grupo_id !== grupoId) return false
+        if (filtros.cpf && !cpfDigitos.includes(filtros.cpf)) return false
+        if (filtros.nome && !nomeLower.includes(filtros.nome)) return false
+        if (filtros.estado && estadoUpper !== filtros.estado) return false
+        if (filtros.cidade && !cidadeLower.includes(filtros.cidade)) return false
+        if (filtros.idadeDe != null && (r.idade == null || Number(r.idade) < filtros.idadeDe)) return false
+        if (filtros.idadeAte != null && (r.idade == null || Number(r.idade) > filtros.idadeAte)) return false
+        if (status === "ativo" && !r.ativo) return false
+        if (status === "cancelado" && r.ativo) return false
+        return true
+      })
+
+      filtrados.sort((a: any, b: any) => String(a.nome || "").localeCompare(String(b.nome || ""), "pt-BR"))
+      setResultados(filtrados)
+      setPaginaAtual(1)
+      if (filtrados.length === 0) {
+        toast.info("Nenhum titular encontrado para os filtros informados.")
+      }
     } catch (e: any) {
       toast.error("Erro: " + (e?.message || "Erro ao pesquisar"))
     } finally {
@@ -106,7 +328,120 @@ export default function BeneficiariosTitularPage() {
     setIdadeAte("")
     setStatus("todos")
     setResultados([])
+    setPaginaAtual(1)
   }
+
+  async function exportarExcel() {
+    try {
+      if (resultados.length === 0) {
+        toast.info("Não há dados para exportar.")
+        return
+      }
+      const XLSX = await import("xlsx")
+      const dados = resultados.map((r: any) => ({
+        Nome: r.nome || "-",
+        CPF: formatarCpf(r.cpf),
+        Grupo: r.grupo_nome || "-",
+        Cidade: r.cidade || "-",
+        UF: r.estado || "-",
+        Idade: r.idade != null ? Number(r.idade) : "",
+        Status: r.ativo ? "Ativo" : "Cancelado",
+      }))
+      const ws = XLSX.utils.json_to_sheet(dados)
+      const wb = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(wb, ws, "Titulares")
+      XLSX.writeFile(wb, `beneficiarios-titulares-${new Date().toISOString().slice(0, 10)}.xlsx`)
+    } catch (e: any) {
+      toast.error("Erro ao exportar Excel: " + (e?.message || "erro desconhecido"))
+    }
+  }
+
+  async function exportarPdf() {
+    try {
+      if (resultados.length === 0) {
+        toast.info("Não há dados para exportar.")
+        return
+      }
+      const jsPDF = (await import("jspdf")).default
+      const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" })
+      const margin = 10
+      const rowHeight = 6
+      const maxY = 185
+      const headers = ["Nº", "Nome", "CPF", "Grupo", "Cidade/UF", "Idade", "Status"]
+      const colWidths = [10, 55, 35, 45, 35, 15, 20]
+      let y = 15
+
+      const desenharCabecalho = (primeiraPagina = false) => {
+        if (primeiraPagina) {
+          doc.setFontSize(14)
+          doc.setFont(undefined, "bold")
+          doc.text("RELATORIO DE TITULARES", margin, y)
+          y += 6
+          doc.setFontSize(10)
+          doc.setFont(undefined, "normal")
+          doc.text(`Total de registros: ${resultados.length}`, margin, y)
+          y += 5
+          doc.text(`Gerado em: ${new Date().toLocaleString("pt-BR")}`, margin, y)
+          y += 8
+        }
+        doc.setFontSize(9)
+        doc.setFont(undefined, "bold")
+        let x = margin
+        headers.forEach((h, i) => {
+          doc.text(h, x, y)
+          x += colWidths[i]
+        })
+        y += 5
+        doc.setFont(undefined, "normal")
+      }
+
+      desenharCabecalho(true)
+
+      resultados.forEach((r: any, index: number) => {
+        if (y > maxY) {
+          doc.addPage("a4", "landscape")
+          y = 15
+          desenharCabecalho(false)
+        }
+        if (index % 2 === 1) {
+          doc.setFillColor(245, 245, 245)
+          doc.rect(margin, y - 4, colWidths.reduce((a, b) => a + b, 0), rowHeight, "F")
+        }
+        let x = margin
+        const linha = [
+          String(index + 1),
+          String(r.nome || "-"),
+          formatarCpf(r.cpf),
+          String(r.grupo_nome || "-"),
+          `${String(r.cidade || "-")} / ${String(r.estado || "-")}`,
+          r.idade != null ? String(r.idade) : "-",
+          r.ativo ? "Ativo" : "Cancelado",
+        ]
+        linha.forEach((valor, i) => {
+          const texto = doc.splitTextToSize(valor, colWidths[i] - 2)?.[0] || "-"
+          doc.text(texto, x, y)
+          x += colWidths[i]
+        })
+        y += rowHeight
+      })
+
+      y += 4
+      doc.setFont(undefined, "bold")
+      doc.text(`Total de registros: ${resultados.length}`, margin, y)
+      doc.save(`beneficiarios-titulares-${new Date().toISOString().slice(0, 10)}.pdf`)
+    } catch (e: any) {
+      toast.error("Erro ao exportar PDF: " + (e?.message || "erro desconhecido"))
+    }
+  }
+
+  const totalPaginas = Math.max(1, Math.ceil(resultados.length / itensPorPagina))
+  const paginaAtualAjustada = Math.min(paginaAtual, totalPaginas)
+  const resultadosPaginados = resultados.slice(
+    (paginaAtualAjustada - 1) * itensPorPagina,
+    paginaAtualAjustada * itensPorPagina
+  )
+  const inicio = resultados.length > 0 ? (paginaAtualAjustada - 1) * itensPorPagina + 1 : 0
+  const fim = Math.min(paginaAtualAjustada * itensPorPagina, resultados.length)
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -231,7 +566,118 @@ export default function BeneficiariosTitularPage() {
           {resultados.length === 0 ? (
             <p className="text-sm text-gray-500 text-center py-8">Use os filtros e clique em Pesquisar para buscar titulares.</p>
           ) : (
-            <p className="text-sm text-gray-600">{resultados.length} resultado(s) encontrado(s).</p>
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-sm text-gray-600">{resultados.length} resultado(s) encontrado(s).</p>
+                <div className="flex items-center gap-2">
+                  <Button variant="outline" size="sm" className="h-8" onClick={exportarExcel}>
+                    <FileSpreadsheet className="h-3.5 w-3.5 mr-1" />
+                    Excel
+                  </Button>
+                  <Button variant="outline" size="sm" className="h-8" onClick={exportarPdf}>
+                    <FileText className="h-3.5 w-3.5 mr-1" />
+                    PDF
+                  </Button>
+                </div>
+              </div>
+              <div className="overflow-x-auto border border-gray-200 rounded-md">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-3 py-2 text-left font-semibold text-gray-700">Nome</th>
+                      <th className="px-3 py-2 text-left font-semibold text-gray-700">CPF</th>
+                      <th className="px-3 py-2 text-left font-semibold text-gray-700">Grupo</th>
+                      <th className="px-3 py-2 text-left font-semibold text-gray-700">Cidade/UF</th>
+                      <th className="px-3 py-2 text-left font-semibold text-gray-700">Idade</th>
+                      <th className="px-3 py-2 text-left font-semibold text-gray-700">Status</th>
+                      <th className="px-3 py-2 text-right font-semibold text-gray-700">Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {resultadosPaginados.map((r, idx) => (
+                      <tr key={r.id} className={idx % 2 === 0 ? "bg-white" : "bg-gray-50/40"}>
+                        <td className="px-3 py-2">{r.nome || "-"}</td>
+                        <td className="px-3 py-2">{formatarCpf(r.cpf)}</td>
+                        <td className="px-3 py-2">{r.grupo_nome || "-"}</td>
+                        <td className="px-3 py-2">{[r.cidade || "-", r.estado || "-"].join(" / ")}</td>
+                        <td className="px-3 py-2">{r.idade != null ? String(r.idade) : "-"}</td>
+                        <td className="px-3 py-2">
+                          <span className={`inline-flex items-center rounded-sm border px-2 py-0.5 text-xs font-semibold ${
+                            r.ativo
+                              ? "bg-slate-100 text-slate-800 border-slate-300"
+                              : "bg-gray-100 text-gray-600 border-gray-300"
+                          }`}>
+                            {r.ativo ? "Ativo" : "Cancelado"}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-8"
+                            onClick={() => router.push(`/administradora/grupos-beneficiarios/${r.grupo_id}/beneficiario/${r.id}`)}
+                          >
+                            <ArrowUpRight className="h-3.5 w-3.5 mr-1" />
+                            Abrir
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-1 py-1">
+                <div className="flex flex-wrap items-center gap-3">
+                  <p className="text-sm text-gray-600">
+                    Mostrando {inicio} a {fim} de {resultados.length}
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-gray-600">Itens por página:</span>
+                    <Select
+                      value={String(itensPorPagina)}
+                      onValueChange={(v) => {
+                        setItensPorPagina(Number(v))
+                        setPaginaAtual(1)
+                      }}
+                    >
+                      <SelectTrigger className="h-8 w-[70px]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="25">25</SelectItem>
+                        <SelectItem value="50">50</SelectItem>
+                        <SelectItem value="100">100</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPaginaAtual((p) => Math.max(1, p - 1))}
+                    disabled={paginaAtualAjustada <= 1}
+                    className="h-8"
+                  >
+                    <ChevronLeft className="h-4 w-4 mr-1" />
+                    Anterior
+                  </Button>
+                  <span className="text-sm text-gray-600 min-w-[80px] text-center">
+                    Página {paginaAtualAjustada} de {totalPaginas}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPaginaAtual((p) => Math.min(totalPaginas, p + 1))}
+                    disabled={paginaAtualAjustada >= totalPaginas}
+                    className="h-8"
+                  >
+                    Próximo
+                    <ChevronRight className="h-4 w-4 ml-1" />
+                  </Button>
+                </div>
+              </div>
+            </div>
           )}
         </div>
       </div>

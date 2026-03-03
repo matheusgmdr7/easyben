@@ -143,7 +143,10 @@ export class GruposBeneficiariosService {
             .eq("grupo_id", grupo.id)
             .eq("tenant_id", tenantId)
 
-          const totalBeneficiarios = (countVinculos || 0) + (countVidas || 0)
+          // Evita dupla contagem:
+          // quando há vidas_importadas no grupo, elas já representam o universo de beneficiários.
+          // clientes_grupos é usado como vínculo operacional e pode repetir titulares já presentes em vidas.
+          const totalBeneficiarios = (countVidas || 0) > 0 ? (countVidas || 0) : (countVinculos || 0)
 
           return {
             ...grupo,

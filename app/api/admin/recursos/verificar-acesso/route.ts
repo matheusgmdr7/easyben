@@ -1,12 +1,32 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase-admin'
 
+async function garantirRecursoDashboardClienteCpf() {
+  await supabaseAdmin
+    .from('recursos_disponiveis')
+    .upsert(
+      {
+        codigo: 'portal_cliente_cpf',
+        nome: 'Dashboard do Cliente (CPF)',
+        descricao: 'Página whitelabel para consulta de cliente e boletos por CPF',
+        categoria: 'portal',
+        rota_base: '/[tenant-slug]/cliente',
+        icone: 'UserRound',
+        ativo: true,
+        ordem: 31,
+      },
+      { onConflict: 'codigo' }
+    )
+}
+
 /**
  * GET /api/admin/recursos/verificar-acesso
  * Verifica se um tenant tem acesso a um recurso específico
  */
 export async function GET(request: NextRequest) {
   try {
+    await garantirRecursoDashboardClienteCpf()
+
     const searchParams = request.nextUrl.searchParams
     const tenantId = searchParams.get('tenantId')
     const codigo = searchParams.get('codigo')

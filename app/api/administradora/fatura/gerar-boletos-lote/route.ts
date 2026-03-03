@@ -97,7 +97,7 @@ export async function POST(request: NextRequest) {
         if (res.ok) {
           results.push({
             success: true,
-            cliente_administradora_id: c.cliente_administradora_id,
+            cliente_administradora_id: data.cliente_administradora_id || c.cliente_administradora_id,
             cliente_nome: c.cliente_nome,
             boleto_url: data.boleto_url,
             invoice_url: data.invoice_url,

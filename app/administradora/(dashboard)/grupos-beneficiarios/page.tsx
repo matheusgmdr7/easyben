@@ -149,7 +149,7 @@ export default function GruposBeneficiariosPage() {
         <Table>
           <TableHeader>
             <TableRow className="bg-gray-50">
-              <TableHead className="font-bold">Nome</TableHead>
+              <TableHead className="font-bold">Nome do Grupo</TableHead>
               <TableHead className="font-bold">Total de Beneficiários</TableHead>
               <TableHead className="font-bold">Status</TableHead>
               <TableHead className="font-bold text-right">Ações</TableHead>
@@ -165,7 +165,7 @@ export default function GruposBeneficiariosPage() {
             ) : (
               gruposFiltrados.map((grupo) => (
                 <TableRow key={grupo.id} className="hover:bg-gray-50">
-                  <TableCell className="font-medium">{grupo.nome}</TableCell>
+                  <TableCell className="font-bold">{grupo.nome}</TableCell>
                   <TableCell>
                     <span className="inline-flex items-center px-2 py-0.5 text-xs font-semibold rounded-sm border border-slate-200 bg-slate-50 text-slate-700">
                       {grupo.total_clientes ?? 0}
@@ -186,19 +186,21 @@ export default function GruposBeneficiariosPage() {
                         variant="outline"
                         size="sm"
                         onClick={() => router.push(`/administradora/grupos-beneficiarios/${grupo.id}`)}
-                        className="h-8 w-8 p-0 border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-800 hover:border-slate-300 rounded-md"
+                        className="h-8 border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-800 hover:border-slate-300 rounded-md"
                         title="Ver detalhes"
                       >
-                        <FileSearch className="h-4 w-4" />
+                        <FileSearch className="h-4 w-4 mr-1" />
+                        Detalhes
                       </Button>
                       <Button
                         variant="outline"
                         size="sm"
                         onClick={() => handleEditar(grupo)}
-                        className="h-8 w-8 p-0 border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-800 hover:border-slate-300 rounded-md"
+                        className="h-8 border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-800 hover:border-slate-300 rounded-md"
                         title="Editar"
                       >
-                        <Pencil className="h-4 w-4" />
+                        <Pencil className="h-4 w-4 mr-1" />
+                        Editar
                       </Button>
                       <Button
                         variant="outline"
@@ -207,10 +209,11 @@ export default function GruposBeneficiariosPage() {
                           setGrupoParaStatus({ id: grupo.id, ativo: grupo.ativo, nome: grupo.nome })
                           setConfirmStatusOpen(true)
                         }}
-                        className="h-8 w-8 p-0 border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-800 hover:border-slate-300 rounded-md"
+                        className="h-8 border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-800 hover:border-slate-300 rounded-md"
                         title={grupo.ativo ? "Desativar" : "Ativar"}
                       >
-                        <Power className="h-4 w-4" />
+                        <Power className="h-4 w-4 mr-1" />
+                        {grupo.ativo ? "Desativar" : "Ativar"}
                       </Button>
                       <Button
                         variant="outline"
@@ -219,10 +222,11 @@ export default function GruposBeneficiariosPage() {
                           setGrupoParaExcluir(grupo.id)
                           setConfirmExcluirOpen(true)
                         }}
-                        className="h-8 w-8 p-0 border-slate-200 text-slate-500 hover:border-red-200 hover:bg-red-50 hover:text-red-700 rounded-md"
+                        className="h-8 border-slate-200 text-slate-500 hover:border-red-200 hover:bg-red-50 hover:text-red-700 rounded-md"
                         title="Excluir"
                       >
-                        <UserMinus className="h-4 w-4" />
+                        <UserMinus className="h-4 w-4 mr-1" />
+                        Excluir
                       </Button>
                     </div>
                   </TableCell>

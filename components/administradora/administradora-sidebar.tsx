@@ -64,12 +64,34 @@ export default function AdministradoraSidebar() {
   const [administradoraInfo, setAdministradoraInfo] = useState<{
     nome: string | null
     logo: string | null
-  }>({ nome: null, logo: null })
+    logoAjuste: { zoom: number; x: number; y: number }
+  }>({ nome: null, logo: null, logoAjuste: { zoom: 1, x: 0, y: 0 } })
+  const [logoFalhou, setLogoFalhou] = useState(false)
+  const LOGO_AJUSTE_PADRAO = { zoom: 1, x: 0, y: 0 }
+
+  const normalizarUrlImagem = (url: string | null | undefined) => {
+    const valor = String(url || "").trim()
+    if (!valor) return null
+    if (
+      valor.startsWith("http://") ||
+      valor.startsWith("https://") ||
+      valor.startsWith("data:") ||
+      valor.startsWith("blob:") ||
+      valor.startsWith("/")
+    ) {
+      return valor
+    }
+    if (valor.startsWith("//")) {
+      return `https:${valor}`
+    }
+    return `https://${valor}`
+  }
   
   // Buscar informações da administradora
   useEffect(() => {
     async function loadAdministradoraInfo() {
       try {
+        let tenantId: string | null = null
         // Buscar do localStorage (salvo pelo serviço de autenticação)
         if (typeof window !== 'undefined') {
           const administradoraLogadaStr = localStorage.getItem('administradoraLogada')
@@ -77,11 +99,12 @@ export default function AdministradoraSidebar() {
             try {
               const administradoraLogada = JSON.parse(administradoraLogadaStr)
               if (administradoraLogada) {
+                tenantId = administradoraLogada.tenant_id || null
                 setAdministradoraInfo({
                   nome: administradoraLogada.nome_fantasia || administradoraLogada.nome || null,
-                  logo: administradoraLogada.logo_url || null
+                  logo: null,
+                  logoAjuste: LOGO_AJUSTE_PADRAO,
                 })
-                return
               }
             } catch (e) {
               console.log("Erro ao parsear administradora do localStorage:", e)
@@ -91,19 +114,44 @@ export default function AdministradoraSidebar() {
         
         // Fallback: buscar do sessionStorage
         const administradoraEmail = sessionStorage.getItem('administradora_email')
-        if (!administradoraEmail) return
-        
-        const { data: administradora } = await supabase
-          .from('administradoras')
-          .select('nome, nome_fantasia, logo_url')
-          .eq('email_login', administradoraEmail)
-          .single()
-        
-        if (administradora) {
-          setAdministradoraInfo({
-            nome: administradora.nome_fantasia || administradora.nome || null,
-            logo: administradora.logo_url || null
-          })
+        if (administradoraEmail) {
+          const { data: administradora } = await supabase
+            .from('administradoras')
+            .select('nome, nome_fantasia, tenant_id')
+            .eq('email_login', administradoraEmail)
+            .single()
+          
+          if (administradora) {
+            tenantId = tenantId || administradora.tenant_id || null
+            setAdministradoraInfo({
+              nome: administradora.nome_fantasia || administradora.nome || null,
+              logo: null,
+              logoAjuste: LOGO_AJUSTE_PADRAO,
+            })
+          }
+        }
+
+        if (tenantId) {
+          const { data: tenant } = await supabase
+            .from('tenants')
+            .select('logo_url, configuracoes')
+            .eq('id', tenantId)
+            .maybeSingle()
+
+          if (tenant?.logo_url) {
+            const ajusteRaw = (tenant as any)?.configuracoes?.logo_ajuste || {}
+            const ajuste = {
+              zoom: Number.isFinite(Number(ajusteRaw?.zoom)) && Number(ajusteRaw?.zoom) > 0 ? Number(ajusteRaw.zoom) : 1,
+              x: Number.isFinite(Number(ajusteRaw?.x)) ? Number(ajusteRaw.x) : 0,
+              y: Number.isFinite(Number(ajusteRaw?.y)) ? Number(ajusteRaw.y) : 0,
+            }
+            setAdministradoraInfo((prev) => ({
+              ...prev,
+              logo: normalizarUrlImagem(tenant.logo_url),
+              logoAjuste: ajuste,
+            }))
+            setLogoFalhou(false)
+          }
         }
       } catch (error) {
         console.log("Erro ao carregar informações da administradora:", error)
@@ -294,30 +342,41 @@ export default function AdministradoraSidebar() {
             {!isVisuallyCollapsed ? (
               <Link
                 href="/administradora/dashboard"
-                className="flex items-center gap-2 sm:gap-3 font-bold transition-colors hover:opacity-90 text-[#0F172A] min-w-0 flex-1"
+                className="flex items-center justify-center w-full h-full"
               >
-                {administradoraInfo.logo && (
-                  <img 
-                    src={administradoraInfo.logo} 
-                    alt="Logo Administradora" 
-                    className="h-8 w-8 sm:h-10 sm:w-10 object-contain flex-shrink-0 rounded"
-                  />
+                {administradoraInfo.logo && !logoFalhou && (
+                  <div className="h-14 w-full max-w-[320px] overflow-hidden relative">
+                    <img 
+                      src={administradoraInfo.logo} 
+                      alt="Logo Administradora" 
+                      className="absolute top-1/2 left-1/2 h-full w-full object-contain"
+                      style={{
+                        transform: `translate(calc(-50% + ${administradoraInfo.logoAjuste.x}px), calc(-50% + ${administradoraInfo.logoAjuste.y}px)) scale(${administradoraInfo.logoAjuste.zoom})`,
+                        transformOrigin: "center center",
+                      }}
+                      onError={() => setLogoFalhou(true)}
+                    />
+                  </div>
                 )}
-                <span className="text-xs sm:text-sm md:text-base font-semibold truncate whitespace-nowrap">
-                  Portal Administradora
-                </span>
               </Link>
             ) : (
               <Link
                 href="/administradora/dashboard"
                 className="flex items-center justify-center w-full h-full"
               >
-                {administradoraInfo.logo ? (
-                  <img 
-                    src={administradoraInfo.logo} 
-                    alt="Logo Administradora" 
-                    className="h-8 w-8 sm:h-10 sm:w-10 object-contain mx-auto rounded"
-                  />
+                {administradoraInfo.logo && !logoFalhou ? (
+                  <div className="h-12 w-12 overflow-hidden relative">
+                    <img 
+                      src={administradoraInfo.logo} 
+                      alt="Logo Administradora" 
+                      className="absolute top-1/2 left-1/2 h-full w-full object-contain"
+                      style={{
+                        transform: `translate(calc(-50% + ${administradoraInfo.logoAjuste.x * 0.4}px), calc(-50% + ${administradoraInfo.logoAjuste.y * 0.4}px)) scale(${Math.max(1, administradoraInfo.logoAjuste.zoom * 0.9)})`,
+                        transformOrigin: "center center",
+                      }}
+                      onError={() => setLogoFalhou(true)}
+                    />
+                  </div>
                 ) : null}
               </Link>
             )}
@@ -360,6 +419,116 @@ export default function AdministradoraSidebar() {
                   {!isVisuallyCollapsed && <span className="truncate flex-1">Dashboard</span>}
                   <HomeIcon className="h-5 w-5 flex-shrink-0" />
                 </Link>
+              </li>
+              {/* Grupo de Beneficiários */}
+              <li>
+                <Link
+                  href="/administradora/grupos-beneficiarios"
+                  className={cn(
+                    "flex items-center justify-between px-3 sm:px-4 py-2.5 sm:py-3 transition-all duration-300 ease-in-out font-medium text-xs sm:text-sm rounded-md",
+                    isActive("/administradora/grupos-beneficiarios")
+                      ? "bg-[#1E293B] text-white shadow-md active-item"
+                      : "text-gray-300 hover:bg-[#1E293B] hover:text-white hover:scale-[1.02] hover:shadow-md",
+                    !isVisuallyCollapsed && !isActive("/administradora/grupos-beneficiarios") && "hover:translate-x-1",
+                    isVisuallyCollapsed && "justify-center px-2"
+                  )}
+                  onClick={closeSidebar}
+                  title={isVisuallyCollapsed ? "Grupo de Beneficiários" : ""}
+                >
+                  {!isVisuallyCollapsed && <span className="truncate flex-1">Grupo de Beneficiários</span>}
+                  <UserGroupIcon className="h-5 w-5 flex-shrink-0" />
+                </Link>
+              </li>
+              {/* Item Beneficiários com Submenu */}
+              <li>
+                <button
+                  onClick={() => setBeneficiariosMenuOpen(!beneficiariosMenuOpen)}
+                  className={cn(
+                    "flex items-center justify-between w-full px-3 sm:px-4 py-2.5 sm:py-3 transition-all duration-300 ease-in-out font-medium text-xs sm:text-sm rounded-md",
+                    isActive("/administradora/beneficiarios")
+                      ? "bg-[#1E293B] text-white shadow-md active-item"
+                      : "text-gray-300 hover:bg-[#1E293B] hover:text-white hover:scale-[1.02] hover:shadow-md",
+                    !isVisuallyCollapsed && !isActive("/administradora/beneficiarios") && "hover:translate-x-1",
+                    isVisuallyCollapsed && "justify-center px-2"
+                  )}
+                  title={isVisuallyCollapsed ? "Beneficiários" : ""}
+                >
+                  {!isVisuallyCollapsed && <span className="truncate flex-1 text-left">Beneficiários</span>}
+                  <div className="flex items-center gap-2">
+                    <UsersIcon className="h-5 w-5 flex-shrink-0" />
+                    {!isVisuallyCollapsed && (
+                      beneficiariosMenuOpen ? (
+                        <ChevronDownIcon className="h-4 w-4 flex-shrink-0" />
+                      ) : (
+                        <ChevronRightIcon className="h-4 w-4 flex-shrink-0" />
+                      )
+                    )}
+                  </div>
+                </button>
+                {!isVisuallyCollapsed && beneficiariosMenuOpen && (
+                  <ul className="ml-4 mt-1 space-y-0.5">
+                    <li>
+                      <Link
+                        href="/administradora/beneficiarios/titular"
+                        className={cn(
+                          "flex items-center gap-2 px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm rounded-md transition-all duration-300",
+                          isActive("/administradora/beneficiarios/titular")
+                            ? "bg-[#1E293B]/80 text-white"
+                            : "text-gray-300 hover:bg-[#1E293B]/50 hover:text-white"
+                        )}
+                        onClick={closeSidebar}
+                      >
+                        <MagnifyingGlassIcon className="h-4 w-4" />
+                        <span>Titular</span>
+                      </Link>
+                    </li>
+                    <li>
+                      <Link
+                        href="/administradora/beneficiarios/dependentes"
+                        className={cn(
+                          "flex items-center gap-2 px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm rounded-md transition-all duration-300",
+                          isActive("/administradora/beneficiarios/dependentes")
+                            ? "bg-[#1E293B]/80 text-white"
+                            : "text-gray-300 hover:bg-[#1E293B]/50 hover:text-white"
+                        )}
+                        onClick={closeSidebar}
+                      >
+                        <MagnifyingGlassIcon className="h-4 w-4" />
+                        <span>Dependentes</span>
+                      </Link>
+                    </li>
+                    <li>
+                      <Link
+                        href="/administradora/beneficiarios/contrato"
+                        className={cn(
+                          "flex items-center gap-2 px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm rounded-md transition-all duration-300",
+                          isActive("/administradora/beneficiarios/contrato")
+                            ? "bg-[#1E293B]/80 text-white"
+                            : "text-gray-300 hover:bg-[#1E293B]/50 hover:text-white"
+                        )}
+                        onClick={closeSidebar}
+                      >
+                        <MagnifyingGlassIcon className="h-4 w-4" />
+                        <span>Contrato</span>
+                      </Link>
+                    </li>
+                    <li>
+                      <Link
+                        href="/administradora/beneficiarios/importacao-vidas"
+                        className={cn(
+                          "flex items-center gap-2 px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm rounded-md transition-all duration-300",
+                          isActive("/administradora/beneficiarios/importacao-vidas")
+                            ? "bg-[#1E293B]/80 text-white"
+                            : "text-gray-300 hover:bg-[#1E293B]/50 hover:text-white"
+                        )}
+                        onClick={closeSidebar}
+                      >
+                        <ArrowUpTrayIcon className="h-4 w-4" />
+                        <span>Importação de vidas</span>
+                      </Link>
+                    </li>
+                  </ul>
+                )}
               </li>
               {/* Item Faturamento com Submenu */}
               <li>
@@ -631,116 +800,6 @@ export default function AdministradoraSidebar() {
                     </li>
                   </ul>
                 )}
-              </li>
-              {/* Item Beneficiários com Submenu */}
-              <li>
-                <button
-                  onClick={() => setBeneficiariosMenuOpen(!beneficiariosMenuOpen)}
-                  className={cn(
-                    "flex items-center justify-between w-full px-3 sm:px-4 py-2.5 sm:py-3 transition-all duration-300 ease-in-out font-medium text-xs sm:text-sm rounded-md",
-                    isActive("/administradora/beneficiarios")
-                      ? "bg-[#1E293B] text-white shadow-md active-item"
-                      : "text-gray-300 hover:bg-[#1E293B] hover:text-white hover:scale-[1.02] hover:shadow-md",
-                    !isVisuallyCollapsed && !isActive("/administradora/beneficiarios") && "hover:translate-x-1",
-                    isVisuallyCollapsed && "justify-center px-2"
-                  )}
-                  title={isVisuallyCollapsed ? "Beneficiários" : ""}
-                >
-                  {!isVisuallyCollapsed && <span className="truncate flex-1 text-left">Beneficiários</span>}
-                  <div className="flex items-center gap-2">
-                    <UsersIcon className="h-5 w-5 flex-shrink-0" />
-                    {!isVisuallyCollapsed && (
-                      beneficiariosMenuOpen ? (
-                        <ChevronDownIcon className="h-4 w-4 flex-shrink-0" />
-                      ) : (
-                        <ChevronRightIcon className="h-4 w-4 flex-shrink-0" />
-                      )
-                    )}
-                  </div>
-                </button>
-                {!isVisuallyCollapsed && beneficiariosMenuOpen && (
-                  <ul className="ml-4 mt-1 space-y-0.5">
-                    <li>
-                      <Link
-                        href="/administradora/beneficiarios/titular"
-                        className={cn(
-                          "flex items-center gap-2 px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm rounded-md transition-all duration-300",
-                          isActive("/administradora/beneficiarios/titular")
-                            ? "bg-[#1E293B]/80 text-white"
-                            : "text-gray-300 hover:bg-[#1E293B]/50 hover:text-white"
-                        )}
-                        onClick={closeSidebar}
-                      >
-                        <MagnifyingGlassIcon className="h-4 w-4" />
-                        <span>Titular</span>
-                      </Link>
-                    </li>
-                    <li>
-                      <Link
-                        href="/administradora/beneficiarios/dependentes"
-                        className={cn(
-                          "flex items-center gap-2 px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm rounded-md transition-all duration-300",
-                          isActive("/administradora/beneficiarios/dependentes")
-                            ? "bg-[#1E293B]/80 text-white"
-                            : "text-gray-300 hover:bg-[#1E293B]/50 hover:text-white"
-                        )}
-                        onClick={closeSidebar}
-                      >
-                        <MagnifyingGlassIcon className="h-4 w-4" />
-                        <span>Dependentes</span>
-                      </Link>
-                    </li>
-                    <li>
-                      <Link
-                        href="/administradora/beneficiarios/contrato"
-                        className={cn(
-                          "flex items-center gap-2 px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm rounded-md transition-all duration-300",
-                          isActive("/administradora/beneficiarios/contrato")
-                            ? "bg-[#1E293B]/80 text-white"
-                            : "text-gray-300 hover:bg-[#1E293B]/50 hover:text-white"
-                        )}
-                        onClick={closeSidebar}
-                      >
-                        <MagnifyingGlassIcon className="h-4 w-4" />
-                        <span>Contrato</span>
-                      </Link>
-                    </li>
-                    <li>
-                      <Link
-                        href="/administradora/beneficiarios/importacao-vidas"
-                        className={cn(
-                          "flex items-center gap-2 px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm rounded-md transition-all duration-300",
-                          isActive("/administradora/beneficiarios/importacao-vidas")
-                            ? "bg-[#1E293B]/80 text-white"
-                            : "text-gray-300 hover:bg-[#1E293B]/50 hover:text-white"
-                        )}
-                        onClick={closeSidebar}
-                      >
-                        <ArrowUpTrayIcon className="h-4 w-4" />
-                        <span>Importação de vidas</span>
-                      </Link>
-                    </li>
-                  </ul>
-                )}
-              </li>
-              {/* Grupo de Beneficiários */}
-              <li>
-                <Link
-                  href="/administradora/grupos-beneficiarios"
-                  className={cn(
-                    "flex items-center justify-between px-3 sm:px-4 py-2.5 sm:py-3 transition-all duration-300 ease-in-out font-medium text-xs sm:text-sm rounded-md",
-                    isActive("/administradora/grupos-beneficiarios") 
-                      ? "bg-[#1E293B] text-white shadow-md active-item" 
-                      : "text-gray-300 hover:bg-[#1E293B] hover:text-white hover:scale-[1.02] hover:shadow-md",
-                    !isVisuallyCollapsed && !isActive("/administradora/grupos-beneficiarios") && "hover:translate-x-1",
-                    isVisuallyCollapsed && "justify-center px-2"
-                  )}
-                  onClick={closeSidebar}
-                  title={isVisuallyCollapsed ? "Grupo de Beneficiários" : ""}
-                >
-                  {!isVisuallyCollapsed && <span className="truncate flex-1">Grupo de Beneficiários</span>}
-                  <UserGroupIcon className="h-5 w-5 flex-shrink-0" />
-                </Link>
               </li>
               <li>
                 <Link

@@ -20,7 +20,16 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    const tenantId = await getCurrentTenantId()
+    let tenantId = await getCurrentTenantId()
+
+    // Em localhost/desenvolvimento, o tenant pode não vir por header/cookie.
+    // Prioriza tenant vinculado à administradora quando possível.
+    const { data: admRow } = await supabaseAdmin
+      .from("administradoras")
+      .select("tenant_id")
+      .eq("id", administradoraId)
+      .maybeSingle()
+    if (admRow?.tenant_id) tenantId = admRow.tenant_id
 
     const { data: faturas, error } = await supabaseAdmin
       .from("faturas")

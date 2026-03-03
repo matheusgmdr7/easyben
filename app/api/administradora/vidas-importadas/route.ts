@@ -10,12 +10,24 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const grupoId = searchParams.get("grupo_id")
+    const administradoraId = searchParams.get("administradora_id")
 
     if (!grupoId) {
       return NextResponse.json({ error: "grupo_id é obrigatório" }, { status: 400 })
     }
 
-    const tenantId = await getCurrentTenantId()
+    let tenantId = await getCurrentTenantId()
+
+    // Em ambiente local, pode não haver tenant_slug no header/cookie.
+    // Quando administradora_id for informado, priorizamos o tenant vinculado à administradora.
+    if (administradoraId) {
+      const { data: admRow } = await supabaseAdmin
+        .from("administradoras")
+        .select("tenant_id")
+        .eq("id", administradoraId)
+        .maybeSingle()
+      if (admRow?.tenant_id) tenantId = admRow.tenant_id
+    }
 
     // Buscar todas as vidas em lotes (Supabase/PostgREST limitam a 1000 por request)
     const PAGE_SIZE = 1000
@@ -23,7 +35,7 @@ export async function GET(request: NextRequest) {
     let from = 0
     let hasMore = true
     while (hasMore) {
-      const { data: chunk, error } = await supabaseAdmin
+      let query = supabaseAdmin
         .from("vidas_importadas")
         .select("*")
         .eq("grupo_id", grupoId)
@@ -31,6 +43,10 @@ export async function GET(request: NextRequest) {
         .order("tipo", { ascending: true })
         .order("nome", { ascending: true })
         .range(from, from + PAGE_SIZE - 1)
+      if (administradoraId) {
+        query = query.eq("administradora_id", administradoraId)
+      }
+      const { data: chunk, error } = await query
 
       if (error) {
         console.error("Erro ao buscar vidas importadas:", error)

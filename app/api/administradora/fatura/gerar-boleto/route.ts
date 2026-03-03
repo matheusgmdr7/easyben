@@ -61,6 +61,10 @@ export async function POST(request: NextRequest) {
     if (isNaN(valorNum) || valorNum <= 0) {
       return NextResponse.json({ error: "Valor inválido" }, { status: 400 })
     }
+    const vencimentoIso = String(vencimento).slice(0, 10)
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(vencimentoIso)) {
+      return NextResponse.json({ error: "Vencimento inválido. Use o formato YYYY-MM-DD." }, { status: 400 })
+    }
 
     // Taxa de administração: usar valor do body (modal) se informado; senão usar config da administradora
     let taxaAdministracao = 0
@@ -308,6 +312,35 @@ export async function POST(request: NextRequest) {
 
     // Configurar Asaas com a API key da financeira
     log("Configurando Asaas", { ambiente: financeira.ambiente || "producao" })
+    // Regra mensal: um cliente só pode ter uma fatura por mês.
+    const [ano, mes] = vencimentoIso.split("-").map(Number)
+    const inicioMes = `${ano}-${String(mes).padStart(2, "0")}-01`
+    const fimMes = `${ano}-${String(mes).padStart(2, "0")}-${String(new Date(ano, mes, 0).getDate()).padStart(2, "0")}`
+    const { data: faturaMesExistente } = await supabaseAdmin
+      .from("faturas")
+      .select("id, numero_fatura, status, vencimento")
+      .eq("cliente_administradora_id", idParaFatura)
+      .eq("administradora_id", administradora_id)
+      .eq("tenant_id", tenantId)
+      .gte("vencimento", inicioMes)
+      .lte("vencimento", fimMes)
+      .order("vencimento", { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (faturaMesExistente) {
+      return NextResponse.json(
+        {
+          error:
+            `Este cliente já possui boleto/fatura para ${String(mes).padStart(2, "0")}/${ano}. ` +
+            `Exclua o boleto atual para gerar novamente no mesmo mês.`,
+          fatura_existente_id: faturaMesExistente.id,
+          fatura_existente_numero: faturaMesExistente.numero_fatura,
+        },
+        { status: 409 }
+      )
+    }
+
     AsaasServiceInstance.setApiKey(financeira.api_key, financeira.ambiente || "producao")
 
     // Verificar se já existe asaas_customer_id no cliente
@@ -372,7 +405,7 @@ export async function POST(request: NextRequest) {
       customer: customerId,
       billingType: "BOLETO",
       value: valorTotalBoleto,
-      dueDate: String(vencimento).slice(0, 10),
+      dueDate: vencimentoIso,
       description: descricaoBoleto,
       externalReference: idParaFatura,
     }
@@ -390,7 +423,7 @@ export async function POST(request: NextRequest) {
         cliente_telefone: telefone || "",
         proposta_id: clienteAdm?.proposta_id ?? undefined,
         valor_original: valorTotalBoleto,
-        data_vencimento: String(vencimento).slice(0, 10),
+        data_vencimento: vencimentoIso,
         observacoes: descricaoBoleto || "",
       },
       supabaseAdmin
@@ -444,9 +477,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       fatura_id: fatura.id,
+      cliente_administradora_id: idParaFatura,
       numero_fatura: updatePayload.numero_fatura ?? fatura.numero_fatura,
       valor: valorTotalBoleto,
-      vencimento: String(vencimento).slice(0, 10),
+      vencimento: vencimentoIso,
       boleto_url: urlBoleto || undefined,
       invoice_url: urlInvoice || undefined,
       payment_link: urlPayment || undefined,

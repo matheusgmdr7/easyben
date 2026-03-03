@@ -1,12 +1,19 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { supabase } from "@/lib/supabase-auth"
 import Link from "next/link"
-import { Settings, User, LogOut } from "lucide-react"
+import { Settings, User, LogOut, Bell, AlertTriangle, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { getAdministradoraLogada } from "@/services/auth-administradoras-service"
+import {
+  listarAlertasSistema,
+  marcarTodosAlertasComoLidos,
+  removerAlertaSistema,
+  obterNomeEventoAlertasSistema,
+  type AlertaSistema,
+} from "@/services/administradora-alertas-service"
 import type React from "react"
 
 interface AdministradoraHeaderProps {
@@ -17,6 +24,9 @@ export default function AdministradoraHeader({ sidebarCollapsed = false }: Admin
   const [administradoraNome, setAdministradoraNome] = useState<string | null>(null)
   const [administradoraEmail, setAdministradoraEmail] = useState<string | null>(null)
   const [showMobileMenu, setShowMobileMenu] = useState(false)
+  const [showAlertas, setShowAlertas] = useState(false)
+  const [alertas, setAlertas] = useState<AlertaSistema[]>([])
+  const alertasRef = useRef<HTMLDivElement | null>(null)
   const router = useRouter()
 
   useEffect(() => {
@@ -62,6 +72,25 @@ export default function AdministradoraHeader({ sidebarCollapsed = false }: Admin
     getAdministradoraInfo()
   }, [router])
 
+  useEffect(() => {
+    const atualizar = () => setAlertas(listarAlertasSistema())
+    atualizar()
+    const eventName = obterNomeEventoAlertasSistema()
+    window.addEventListener(eventName, atualizar)
+    return () => window.removeEventListener(eventName, atualizar)
+  }, [])
+
+  useEffect(() => {
+    const handleCliqueFora = (event: MouseEvent) => {
+      if (!alertasRef.current) return
+      if (!alertasRef.current.contains(event.target as Node)) {
+        setShowAlertas(false)
+      }
+    }
+    document.addEventListener("mousedown", handleCliqueFora)
+    return () => document.removeEventListener("mousedown", handleCliqueFora)
+  }, [])
+
   const handleLogout = async () => {
     try {
       // Limpar dados do localStorage e sessionStorage
@@ -82,6 +111,7 @@ export default function AdministradoraHeader({ sidebarCollapsed = false }: Admin
     borderBottom: '1px solid rgba(0, 0, 0, 0.1)',
     boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06)'
   }
+  const alertasNaoLidos = alertas.filter((a) => !a.lido).length
 
   return (
     <header 
@@ -93,10 +123,17 @@ export default function AdministradoraHeader({ sidebarCollapsed = false }: Admin
       {/* Logo/Título */}
       <div className="flex items-center h-full">
         <Link href="/administradora/dashboard" className="text-sm sm:text-base md:text-lg font-semibold text-[#0F172A] block md:hidden hover:opacity-90 transition-opacity">
-          Portal
+          Portal da Administradora
         </Link>
-        <Link href="/administradora/dashboard" className="text-base md:text-lg font-semibold text-[#0F172A] hidden md:block hover:opacity-90 transition-opacity">
-          {administradoraNome || 'Administradora'} <span className="text-gray-600 font-normal">Portal</span>
+        <Link
+          href="/administradora/dashboard"
+          className="hidden md:flex items-center gap-2 lg:gap-3 text-base md:text-lg font-semibold text-[#0F172A] hover:opacity-90 transition-opacity"
+        >
+          <span className="whitespace-nowrap">{administradoraNome || "Administradora"}</span>
+          <span className="h-5 w-px bg-gray-300 hidden lg:block" aria-hidden="true" />
+          <span className="whitespace-nowrap">
+            <span className="text-gray-600 font-normal">Portal da Administradora</span>
+          </span>
         </Link>
       </div>
 
@@ -119,6 +156,71 @@ export default function AdministradoraHeader({ sidebarCollapsed = false }: Admin
         >
           <Settings className="h-4 w-4 sm:h-5 sm:w-5" />
         </button>
+
+        <div className="relative" ref={alertasRef}>
+          <button
+            className="relative p-1.5 sm:p-2 rounded-lg hover:bg-gray-100 text-gray-700 transition-colors flex items-center justify-center"
+            title="Avisos do sistema"
+            onClick={() => setShowAlertas((v) => !v)}
+          >
+            <Bell className="h-4 w-4 sm:h-5 sm:w-5" />
+            {alertasNaoLidos > 0 && (
+              <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-amber-500 text-white text-[10px] font-bold flex items-center justify-center">
+                {alertasNaoLidos > 9 ? "9+" : alertasNaoLidos}
+              </span>
+            )}
+          </button>
+
+          {showAlertas && (
+            <div className="absolute right-0 top-11 w-[360px] max-h-[420px] overflow-y-auto bg-white border border-gray-200 rounded-xl shadow-2xl z-50">
+              <div className="p-3 border-b border-gray-100 flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-gray-900">Avisos do sistema</p>
+                  <p className="text-xs text-gray-500">{alertasNaoLidos} não lido(s)</p>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 text-xs"
+                  onClick={() => marcarTodosAlertasComoLidos()}
+                  disabled={alertas.length === 0}
+                >
+                  Marcar todos como lidos
+                </Button>
+              </div>
+
+              {alertas.length === 0 ? (
+                <div className="p-4 text-sm text-gray-500">Nenhum aviso pendente.</div>
+              ) : (
+                <div className="divide-y divide-gray-100">
+                  {alertas.map((alerta) => (
+                    <div key={alerta.id} className={`p-3 ${alerta.lido ? "bg-white" : "bg-amber-50/50"}`}>
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-start gap-2 min-w-0">
+                          <AlertTriangle className={`h-4 w-4 mt-0.5 ${alerta.tipo === "warning" ? "text-amber-600" : "text-blue-600"}`} />
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold text-gray-900 truncate">{alerta.titulo}</p>
+                            <p className="text-xs text-gray-700 mt-1 whitespace-pre-line">{alerta.mensagem}</p>
+                            <p className="text-[11px] text-gray-500 mt-1">
+                              {new Date(alerta.criadoEm).toLocaleString("pt-BR")}
+                            </p>
+                          </div>
+                        </div>
+                        <button
+                          className="p-1 rounded hover:bg-gray-100 text-gray-500"
+                          title="Remover aviso"
+                          onClick={() => removerAlertaSistema(alerta.id)}
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
 
         {/* User Info */}
         <div className="flex items-center gap-2 sm:gap-3 ml-2 pl-3 border-l border-gray-200 h-full">
@@ -179,6 +281,21 @@ export default function AdministradoraHeader({ sidebarCollapsed = false }: Admin
                 </div>
               </div>
             </div>
+            <button
+              className="w-full text-left px-4 py-3 text-sm text-amber-700 hover:bg-amber-50 flex items-center justify-between gap-3 transition-colors"
+              onClick={() => {
+                setShowMobileMenu(false)
+                setShowAlertas(true)
+              }}
+            >
+              <div className="flex items-center gap-3">
+                <Bell className="h-4 w-4 text-amber-600" />
+                Avisos do sistema
+              </div>
+              <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1 rounded-full bg-amber-500 text-white text-[10px] font-bold">
+                {alertasNaoLidos > 9 ? "9+" : alertasNaoLidos}
+              </span>
+            </button>
             <button
               className="w-full text-left px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-3 transition-colors"
               onClick={() => {

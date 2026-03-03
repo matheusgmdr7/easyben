@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { autenticarAdministradora } from "@/services/auth-administradoras-service"
@@ -15,8 +15,24 @@ export default function AdministradoraLoginPage() {
   const [senha, setSenha] = useState("")
   const [loading, setLoading] = useState(false)
   const [mostrarSenha, setMostrarSenha] = useState(false)
-  // Logo será carregada da configuração do sistema/tenant (configurada no painel EasyBen)
-  const [logoUrl] = useState<string | null>(null)
+  const [logoUrl, setLogoUrl] = useState<string | null>(null)
+  const [logoFalhou, setLogoFalhou] = useState(false)
+
+  const normalizarUrlImagem = (url: string | null | undefined) => {
+    const valor = String(url || "").trim()
+    if (!valor) return null
+    if (
+      valor.startsWith("http://") ||
+      valor.startsWith("https://") ||
+      valor.startsWith("data:") ||
+      valor.startsWith("blob:") ||
+      valor.startsWith("/")
+    ) {
+      return valor
+    }
+    if (valor.startsWith("//")) return `https:${valor}`
+    return `https://${valor}`
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -64,11 +80,46 @@ export default function AdministradoraLoginPage() {
     }
   }
 
-  // TODO: Carregar logo da configuração do sistema/tenant
-  // useEffect(() => {
-  //   // Buscar logo da configuração do tenant/administradora
-  //   // setLogoUrl(logoDaConfiguracao)
-  // }, [])
+  useEffect(() => {
+    let ativo = true
+    async function carregarLogoTenant() {
+      try {
+        const cookieTenantSlug = document.cookie
+          .split("; ")
+          .find((row) => row.startsWith("tenant_slug="))
+          ?.split("=")[1]
+
+        let tenantSlug = cookieTenantSlug || ""
+        if (!tenantSlug) {
+          const hostname = window.location.hostname
+          const subdominio = hostname.split(".")[0]?.toLowerCase()
+          const ignorados = new Set(["www", "app", "api", "admin", "localhost"])
+          if (subdominio && !ignorados.has(subdominio)) {
+            tenantSlug = subdominio
+          }
+        }
+
+        if (!tenantSlug) return
+
+        const response = await fetch(`/api/admin/plataformas?action=get-by-slug&slug=${encodeURIComponent(tenantSlug)}`)
+        const json = await response.json().catch(() => ({}))
+        if (!response.ok) return
+
+        const logo = normalizarUrlImagem(String(json?.data?.logo_url || "").trim())
+        if (ativo && logo) {
+          setLogoUrl(logo)
+          setLogoFalhou(false)
+        }
+      } catch {
+        // sem bloqueio de login quando branding não estiver disponível
+      }
+    }
+
+    carregarLogoTenant()
+    return () => {
+      ativo = false
+    }
+  }, [])
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
@@ -76,12 +127,13 @@ export default function AdministradoraLoginPage() {
         <div className="text-center mb-8">
           {/* Título com Logo ao lado */}
           <div className="flex items-center justify-center gap-3 sm:gap-4 md:gap-5 mb-4">
-            {logoUrl && (
+            {logoUrl && !logoFalhou && (
               <div className="relative w-20 h-20 sm:w-24 sm:h-24 md:w-28 md:h-28 flex-shrink-0">
                 <img
                   src={logoUrl}
                   alt="Logo"
                   className="w-full h-full object-contain"
+                  onError={() => setLogoFalhou(true)}
                 />
               </div>
             )}
