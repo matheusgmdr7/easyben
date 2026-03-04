@@ -201,8 +201,17 @@ export async function middleware(request: NextRequest) {
   const ehTelaLogin = pathname.endsWith('/login')
   if (ehTelaLogin) {
     response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0')
+    response.headers.set('CDN-Cache-Control', 'no-store')
+    response.headers.set('Netlify-CDN-Cache-Control', 'no-store')
     response.headers.set('Pragma', 'no-cache')
     response.headers.set('Expires', '0')
+    const varyAtual = response.headers.get('Vary')
+    const varyLogin = 'x-tenant-slug'
+    if (!varyAtual) {
+      response.headers.set('Vary', varyLogin)
+    } else if (!varyAtual.toLowerCase().includes(varyLogin)) {
+      response.headers.set('Vary', `${varyAtual}, ${varyLogin}`)
+    }
   }
 
   // Adicionar cookie para persistência (válido por 7 dias)
