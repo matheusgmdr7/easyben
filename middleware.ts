@@ -185,6 +185,15 @@ export async function middleware(request: NextRequest) {
         },
       })
   
+  // Evita cache de HTML das telas de login no edge/CDN.
+  // Isso previne mismatch de assets (_next/static/css hash antigo) após deploy.
+  const ehTelaLogin = pathname.endsWith('/login')
+  if (ehTelaLogin) {
+    response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0')
+    response.headers.set('Pragma', 'no-cache')
+    response.headers.set('Expires', '0')
+  }
+
   // Adicionar cookie para persistência (válido por 7 dias)
   response.cookies.set('tenant_slug', tenantSlug, {
     path: '/',
