@@ -2,6 +2,33 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase-admin'
 import type { Tenant } from '@/lib/tenant-utils'
 
+function normalizarSlug(valor: string): string {
+  return String(valor || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+}
+
+function mergeSlugAliases(configuracoesBase: any, slugAntigo: string, slugNovo: string) {
+  const base = configuracoesBase && typeof configuracoesBase === 'object' ? { ...configuracoesBase } : {}
+  const aliasesAtuais = Array.isArray(base.slug_aliases) ? base.slug_aliases : []
+  const setAliases = new Set(
+    aliasesAtuais
+      .map((s: any) => normalizarSlug(String(s || '')))
+      .filter(Boolean)
+  )
+  const antigo = normalizarSlug(slugAntigo)
+  const novo = normalizarSlug(slugNovo)
+  if (antigo && antigo !== novo) setAliases.add(antigo)
+  if (novo) setAliases.delete(novo)
+  return {
+    ...base,
+    slug_aliases: Array.from(setAliases),
+  }
+}
+
 /**
  * API Route para gerenciamento de plataformas (Admin)
  * Todas as operações usam supabaseAdmin (service role) no servidor
@@ -136,18 +163,42 @@ export async function PUT(request: NextRequest) {
 
     const { id, ...dadosAtualizacao } = body
 
+    const { data: tenantAtual, error: erroTenantAtual } = await supabaseAdmin
+      .from('tenants')
+      .select('id, slug, configuracoes')
+      .eq('id', id)
+      .single()
+
+    if (erroTenantAtual || !tenantAtual) {
+      return NextResponse.json(
+        { error: 'Plataforma não encontrada' },
+        { status: 404 }
+      )
+    }
+
     // Se estiver atualizando o slug, verificar se não existe outro com o mesmo slug
     if (dadosAtualizacao.slug) {
+      const slugNovo = normalizarSlug(dadosAtualizacao.slug)
+      dadosAtualizacao.slug = slugNovo
+
       const { data: existing } = await supabaseAdmin
         .from('tenants')
         .select('id')
-        .eq('slug', dadosAtualizacao.slug)
+        .eq('slug', slugNovo)
         .single()
 
       if (existing && existing.id !== id) {
         return NextResponse.json(
           { error: 'Já existe outra plataforma com este slug' },
           { status: 400 }
+        )
+      }
+
+      if (slugNovo !== normalizarSlug(tenantAtual.slug)) {
+        dadosAtualizacao.configuracoes = mergeSlugAliases(
+          dadosAtualizacao.configuracoes ?? tenantAtual.configuracoes,
+          tenantAtual.slug,
+          slugNovo
         )
       }
     }

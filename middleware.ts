@@ -103,6 +103,23 @@ export async function middleware(request: NextRequest) {
       if (tenantByPath?.slug) {
         tenantSlug = tenantByPath.slug
         tenantSlugDoCaminho = tenantByPath.slug
+      } else {
+        // Fallback por aliases de slug (configuracoes.slug_aliases)
+        for (const slugCandidato of slugsCandidatos) {
+          const { data: tenantByAlias } = await supabaseAdmin
+            .from('tenants')
+            .select('slug, configuracoes')
+            .contains('configuracoes', { slug_aliases: [slugCandidato] })
+            .eq('status', 'ativo')
+            .limit(1)
+            .maybeSingle()
+
+          if (tenantByAlias?.slug) {
+            tenantSlug = tenantByAlias.slug
+            tenantSlugDoCaminho = tenantByAlias.slug
+            break
+          }
+        }
       }
     }
   }
@@ -133,8 +150,20 @@ export async function middleware(request: NextRequest) {
     !!segundoSegmento &&
     tenantPrefixedPortalRoots.has(segundoSegmento.toLowerCase())
 
+  const deveReescreverSlugAntigoParaAtual =
+    !!tenantSlugDoCaminho &&
+    primeiroSegmento &&
+    primeiroSegmento.toLowerCase() !== String(tenantSlugDoCaminho).toLowerCase() &&
+    !tenantPrefixedPortalRoots.has(segundoSegmento.toLowerCase())
+
   const response = deveReescreverPortalPrefixed
     ? NextResponse.rewrite(new URL(`/${pathSegments.slice(1).join('/')}${search}`, request.url), {
+        request: {
+          headers: requestHeaders,
+        },
+      })
+    : deveReescreverSlugAntigoParaAtual
+    ? NextResponse.rewrite(new URL(`/${tenantSlugDoCaminho}/${pathSegments.slice(1).join('/')}${search}`, request.url), {
         request: {
           headers: requestHeaders,
         },
