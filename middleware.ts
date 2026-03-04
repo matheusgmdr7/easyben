@@ -160,6 +160,10 @@ export async function middleware(request: NextRequest) {
 
   const deveReescreverPortalPrefixed =
     pathTemPrefixoTenantPortal
+  const ehLoginAdministradoraPrefixado =
+    pathTemPrefixoTenantPortal &&
+    segundoSegmentoLower === 'administradora' &&
+    String(pathSegments[2] || '').toLowerCase() === 'login'
 
   const deveReescreverSlugAntigoParaAtual =
     !!tenantSlugDoCaminho &&
@@ -168,7 +172,7 @@ export async function middleware(request: NextRequest) {
     !tenantPrefixedPortalRoots.has(segundoSegmentoLower)
 
   const response = (() => {
-    if (deveReescreverPortalPrefixed) {
+    if (deveReescreverPortalPrefixed && !ehLoginAdministradoraPrefixado) {
       const rewriteUrl = new URL(`/${pathSegments.slice(1).join('/')}${search}`, request.url)
       // Evita reaproveitamento indevido de cache por caminho interno compartilhado.
       rewriteUrl.searchParams.set('__tenant', tenantSlugHeader)
