@@ -167,23 +167,34 @@ export async function middleware(request: NextRequest) {
     primeiroSegmento.toLowerCase() !== String(tenantSlugDoCaminho).toLowerCase() &&
     !tenantPrefixedPortalRoots.has(segundoSegmentoLower)
 
-  const response = deveReescreverPortalPrefixed
-    ? NextResponse.rewrite(new URL(`/${pathSegments.slice(1).join('/')}${search}`, request.url), {
+  const response = (() => {
+    if (deveReescreverPortalPrefixed) {
+      const rewriteUrl = new URL(`/${pathSegments.slice(1).join('/')}${search}`, request.url)
+      // Evita reaproveitamento indevido de cache por caminho interno compartilhado.
+      rewriteUrl.searchParams.set('__tenant', tenantSlugHeader)
+      return NextResponse.rewrite(rewriteUrl, {
         request: {
           headers: requestHeaders,
         },
       })
-    : deveReescreverSlugAntigoParaAtual
-    ? NextResponse.rewrite(new URL(`/${tenantSlugDoCaminho}/${pathSegments.slice(1).join('/')}${search}`, request.url), {
+    }
+
+    if (deveReescreverSlugAntigoParaAtual) {
+      const rewriteUrl = new URL(`/${tenantSlugDoCaminho}/${pathSegments.slice(1).join('/')}${search}`, request.url)
+      rewriteUrl.searchParams.set('__tenant', tenantSlugHeader)
+      return NextResponse.rewrite(rewriteUrl, {
         request: {
           headers: requestHeaders,
         },
       })
-    : NextResponse.next({
-        request: {
-          headers: requestHeaders,
-        },
-      })
+    }
+
+    return NextResponse.next({
+      request: {
+        headers: requestHeaders,
+      },
+    })
+  })()
   
   // Evita cache de HTML das telas de login no edge/CDN.
   // Isso previne mismatch de assets (_next/static/css hash antigo) após deploy.
