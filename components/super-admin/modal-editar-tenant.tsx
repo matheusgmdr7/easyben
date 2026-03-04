@@ -486,6 +486,13 @@ export function ModalEditarTenant({ isOpen, onClose, tenant, onSuccess }: ModalE
               />
             </div>
 
+            <div className="rounded-md border border-amber-200 bg-amber-50 p-3 space-y-1">
+              <p className="text-xs font-semibold text-amber-900">Checklist para domínio personalizado funcionar</p>
+              <p className="text-[11px] text-amber-800">1) DNS do cliente deve apontar para a hospedagem (Netlify).</p>
+              <p className="text-[11px] text-amber-800">2) SSL/HTTPS deve estar ativo e válido para o domínio.</p>
+              <p className="text-[11px] text-amber-800">3) Enquanto DNS/SSL não propagarem, use o acesso por slug no domínio nativo.</p>
+            </div>
+
             <div className="rounded-md border border-sky-200 bg-sky-50 p-3">
               <p className="text-xs font-semibold text-sky-900">Preview da URL final de acesso</p>
               <p className="text-xs text-sky-800 mt-1 break-all">{previewAcesso.principal}</p>

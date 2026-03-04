@@ -4,7 +4,17 @@ import { supabaseAdmin } from '@/lib/supabase-admin'
 
 export async function middleware(request: NextRequest) {
   const hostname = request.headers.get('host') || ''
+  const hostnameSemPorta = hostname.split(':')[0].toLowerCase()
   const pathname = request.nextUrl.pathname
+  const search = request.nextUrl.search
+  const pathSegments = pathname.split('/').filter(Boolean)
+  const primeiroSegmento = pathSegments[0] || ''
+  const segundoSegmento = pathSegments[1] || ''
+
+  // Rotas de portal que hoje existem sem prefixo de tenant.
+  // Suportamos URL com tenant no domínio nativo, ex.: /alfa-seguros/admin/login
+  const tenantPrefixedPortalRoots = new Set(['admin', 'administradora', 'analista', 'corretor', 'gestor'])
+  const dominiosNativosEasyben = new Set(['easyben.com.br', 'www.easyben.com.br'])
   
   // Ignorar arquivos estáticos, API routes internas e assets
   if (
@@ -20,6 +30,7 @@ export async function middleware(request: NextRequest) {
   // Detectar tenant pelo domínio/subdomínio
   let tenantSlug: string = 'contratando-planos' // Fallback padrão
   let tenantResolvidoPorHost = false
+  let tenantSlugDoCaminho: string | null = null
   
   try {
     // 1. Verificar domínio personalizado
@@ -62,7 +73,6 @@ export async function middleware(request: NextRequest) {
   // 3. Fallback por slug no caminho para domínio nativo EasyBen:
   //    ex.: /alfa-seguros ou /alfa-seguros/corretores/equipe/:token
   if (!tenantResolvidoPorHost) {
-    const primeiroSegmento = pathname.split('/').filter(Boolean)[0]
     const rotasReservadas = new Set([
       'admin',
       'easyben-admin',
@@ -75,29 +85,65 @@ export async function middleware(request: NextRequest) {
     ])
 
     if (primeiroSegmento && !rotasReservadas.has(primeiroSegmento.toLowerCase())) {
+      const slugBruto = primeiroSegmento.toLowerCase().trim()
+      const slugSemHifen = slugBruto.replace(/-/g, '')
+      const slugComHifenNormalizado = slugBruto
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/^-|-$/g, '')
+      const slugsCandidatos = Array.from(new Set([slugBruto, slugSemHifen, slugComHifenNormalizado].filter(Boolean)))
+
       const { data: tenantByPath } = await supabaseAdmin
         .from('tenants')
         .select('slug')
-        .eq('slug', primeiroSegmento)
+        .in('slug', slugsCandidatos)
         .eq('status', 'ativo')
         .maybeSingle()
 
       if (tenantByPath?.slug) {
         tenantSlug = tenantByPath.slug
+        tenantSlugDoCaminho = tenantByPath.slug
       }
     }
+  }
+
+  // Em produção no domínio nativo, evita cair no tenant padrão ao acessar
+  // portais sem slug de plataforma (ex.: /admin/login).
+  // Exige identificação explícita da plataforma via /{tenant}/...
+  const acessandoPortalSemSlug =
+    !tenantResolvidoPorHost &&
+    !tenantSlugDoCaminho &&
+    tenantPrefixedPortalRoots.has(primeiroSegmento.toLowerCase())
+
+  if (dominiosNativosEasyben.has(hostnameSemPorta) && acessandoPortalSemSlug) {
+    const url = request.nextUrl.clone()
+    url.pathname = '/404'
+    url.search = ''
+    return NextResponse.rewrite(url)
   }
 
   // Adicionar tenant_slug ao header da requisição
   const requestHeaders = new Headers(request.headers)
   requestHeaders.set('x-tenant-slug', tenantSlug)
   
-  // Criar resposta com header
-  const response = NextResponse.next({
-    request: {
-      headers: requestHeaders,
-    },
-  })
+  // Se a URL veio com tenant no caminho e rota de portal na sequência,
+  // reescreve internamente para a rota sem slug mantendo o contexto do tenant.
+  const deveReescreverPortalPrefixed =
+    !!tenantSlugDoCaminho &&
+    !!segundoSegmento &&
+    tenantPrefixedPortalRoots.has(segundoSegmento.toLowerCase())
+
+  const response = deveReescreverPortalPrefixed
+    ? NextResponse.rewrite(new URL(`/${pathSegments.slice(1).join('/')}${search}`, request.url), {
+        request: {
+          headers: requestHeaders,
+        },
+      })
+    : NextResponse.next({
+        request: {
+          headers: requestHeaders,
+        },
+      })
   
   // Adicionar cookie para persistência (válido por 7 dias)
   response.cookies.set('tenant_slug', tenantSlug, {
