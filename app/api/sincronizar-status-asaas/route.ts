@@ -12,6 +12,87 @@ interface ResultadoSincronizacao {
   erros: string[]
 }
 
+function mapearStatusAsaas(status: string | null | undefined): string {
+  const s = String(status || '').toUpperCase()
+  const mapa: Record<string, string> = {
+    PENDING: 'pendente',
+    RECEIVED: 'paga',
+    CONFIRMED: 'paga',
+    RECEIVED_IN_CASH: 'paga',
+    OVERDUE: 'atrasada',
+    REFUNDED: 'cancelada',
+    REFUND_REQUESTED: 'cancelada',
+    CHARGEBACK_REQUESTED: 'cancelada',
+    CHARGEBACK_DISPUTE: 'cancelada',
+    AWAITING_CHARGEBACK_REVERSAL: 'cancelada',
+    DELETED: 'cancelada',
+    CANCELED: 'cancelada',
+    CANCELLED: 'cancelada',
+    AWAITING_RISK_ANALYSIS: 'pendente',
+    DUNNING_REQUESTED: 'atrasada',
+    DUNNING_RECEIVED: 'paga',
+  }
+  return mapa[s] || 'pendente'
+}
+
+function obterChargeIds(baseId: string): string[] {
+  const limpo = String(baseId || '').trim()
+  if (!limpo) return []
+  const semPrefixo = limpo.replace(/^pay_/, '')
+  const comPrefixo = semPrefixo ? `pay_${semPrefixo}` : ''
+  return Array.from(new Set([limpo, semPrefixo, comPrefixo].filter(Boolean)))
+}
+
+async function buscarConfigAsaas(administradoraId: string): Promise<{ api_key: string; ambiente: string } | null> {
+  const { data: adm } = await supabase
+    .from('administradoras')
+    .select('tenant_id')
+    .eq('id', administradoraId)
+    .maybeSingle()
+
+  const tenantId = adm?.tenant_id || null
+
+  if (tenantId) {
+    const { data: financeiras } = await supabase
+      .from('administradora_financeiras')
+      .select('api_key, ambiente, instituicao_financeira, status_integracao, ativo')
+      .eq('administradora_id', administradoraId)
+      .eq('tenant_id', tenantId)
+      .eq('ativo', true)
+
+    const asaasAtual = (financeiras || []).find(
+      (f: any) =>
+        String(f?.instituicao_financeira || '').toLowerCase() === 'asaas' &&
+        String(f?.status_integracao || '').toLowerCase() === 'ativa' &&
+        !!f?.api_key
+    )
+
+    if (asaasAtual) {
+      return {
+        api_key: String((asaasAtual as any).api_key),
+        ambiente: String((asaasAtual as any).ambiente || 'producao'),
+      }
+    }
+  }
+
+  const { data: legado } = await supabase
+    .from('administradoras_config_financeira')
+    .select('api_key, ambiente')
+    .eq('administradora_id', administradoraId)
+    .eq('instituicao_financeira', 'asaas')
+    .eq('status_integracao', 'ativa')
+    .maybeSingle()
+
+  if (legado?.api_key) {
+    return {
+      api_key: String(legado.api_key),
+      ambiente: String(legado.ambiente || 'producao'),
+    }
+  }
+
+  return null
+}
+
 /**
  * API Route para sincronizar status das faturas com o Asaas
  * Atualiza faturas que foram pagas mas ainda estão como "pendente" no banco
@@ -35,16 +116,9 @@ export async function POST(request: NextRequest) {
 
     console.log('🔄 Iniciando sincronização de status...')
 
-    // 1. Buscar configuração do Asaas
-    const { data: config, error: configError } = await supabase
-      .from('administradoras_config_financeira')
-      .select('api_key, ambiente')
-      .eq('administradora_id', administradora_id)
-      .eq('instituicao_financeira', 'asaas')
-      .eq('status_integracao', 'ativa')
-      .single()
-
-    if (configError || !config) {
+    // 1. Buscar configuração do Asaas (tabela atual e legado)
+    const config = await buscarConfigAsaas(administradora_id)
+    if (!config?.api_key) {
       return NextResponse.json(
         { error: 'Configuração do Asaas não encontrada' },
         { status: 404 }
@@ -59,9 +133,9 @@ export async function POST(request: NextRequest) {
     // 2. Buscar faturas com asaas_charge_id
     const { data: faturas, error: faturasError } = await supabase
       .from('faturas')
-      .select('id, asaas_charge_id, status, valor, vencimento')
+      .select('id, asaas_charge_id, gateway_id, status, valor, vencimento')
       .eq('administradora_id', administradora_id)
-      .not('asaas_charge_id', 'is', null)
+      .or('asaas_charge_id.not.is.null,gateway_id.not.is.null')
 
     if (faturasError) {
       return NextResponse.json(
@@ -77,38 +151,32 @@ export async function POST(request: NextRequest) {
       try {
         resultado.faturas_verificadas++
 
-        // Buscar status atual no Asaas
-        const response = await fetch(
-          `${BASE_URL}/payments/${fatura.asaas_charge_id}`,
-          {
-            headers: {
-              'access_token': API_KEY,
-              'Content-Type': 'application/json'
-            }
-          }
-        )
+        const idBase = String(fatura.asaas_charge_id || fatura.gateway_id || '').trim()
+        if (!idBase) continue
+        const idsCandidatos = obterChargeIds(idBase)
 
-        if (!response.ok) {
-          console.error(`❌ Erro ao buscar fatura ${fatura.asaas_charge_id}: ${response.status}`)
+        let charge: any = null
+        let ultimoStatusHttp: number | null = null
+        for (const id of idsCandidatos) {
+          const response = await fetch(`${BASE_URL}/payments/${id}`, {
+            headers: {
+              access_token: API_KEY,
+              'Content-Type': 'application/json',
+            },
+          })
+          ultimoStatusHttp = response.status
+          if (response.ok) {
+            charge = await response.json()
+            break
+          }
+        }
+
+        if (!charge) {
+          console.error(`❌ Erro ao buscar fatura ${idBase}: ${ultimoStatusHttp}`)
           continue
         }
 
-        const charge = await response.json()
-
-        // Mapear status do Asaas
-        const statusMap: Record<string, string> = {
-          'PENDING': 'pendente',
-          'RECEIVED': 'paga',
-          'CONFIRMED': 'paga',
-          'OVERDUE': 'atrasada',
-          'REFUNDED': 'cancelada',
-          'RECEIVED_IN_CASH': 'paga',
-          'REFUND_REQUESTED': 'cancelada',
-          'CHARGEBACK_REQUESTED': 'cancelada',
-          'AWAITING_RISK_ANALYSIS': 'pendente'
-        }
-
-        const novoStatus = statusMap[charge.status] || 'pendente'
+        const novoStatus = mapearStatusAsaas(charge.status)
 
         // Verificar se QUALQUER dado mudou (não apenas o status)
         const valorMudou = Math.abs(charge.value - fatura.valor) > 0.01
@@ -148,7 +216,7 @@ export async function POST(request: NextRequest) {
             if (statusMudou) mudancas.push(`status: ${fatura.status} → ${novoStatus}`)
             if (valorMudou) mudancas.push(`valor: R$ ${fatura.valor} → R$ ${charge.value}`)
             if (vencimentoMudou) mudancas.push(`vencimento: ${fatura.vencimento} → ${charge.dueDate}`)
-            console.log(`✅ Fatura ${fatura.asaas_charge_id} atualizada: ${mudancas.join(', ')}`)
+            console.log(`✅ Fatura ${idBase} atualizada: ${mudancas.join(', ')}`)
           }
         }
 
