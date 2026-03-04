@@ -26,7 +26,6 @@ async function buscarConfigAsaas(administradoraId: string): Promise<{ api_key: s
     const asaasAtual = (financeiras || []).find(
       (f: any) =>
         String(f?.instituicao_financeira || '').toLowerCase() === 'asaas' &&
-        String(f?.status_integracao || '').toLowerCase() === 'ativa' &&
         !!f?.api_key
     )
     if (asaasAtual) {
@@ -42,13 +41,14 @@ async function buscarConfigAsaas(administradoraId: string): Promise<{ api_key: s
     .select('api_key, ambiente')
     .eq('administradora_id', administradoraId)
     .eq('instituicao_financeira', 'asaas')
-    .eq('status_integracao', 'ativa')
-    .maybeSingle()
+    .not('api_key', 'is', null)
+    .limit(1)
 
-  if (legado?.api_key) {
+  const legadoRow = Array.isArray(legado) ? legado[0] : legado
+  if (legadoRow?.api_key) {
     return {
-      api_key: String(legado.api_key),
-      ambiente: String(legado.ambiente || 'producao'),
+      api_key: String(legadoRow.api_key),
+      ambiente: String(legadoRow.ambiente || 'producao'),
     }
   }
 
