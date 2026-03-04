@@ -6,6 +6,54 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
+async function buscarConfigAsaas(administradoraId: string): Promise<{ api_key: string; ambiente: string } | null> {
+  const { data: administradora } = await supabase
+    .from('administradoras')
+    .select('tenant_id')
+    .eq('id', administradoraId)
+    .maybeSingle()
+
+  const tenantId = administradora?.tenant_id || null
+  if (tenantId) {
+    const { data: financeiras } = await supabase
+      .from('administradora_financeiras')
+      .select('api_key, ambiente, instituicao_financeira, status_integracao, ativo')
+      .eq('administradora_id', administradoraId)
+      .eq('tenant_id', tenantId)
+      .eq('ativo', true)
+
+    const asaasAtual = (financeiras || []).find(
+      (f: any) =>
+        String(f?.instituicao_financeira || '').toLowerCase() === 'asaas' &&
+        String(f?.status_integracao || '').toLowerCase() === 'ativa' &&
+        !!f?.api_key
+    )
+    if (asaasAtual) {
+      return {
+        api_key: String((asaasAtual as any).api_key),
+        ambiente: String((asaasAtual as any).ambiente || 'producao'),
+      }
+    }
+  }
+
+  const { data: legado } = await supabase
+    .from('administradoras_config_financeira')
+    .select('api_key, ambiente')
+    .eq('administradora_id', administradoraId)
+    .eq('instituicao_financeira', 'asaas')
+    .eq('status_integracao', 'ativa')
+    .maybeSingle()
+
+  if (legado?.api_key) {
+    return {
+      api_key: String(legado.api_key),
+      ambiente: String(legado.ambiente || 'producao'),
+    }
+  }
+
+  return null
+}
+
 interface ResultadoImportacao {
   total_cobrancas_encontradas: number
   faturas_importadas: number
@@ -54,22 +102,16 @@ export async function POST(request: NextRequest) {
       .eq('id', administradora_id)
       .single()
 
-    const { data: config, error: configError } = await supabase
-      .from('administradoras_config_financeira')
-      .select('api_key, ambiente')
-      .eq('administradora_id', administradora_id)
-      .eq('instituicao_financeira', 'asaas')
-      .eq('status_integracao', 'ativa')
-      .single()
+    const config = await buscarConfigAsaas(administradora_id)
 
-    if (configError || !config) {
-      console.error('❌ Configuração não encontrada:', configError)
+    if (!config?.api_key) {
+      console.error('❌ Configuração não encontrada')
       return NextResponse.json(
         { 
           error: 'Configuração do Asaas não encontrada',
           debug: {
             administradora_id,
-            error: configError?.message
+            error: 'Nenhuma financeira Asaas ativa com API key'
           }
         },
         { status: 404 }

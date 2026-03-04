@@ -6,6 +6,55 @@ import AsaasServiceInstance from '@/services/asaas-service'
  * API Route para recuperar faturas do Asaas e salvá-las no banco
  * Útil quando a fatura foi criada no Asaas mas não foi salva no banco
  */
+
+async function buscarConfigAsaas(administradoraId: string): Promise<{ api_key: string; ambiente: string } | null> {
+  const { data: administradora } = await supabase
+    .from('administradoras')
+    .select('tenant_id')
+    .eq('id', administradoraId)
+    .maybeSingle()
+
+  const tenantId = administradora?.tenant_id || null
+  if (tenantId) {
+    const { data: financeiras } = await supabase
+      .from('administradora_financeiras')
+      .select('api_key, ambiente, instituicao_financeira, status_integracao, ativo')
+      .eq('administradora_id', administradoraId)
+      .eq('tenant_id', tenantId)
+      .eq('ativo', true)
+
+    const asaasAtual = (financeiras || []).find(
+      (f: any) =>
+        String(f?.instituicao_financeira || '').toLowerCase() === 'asaas' &&
+        String(f?.status_integracao || '').toLowerCase() === 'ativa' &&
+        !!f?.api_key
+    )
+    if (asaasAtual) {
+      return {
+        api_key: String((asaasAtual as any).api_key),
+        ambiente: String((asaasAtual as any).ambiente || 'producao'),
+      }
+    }
+  }
+
+  const { data: legado } = await supabase
+    .from('administradoras_config_financeira')
+    .select('api_key, ambiente')
+    .eq('administradora_id', administradoraId)
+    .eq('instituicao_financeira', 'asaas')
+    .eq('status_integracao', 'ativa')
+    .maybeSingle()
+
+  if (legado?.api_key) {
+    return {
+      api_key: String(legado.api_key),
+      ambiente: String(legado.ambiente || 'producao'),
+    }
+  }
+
+  return null
+}
+
 export async function POST(request: NextRequest) {
   try {
     console.log("🚀 API Route /api/admin/recuperar-fatura-asaas chamada!")
@@ -31,15 +80,8 @@ export async function POST(request: NextRequest) {
     
     if (!apiKeyToUse) {
       console.log("🔍 Buscando API key no banco...")
-      const { data: config, error: erroConfig } = await supabase
-        .from('administradoras_config_financeira')
-        .select('api_key, ambiente')
-        .eq('administradora_id', administradora_id)
-        .eq('instituicao_financeira', 'asaas')
-        .eq('status_integracao', 'ativa')
-        .single()
-
-      if (erroConfig || !config || !config.api_key) {
+      const config = await buscarConfigAsaas(administradora_id)
+      if (!config?.api_key) {
         return NextResponse.json(
           { 
             sucesso: false,
