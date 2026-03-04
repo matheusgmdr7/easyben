@@ -48,23 +48,25 @@ export default function AdminLogin() {
     <div className="min-h-screen flex items-center justify-center bg-gray-100">
       <Card className="w-[400px]">
         <CardHeader>
-          <div className="flex items-center justify-center gap-3 sm:gap-4 md:gap-5 mb-2">
-            {logoUrl && (
-              <div className="relative w-20 h-20 sm:w-24 sm:h-24 md:w-28 md:h-28 flex-shrink-0">
-                <img
-                  src={logoUrl}
-                  alt="Logo"
-                  className="w-full h-full object-contain"
-                />
-              </div>
-            )}
-          <CardTitle>Login Administrativo</CardTitle>
+          <div className="flex items-center justify-center mb-2">
+            <CardTitle>Login Administrativo</CardTitle>
           </div>
           <CardDescription>Entre com suas credenciais para acessar o painel</CardDescription>
         </CardHeader>
         <CardContent>
 
           <form onSubmit={handleSubmit} className="space-y-4">
+            {logoUrl && (
+              <div className="flex justify-center pb-0">
+                <div className="relative h-14 sm:h-16 w-auto max-w-[220px] flex-shrink-0">
+                  <img
+                    src={logoUrl}
+                    alt="Logo"
+                    className="h-full w-auto object-contain"
+                  />
+                </div>
+              </div>
+            )}
             <div className="space-y-2">
               <Label htmlFor="email" className="font-semibold">Email</Label>
               <Input

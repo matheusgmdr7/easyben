@@ -125,25 +125,24 @@ export default function AdministradoraLoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          {/* Título com Logo ao lado */}
-          <div className="flex items-center justify-center gap-3 sm:gap-4 md:gap-5 mb-4">
-            {logoUrl && !logoFalhou && (
-              <div className="relative w-20 h-20 sm:w-24 sm:h-24 md:w-28 md:h-28 flex-shrink-0">
-                <img
-                  src={logoUrl}
-                  alt="Logo"
-                  className="w-full h-full object-contain"
-                  onError={() => setLogoFalhou(true)}
-                />
-              </div>
-            )}
-            <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold text-[#0F172A]">Portal da Administradora</h1>
-          </div>
+          <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold text-[#0F172A]">Portal da Administradora</h1>
           <p className="text-gray-600 mt-2">Faça login para acessar sua conta</p>
         </div>
 
         <div className="bg-white rounded-lg shadow-md p-6">
           <form onSubmit={handleSubmit} className="space-y-4">
+            {logoUrl && !logoFalhou && (
+              <div className="flex justify-center pb-0">
+                <div className="relative h-14 sm:h-16 w-auto max-w-[220px] flex-shrink-0">
+                  <img
+                    src={logoUrl}
+                    alt="Logo"
+                    className="h-full w-auto object-contain"
+                    onError={() => setLogoFalhou(true)}
+                  />
+                </div>
+              </div>
+            )}
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
                 Email
