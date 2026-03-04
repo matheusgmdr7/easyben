@@ -134,7 +134,7 @@ export default function AdministradoraSidebar() {
         if (tenantId) {
           const { data: tenant } = await supabase
             .from('tenants')
-            .select('logo_url, configuracoes')
+            .select('nome_marca, logo_url, configuracoes')
             .eq('id', tenantId)
             .maybeSingle()
 
@@ -147,10 +147,16 @@ export default function AdministradoraSidebar() {
             }
             setAdministradoraInfo((prev) => ({
               ...prev,
+              nome: tenant?.nome_marca || prev.nome,
               logo: normalizarUrlImagem(tenant.logo_url),
               logoAjuste: ajuste,
             }))
             setLogoFalhou(false)
+          } else if (tenant?.nome_marca) {
+            setAdministradoraInfo((prev) => ({
+              ...prev,
+              nome: tenant.nome_marca,
+            }))
           }
         }
       } catch (error) {

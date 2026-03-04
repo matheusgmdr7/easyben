@@ -10,6 +10,8 @@ export async function middleware(request: NextRequest) {
   const pathSegments = pathname.split('/').filter(Boolean)
   const primeiroSegmento = pathSegments[0] || ''
   const segundoSegmento = pathSegments[1] || ''
+  const primeiroSegmentoLower = primeiroSegmento.toLowerCase()
+  const segundoSegmentoLower = segundoSegmento.toLowerCase()
 
   // Rotas de portal que hoje existem sem prefixo de tenant.
   // Suportamos URL com tenant no domínio nativo, ex.: /alfa-seguros/admin/login
@@ -84,8 +86,8 @@ export async function middleware(request: NextRequest) {
       'favicon.ico',
     ])
 
-    if (primeiroSegmento && !rotasReservadas.has(primeiroSegmento.toLowerCase())) {
-      const slugBruto = primeiroSegmento.toLowerCase().trim()
+    if (primeiroSegmento && !rotasReservadas.has(primeiroSegmentoLower)) {
+      const slugBruto = primeiroSegmentoLower.trim()
       const slugSemHifen = slugBruto.replace(/-/g, '')
       const slugComHifenNormalizado = slugBruto
         .replace(/[^a-z0-9]+/g, '-')
@@ -130,7 +132,7 @@ export async function middleware(request: NextRequest) {
   const acessandoPortalSemSlug =
     !tenantResolvidoPorHost &&
     !tenantSlugDoCaminho &&
-    tenantPrefixedPortalRoots.has(primeiroSegmento.toLowerCase())
+    tenantPrefixedPortalRoots.has(primeiroSegmentoLower)
 
   if (dominiosNativosEasyben.has(hostnameSemPorta) && acessandoPortalSemSlug) {
     const url = request.nextUrl.clone()
@@ -139,22 +141,31 @@ export async function middleware(request: NextRequest) {
     return NextResponse.rewrite(url)
   }
 
-  // Adicionar tenant_slug ao header da requisição
-  const requestHeaders = new Headers(request.headers)
-  requestHeaders.set('x-tenant-slug', tenantSlug)
-  
   // Se a URL veio com tenant no caminho e rota de portal na sequência,
   // reescreve internamente para a rota sem slug mantendo o contexto do tenant.
-  const deveReescreverPortalPrefixed =
-    !!tenantSlugDoCaminho &&
+  // Mantém robustez mesmo quando o lookup do tenant por slug falhar temporariamente.
+  const pathTemPrefixoTenantPortal =
+    !!primeiroSegmento &&
     !!segundoSegmento &&
-    tenantPrefixedPortalRoots.has(segundoSegmento.toLowerCase())
+    !tenantPrefixedPortalRoots.has(primeiroSegmentoLower) &&
+    segundoSegmentoLower !== 'api' &&
+    segundoSegmentoLower !== '_next' &&
+    tenantPrefixedPortalRoots.has(segundoSegmentoLower)
+
+  const tenantSlugHeader = tenantSlugDoCaminho || (pathTemPrefixoTenantPortal ? primeiroSegmentoLower : tenantSlug)
+
+  // Adicionar tenant_slug ao header da requisição
+  const requestHeaders = new Headers(request.headers)
+  requestHeaders.set('x-tenant-slug', tenantSlugHeader)
+
+  const deveReescreverPortalPrefixed =
+    pathTemPrefixoTenantPortal
 
   const deveReescreverSlugAntigoParaAtual =
     !!tenantSlugDoCaminho &&
     primeiroSegmento &&
     primeiroSegmento.toLowerCase() !== String(tenantSlugDoCaminho).toLowerCase() &&
-    !tenantPrefixedPortalRoots.has(segundoSegmento.toLowerCase())
+    !tenantPrefixedPortalRoots.has(segundoSegmentoLower)
 
   const response = deveReescreverPortalPrefixed
     ? NextResponse.rewrite(new URL(`/${pathSegments.slice(1).join('/')}${search}`, request.url), {

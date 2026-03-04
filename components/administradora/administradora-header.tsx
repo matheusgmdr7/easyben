@@ -32,6 +32,10 @@ export default function AdministradoraHeader({ sidebarCollapsed = false }: Admin
   useEffect(() => {
     async function getAdministradoraInfo() {
       try {
+        let tenantId: string | null = null
+        let nomeFallback: string | null = null
+        let emailFallback: string | null = null
+
         // Buscar administradora logada do serviço
         const administradora = getAdministradoraLogada()
         
@@ -42,12 +46,12 @@ export default function AdministradoraHeader({ sidebarCollapsed = false }: Admin
             router.push("/administradora/login")
             return
           }
-          setAdministradoraEmail(emailLogin)
+          emailFallback = emailLogin
           
           // Buscar informações da administradora
           const { data: adminData, error } = await supabase
             .from('administradoras')
-            .select('nome, nome_fantasia, email_login')
+            .select('nome, nome_fantasia, email_login, tenant_id')
             .eq('email_login', emailLogin)
             .single()
 
@@ -57,13 +61,28 @@ export default function AdministradoraHeader({ sidebarCollapsed = false }: Admin
           }
 
           if (adminData) {
-            setAdministradoraNome(adminData.nome_fantasia || adminData.nome || "Administradora")
-            setAdministradoraEmail(adminData.email_login || emailLogin)
+            tenantId = adminData.tenant_id || null
+            nomeFallback = adminData.nome_fantasia || adminData.nome || "Administradora"
+            emailFallback = adminData.email_login || emailLogin
           }
         } else {
-          setAdministradoraNome(administradora.nome_fantasia || administradora.nome || "Administradora")
-          setAdministradoraEmail(administradora.email_login || null)
+          tenantId = administradora.tenant_id || null
+          nomeFallback = administradora.nome_fantasia || administradora.nome || "Administradora"
+          emailFallback = administradora.email_login || null
         }
+
+        if (tenantId) {
+          const { data: tenantData } = await supabase
+            .from("tenants")
+            .select("nome_marca")
+            .eq("id", tenantId)
+            .maybeSingle()
+
+          setAdministradoraNome(tenantData?.nome_marca || nomeFallback || "Administradora")
+        } else {
+          setAdministradoraNome(nomeFallback || "Administradora")
+        }
+        setAdministradoraEmail(emailFallback || null)
       } catch (error) {
         console.error("Erro ao carregar informações da administradora:", error)
       }
