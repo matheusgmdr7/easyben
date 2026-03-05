@@ -135,10 +135,29 @@ export async function middleware(request: NextRequest) {
     tenantPrefixedPortalRoots.has(primeiroSegmentoLower)
 
   if (dominiosNativosEasyben.has(hostnameSemPorta) && acessandoPortalSemSlug) {
-    const url = request.nextUrl.clone()
-    url.pathname = '/404'
-    url.search = ''
-    return NextResponse.rewrite(url)
+    const tenantSlugCookie = (request.cookies.get('tenant_slug')?.value || '').toLowerCase().trim()
+    if (tenantSlugCookie) {
+      const { data: tenantByCookie } = await supabaseAdmin
+        .from('tenants')
+        .select('slug')
+        .eq('slug', tenantSlugCookie)
+        .eq('status', 'ativo')
+        .maybeSingle()
+
+      if (tenantByCookie?.slug) {
+        tenantSlug = tenantByCookie.slug
+      } else {
+        const url = request.nextUrl.clone()
+        url.pathname = '/404'
+        url.search = ''
+        return NextResponse.rewrite(url)
+      }
+    } else {
+      const url = request.nextUrl.clone()
+      url.pathname = '/404'
+      url.search = ''
+      return NextResponse.rewrite(url)
+    }
   }
 
   // Se a URL veio com tenant no caminho e rota de portal na sequência,
