@@ -219,10 +219,11 @@ export async function middleware(request: NextRequest) {
     })
   })()
   
-  // Evita cache de HTML das telas de login no edge/CDN.
+  // Evita cache de HTML do portal da administradora no edge/CDN.
   // Isso previne mismatch de assets (_next/static/css hash antigo) após deploy.
-  const ehTelaLogin = pathname.endsWith('/login')
-  if (ehTelaLogin) {
+  const ehPortalAdministradora =
+    primeiroSegmentoLower === 'administradora' || segundoSegmentoLower === 'administradora'
+  if (ehPortalAdministradora) {
     response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0')
     response.headers.set('CDN-Cache-Control', 'no-store')
     response.headers.set('Netlify-CDN-Cache-Control', 'no-store')
