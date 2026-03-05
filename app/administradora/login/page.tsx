@@ -2,7 +2,7 @@
 
 import type React from "react"
 import { useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import Link from "next/link"
 import { autenticarAdministradora } from "@/services/auth-administradoras-service"
 import { Spinner } from "@/components/ui/spinner"
@@ -11,12 +11,29 @@ import { toast } from "sonner"
 
 export default function AdministradoraLoginPage() {
   const router = useRouter()
+  const pathname = usePathname()
   const [email, setEmail] = useState("")
   const [senha, setSenha] = useState("")
   const [loading, setLoading] = useState(false)
   const [mostrarSenha, setMostrarSenha] = useState(false)
   const [logoUrl, setLogoUrl] = useState<string | null>(null)
   const [logoFalhou, setLogoFalhou] = useState(false)
+
+  const extrairPrefixoTenantDaUrl = () => {
+    const segmentos = String(pathname || "")
+      .split("/")
+      .filter(Boolean)
+    const primeiro = (segmentos[0] || "").toLowerCase()
+    const rotasPortal = new Set(["admin", "administradora", "analista", "corretor", "gestor", "easyben-admin"])
+    if (!primeiro || rotasPortal.has(primeiro)) return ""
+    return primeiro
+  }
+
+  const montarRotaPortal = (rotaPortal: string) => {
+    const prefixoTenant = extrairPrefixoTenantDaUrl()
+    if (!prefixoTenant) return rotaPortal
+    return `/${prefixoTenant}${rotaPortal}`
+  }
 
   const normalizarUrlImagem = (url: string | null | undefined) => {
     const valor = String(url || "").trim()
@@ -59,10 +76,10 @@ export default function AdministradoraLoginPage() {
         // Redirecionar com base no status de login
         if (result.administradora?.status_login === "ativo") {
           console.log("✅ Administradora ativa, redirecionando para dashboard")
-          router.push("/administradora/dashboard")
+          router.push(montarRotaPortal("/administradora/dashboard"))
         } else {
           console.log("⚠️ Administradora não ativa, redirecionando para aguardando aprovação")
-          router.push("/administradora/aguardando-aprovacao")
+          router.push(montarRotaPortal("/administradora/aguardando-aprovacao"))
         }
       } else {
         console.error("❌ Login falhou:", result.message)
@@ -200,13 +217,13 @@ export default function AdministradoraLoginPage() {
 
           <div className="mt-6 space-y-2 text-center">
             <p className="text-sm text-gray-600">
-              <Link href="/administradora/recuperar-senha" className="text-[#0F172A] hover:underline font-medium">
+              <Link href={montarRotaPortal("/administradora/recuperar-senha")} className="text-[#0F172A] hover:underline font-medium">
                 Esqueceu sua senha?
               </Link>
             </p>
             <p className="text-sm text-gray-600">
               Não tem uma conta?{" "}
-              <Link href="/administradora/cadastro" className="text-[#0F172A] hover:underline font-medium">
+              <Link href={montarRotaPortal("/administradora/cadastro")} className="text-[#0F172A] hover:underline font-medium">
                 Cadastre-se
               </Link>
             </p>
