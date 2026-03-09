@@ -20,13 +20,18 @@ export default function AdministradoraLoginPage() {
   const [logoFalhou, setLogoFalhou] = useState(false)
 
   const extrairPrefixoTenantDaUrl = () => {
-    const segmentos = String(pathname || "")
-      .split("/")
-      .filter(Boolean)
+    // Priorizar pathname real da URL (window) para garantir tenant em rotas /{tenant}/administradora/...
+    const pathParaAnalise =
+      typeof window !== "undefined"
+        ? window.location.pathname
+        : String(pathname || "")
+    const segmentos = pathParaAnalise.split("/").filter(Boolean)
     const primeiro = (segmentos[0] || "").toLowerCase()
+    const segundo = (segmentos[1] || "").toLowerCase()
     const rotasPortal = new Set(["admin", "administradora", "analista", "corretor", "gestor", "easyben-admin"])
     if (!primeiro || rotasPortal.has(primeiro)) return ""
-    return primeiro
+    if (segundo && rotasPortal.has(segundo)) return primeiro
+    return ""
   }
 
   const montarRotaPortal = (rotaPortal: string) => {
@@ -101,12 +106,22 @@ export default function AdministradoraLoginPage() {
     let ativo = true
     async function carregarLogoTenant() {
       try {
-        const cookieTenantSlug = document.cookie
-          .split("; ")
-          .find((row) => row.startsWith("tenant_slug="))
-          ?.split("=")[1]
-
-        let tenantSlug = cookieTenantSlug || ""
+        // 1. Extrair tenant do pathname (ex: /benefit/administradora/login)
+        const pathSegments = window.location.pathname.split("/").filter(Boolean)
+        const primeiro = (pathSegments[0] || "").toLowerCase()
+        const segundo = (pathSegments[1] || "").toLowerCase()
+        const rotasPortal = new Set(["admin", "administradora", "analista", "corretor", "gestor", "easyben-admin"])
+        let tenantSlug = ""
+        if (primeiro && !rotasPortal.has(primeiro) && segundo && rotasPortal.has(segundo)) {
+          tenantSlug = primeiro
+        }
+        if (!tenantSlug) {
+          const cookieTenantSlug = document.cookie
+            .split("; ")
+            .find((row) => row.startsWith("tenant_slug="))
+            ?.split("=")[1]
+          tenantSlug = cookieTenantSlug || ""
+        }
         if (!tenantSlug) {
           const hostname = window.location.hostname
           const subdominio = hostname.split(".")[0]?.toLowerCase()
@@ -122,10 +137,16 @@ export default function AdministradoraLoginPage() {
         const json = await response.json().catch(() => ({}))
         if (!response.ok) return
 
-        const logo = normalizarUrlImagem(String(json?.data?.logo_url || "").trim())
+        const data = json?.data
+        const logo = normalizarUrlImagem(String(data?.logo_url || "").trim())
         if (ativo && logo) {
           setLogoUrl(logo)
           setLogoFalhou(false)
+        }
+        // Definir título da aba com nome da marca do tenant
+        if (ativo && data) {
+          const titulo = data.nome_marca || data.nome || "Portal da Administradora"
+          document.title = titulo
         }
       } catch {
         // sem bloqueio de login quando branding não estiver disponível

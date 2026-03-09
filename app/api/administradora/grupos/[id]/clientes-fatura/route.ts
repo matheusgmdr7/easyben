@@ -20,7 +20,19 @@ export async function GET(
         { status: 400 }
       )
     }
-    const tenantId = await getCurrentTenantId()
+
+    // Priorizar tenant da administradora (garante contexto correto em multi-tenant)
+    let tenantId: string
+    const { data: adm } = await supabaseAdmin
+      .from("administradoras")
+      .select("tenant_id")
+      .eq("id", administradoraId)
+      .maybeSingle()
+    if (adm?.tenant_id) {
+      tenantId = adm.tenant_id
+    } else {
+      tenantId = await getCurrentTenantId()
+    }
 
     // Garantir que o grupo pertence à administradora
     const { data: grupo, error: errGrupo } = await supabaseAdmin

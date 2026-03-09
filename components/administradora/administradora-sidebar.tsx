@@ -24,6 +24,7 @@ import {
   BuildingOffice2Icon,
   BanknotesIcon,
   BriefcaseIcon,
+  ChartBarSquareIcon,
 } from "@heroicons/react/24/outline"
 import { supabase } from "@/lib/supabase-auth"
 
@@ -424,6 +425,17 @@ export default function AdministradoraSidebar() {
                 >
                   {!isVisuallyCollapsed && <span className="truncate flex-1">Dashboard</span>}
                   <HomeIcon className="h-5 w-5 flex-shrink-0" />
+                </Link>
+              </li>
+              <li>
+                <Link
+                  href="/administradora/relatorios"
+                  className={getMenuItemClasses("/administradora/relatorios")}
+                  onClick={closeSidebar}
+                  title={isVisuallyCollapsed ? "Relatórios" : ""}
+                >
+                  {!isVisuallyCollapsed && <span className="truncate flex-1">Relatórios</span>}
+                  <ChartBarSquareIcon className="h-5 w-5 flex-shrink-0" />
                 </Link>
               </li>
               {/* Grupo de Beneficiários */}

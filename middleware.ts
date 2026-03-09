@@ -72,9 +72,12 @@ export async function middleware(request: NextRequest) {
     tenantSlug = 'contratando-planos'
   }
 
-  // 3. Fallback por slug no caminho para domínio nativo EasyBen:
-  //    ex.: /alfa-seguros ou /alfa-seguros/corretores/equipe/:token
-  if (!tenantResolvidoPorHost) {
+  // 3. Fallback/override por slug no caminho para domínio nativo EasyBen:
+  //    ex.: /benefit/administradora/login ou /alfa-seguros/corretores/equipe/:token
+  //    Mesmo que o tenant tenha sido resolvido pelo host (easyben.com.br),
+  //    permitimos que o slug do caminho defina o tenant da plataforma,
+  //    mantendo os dados isolados por tenant.
+  if (!tenantResolvidoPorHost || dominiosNativosEasyben.has(hostnameSemPorta)) {
     const rotasReservadas = new Set([
       'admin',
       'easyben-admin',

@@ -134,11 +134,11 @@ export default function FaturaGerarPage() {
       const res = await fetch(
         `/api/administradora/grupos/${grupoId}/clientes-fatura?administradora_id=${encodeURIComponent(administradoraId)}`
       )
-      if (!res.ok) throw new Error("Erro ao carregar clientes do grupo")
-      const data = await res.json()
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error((data as { error?: string })?.error || "Erro ao carregar clientes do grupo")
       setClientes(Array.isArray(data) ? data : [])
-    } catch {
-      toast.error("Erro ao carregar clientes do grupo")
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erro ao carregar clientes do grupo")
       setClientes([])
     } finally {
       setLoadingClientes(false)
