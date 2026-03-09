@@ -7,10 +7,13 @@ import { GruposBeneficiariosService, type GrupoBeneficiarios } from "@/services/
 import { adicionarAlertaSistema } from "@/services/administradora-alertas-service"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { AlertTriangle, ArrowLeft, Download, ExternalLink, Loader2, Pencil, Save, Trash2, X } from "lucide-react"
 import { formatarData, formatarMoeda } from "@/utils/formatters"
 import { toast } from "sonner"
@@ -34,6 +37,10 @@ export default function BeneficiarioDetalhesPage() {
   const [historico, setHistorico] = useState<any[]>([])
   const [produtoCliente, setProdutoCliente] = useState<any>(null)
   const [valorProdutoCliente, setValorProdutoCliente] = useState<number | null>(null)
+  const [corretores, setCorretores] = useState<{ id: string; nome: string }[]>([])
+  const [modalCorretorOpen, setModalCorretorOpen] = useState(false)
+  const [corretorSelecionadoId, setCorretorSelecionadoId] = useState<string>("__nenhum__")
+  const [salvandoCorretor, setSalvandoCorretor] = useState(false)
   const [excluindoFaturaId, setExcluindoFaturaId] = useState<string | null>(null)
   const [editandoDadosBasicos, setEditandoDadosBasicos] = useState(false)
   const [editandoContato, setEditandoContato] = useState(false)
@@ -71,6 +78,29 @@ export default function BeneficiarioDetalhesPage() {
     const d = String(cpf).replace(/\D/g, "")
     if (d.length === 11) return d.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4")
     return cpf
+  }
+
+  function normalizarCorretorId(valor: unknown): string | null {
+    const raw = String(valor ?? "").trim()
+    if (!raw) return null
+    const lower = raw.toLowerCase()
+    if (lower === "null" || lower === "undefined" || lower === "__nenhum__") return null
+    return raw
+  }
+
+  function obterCorretorIdAtual(): string | null {
+    if (!clienteSelecionado) return null
+    if (clienteSelecionado.cliente_tipo === "vida_importada") {
+      return normalizarCorretorId(clienteSelecionado?._vida?.corretor_id ?? clienteSelecionado?.cliente?.corretor_id)
+    }
+    return normalizarCorretorId(clienteSelecionado?.cliente?.corretor_id)
+  }
+
+  function obterNomeCorretorAtual(): string {
+    const corretorId = obterCorretorIdAtual()
+    if (!corretorId) return "—"
+    const nome = corretores.find((c) => c.id === corretorId)?.nome
+    return nome || "Corretor não encontrado"
   }
 
   const titularesDoGrupo = useMemo(() => {
@@ -121,6 +151,10 @@ export default function BeneficiarioDetalhesPage() {
       setLoading(true)
       const adm = getAdministradoraLogada()
       if (!adm?.id) throw new Error("Administradora não encontrada")
+
+      const corretoresRes = await fetch(`/api/administradora/corretores?administradora_id=${encodeURIComponent(adm.id)}`)
+      const corretoresData = await corretoresRes.json().catch(() => [])
+      setCorretores(Array.isArray(corretoresData) ? corretoresData.map((c: any) => ({ id: String(c.id), nome: String(c.nome || "") })) : [])
 
       const g = await GruposBeneficiariosService.buscarPorId(grupoId)
       setGrupo(g)
@@ -534,6 +568,76 @@ export default function BeneficiarioDetalhesPage() {
     }
   }
 
+  async function resolverClienteAdministradoraIdAtual(administradoraId: string): Promise<string | null> {
+    if (!clienteSelecionado) return null
+    if (clienteSelecionado.cliente_tipo === "cliente_administradora") {
+      return String(clienteSelecionado.cliente_id)
+    }
+    if (clienteSelecionado.cliente_tipo === "proposta") {
+      const propostaId = String(clienteSelecionado.cliente_id || "")
+      if (!propostaId) return null
+      const { supabase } = await import("@/lib/supabase")
+      const { data } = await supabase
+        .from("clientes_administradoras")
+        .select("id")
+        .eq("proposta_id", propostaId)
+        .eq("administradora_id", administradoraId)
+        .limit(1)
+      return data?.[0]?.id || null
+    }
+    const vida = clienteSelecionado._vida || clienteSelecionado.cliente
+    return resolverClienteAdministradoraIdVida(vida, administradoraId)
+  }
+
+  async function salvarCorretorBeneficiario() {
+    const adm = getAdministradoraLogada()
+    if (!adm?.id || !clienteSelecionado) {
+      toast.error("Administradora não identificada.")
+      return
+    }
+    const corretorIdFinal = normalizarCorretorId(corretorSelecionadoId)
+    const corretorIdAtual = obterCorretorIdAtual()
+    if ((corretorIdAtual || null) === (corretorIdFinal || null)) {
+      setModalCorretorOpen(false)
+      return
+    }
+
+    try {
+      setSalvandoCorretor(true)
+      let res: Response
+      if (clienteSelecionado.cliente_tipo === "vida_importada") {
+        res = await fetch(`/api/administradora/vidas-importadas/${encodeURIComponent(clienteSelecionado.id)}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            administradora_id: adm.id,
+            corretor_id: corretorIdFinal,
+          }),
+        })
+      } else {
+        const clienteAdmId = await resolverClienteAdministradoraIdAtual(adm.id)
+        if (!clienteAdmId) throw new Error("Cliente da administradora não encontrado para este beneficiário.")
+        res = await fetch(`/api/administradora/clientes/${encodeURIComponent(clienteAdmId)}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            administradora_id: adm.id,
+            corretor_id: corretorIdFinal,
+          }),
+        })
+      }
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(json?.error || "Erro ao atualizar corretor")
+      toast.success(corretorIdFinal ? "Corretor atualizado com sucesso." : "Vínculo de corretor removido.")
+      setModalCorretorOpen(false)
+      await carregarContexto()
+    } catch (e: any) {
+      toast.error(e?.message || "Erro ao atualizar corretor")
+    } finally {
+      setSalvandoCorretor(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex justify-center items-center h-64">
@@ -895,19 +999,36 @@ export default function BeneficiarioDetalhesPage() {
 
             <TabsContent value="contrato" className="space-y-4">
               {contrato || produtoCliente || valorProdutoCliente != null ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-0 text-sm border border-gray-200 rounded-lg overflow-hidden">
-                  {[
-                    { label: "Número", val: contrato?.numero || contrato?.numero_contrato || "-" },
-                    { label: "Data Vigência", val: contrato?.data_vigencia ? String(contrato.data_vigencia).slice(0, 10) : "-" },
-                    { label: "Valor Mensal", val: (valorProdutoCliente ?? contrato?.valor_mensal) != null ? `R$ ${Number(valorProdutoCliente ?? contrato?.valor_mensal).toFixed(2)}` : "-" },
-                    { label: "Produto vinculado", val: produtoCliente?.nome || "-" },
-                  ].map((c, i) => (
-                    <div key={`${c.label}-${i}`} className={`p-3 ${Math.floor(i / 2) % 2 === 0 ? "bg-gray-50" : "bg-white"}`}>
-                      <span className="text-gray-500 block text-xs font-medium">{c.label}</span>
-                      <span className="text-gray-900">{c.val}</span>
-                    </div>
-                  ))}
-                </div>
+                <>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-0 text-sm border border-gray-200 rounded-lg overflow-hidden">
+                    {[
+                      { label: "Número", val: contrato?.numero || contrato?.numero_contrato || "-" },
+                      { label: "Data Vigência", val: contrato?.data_vigencia ? String(contrato.data_vigencia).slice(0, 10) : "-" },
+                      { label: "Valor Mensal", val: (valorProdutoCliente ?? contrato?.valor_mensal) != null ? `R$ ${Number(valorProdutoCliente ?? contrato?.valor_mensal).toFixed(2)}` : "-" },
+                      { label: "Produto vinculado", val: produtoCliente?.nome || "-" },
+                      { label: "Corretor", val: obterNomeCorretorAtual() },
+                    ].map((c, i) => (
+                      <div key={`${c.label}-${i}`} className={`p-3 ${Math.floor(i / 2) % 2 === 0 ? "bg-gray-50" : "bg-white"}`}>
+                        <span className="text-gray-500 block text-xs font-medium">{c.label}</span>
+                        <span className="text-gray-900">{c.val}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex justify-end">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        const atual = obterCorretorIdAtual()
+                        setCorretorSelecionadoId(atual || "__nenhum__")
+                        setModalCorretorOpen(true)
+                      }}
+                    >
+                      <Pencil className="h-3.5 w-3.5 mr-1" />
+                      {obterCorretorIdAtual() ? "Trocar corretor" : "Vincular corretor"}
+                    </Button>
+                  </div>
+                </>
               ) : (
                 <p className="text-sm text-gray-500">Nenhum contrato vinculado.</p>
               )}
@@ -952,6 +1073,50 @@ export default function BeneficiarioDetalhesPage() {
           </Tabs>
         </CardContent>
       </Card>
+
+      <Dialog open={modalCorretorOpen} onOpenChange={setModalCorretorOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{obterCorretorIdAtual() ? "Trocar corretor" : "Vincular corretor"}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <p className="text-sm text-gray-600">
+              Beneficiário: <span className="font-medium text-gray-900">{d?.nome || "—"}</span>
+            </p>
+            <div>
+              <Label className="text-sm">Corretor(a)</Label>
+              <Select value={corretorSelecionadoId} onValueChange={setCorretorSelecionadoId}>
+                <SelectTrigger className="mt-1.5">
+                  <SelectValue placeholder="Selecione o corretor" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__nenhum__">Sem corretor</SelectItem>
+                  {corretores.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.nome}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setModalCorretorOpen(false)} disabled={salvandoCorretor}>
+              Cancelar
+            </Button>
+            <Button onClick={salvarCorretorBeneficiario} disabled={salvandoCorretor}>
+              {salvandoCorretor ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Salvando...
+                </>
+              ) : (
+                "Salvar"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

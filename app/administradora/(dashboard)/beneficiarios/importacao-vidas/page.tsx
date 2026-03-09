@@ -36,7 +36,6 @@ const CAMPOS_ALVO = [
   { id: "telefone", label: "Telefone", obrigatorio: false },
   { id: "email", label: "E-mail", obrigatorio: false },
   { id: "observacoes", label: "Observações", obrigatorio: false },
-  { id: "corretor", label: "Corretor(a)", obrigatorio: false },
 ] as const
 
 const TIPO_NORMALIZE: Record<string, string> = {
@@ -195,20 +194,19 @@ type LinhaPreview = {
   telefone: string
   email: string
   observacoes: string
-  corretor: string
 }
 
 const CAMPOS_TABELA: (keyof LinhaPreview)[] = [
   "nome", "cpf", "nome_mae", "nome_pai", "tipo", "data_nascimento", "idade", "sexo", "estado_civil",
   "parentesco", "cpf_titular", "identidade", "cns", "acomodacao",
-  "cep", "logradouro", "numero", "complemento", "bairro", "cidade", "estado", "telefone", "email", "observacoes", "corretor"
+  "cep", "logradouro", "numero", "complemento", "bairro", "cidade", "estado", "telefone", "email", "observacoes"
 ]
 
 const LABEL_CAMPO: Record<keyof LinhaPreview, string> = {
   nome: "Nome", cpf: "CPF", nome_mae: "Nome mãe", nome_pai: "Nome pai", tipo: "Tipo", data_nascimento: "Dt. nasc.", idade: "Idade",
   sexo: "Sexo", estado_civil: "Est. civil", parentesco: "Parentesco", cpf_titular: "CPF Tit.", identidade: "RG", cns: "CNS", acomodacao: "Acomod.",
   cep: "CEP", logradouro: "Logradouro", numero: "Nº", complemento: "Compl.", bairro: "Bairro", cidade: "Cidade", estado: "UF",
-  telefone: "Telefone", email: "E-mail", observacoes: "Obs.", corretor: "Corretor(a)",
+  telefone: "Telefone", email: "E-mail", observacoes: "Obs.",
 }
 
 export default function ImportacaoVidasPage() {
@@ -216,7 +214,6 @@ export default function ImportacaoVidasPage() {
   const [administradoraId, setAdministradoraId] = useState<string | null>(null)
   const [grupos, setGrupos] = useState<GrupoBeneficiarios[]>([])
   const [produtos, setProdutos] = useState<{ id: string; nome?: string }[]>([])
-  const [corretores, setCorretores] = useState<{ id: string; nome: string }[]>([])
   const [file, setFile] = useState<File | null>(null)
   const [headers, setHeaders] = useState<string[]>([])
   const [rows, setRows] = useState<Record<string, unknown>[]>([])
@@ -260,7 +257,6 @@ export default function ImportacaoVidasPage() {
     telefone: "",
     email: "",
     observacoes: "",
-    corretor: "",
   })
 
   useEffect(() => {
@@ -283,14 +279,6 @@ export default function ImportacaoVidasPage() {
         toast.error("Erro ao carregar produtos dos contratos")
         setProdutos([])
       })
-  }, [administradoraId])
-
-  useEffect(() => {
-    if (!administradoraId) return
-    fetch(`/api/administradora/corretores?administradora_id=${encodeURIComponent(administradoraId)}`)
-      .then((r) => r.json())
-      .then((d) => setCorretores(Array.isArray(d) ? d.map((c: any) => ({ id: String(c.id), nome: String(c.nome || "") })) : []))
-      .catch(() => setCorretores([]))
   }, [administradoraId])
 
   const onFile = useCallback((f: File | null) => {
@@ -324,7 +312,6 @@ export default function ImportacaoVidasPage() {
             if (c.id === "nome_pai" && (x.includes("pai"))) return true
             if (c.id === "cpf_titular" && x.includes("titular") && x.includes("cpf")) return true
             if (c.id === "estado" && (x === "uf" || x === "estado")) return true
-            if (c.id === "corretor" && (x.includes("corretor") || x.includes("corretora"))) return true
             return false
           })
           if (i >= 0) auto[c.id] = h[i]
@@ -388,7 +375,6 @@ export default function ImportacaoVidasPage() {
         telefone: getVal(row, "telefone", mapCol),
         email: getVal(row, "email", mapCol),
         observacoes: getVal(row, "observacoes", mapCol),
-        corretor: getVal(row, "corretor", mapCol),
       }
     })
   }, [rows, mapCol, getVal])
@@ -566,7 +552,6 @@ export default function ImportacaoVidasPage() {
         telefone: (manualForm.telefone || "").trim(),
         email: (manualForm.email || "").trim(),
         observacoes: (manualForm.observacoes || "").trim(),
-        corretor: (manualForm.corretor || "").trim(),
         dados_adicionais: {
           ...(manualForm.orgao_emissor?.trim() ? { orgao_emissor: manualForm.orgao_emissor.trim() } : {}),
         },
@@ -612,7 +597,6 @@ export default function ImportacaoVidasPage() {
         telefone: "",
         email: "",
         observacoes: "",
-        corretor: "",
       })
       setManualOpen(false)
     } catch (e: unknown) {
@@ -694,20 +678,6 @@ export default function ImportacaoVidasPage() {
                         <SelectContent>
                           {ESTADO_CIVIL_OPCOES.map((opt) => (
                             <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    ) : campo.id === "corretor" ? (
-                      <Select
-                        value={manualForm[campo.id] || ""}
-                        onValueChange={(v) => setManualForm((p) => ({ ...p, [campo.id]: v }))}
-                      >
-                        <SelectTrigger className="h-10 w-full rounded-md border border-gray-300 bg-background px-3 py-2 text-sm">
-                          <SelectValue placeholder="Selecione o corretor" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {corretores.map((c) => (
-                            <SelectItem key={c.id} value={c.nome}>{c.nome || "-"}</SelectItem>
                           ))}
                         </SelectContent>
                       </Select>

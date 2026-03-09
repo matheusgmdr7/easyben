@@ -12,8 +12,9 @@ import { Label } from "@/components/ui/label"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { ModalConfirmacaoExclusao } from "@/components/administradora/modal-confirmacao-exclusao"
-import { ArrowLeft, FileText, FileSearch, UserMinus, Search, ChevronLeft, ChevronRight } from "lucide-react"
+import { ArrowLeft, FileText, FileSearch, UserMinus, Search, ChevronLeft, ChevronRight, UserPlus, Loader2 } from "lucide-react"
 
 export default function DetalhesGrupoPage() {
   const params = useParams()
@@ -23,6 +24,7 @@ export default function DetalhesGrupoPage() {
 
   const [grupo, setGrupo] = useState<GrupoBeneficiarios | null>(null)
   const [loading, setLoading] = useState(true)
+  const [loadingClientes, setLoadingClientes] = useState(false)
   const [clientes, setClientes] = useState<any[]>([])
   const [showModalGerarFatura, setShowModalGerarFatura] = useState(false)
   const [clienteSelecionado, setClienteSelecionado] = useState<any>(null)
@@ -41,6 +43,15 @@ export default function DetalhesGrupoPage() {
   const [itemParaExcluir, setItemParaExcluir] = useState<any>(null)
   const [excluindoBeneficiario, setExcluindoBeneficiario] = useState(false)
   const [corretores, setCorretores] = useState<{ id: string; nome: string }[]>([])
+  const [modalCorretorOpen, setModalCorretorOpen] = useState(false)
+  const [itemCorretor, setItemCorretor] = useState<any>(null)
+  const [corretorSelecionadoId, setCorretorSelecionadoId] = useState<string>("__nenhum__")
+  const [salvandoCorretor, setSalvandoCorretor] = useState(false)
+  const [selecionadosSemCorretor, setSelecionadosSemCorretor] = useState<Set<string>>(new Set())
+  const [modalCorretorLoteOpen, setModalCorretorLoteOpen] = useState(false)
+  const [corretorLoteId, setCorretorLoteId] = useState<string>("")
+  const [salvandoCorretorLote, setSalvandoCorretorLote] = useState(false)
+  const [modoSelecaoCorretorLote, setModoSelecaoCorretorLote] = useState(false)
 
   function getTipoItem(item: any): "titular" | "dependente" {
     if (item.cliente_tipo === "vida_importada") {
@@ -105,6 +116,7 @@ export default function DetalhesGrupoPage() {
 
   async function carregarClientes() {
     try {
+      setLoadingClientes(true)
       const { supabase } = await import("@/lib/supabase")
       
       // Buscar clientes vinculados ao grupo
@@ -129,6 +141,33 @@ export default function DetalhesGrupoPage() {
         if (!atual || String(atual?.tipo || "").toLowerCase() === "dependente") {
           vidaPorClienteAdmId.set(caId, v)
         }
+      }
+
+      const vidasComoClientes = vidasArray.map((v: { corretor_id?: string | null }) => ({
+        id: v.id,
+        cliente_id: v.id,
+        cliente_tipo: "vida_importada",
+        cliente: {
+          nome: v.nome,
+          cpf: v.cpf,
+          nome_mae: v.nome_mae,
+          tipo: v.tipo,
+          data_nascimento: v.data_nascimento,
+          idade: v.idade,
+          parentesco: v.parentesco,
+          cpf_titular: v.cpf_titular,
+          produto_id: v.produto_id,
+          ativo: v.ativo !== false,
+        },
+        situacao: v.ativo !== false ? "Ativo" : "Inativo",
+        _vida: { ...v, valor_mensal: v.valor_mensal },
+      }))
+
+      // Otimização: quando há vidas importadas, elas são a fonte oficial da tela.
+      // Nesse cenário não precisamos montar os dados de clientes_grupos (query pesada em lote).
+      if (vidasComoClientes.length > 0) {
+        setClientes(vidasComoClientes)
+        return
       }
 
       // Buscar dados completos dos clientes
@@ -215,25 +254,7 @@ export default function DetalhesGrupoPage() {
       )
 
       const clientesFiltrados = clientesCompletos.filter((c) => c.cliente)
-      const vidasComoClientes = vidasArray.map((v: { corretor_id?: string | null }) => ({
-        id: v.id,
-        cliente_id: v.id,
-        cliente_tipo: "vida_importada",
-        cliente: {
-          nome: v.nome,
-          cpf: v.cpf,
-          nome_mae: v.nome_mae,
-          tipo: v.tipo,
-          data_nascimento: v.data_nascimento,
-          idade: v.idade,
-          parentesco: v.parentesco,
-          cpf_titular: v.cpf_titular,
-          produto_id: v.produto_id,
-          ativo: v.ativo !== false,
-        },
-        situacao: v.ativo !== false ? "Ativo" : "Inativo",
-        _vida: { ...v, valor_mensal: v.valor_mensal },
-      }))
+
       // Fonte única por grupo:
       // - Se houver vidas importadas, elas são a origem oficial dos beneficiários.
       // - Só usa clientes_grupos quando o grupo não tiver vidas importadas.
@@ -242,6 +263,8 @@ export default function DetalhesGrupoPage() {
     } catch (error: any) {
       console.error("Erro ao carregar clientes:", error)
       toast.error("Erro ao carregar clientes")
+    } finally {
+      setLoadingClientes(false)
     }
   }
 
@@ -250,6 +273,172 @@ export default function DetalhesGrupoPage() {
     const d = String(cpf).replace(/\D/g, "")
     if (d.length === 11) return d.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4")
     return cpf
+  }
+
+  function normalizarCorretorId(valor: unknown): string | null {
+    const raw = String(valor ?? "").trim()
+    if (!raw) return null
+    const lower = raw.toLowerCase()
+    if (lower === "null" || lower === "undefined" || lower === "__nenhum__") return null
+    return raw
+  }
+
+  function obterCorretorIdItem(item: any): string | null {
+    if (!item) return null
+    const idBruto = item.cliente_tipo === "vida_importada"
+      ? ((item._vida as { corretor_id?: string | null })?.corretor_id ?? null)
+      : ((item.cliente as { corretor_id?: string | null })?.corretor_id ?? null)
+    return normalizarCorretorId(idBruto)
+  }
+
+  function itemTemCorretor(item: any): boolean {
+    const corretorId = obterCorretorIdItem(item)
+    if (!corretorId) return false
+    return corretores.some((c) => c.id === corretorId)
+  }
+
+  function chaveSelecaoItem(item: any): string {
+    return item.cliente_tipo === "vida_importada"
+      ? `vida:${String(item.id)}`
+      : `cliente:${String(item.cliente_id)}`
+  }
+
+  function obterNomeCorretor(corretorId: string | null | undefined): string {
+    const id = normalizarCorretorId(corretorId)
+    if (!id) return "—"
+    const nome = corretores.find((c) => c.id === id)?.nome
+    return nome || "Corretor não encontrado"
+  }
+
+  function abrirModalCorretor(item: any) {
+    setItemCorretor(item)
+    const corretorIdAtual = obterCorretorIdItem(item)
+    setCorretorSelecionadoId(corretorIdAtual || "__nenhum__")
+    setModalCorretorOpen(true)
+  }
+
+  async function atualizarCorretorDoItem(item: any, corretorIdFinal: string | null) {
+    const adm = getAdministradoraLogada()
+    if (!adm?.id || !item) throw new Error("Beneficiário inválido")
+
+    let res: Response
+    if (item.cliente_tipo === "vida_importada") {
+      res = await fetch(`/api/administradora/vidas-importadas/${item.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          administradora_id: adm.id,
+          corretor_id: corretorIdFinal,
+        }),
+      })
+    } else {
+      res = await fetch(`/api/administradora/clientes/${item.cliente_id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          administradora_id: adm.id,
+          corretor_id: corretorIdFinal,
+        }),
+      })
+    }
+    const json = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(json?.error || "Erro ao atualizar corretor")
+  }
+
+  async function salvarCorretorDoBeneficiario() {
+    if (!itemCorretor) return
+
+    const corretorIdFinal = normalizarCorretorId(corretorSelecionadoId)
+    const corretorIdAnterior = obterCorretorIdItem(itemCorretor)
+
+    if ((corretorIdAnterior || null) === (corretorIdFinal || null)) {
+      setModalCorretorOpen(false)
+      setItemCorretor(null)
+      return
+    }
+
+    try {
+      setSalvandoCorretor(true)
+      await atualizarCorretorDoItem(itemCorretor, corretorIdFinal)
+      await carregarClientes()
+      toast.success(corretorIdFinal ? "Corretor atualizado com sucesso." : "Vínculo de corretor removido.")
+      setModalCorretorOpen(false)
+      setItemCorretor(null)
+    } catch (e: any) {
+      toast.error(e?.message || "Erro ao atualizar corretor")
+    } finally {
+      setSalvandoCorretor(false)
+    }
+  }
+
+  function toggleSelecaoSemCorretor(item: any) {
+    if (itemTemCorretor(item)) return
+    const key = chaveSelecaoItem(item)
+    setSelecionadosSemCorretor((prev) => {
+      const prox = new Set(prev)
+      if (prox.has(key)) prox.delete(key)
+      else prox.add(key)
+      return prox
+    })
+  }
+
+  function limparSelecaoSemCorretor() {
+    setSelecionadosSemCorretor(new Set())
+  }
+
+  function selecionarTodosBeneficiariosDoGrupo() {
+    const ids = clientes
+      .filter((item) => !itemTemCorretor(item))
+      .map((item) => chaveSelecaoItem(item))
+    setSelecionadosSemCorretor(new Set(ids))
+  }
+
+  function alternarModoSelecaoCorretorLote() {
+    setModoSelecaoCorretorLote((prev) => {
+      const proximo = !prev
+      if (!proximo) {
+        setSelecionadosSemCorretor(new Set())
+      }
+      return proximo
+    })
+  }
+
+  async function vincularCorretorEmLote() {
+    const corretorIdFinal = normalizarCorretorId(corretorLoteId)
+    if (!corretorIdFinal) {
+      toast.error("Selecione um corretor")
+      return
+    }
+    const itensSelecionados = clientes.filter((item) => {
+      const key = chaveSelecaoItem(item)
+      return selecionadosSemCorretor.has(key) && !itemTemCorretor(item)
+    })
+    if (itensSelecionados.length === 0) {
+      toast.error("Selecione ao menos um beneficiário sem corretor")
+      return
+    }
+
+    try {
+      setSalvandoCorretorLote(true)
+      const resultados = await Promise.allSettled(
+        itensSelecionados.map((item) => atualizarCorretorDoItem(item, corretorIdFinal))
+      )
+      const sucesso = resultados.filter((r) => r.status === "fulfilled").length
+      const erro = resultados.length - sucesso
+      await carregarClientes()
+      setSelecionadosSemCorretor(new Set())
+      setModalCorretorLoteOpen(false)
+      setCorretorLoteId("")
+      if (erro === 0) {
+        toast.success(`${sucesso} beneficiário(s) vinculado(s) ao corretor.`)
+      } else {
+        toast.warning(`${sucesso} vinculado(s) e ${erro} com erro.`)
+      }
+    } catch (e: any) {
+      toast.error(e?.message || "Erro ao vincular corretor em lote")
+    } finally {
+      setSalvandoCorretorLote(false)
+    }
   }
 
   async function handleGerarFatura(cliente: any) {
@@ -354,10 +543,7 @@ export default function DetalhesGrupoPage() {
   const clientesFiltrados = clientes.filter((item) => {
     if (filtroTipo === "titular" && getTipoItem(item) !== "titular") return false
     if (filtroCorretora !== "todas") {
-      const corretorId =
-        item.cliente_tipo === "vida_importada"
-          ? (item._vida as { corretor_id?: string | null })?.corretor_id
-          : (item.cliente as { corretor_id?: string | null })?.corretor_id
+      const corretorId = obterCorretorIdItem(item)
       if ((corretorId || "") !== filtroCorretora) return false
     }
     if (!filtro.trim()) return true
@@ -378,10 +564,30 @@ export default function DetalhesGrupoPage() {
   )
   const inicio = (paginaAtualAjustada - 1) * itensPorPagina + 1
   const fim = Math.min(paginaAtualAjustada * itensPorPagina, clientesFiltrados.length)
+  const totalSelecionadosSemCorretor = clientes.filter((item) => {
+    const key = chaveSelecaoItem(item)
+    return selecionadosSemCorretor.has(key) && !itemTemCorretor(item)
+  }).length
 
   useEffect(() => {
     setPaginaAtual(1)
   }, [filtro, filtroTipo, filtroCorretora])
+
+  useEffect(() => {
+    setSelecionadosSemCorretor((prev) => {
+      if (prev.size === 0) return prev
+      const validos = new Set(
+        clientes
+          .filter((item) => !itemTemCorretor(item))
+          .map((item) => chaveSelecaoItem(item))
+      )
+      const prox = new Set<string>()
+      prev.forEach((id) => {
+        if (validos.has(id)) prox.add(id)
+      })
+      return prox
+    })
+  }, [clientes])
 
   const titularesDoGrupo = useMemo(() => {
     return clientes
@@ -528,7 +734,38 @@ export default function DetalhesGrupoPage() {
 
       {/* Lista de Clientes - mesmo design da tabela de grupos */}
       <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
-        {clientesFiltrados.length === 0 ? (
+        <div className="px-4 py-3 border-b border-gray-200 bg-gray-50/50 flex flex-wrap items-center justify-between gap-2">
+          <p className="text-sm text-gray-600">
+            Selecionados sem corretor: <span className="font-semibold text-gray-900">{totalSelecionadosSemCorretor}</span>
+            {loadingClientes && <span className="ml-2 text-xs text-gray-500 animate-pulse">Carregando beneficiários...</span>}
+          </p>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={alternarModoSelecaoCorretorLote}>
+              {modoSelecaoCorretorLote ? "Fechar seleção" : "Selecionar beneficiários"}
+            </Button>
+            {modoSelecaoCorretorLote && (
+              <>
+                <Button variant="outline" size="sm" onClick={selecionarTodosBeneficiariosDoGrupo}>
+                  Selecionar todos
+                </Button>
+                <Button variant="outline" size="sm" onClick={limparSelecaoSemCorretor}>
+                  Limpar seleção
+                </Button>
+                <Button
+                  size="sm"
+                  className="bg-[#0F172A] hover:bg-[#1E293B] text-white"
+                  disabled={totalSelecionadosSemCorretor === 0}
+                  onClick={() => setModalCorretorLoteOpen(true)}
+                >
+                  Vincular corretor em lote
+                </Button>
+              </>
+            )}
+          </div>
+        </div>
+        {loadingClientes ? (
+          <div className="px-4 py-8 text-sm text-gray-500 animate-pulse">Carregando informações dos beneficiários...</div>
+        ) : clientesFiltrados.length === 0 ? (
           <div className="text-center py-8 text-gray-500">
             {filtro.trim() || filtroTipo !== "titular" || filtroCorretora !== "todas"
               ? "Nenhum cliente encontrado com os filtros aplicados"
@@ -539,6 +776,7 @@ export default function DetalhesGrupoPage() {
             <Table>
               <TableHeader>
                 <TableRow className="bg-gray-50">
+                  {modoSelecaoCorretorLote && <TableHead className="font-bold w-[50px]">Sel.</TableHead>}
                   <TableHead className="font-bold">Nome</TableHead>
                   <TableHead className="font-bold">CPF/CNPJ</TableHead>
                   <TableHead className="font-bold">Tipo</TableHead>
@@ -558,6 +796,18 @@ export default function DetalhesGrupoPage() {
                     })()
                   return (
                   <TableRow key={item.id} className="hover:bg-gray-50">
+                    {modoSelecaoCorretorLote && (
+                      <TableCell>
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 accent-[#0F172A] cursor-pointer disabled:cursor-not-allowed"
+                          disabled={itemTemCorretor(item)}
+                          checked={selecionadosSemCorretor.has(chaveSelecaoItem(item))}
+                          onChange={() => toggleSelecaoSemCorretor(item)}
+                          title={itemTemCorretor(item) ? "Beneficiário já possui corretor vinculado" : "Selecionar para vincular corretor"}
+                        />
+                      </TableCell>
+                    )}
                     <TableCell className="font-medium">
                       <div>
                         {item.cliente?.nome || "-"}
@@ -592,13 +842,7 @@ export default function DetalhesGrupoPage() {
                       </span>
                     </TableCell>
                     <TableCell className="text-gray-700">
-                      {(() => {
-                        const corretorId =
-                          item.cliente_tipo === "vida_importada"
-                            ? (item._vida as { corretor_id?: string | null })?.corretor_id
-                            : (item.cliente as { corretor_id?: string | null })?.corretor_id
-                        return corretorId ? (corretores.find((c) => c.id === corretorId)?.nome ?? "—") : "—"
-                      })()}
+                      {obterNomeCorretor(obterCorretorIdItem(item))}
                     </TableCell>
                   <TableCell className="text-right">
                     <div className="flex items-center justify-end gap-1.5">
@@ -708,6 +952,96 @@ export default function DetalhesGrupoPage() {
         onConfirm={() => itemParaExcluir && handleExcluir(itemParaExcluir)}
         carregando={excluindoBeneficiario}
       />
+
+      <Dialog open={modalCorretorOpen} onOpenChange={setModalCorretorOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {obterCorretorIdItem(itemCorretor) ? "Trocar corretor do beneficiario" : "Vincular corretor ao beneficiario"}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <p className="text-sm text-gray-600">
+              Beneficiario: <span className="font-medium text-gray-900">{itemCorretor?.cliente?.nome || "—"}</span>
+            </p>
+            <div>
+              <Label className="text-sm">Corretor(a)</Label>
+              <Select value={corretorSelecionadoId} onValueChange={setCorretorSelecionadoId}>
+                <SelectTrigger className="mt-1.5">
+                  <SelectValue placeholder="Selecione o corretor" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__nenhum__">Sem corretor</SelectItem>
+                  {corretores.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.nome}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setModalCorretorOpen(false)} disabled={salvandoCorretor}>
+              Cancelar
+            </Button>
+            <Button onClick={salvarCorretorDoBeneficiario} disabled={salvandoCorretor}>
+              {salvandoCorretor ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Salvando...
+                </>
+              ) : (
+                "Salvar"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={modalCorretorLoteOpen} onOpenChange={setModalCorretorLoteOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Vincular corretor em lote</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <p className="text-sm text-gray-600">
+              Beneficiários selecionados (sem corretor):{" "}
+              <span className="font-medium text-gray-900">{totalSelecionadosSemCorretor}</span>
+            </p>
+            <div>
+              <Label className="text-sm">Corretor(a)</Label>
+              <Select value={corretorLoteId} onValueChange={setCorretorLoteId}>
+                <SelectTrigger className="mt-1.5">
+                  <SelectValue placeholder="Selecione o corretor" />
+                </SelectTrigger>
+                <SelectContent>
+                  {corretores.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.nome}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setModalCorretorLoteOpen(false)} disabled={salvandoCorretorLote}>
+              Cancelar
+            </Button>
+            <Button onClick={vincularCorretorEmLote} disabled={salvandoCorretorLote || !corretorLoteId}>
+              {salvandoCorretorLote ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Salvando...
+                </>
+              ) : (
+                "Vincular"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Modal Gerar Fatura */}
       {showModalGerarFatura && clienteSelecionado && (
