@@ -16,25 +16,96 @@ export async function GET(
       return NextResponse.json({ error: "ID do contrato é obrigatório" }, { status: 400 })
     }
 
-    const tenantId = await getCurrentTenantId()
+    // Primeiro tenta por tenant atual; se não encontrar, fallback por ID (dados legados sem tenant_id).
+    const tenantIdAtual = await getCurrentTenantId()
 
-    const { data: contrato, error: errContrato } = await supabaseAdmin
+    let { data: contrato, error: errContrato } = await supabaseAdmin
       .from("contratos_administradora")
       .select("*")
       .eq("id", id)
-      .eq("tenant_id", tenantId)
+      .eq("tenant_id", tenantIdAtual)
       .single()
+
+    if (errContrato || !contrato) {
+      const fallbackContrato = await supabaseAdmin
+        .from("contratos_administradora")
+        .select("*")
+        .eq("id", id)
+        .maybeSingle()
+      contrato = fallbackContrato.data
+      errContrato = fallbackContrato.error as any
+    }
 
     if (errContrato || !contrato) {
       return NextResponse.json({ error: "Contrato não encontrado" }, { status: 404 })
     }
 
-    const { data: produtos } = await supabaseAdmin
+    const tenantContrato = (contrato as any)?.tenant_id ? String((contrato as any).tenant_id) : null
+
+    let produtos: Array<Record<string, any>> = []
+    let queryProdutos = supabaseAdmin
       .from("produtos_contrato_administradora")
       .select("id, nome, segmentacao, acomodacao, faixas")
       .eq("contrato_id", id)
-      .eq("tenant_id", tenantId)
       .order("created_at", { ascending: true })
+    if (tenantContrato) queryProdutos = queryProdutos.eq("tenant_id", tenantContrato)
+
+    const produtosCompletos = await queryProdutos
+    if (!produtosCompletos.error) {
+      produtos = (produtosCompletos.data as Array<Record<string, any>>) || []
+    } else {
+      // Fallback para schema legado sem colunas novas (ex.: acomodacao/faixas).
+      let queryProdutosLegado = supabaseAdmin
+        .from("produtos_contrato_administradora")
+        .select("id, nome, segmentacao")
+        .eq("contrato_id", id)
+      if (tenantContrato) queryProdutosLegado = queryProdutosLegado.eq("tenant_id", tenantContrato)
+      const legado = await queryProdutosLegado
+      produtos = ((legado.data as Array<Record<string, any>>) || []).map((p) => ({
+        ...p,
+        acomodacao: null,
+        faixas: [],
+      }))
+    }
+
+    if (produtos.length === 0 && tenantContrato) {
+      // Fallback legado sem tenant_id em produtos
+      const produtosLegado = await supabaseAdmin
+        .from("produtos_contrato_administradora")
+        .select("id, nome, segmentacao, acomodacao, faixas")
+        .eq("contrato_id", id)
+        .order("created_at", { ascending: true })
+
+      if (!produtosLegado.error) {
+        produtos = (produtosLegado.data as Array<Record<string, any>>) || []
+      } else {
+        const legadoMin = await supabaseAdmin
+          .from("produtos_contrato_administradora")
+          .select("id, nome, segmentacao")
+          .eq("contrato_id", id)
+        produtos = ((legadoMin.data as Array<Record<string, any>>) || []).map((p) => ({
+          ...p,
+          acomodacao: null,
+          faixas: [],
+        }))
+      }
+    }
+
+    // Fallback final: produtos legados armazenados diretamente no registro do contrato.
+    // Evita misturar produtos de outros contratos.
+    if (produtos.length === 0) {
+      const produtosContratoLegado = (contrato as any)?.produtos
+      const arrLegado = Array.isArray(produtosContratoLegado) ? produtosContratoLegado : []
+      produtos = arrLegado
+        .map((p: any, idx: number) => ({
+          id: String(p?.id || `legacy-${idx}`),
+          nome: String(p?.nome || p?.descricao || "").trim() || `Produto ${idx + 1}`,
+          segmentacao: String(p?.segmentacao || "Padrão"),
+          acomodacao: p?.acomodacao ?? null,
+          faixas: p?.faixas ?? p?.faixas_por_acomodacao ?? [],
+        }))
+        .filter((p: any) => String(p.nome || "").trim().length > 0)
+    }
 
     type FaixasPorAcomodacao = { Enfermaria: Array<{ faixa_etaria: string; valor: string }>; Apartamento: Array<{ faixa_etaria: string; valor: string }> }
     const faixasParsed = (produtos || []).map((p) => {
@@ -100,18 +171,30 @@ export async function PUT(
       }>
     }
 
-    const tenantId = await getCurrentTenantId()
+    const tenantIdAtual = await getCurrentTenantId()
 
-    const { data: existente, error: errExist } = await supabaseAdmin
+    let { data: existente, error: errExist } = await supabaseAdmin
       .from("contratos_administradora")
-      .select("id")
+      .select("id, tenant_id")
       .eq("id", id)
-      .eq("tenant_id", tenantId)
+      .eq("tenant_id", tenantIdAtual)
       .single()
+
+    if (errExist || !existente) {
+      const fallbackExistente = await supabaseAdmin
+        .from("contratos_administradora")
+        .select("id, tenant_id")
+        .eq("id", id)
+        .maybeSingle()
+      existente = fallbackExistente.data as any
+      errExist = fallbackExistente.error as any
+    }
 
     if (errExist || !existente) {
       return NextResponse.json({ error: "Contrato não encontrado" }, { status: 404 })
     }
+
+    const tenantContrato = (existente as any)?.tenant_id ? String((existente as any).tenant_id) : null
 
     const atualizar: Record<string, unknown> = {}
     if (descricao !== undefined) atualizar.descricao = String(descricao).trim()
@@ -120,11 +203,12 @@ export async function PUT(
     if (logo !== undefined) atualizar.logo = logo ? String(logo).trim() : null
 
     if (Object.keys(atualizar).length > 0) {
-      const { error: errUpd } = await supabaseAdmin
+      let queryAtualizarContrato = supabaseAdmin
         .from("contratos_administradora")
         .update(atualizar)
         .eq("id", id)
-        .eq("tenant_id", tenantId)
+      if (tenantContrato) queryAtualizarContrato = queryAtualizarContrato.eq("tenant_id", tenantContrato)
+      const { error: errUpd } = await queryAtualizarContrato
 
       if (errUpd) {
         console.error("Erro ao atualizar contrato:", errUpd)
@@ -146,11 +230,12 @@ export async function PUT(
             valor: String(f?.valor ?? "").replace(",", "."),
           }))
 
-      const { data: produtosExistentes } = await supabaseAdmin
+      let queryProdutosExistentes = supabaseAdmin
         .from("produtos_contrato_administradora")
         .select("id")
         .eq("contrato_id", id)
-        .eq("tenant_id", tenantId)
+      if (tenantContrato) queryProdutosExistentes = queryProdutosExistentes.eq("tenant_id", tenantContrato)
+      const { data: produtosExistentes } = await queryProdutosExistentes
 
       const idsExistentes = new Set((produtosExistentes || []).map((r) => r.id))
       const payloadValidos = produtos.filter((p) => p && (p.nome || "").trim().length > 0)
@@ -175,7 +260,7 @@ export async function PUT(
         const existeEValido = produtoId && idsExistentes.has(produtoId)
 
         if (existeEValido) {
-          const { error: errUpd } = await supabaseAdmin
+          let queryAtualizarProduto = supabaseAdmin
             .from("produtos_contrato_administradora")
             .update({
               nome,
@@ -185,7 +270,8 @@ export async function PUT(
             })
             .eq("id", produtoId)
             .eq("contrato_id", id)
-            .eq("tenant_id", tenantId)
+          if (tenantContrato) queryAtualizarProduto = queryAtualizarProduto.eq("tenant_id", tenantContrato)
+          const { error: errUpd } = await queryAtualizarProduto
 
           if (errUpd) {
             console.error("Erro ao atualizar produto:", errUpd)
@@ -197,7 +283,7 @@ export async function PUT(
             .from("produtos_contrato_administradora")
             .insert({
               contrato_id: id,
-              tenant_id: tenantId,
+              tenant_id: tenantContrato || tenantIdAtual,
               nome,
               segmentacao,
               acomodacao: "Enfermaria",
@@ -216,11 +302,12 @@ export async function PUT(
 
       const idsParaRemover = (produtosExistentes || []).map((r) => r.id).filter((idProd) => !idsMantidos.includes(idProd))
       if (idsParaRemover.length > 0) {
-        const { error: errDel } = await supabaseAdmin
+        let queryDelete = supabaseAdmin
           .from("produtos_contrato_administradora")
           .delete()
           .in("id", idsParaRemover)
-          .eq("tenant_id", tenantId)
+        if (tenantContrato) queryDelete = queryDelete.eq("tenant_id", tenantContrato)
+        const { error: errDel } = await queryDelete
 
         if (errDel) console.error("Erro ao remover produtos desvinculados:", errDel)
       }

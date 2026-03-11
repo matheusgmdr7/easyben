@@ -15,9 +15,20 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "administradora_id é obrigatório" }, { status: 400 })
     }
 
-    const tenantId = await getCurrentTenantId()
+    // Priorizar tenant da administradora para evitar mismatch de contexto.
+    let tenantId: string
+    const { data: adm } = await supabaseAdmin
+      .from("administradoras")
+      .select("tenant_id")
+      .eq("id", administradoraId)
+      .maybeSingle()
+    if (adm?.tenant_id) {
+      tenantId = adm.tenant_id
+    } else {
+      tenantId = await getCurrentTenantId()
+    }
 
-    const { data: contratos, error } = await supabaseAdmin
+    let { data: contratos, error } = await supabaseAdmin
       .from("contratos_administradora")
       .select(`
         id,
@@ -32,6 +43,27 @@ export async function GET(request: NextRequest) {
       .eq("administradora_id", administradoraId)
       .eq("tenant_id", tenantId)
       .order("created_at", { ascending: false })
+
+    if (!error && (!contratos || contratos.length === 0)) {
+      // Fallback para dados legados sem tenant_id preenchido
+      const fallback = await supabaseAdmin
+        .from("contratos_administradora")
+        .select(`
+          id,
+          numero,
+          descricao,
+          razao_social,
+          nome_fantasia,
+          logo,
+          observacao,
+          created_at
+        `)
+        .eq("administradora_id", administradoraId)
+        .order("created_at", { ascending: false })
+
+      contratos = fallback.data || []
+      error = fallback.error as any
+    }
 
     if (error) {
       console.error("Erro ao buscar contratos:", error)

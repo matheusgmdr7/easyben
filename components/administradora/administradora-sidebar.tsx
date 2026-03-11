@@ -16,9 +16,7 @@ import {
   ChevronDownIcon,
   ChevronRightIcon,
   MagnifyingGlassIcon,
-  CalendarIcon,
   DocumentDuplicateIcon,
-  ExclamationTriangleIcon,
   PlusIcon,
   ArrowUpTrayIcon,
   BuildingOffice2Icon,
@@ -34,7 +32,7 @@ export default function AdministradoraSidebar() {
   const [isOpen, setIsOpen] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
   const [isLoggingOut, setIsLoggingOut] = useState(false)
-  const [faturamentoMenuOpen, setFaturamentoMenuOpen] = useState(false)
+  const [relatoriosMenuOpen, setRelatoriosMenuOpen] = useState(false)
   const [faturaMenuOpen, setFaturaMenuOpen] = useState(false)
   const [financeirasMenuOpen, setFinanceirasMenuOpen] = useState(false)
   const [financeiroMenuOpen, setFinanceiroMenuOpen] = useState(false)
@@ -228,8 +226,12 @@ export default function AdministradoraSidebar() {
 
   // Verificar se os menus devem estar abertos
   useEffect(() => {
-    if (pathname?.startsWith('/administradora/faturamento')) {
-      setFaturamentoMenuOpen(true)
+    if (
+      pathname?.startsWith('/administradora/faturamento') ||
+      pathname?.startsWith('/administradora/relatorios') ||
+      pathname?.startsWith('/administradora/fatura/devedores')
+    ) {
+      setRelatoriosMenuOpen(true)
     }
     if (pathname?.startsWith('/administradora/fatura')) {
       setFaturaMenuOpen(true)
@@ -428,15 +430,81 @@ export default function AdministradoraSidebar() {
                 </Link>
               </li>
               <li>
-                <Link
-                  href="/administradora/relatorios"
-                  className={getMenuItemClasses("/administradora/relatorios")}
-                  onClick={closeSidebar}
+                <button
+                  onClick={() => setRelatoriosMenuOpen(!relatoriosMenuOpen)}
+                  className={cn(
+                    "flex items-center justify-between w-full px-3 sm:px-4 py-2.5 sm:py-3 transition-all duration-300 ease-in-out font-medium text-xs sm:text-sm rounded-md",
+                    isActive("/administradora/relatorios") || isActive("/administradora/faturamento") || isActive("/administradora/fatura/devedores")
+                      ? "bg-[#1E293B] text-white shadow-md active-item"
+                      : "text-gray-300 hover:bg-[#1E293B] hover:text-white hover:scale-[1.02] hover:shadow-md",
+                    !isVisuallyCollapsed &&
+                      !(isActive("/administradora/relatorios") || isActive("/administradora/faturamento") || isActive("/administradora/fatura/devedores")) &&
+                      "hover:translate-x-1",
+                    isVisuallyCollapsed && "justify-center px-2"
+                  )}
                   title={isVisuallyCollapsed ? "Relatórios" : ""}
                 >
-                  {!isVisuallyCollapsed && <span className="truncate flex-1">Relatórios</span>}
-                  <ChartBarSquareIcon className="h-5 w-5 flex-shrink-0" />
-                </Link>
+                  {!isVisuallyCollapsed && <span className="truncate flex-1 text-left">Relatórios</span>}
+                  <div className="flex items-center gap-2">
+                    <ChartBarSquareIcon className="h-5 w-5 flex-shrink-0" />
+                    {!isVisuallyCollapsed && (
+                      relatoriosMenuOpen ? (
+                        <ChevronDownIcon className="h-4 w-4 flex-shrink-0" />
+                      ) : (
+                        <ChevronRightIcon className="h-4 w-4 flex-shrink-0" />
+                      )
+                    )}
+                  </div>
+                </button>
+                {!isVisuallyCollapsed && relatoriosMenuOpen && (
+                  <ul className="ml-4 mt-1 space-y-0.5">
+                    <li>
+                      <Link
+                        href="/administradora/faturamento"
+                        className={cn(
+                          "flex items-center gap-2 px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm rounded-md transition-all duration-300",
+                          isActive("/administradora/faturamento")
+                            ? "bg-[#1E293B]/80 text-white"
+                            : "text-gray-300 hover:bg-[#1E293B]/50 hover:text-white"
+                        )}
+                        onClick={closeSidebar}
+                      >
+                        <CurrencyDollarIcon className="h-4 w-4" />
+                        <span>Relatório de faturamento</span>
+                      </Link>
+                    </li>
+                    <li>
+                      <Link
+                        href="/administradora/relatorios"
+                        className={cn(
+                          "flex items-center gap-2 px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm rounded-md transition-all duration-300",
+                          isActive("/administradora/relatorios")
+                            ? "bg-[#1E293B]/80 text-white"
+                            : "text-gray-300 hover:bg-[#1E293B]/50 hover:text-white"
+                        )}
+                        onClick={closeSidebar}
+                      >
+                        <ChartBarSquareIcon className="h-4 w-4" />
+                        <span>Relatório Layout</span>
+                      </Link>
+                    </li>
+                    <li>
+                      <Link
+                        href="/administradora/fatura/devedores"
+                        className={cn(
+                          "flex items-center gap-2 px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm rounded-md transition-all duration-300",
+                          isActive("/administradora/fatura/devedores")
+                            ? "bg-[#1E293B]/80 text-white"
+                            : "text-gray-300 hover:bg-[#1E293B]/50 hover:text-white"
+                        )}
+                        onClick={closeSidebar}
+                      >
+                        <DocumentDuplicateIcon className="h-4 w-4" />
+                        <span>Relatório de faturas</span>
+                      </Link>
+                    </li>
+                  </ul>
+                )}
               </li>
               {/* Grupo de Beneficiários */}
               <li>
@@ -548,82 +616,6 @@ export default function AdministradoraSidebar() {
                   </ul>
                 )}
               </li>
-              {/* Item Faturamento com Submenu */}
-              <li>
-                <button
-                  onClick={() => setFaturamentoMenuOpen(!faturamentoMenuOpen)}
-                  className={cn(
-                    "flex items-center justify-between w-full px-3 sm:px-4 py-2.5 sm:py-3 transition-all duration-300 ease-in-out font-medium text-xs sm:text-sm rounded-md",
-                    isActive("/administradora/faturamento") 
-                      ? "bg-[#1E293B] text-white shadow-md active-item" 
-                      : "text-gray-300 hover:bg-[#1E293B] hover:text-white hover:scale-[1.02] hover:shadow-md",
-                    !isVisuallyCollapsed && !isActive("/administradora/faturamento") && "hover:translate-x-1",
-                    isVisuallyCollapsed && "justify-center px-2"
-                  )}
-                  title={isVisuallyCollapsed ? "Faturamento" : ""}
-                >
-                  {!isVisuallyCollapsed && <span className="truncate flex-1 text-left">Faturamento</span>}
-                  <div className="flex items-center gap-2">
-                    <CurrencyDollarIcon className="h-5 w-5 flex-shrink-0" />
-                    {!isVisuallyCollapsed && (
-                      faturamentoMenuOpen ? (
-                        <ChevronDownIcon className="h-4 w-4 flex-shrink-0" />
-                      ) : (
-                        <ChevronRightIcon className="h-4 w-4 flex-shrink-0" />
-                      )
-                    )}
-                  </div>
-                </button>
-                {!isVisuallyCollapsed && faturamentoMenuOpen && (
-                  <ul className="ml-4 mt-1 space-y-0.5">
-                    <li>
-                      <Link
-                        href="/administradora/faturamento"
-                        className={cn(
-                          "flex items-center gap-2 px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm rounded-md transition-all duration-300",
-                          isActive("/administradora/faturamento") && !pathname?.includes("/pesquisar") && !pathname?.includes("/agendamento")
-                            ? "bg-[#1E293B]/80 text-white"
-                            : "text-gray-300 hover:bg-[#1E293B]/50 hover:text-white"
-                        )}
-                        onClick={closeSidebar}
-                      >
-                        <CurrencyDollarIcon className="h-4 w-4" />
-                        <span>Gerar</span>
-                      </Link>
-                    </li>
-                    <li>
-                      <Link
-                        href="/administradora/faturamento/pesquisar"
-                        className={cn(
-                          "flex items-center gap-2 px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm rounded-md transition-all duration-300",
-                          isActive("/administradora/faturamento/pesquisar")
-                            ? "bg-[#1E293B]/80 text-white"
-                            : "text-gray-300 hover:bg-[#1E293B]/50 hover:text-white"
-                        )}
-                        onClick={closeSidebar}
-                      >
-                        <MagnifyingGlassIcon className="h-4 w-4" />
-                        <span>Pesquisar</span>
-                      </Link>
-                    </li>
-                    <li>
-                      <Link
-                        href="/administradora/faturamento/agendamento"
-                        className={cn(
-                          "flex items-center gap-2 px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm rounded-md transition-all duration-300",
-                          isActive("/administradora/faturamento/agendamento")
-                            ? "bg-[#1E293B]/80 text-white"
-                            : "text-gray-300 hover:bg-[#1E293B]/50 hover:text-white"
-                        )}
-                        onClick={closeSidebar}
-                      >
-                        <CalendarIcon className="h-4 w-4" />
-                        <span>Agendamento</span>
-                      </Link>
-                    </li>
-                  </ul>
-                )}
-              </li>
               {/* Item Fatura com Submenu */}
               <li>
                 <button
@@ -672,7 +664,7 @@ export default function AdministradoraSidebar() {
                         href="/administradora/fatura"
                         className={cn(
                           "flex items-center gap-2 px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm rounded-md transition-all duration-300",
-                          isActive("/administradora/fatura") && !pathname?.includes("/devedores") && !pathname?.includes("/gerar")
+                          isActive("/administradora/fatura") && !pathname?.includes("/gerar")
                             ? "bg-[#1E293B]/80 text-white"
                             : "text-gray-300 hover:bg-[#1E293B]/50 hover:text-white"
                         )}
@@ -680,21 +672,6 @@ export default function AdministradoraSidebar() {
                       >
                         <MagnifyingGlassIcon className="h-4 w-4" />
                         <span>Pesquisar</span>
-                      </Link>
-                    </li>
-                    <li>
-                      <Link
-                        href="/administradora/fatura/devedores"
-                        className={cn(
-                          "flex items-center gap-2 px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm rounded-md transition-all duration-300",
-                          isActive("/administradora/fatura/devedores")
-                            ? "bg-[#1E293B]/80 text-white"
-                            : "text-gray-300 hover:bg-[#1E293B]/50 hover:text-white"
-                        )}
-                        onClick={closeSidebar}
-                      >
-                        <ExclamationTriangleIcon className="h-4 w-4" />
-                        <span>Devedores</span>
                       </Link>
                     </li>
                   </ul>

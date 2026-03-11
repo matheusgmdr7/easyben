@@ -37,7 +37,28 @@ export async function GET(request: NextRequest) {
     }
 
     const [refAno, refMes] = referencia.split("-").map(Number)
-    const tenantId = await getCurrentTenantId()
+    // Priorizar tenant da administradora dona do grupo para evitar contexto incorreto.
+    let tenantId: string
+    const { data: grupoAdmin } = await supabaseAdmin
+      .from("grupos_beneficiarios")
+      .select("administradora_id")
+      .eq("id", grupoId)
+      .maybeSingle()
+
+    if (grupoAdmin?.administradora_id) {
+      const { data: adm } = await supabaseAdmin
+        .from("administradoras")
+        .select("tenant_id")
+        .eq("id", grupoAdmin.administradora_id)
+        .maybeSingle()
+      if (adm?.tenant_id) {
+        tenantId = adm.tenant_id
+      } else {
+        tenantId = await getCurrentTenantId()
+      }
+    } else {
+      tenantId = await getCurrentTenantId()
+    }
 
     const { data: grupo } = await supabaseAdmin
       .from("grupos_beneficiarios")

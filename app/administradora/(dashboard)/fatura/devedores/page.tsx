@@ -2,110 +2,142 @@
 
 import { useState, useEffect } from "react"
 import { getAdministradoraLogada } from "@/services/auth-administradoras-service"
-import { FaturasService, type Fatura } from "@/services/faturas-service"
+import { GruposBeneficiariosService, type GrupoBeneficiarios } from "@/services/grupos-beneficiarios-service"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Search, X } from "lucide-react"
+import { FileDown, FileSpreadsheet, Search, X } from "lucide-react"
 import { formatarMoeda } from "@/utils/formatters"
-import { format } from "date-fns"
-import { ptBR } from "date-fns/locale"
 import { cn } from "@/lib/utils"
 
+type LinhaRelatorio = {
+  id: string
+  cliente_nome: string
+  cpf: string | null
+  telefone: string | null
+  valor_fatura: number
+  status: string
+  vencimento: string | null
+}
+
+type Corretor = { id: string; nome: string }
+
+const MESES = [
+  { value: "01", label: "Janeiro" },
+  { value: "02", label: "Fevereiro" },
+  { value: "03", label: "Março" },
+  { value: "04", label: "Abril" },
+  { value: "05", label: "Maio" },
+  { value: "06", label: "Junho" },
+  { value: "07", label: "Julho" },
+  { value: "08", label: "Agosto" },
+  { value: "09", label: "Setembro" },
+  { value: "10", label: "Outubro" },
+  { value: "11", label: "Novembro" },
+  { value: "12", label: "Dezembro" },
+]
+
 export default function DevedoresPage() {
-  const [faturas, setFaturas] = useState<Fatura[]>([])
+  const [linhas, setLinhas] = useState<LinhaRelatorio[]>([])
   const [loading, setLoading] = useState(false)
   const [administradoraId, setAdministradoraId] = useState<string | null>(null)
+  const [grupos, setGrupos] = useState<GrupoBeneficiarios[]>([])
+  const [corretores, setCorretores] = useState<Corretor[]>([])
+  const [exportandoPDF, setExportandoPDF] = useState(false)
+  const [exportandoExcel, setExportandoExcel] = useState(false)
 
-  // Filtros
+  const [mesRef, setMesRef] = useState<string>("")
+  const [anoRef, setAnoRef] = useState<string>("")
+  const [grupoId, setGrupoId] = useState<string>("todos")
+  const [corretorId, setCorretorId] = useState<string>("todos")
+  const [statusFiltro, setStatusFiltro] = useState<string>("principais")
   const [nomeFiltro, setNomeFiltro] = useState<string>("")
-  const [statusFiltro, setStatusFiltro] = useState<string>("")
-
-  // Paginação
-  const [currentPage, setCurrentPage] = useState(1)
-  const [totalPages, setTotalPages] = useState(1)
-  const [itemsPerPage, setItemsPerPage] = useState(50)
 
   useEffect(() => {
     const administradora = getAdministradoraLogada()
     if (administradora?.id) {
       setAdministradoraId(administradora.id)
-      carregarDevedores()
+      carregarFiltros(administradora.id)
     }
+    const agora = new Date()
+    setMesRef(String(agora.getMonth() + 1).padStart(2, "0"))
+    setAnoRef(String(agora.getFullYear()))
   }, [])
 
-  async function carregarDevedores() {
+  async function carregarFiltros(admId: string) {
+    try {
+      const [gruposData, corretoresRes] = await Promise.all([
+        GruposBeneficiariosService.buscarTodos(admId),
+        fetch(`/api/administradora/corretores?administradora_id=${encodeURIComponent(admId)}`),
+      ])
+      setGrupos(gruposData || [])
+      if (corretoresRes.ok) {
+        const corretoresData = await corretoresRes.json()
+        setCorretores(Array.isArray(corretoresData) ? corretoresData : [])
+      }
+    } catch {
+      setGrupos([])
+      setCorretores([])
+    }
+  }
+
+  function obterStatusParaBusca() {
+    if (statusFiltro === "principais") return "atrasada,cancelada,paga"
+    if (statusFiltro === "asaas") return "PENDING,RECEIVED,CONFIRMED,OVERDUE,REFUNDED,CANCELED"
+    if (statusFiltro === "todos") return ""
+    return statusFiltro
+  }
+
+  async function carregarRelatorio() {
     if (!administradoraId) return
 
     try {
       setLoading(true)
+      const url = new URL("/api/administradora/relatorios/faturas", window.location.origin)
+      url.searchParams.set("administradora_id", administradoraId)
+      if (mesRef && anoRef) {
+        url.searchParams.set("mes", mesRef)
+        url.searchParams.set("ano", anoRef)
+      }
+      if (grupoId && grupoId !== "todos") url.searchParams.set("grupo_id", grupoId)
+      if (corretorId && corretorId !== "todos") url.searchParams.set("corretor_id", corretorId)
+      const status = obterStatusParaBusca()
+      if (status) url.searchParams.set("status", status)
 
-      const resultado = await FaturasService.buscarPorAdministradora(
-        administradoraId,
-        {
-          status: "atrasada",
-          page: 1,
-          limit: 1000,
-        }
-      )
-
-      if (!resultado) {
-        throw new Error("Erro ao buscar devedores: resultado vazio")
+      const res = await fetch(url.toString(), { cache: "no-store" })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        throw new Error(data?.error || "Erro ao buscar relatório")
       }
 
-      const hoje = new Date()
-      hoje.setHours(0, 0, 0, 0)
-
-      let faturasAtrasadas = (resultado.faturas || []).filter((fatura) => {
-        if (!fatura.data_vencimento) return false
-        const vencimento = new Date(fatura.data_vencimento)
-        vencimento.setHours(0, 0, 0, 0)
-        return vencimento < hoje && fatura.status !== "paga"
-      })
-
-      if (nomeFiltro) {
-        faturasAtrasadas = faturasAtrasadas.filter((f) => 
-          f.cliente_nome?.toLowerCase().includes(nomeFiltro.toLowerCase())
-        )
+      let lista = Array.isArray(data?.linhas) ? (data.linhas as LinhaRelatorio[]) : []
+      if (nomeFiltro.trim()) {
+        const termo = nomeFiltro.trim().toLowerCase()
+        lista = lista.filter((l) => String(l.cliente_nome || "").toLowerCase().includes(termo))
       }
 
-      if (statusFiltro && statusFiltro !== "todos") {
-        faturasAtrasadas = faturasAtrasadas.filter((f) => f.status === statusFiltro)
+      setLinhas(lista)
+      if (lista.length === 0) {
+        toast.info("Nenhum resultado encontrado com os filtros selecionados.")
       }
-
-      setFaturas(faturasAtrasadas)
-      setTotalPages(Math.ceil(faturasAtrasadas.length / itemsPerPage))
-    } catch (error: any) {
-      console.error("Erro ao carregar devedores:", error)
-      toast.error("Erro ao carregar devedores: " + error.message)
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Erro ao buscar relatório")
+      setLinhas([])
     } finally {
       setLoading(false)
     }
   }
 
   function limparFiltros() {
+    const agora = new Date()
+    setMesRef(String(agora.getMonth() + 1).padStart(2, "0"))
+    setAnoRef(String(agora.getFullYear()))
+    setGrupoId("todos")
+    setCorretorId("todos")
+    setStatusFiltro("principais")
     setNomeFiltro("")
-    setStatusFiltro("")
-    setCurrentPage(1)
-    carregarDevedores()
-  }
-
-  function formatarData(data: string | undefined): string {
-    if (!data) return "-"
-    try {
-      return format(new Date(data), "dd/MM/yyyy", { locale: ptBR })
-    } catch {
-      return data
-    }
-  }
-
-  function calcularDiasAtraso(dataVencimento: string | undefined): number {
-    if (!dataVencimento) return 0
-    const hoje = new Date()
-    const vencimento = new Date(dataVencimento)
-    const diff = hoje.getTime() - vencimento.getTime()
-    return Math.max(0, Math.floor(diff / (1000 * 60 * 60 * 24)))
+    setLinhas([])
   }
 
   function getStatusBadge(status: string) {
@@ -113,40 +145,187 @@ export default function DevedoresPage() {
     const statusMap: Record<string, { label: string; className: string }> = {
       atrasada: { label: "Atrasada", className: "bg-gray-100 text-gray-600 border-gray-300" },
       pendente: { label: "Pendente", className: "bg-amber-50 text-amber-800 border-amber-200" },
+      paga: { label: "Paga", className: "bg-green-50 text-green-700 border-green-200" },
       cancelada: { label: "Cancelada", className: "bg-gray-100 text-gray-600 border-gray-300" },
     }
-    const statusInfo = statusMap[status.toLowerCase()] || { label: status, className: "bg-gray-100 text-gray-600 border-gray-300" }
+    const statusInfo = statusMap[(status || "").toLowerCase()] || { label: status, className: "bg-gray-100 text-gray-600 border-gray-300" }
     return <span className={cn(baseClass, statusInfo.className)}>{statusInfo.label}</span>
   }
 
-  const faturasPaginadas = faturas.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
-  )
+  function formatarCpf(cpf: string | null | undefined) {
+    const digitos = String(cpf || "").replace(/\D/g, "")
+    if (digitos.length !== 11) return cpf || "-"
+    return digitos.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4")
+  }
 
-  const valorTotal = faturas.reduce((sum, f) => sum + (f.valor_total || 0), 0)
-  const totalDevedores = faturas.length
+  function formatarTelefone(telefone: string | null | undefined) {
+    const digitos = String(telefone || "").replace(/\D/g, "")
+    if (digitos.length === 11) return digitos.replace(/(\d{2})(\d{5})(\d{4})/, "($1) $2-$3")
+    if (digitos.length === 10) return digitos.replace(/(\d{2})(\d{4})(\d{4})/, "($1) $2-$3")
+    return telefone || "-"
+  }
+
+  async function exportarPDF() {
+    if (linhas.length === 0) {
+      toast.error("Não há dados para exportar")
+      return
+    }
+    try {
+      setExportandoPDF(true)
+      const jsPDF = (await import("jspdf")).default
+      const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" })
+      const margin = 10
+      let y = 14
+      doc.setFontSize(13)
+      doc.setFont(undefined, "bold")
+      doc.text("RELATORIO DE FATURAS", margin, y)
+      y += 6
+      doc.setFontSize(9)
+      doc.setFont(undefined, "normal")
+      doc.text(`Referencia: ${mesRef}/${anoRef} | Registros: ${linhas.length}`, margin, y)
+      y += 6
+
+      const headers = ["Nome", "CPF", "Telefone", "Valor", "Status"]
+      const widths = [90, 40, 45, 30, 35]
+      let x = margin
+      doc.setFont(undefined, "bold")
+      headers.forEach((h, i) => {
+        doc.text(h, x, y)
+        x += widths[i]
+      })
+      y += 5
+      doc.setFont(undefined, "normal")
+      const rowHeight = 6
+      linhas.forEach((item, index) => {
+        if (y > 185) {
+          doc.addPage("landscape", "a4")
+          y = 14
+        }
+        if (index % 2 === 1) {
+          doc.setFillColor(245, 245, 245)
+          doc.rect(margin, y - 4, widths.reduce((a, b) => a + b, 0), rowHeight, "F")
+        }
+        x = margin
+        doc.text(doc.splitTextToSize(item.cliente_nome || "-", widths[0] - 2)[0] || "-", x, y)
+        x += widths[0]
+        doc.text(String(formatarCpf(item.cpf)), x, y)
+        x += widths[1]
+        doc.text(String(formatarTelefone(item.telefone)), x, y)
+        x += widths[2]
+        doc.text(formatarMoeda(item.valor_fatura), x, y)
+        x += widths[3]
+        doc.text(String(item.status || "-"), x, y)
+        y += rowHeight
+      })
+      y += 4
+      doc.setFont(undefined, "bold")
+      doc.text(`TOTAL: ${formatarMoeda(totalValor)}`, margin, y)
+      doc.save(`relatorio-faturas-${anoRef}-${mesRef}.pdf`)
+      toast.success("PDF exportado com sucesso")
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Erro ao exportar PDF")
+    } finally {
+      setExportandoPDF(false)
+    }
+  }
+
+  async function exportarExcel() {
+    if (linhas.length === 0) {
+      toast.error("Não há dados para exportar")
+      return
+    }
+    try {
+      setExportandoExcel(true)
+      const XLSX = await import("xlsx")
+      const rows = linhas.map((item) => ({
+        Nome: item.cliente_nome || "-",
+        CPF: formatarCpf(item.cpf),
+        Telefone: formatarTelefone(item.telefone),
+        Valor: item.valor_fatura,
+        Status: item.status || "-",
+      }))
+      const ws = XLSX.utils.json_to_sheet(rows)
+      const wb = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(wb, ws, "RelatorioFaturas")
+      XLSX.writeFile(wb, `relatorio-faturas-${anoRef}-${mesRef}.xlsx`)
+      toast.success("Excel exportado com sucesso")
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Erro ao exportar Excel")
+    } finally {
+      setExportandoExcel(false)
+    }
+  }
+
+  const totalValor = linhas.reduce((sum, item) => sum + Number(item.valor_fatura || 0), 0)
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header Simplificado */}
       <div className="bg-white border-b border-gray-200 px-6 py-4">
-        <h1 className="text-xl font-semibold text-gray-800">Devedores</h1>
+        <h1 className="text-xl font-semibold text-gray-800">Relatório de faturas</h1>
+        <p className="text-sm text-gray-500 mt-0.5">
+          Consulte faturas por status e período, com filtros opcionais de grupo e corretor.
+        </p>
       </div>
 
-      {/* Filtros Simplificados */}
       <div className="bg-white border-b border-gray-200 px-6 py-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-3 mb-4">
           <div>
-            <label className="block text-xs text-gray-600 mb-1">Nome do Cliente</label>
+            <label className="block text-xs text-gray-600 mb-1">Mês</label>
+            <Select value={mesRef} onValueChange={setMesRef}>
+              <SelectTrigger className="h-10 w-full rounded-md border border-gray-300 bg-background px-3 py-2 text-sm">
+                <SelectValue placeholder="Mês" />
+              </SelectTrigger>
+              <SelectContent>
+                {MESES.map((m) => (
+                  <SelectItem key={m.value} value={m.value}>
+                    {m.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <label className="block text-xs text-gray-600 mb-1">Ano</label>
             <Input
-              value={nomeFiltro}
-              onChange={(e) => setNomeFiltro(e.target.value)}
-              placeholder="Digite o nome do cliente"
-              className="h-9 text-sm border-gray-300 rounded-sm"
+              type="number"
+              value={anoRef}
+              onChange={(e) => setAnoRef(e.target.value)}
+              placeholder="2026"
+              className="h-10 border border-gray-300 rounded-md"
             />
           </div>
-
+          <div>
+            <label className="block text-xs text-gray-600 mb-1">Grupo (opcional)</label>
+            <Select value={grupoId} onValueChange={setGrupoId}>
+              <SelectTrigger className="h-10 w-full rounded-md border border-gray-300 bg-background px-3 py-2 text-sm">
+                <SelectValue placeholder="Todos os grupos" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="todos">Todos os grupos</SelectItem>
+                {grupos.map((g) => (
+                  <SelectItem key={g.id} value={g.id}>
+                    {g.nome}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <label className="block text-xs text-gray-600 mb-1">Corretor (opcional)</label>
+            <Select value={corretorId} onValueChange={setCorretorId}>
+              <SelectTrigger className="h-10 w-full rounded-md border border-gray-300 bg-background px-3 py-2 text-sm">
+                <SelectValue placeholder="Todos os corretores" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="todos">Todos os corretores</SelectItem>
+                {corretores.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.nome}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
           <div>
             <label className="block text-xs text-gray-600 mb-1">Status</label>
             <Select value={statusFiltro} onValueChange={setStatusFiltro}>
@@ -154,19 +333,30 @@ export default function DevedoresPage() {
                 <SelectValue placeholder="Selecione" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="todos">Todos</SelectItem>
-                <SelectItem value="atrasada">Atrasada</SelectItem>
-                <SelectItem value="pendente">Pendente</SelectItem>
-                <SelectItem value="cancelada">Cancelada</SelectItem>
+                <SelectItem value="principais">Atrasada, Cancelada e Paga</SelectItem>
+                <SelectItem value="asaas">Padrão Asaas</SelectItem>
+                <SelectItem value="atrasada">Somente atrasada</SelectItem>
+                <SelectItem value="cancelada">Somente cancelada</SelectItem>
+                <SelectItem value="paga">Somente paga</SelectItem>
+                <SelectItem value="pendente">Somente pendente</SelectItem>
+                <SelectItem value="todos">Todos os status</SelectItem>
               </SelectContent>
             </Select>
           </div>
+          <div>
+            <label className="block text-xs text-gray-600 mb-1">Nome do cliente</label>
+            <Input
+              value={nomeFiltro}
+              onChange={(e) => setNomeFiltro(e.target.value)}
+              placeholder="Filtro por nome"
+              className="h-10 text-sm border-gray-300 rounded-md"
+            />
+          </div>
         </div>
 
-        {/* Botões de Ação Simplificados */}
-        <div className="flex gap-2 pt-2 border-t border-gray-200">
+        <div className="flex flex-wrap gap-2 pt-2 border-t border-gray-200">
           <Button
-            onClick={carregarDevedores}
+            onClick={carregarRelatorio}
             disabled={loading}
             className="h-9 px-4 text-sm bg-gray-700 hover:bg-gray-800 text-white rounded-sm"
           >
@@ -181,143 +371,90 @@ export default function DevedoresPage() {
             <X className="h-4 w-4 mr-1" />
             Limpar
           </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={exportarPDF}
+            disabled={exportandoPDF || linhas.length === 0}
+            className="border-gray-300"
+          >
+            <FileDown className="h-4 w-4 mr-1.5" />
+            {exportandoPDF ? "Exportando PDF..." : "Exportar PDF"}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={exportarExcel}
+            disabled={exportandoExcel || linhas.length === 0}
+            className="border-gray-300"
+          >
+            <FileSpreadsheet className="h-4 w-4 mr-1.5" />
+            {exportandoExcel ? "Exportando Excel..." : "Exportar Excel"}
+          </Button>
         </div>
       </div>
 
-      {/* Resumo Simplificado */}
       <div className="bg-white border-b border-gray-200 px-6 py-3">
         <div className="flex items-center gap-6 text-sm">
           <div>
-            <span className="text-gray-600">Total de Devedores: </span>
-            <span className="font-semibold text-gray-800">{totalDevedores}</span>
+            <span className="text-gray-600">Total de Registros: </span>
+            <span className="font-semibold text-gray-800">{linhas.length}</span>
           </div>
           <div>
-            <span className="text-gray-600">Valor Total em Atraso: </span>
-            <span className="font-semibold text-gray-800">{formatarMoeda(valorTotal)}</span>
+            <span className="text-gray-600">Valor Total: </span>
+            <span className="font-semibold text-gray-800">{formatarMoeda(totalValor)}</span>
           </div>
         </div>
       </div>
 
-      {/* Tabela com Design Bancário */}
       <div className="px-6 py-4">
         <div className="bg-white border border-gray-300 rounded shadow-sm overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full border-collapse">
               <thead>
                 <tr className="bg-gray-100 border-b border-gray-300">
-                  <th className="px-4 py-2 text-left text-xs font-semibold text-gray-700 border-r border-gray-300">Cliente</th>
-                  <th className="px-4 py-2 text-left text-xs font-semibold text-gray-700 border-r border-gray-300">Fatura</th>
+                  <th className="px-4 py-2 text-left text-xs font-semibold text-gray-700 border-r border-gray-300">Nome do Cliente</th>
+                  <th className="px-4 py-2 text-left text-xs font-semibold text-gray-700 border-r border-gray-300">CPF</th>
+                  <th className="px-4 py-2 text-left text-xs font-semibold text-gray-700 border-r border-gray-300">Telefone</th>
+                  <th className="px-4 py-2 text-left text-xs font-semibold text-gray-700 border-r border-gray-300">Valor da Fatura</th>
                   <th className="px-4 py-2 text-left text-xs font-semibold text-gray-700 border-r border-gray-300">Status</th>
-                  <th className="px-4 py-2 text-left text-xs font-semibold text-gray-700 border-r border-gray-300">Vencimento</th>
-                  <th className="px-4 py-2 text-left text-xs font-semibold text-gray-700 border-r border-gray-300">Valor</th>
-                  <th className="px-4 py-2 text-left text-xs font-semibold text-gray-700">Dias em Atraso</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={6} className="px-4 py-8 text-center text-sm text-gray-500">
+                    <td colSpan={5} className="px-4 py-8 text-center text-sm text-gray-500">
                       Carregando...
                     </td>
                   </tr>
-                ) : faturasPaginadas.length === 0 ? (
+                ) : linhas.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-4 py-8 text-center text-sm text-gray-500">
-                      Nenhum devedor encontrado
+                    <td colSpan={5} className="px-4 py-8 text-center text-sm text-gray-500">
+                      Nenhum resultado encontrado
                     </td>
                   </tr>
                 ) : (
-                  faturasPaginadas.map((fatura, index) => {
-                    const diasAtraso = calcularDiasAtraso(fatura.data_vencimento)
-                    return (
-                      <tr
-                        key={fatura.id}
-                        className={cn(
-                          "border-b border-gray-200 hover:bg-gray-50 transition-colors",
-                          index % 2 === 0 ? "bg-white" : "bg-gray-50"
-                        )}
-                      >
-                        <td className="px-4 py-2 text-sm text-gray-800 border-r border-gray-200">{fatura.cliente_nome || "-"}</td>
-                        <td className="px-4 py-2 text-sm text-gray-800 border-r border-gray-200">{fatura.numero_fatura || fatura.id.slice(0, 8)}</td>
-                        <td className="px-4 py-2 border-r border-gray-200">
-                          {getStatusBadge(fatura.status)}
-                        </td>
-                        <td className="px-4 py-2 text-sm text-gray-800 border-r border-gray-200">{formatarData(fatura.data_vencimento)}</td>
-                        <td className="px-4 py-2 text-sm font-medium text-gray-800 border-r border-gray-200">{formatarMoeda(fatura.valor_total)}</td>
-                        <td className="px-4 py-2">
-                          <span className="inline-flex items-center px-2 py-0.5 text-xs font-semibold rounded-sm border bg-gray-100 text-gray-600 border-gray-300">
-                            {diasAtraso} dias
-                          </span>
-                        </td>
-                      </tr>
-                    )
-                  })
+                  linhas.map((linha, index) => (
+                    <tr
+                      key={linha.id}
+                      className={cn(
+                        "border-b border-gray-200 hover:bg-gray-50 transition-colors",
+                        index % 2 === 0 ? "bg-white" : "bg-gray-50"
+                      )}
+                    >
+                      <td className="px-4 py-2 text-sm text-gray-800 border-r border-gray-200">{linha.cliente_nome || "-"}</td>
+                      <td className="px-4 py-2 text-sm text-gray-800 border-r border-gray-200">{formatarCpf(linha.cpf)}</td>
+                      <td className="px-4 py-2 text-sm text-gray-800 border-r border-gray-200">{formatarTelefone(linha.telefone)}</td>
+                      <td className="px-4 py-2 text-sm font-medium text-gray-800 border-r border-gray-200">{formatarMoeda(linha.valor_fatura)}</td>
+                      <td className="px-4 py-2 border-r border-gray-200">{getStatusBadge(linha.status)}</td>
+                    </tr>
+                  ))
                 )}
               </tbody>
             </table>
           </div>
         </div>
       </div>
-
-      {/* Paginação Simplificada */}
-      {totalPages > 1 && (
-        <div className="bg-white border-t border-gray-200 px-6 py-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setCurrentPage(1)}
-                disabled={currentPage === 1}
-                className="h-8 px-3 text-xs border-gray-300"
-              >
-                Primeira
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                disabled={currentPage === 1}
-                className="h-8 px-3 text-xs border-gray-300"
-              >
-                Anterior
-              </Button>
-              <span className="px-3 py-1 text-sm text-gray-700">
-                Página {currentPage} de {totalPages}
-              </span>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                disabled={currentPage >= totalPages}
-                className="h-8 px-3 text-xs border-gray-300"
-              >
-                Próxima
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setCurrentPage(totalPages)}
-                disabled={currentPage >= totalPages}
-                className="h-8 px-3 text-xs border-gray-300"
-              >
-                Última
-              </Button>
-            </div>
-            <Select value={String(itemsPerPage)} onValueChange={(v) => setItemsPerPage(Number(v))}>
-              <SelectTrigger className="w-24 h-8 text-xs rounded-md border border-gray-300 bg-background px-3 py-2">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="10">10</SelectItem>
-                <SelectItem value="25">25</SelectItem>
-                <SelectItem value="50">50</SelectItem>
-                <SelectItem value="100">100</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

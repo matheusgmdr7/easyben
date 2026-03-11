@@ -54,19 +54,29 @@ export function TenantProvider({ children }: { children: ReactNode }) {
         .single()
       
       if (fetchError) {
-        // Se não encontrar, usar tenant padrão
+        // Em rota de tenant explícito, evita aplicar branding de outra plataforma.
+        // Ex.: /benefit/... não deve cair para "contratando-planos" por erro temporário.
+        if (slug && slug !== 'contratando-planos') {
+          console.warn('Tenant não encontrado para slug explícito, mantendo slug atual:', slug, fetchError)
+          setTenant({
+            id: '00000000-0000-0000-0000-000000000001',
+            slug,
+            nome: slug,
+          })
+          return
+        }
+
+        // Se não houver slug explícito, usar tenant padrão
         console.warn('Tenant não encontrado, usando padrão:', fetchError)
-        
-        // Tentar carregar tenant padrão
+
         const { data: defaultTenant, error: defaultError } = await supabase
           .from('tenants')
           .select('*')
           .eq('slug', 'contratando-planos')
           .eq('status', 'ativo')
           .single()
-        
+
         if (defaultError || !defaultTenant) {
-          // Se nem o padrão existir, criar objeto mínimo
           setTenant({
             id: '00000000-0000-0000-0000-000000000001',
             slug: 'contratando-planos',

@@ -227,8 +227,8 @@ export default function FaturamentoPage() {
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="bg-white border-b border-gray-200 px-6 py-4">
-        <h1 className="text-xl font-semibold text-gray-800">Gerar Faturamento</h1>
-        <p className="text-sm text-gray-500 mt-0.5">Gere a fatura de um grupo de beneficiários por mês/ano</p>
+        <h1 className="text-xl font-semibold text-gray-800">Relatório de faturamento</h1>
+        <p className="text-sm text-gray-500 mt-0.5">Gere o relatório de faturamento de um grupo por mês/ano</p>
       </div>
 
       <div className="bg-white border-b border-gray-200 px-6 py-4">
