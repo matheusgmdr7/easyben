@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { formatarCEP, formatarTelefone } from "@/utils/formatters"
 import * as XLSX from "xlsx"
+import { AlertTriangle, Info } from "lucide-react"
 
 const CAMPOS_ALVO = [
   { id: "nome", label: "Nome", obrigatorio: true },
@@ -222,6 +223,10 @@ export default function ImportacaoVidasPage() {
   const [administradoraId, setAdministradoraId] = useState<string | null>(null)
   const [grupos, setGrupos] = useState<GrupoBeneficiarios[]>([])
   const [contratos, setContratos] = useState<ContratoImportacao[]>([])
+  const [opcoesContratoSelecionado, setOpcoesContratoSelecionado] = useState<{ dias: string[]; vigencias: string[] }>({
+    dias: [],
+    vigencias: [],
+  })
   const [produtos, setProdutos] = useState<{ id: string; nome?: string }[]>([])
   const [file, setFile] = useState<File | null>(null)
   const [headers, setHeaders] = useState<string[]>([])
@@ -297,6 +302,7 @@ export default function ImportacaoVidasPage() {
     if (!administradoraId || !contratoId) {
       setProdutos([])
       setProdutoId("")
+      setOpcoesContratoSelecionado({ dias: [], vigencias: [] })
       return
     }
     fetch(
@@ -311,6 +317,31 @@ export default function ImportacaoVidasPage() {
   }, [administradoraId, contratoId])
 
   useEffect(() => {
+    if (!contratoId) {
+      setOpcoesContratoSelecionado({ dias: [], vigencias: [] })
+      return
+    }
+
+    fetch(`/api/administradora/contrato/${encodeURIComponent(contratoId)}`)
+      .then((r) => r.json())
+      .then((d) => {
+        const dias = Array.isArray(d?.opcoes_dia_vencimento)
+          ? d.opcoes_dia_vencimento
+              .map((x: unknown) => String(x || "").replace(/\D/g, "").padStart(2, "0").slice(-2))
+              .filter(Boolean)
+          : []
+        const vigencias = Array.isArray(d?.opcoes_data_vigencia)
+          ? d.opcoes_data_vigencia.map((x: unknown) => String(x || "").trim()).filter(Boolean)
+          : []
+        setOpcoesContratoSelecionado({
+          dias: Array.from(new Set(dias)).sort((a, b) => Number(a) - Number(b)),
+          vigencias: Array.from(new Set(vigencias)),
+        })
+      })
+      .catch(() => setOpcoesContratoSelecionado({ dias: [], vigencias: [] }))
+  }, [contratoId])
+
+  useEffect(() => {
     if (!produtoId) return
     const existe = produtos.some((p) => p.id === produtoId)
     if (!existe) setProdutoId("")
@@ -323,11 +354,23 @@ export default function ImportacaoVidasPage() {
       setDataVigencia("")
       return
     }
-    const dias = Array.isArray(contrato.opcoes_dia_vencimento) ? contrato.opcoes_dia_vencimento : []
-    const vigs = Array.isArray(contrato.opcoes_data_vigencia) ? contrato.opcoes_data_vigencia : []
-    setDiaVencimento((prev) => (prev && dias.includes(prev) ? prev : (dias[0] || "")))
-    setDataVigencia((prev) => (prev && vigs.includes(prev) ? prev : (vigs[0] || "")))
-  }, [contratoId, contratos])
+    const diasLista = Array.isArray(contrato.opcoes_dia_vencimento)
+      ? contrato.opcoes_dia_vencimento
+          .map((x) => String(x || "").replace(/\D/g, "").padStart(2, "0").slice(-2))
+          .filter(Boolean)
+      : []
+    const vigsLista = Array.isArray(contrato.opcoes_data_vigencia)
+      ? contrato.opcoes_data_vigencia.map((x) => String(x || "").trim()).filter(Boolean)
+      : []
+
+    const dias = Array.from(new Set([...diasLista, ...opcoesContratoSelecionado.dias]))
+    const vigs = Array.from(new Set([...vigsLista, ...opcoesContratoSelecionado.vigencias]))
+    const vigsComFallback = vigs.length > 0 ? vigs : ["A DEFINIR"]
+    const diasComFallback = dias.length > 0 ? dias : ["01", "10"]
+
+    setDiaVencimento((prev) => (prev && diasComFallback.includes(prev) ? prev : (diasComFallback[0] || "")))
+    setDataVigencia((prev) => (prev && vigsComFallback.includes(prev) ? prev : (vigsComFallback[0] || "")))
+  }, [contratoId, contratos, opcoesContratoSelecionado])
 
   const onFile = useCallback((f: File | null) => {
     setEditedOverrides({})
@@ -714,6 +757,31 @@ export default function ImportacaoVidasPage() {
     }
   }
 
+  const contratoSelecionado = contratos.find((c) => c.id === contratoId)
+  const diasContratoTela = Array.from(
+    new Set([
+      ...((Array.isArray(contratoSelecionado?.opcoes_dia_vencimento)
+        ? contratoSelecionado?.opcoes_dia_vencimento
+            ?.map((x) => String(x || "").replace(/\D/g, "").padStart(2, "0").slice(-2))
+            .filter(Boolean)
+        : []) as string[]),
+      ...(opcoesContratoSelecionado.dias || []),
+    ])
+  )
+  const diasContrato = diasContratoTela.length > 0 ? diasContratoTela : ["01", "10"]
+  const usandoFallbackDiaContrato = diasContratoTela.length === 0
+  const vigenciasContrato = Array.from(
+    new Set([
+      ...((Array.isArray(contratoSelecionado?.opcoes_data_vigencia)
+        ? contratoSelecionado?.opcoes_data_vigencia?.map((x) => String(x || "").trim()).filter(Boolean)
+        : []) as string[]),
+      ...(opcoesContratoSelecionado.vigencias || []),
+    ])
+  )
+  const vigenciasContratoComFallback = vigenciasContrato.length > 0 ? vigenciasContrato : ["A DEFINIR"]
+  const usandoFallbackVigenciaContrato = vigenciasContrato.length === 0
+  const contratoComOpcoesCompletas = !usandoFallbackDiaContrato && !usandoFallbackVigenciaContrato
+
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="bg-white border-b border-gray-200 px-6 py-4">
@@ -902,7 +970,7 @@ export default function ImportacaoVidasPage() {
                         <SelectValue placeholder="Selecione o dia" />
                       </SelectTrigger>
                       <SelectContent>
-                        {(contratos.find((c) => c.id === contratoId)?.opcoes_dia_vencimento || []).map((dia) => (
+                        {diasContrato.map((dia) => (
                           <SelectItem key={dia} value={dia}>{dia}</SelectItem>
                         ))}
                       </SelectContent>
@@ -910,6 +978,11 @@ export default function ImportacaoVidasPage() {
                     <p className="text-xs text-amber-700 mt-1.5">
                       Opções conforme cadastro do contrato selecionado.
                     </p>
+                    {usandoFallbackDiaContrato && (
+                      <p className="text-xs text-orange-600 mt-1">
+                        Este contrato ainda não tem dias de vencimento cadastrados; usando fallback 01 e 10.
+                      </p>
+                    )}
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">Vigência (referência) <span className="text-red-500">*</span></label>
@@ -918,7 +991,7 @@ export default function ImportacaoVidasPage() {
                         <SelectValue placeholder="Selecione a vigência" />
                       </SelectTrigger>
                       <SelectContent>
-                        {(contratos.find((c) => c.id === contratoId)?.opcoes_data_vigencia || []).map((vig) => (
+                        {vigenciasContratoComFallback.map((vig) => (
                           <SelectItem key={vig} value={vig}>{vig}</SelectItem>
                         ))}
                       </SelectContent>
@@ -926,6 +999,11 @@ export default function ImportacaoVidasPage() {
                     <p className="text-xs text-amber-700 mt-1.5">
                       Aqui é uma referência de vigência do contrato. A data formal é validada na ficha do beneficiário.
                     </p>
+                    {usandoFallbackVigenciaContrato && (
+                      <p className="text-xs text-orange-600 mt-1">
+                        Este contrato ainda não tem vigências de referência cadastradas; usando fallback A DEFINIR.
+                      </p>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1141,9 +1219,18 @@ export default function ImportacaoVidasPage() {
                 <h2 className="text-sm font-semibold text-gray-800 inline">Grupo e produto para cadastro</h2>
               </div>
               <div className="p-6">
-                <p className="text-xs text-gray-500 mb-4">O produto lista apenas planos já utilizados nos contratos desta administradora (sessão Contrato / Clientes).</p>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 max-w-6xl">
-                  <div>
+                <div className="mb-4 rounded-md border border-slate-200 bg-slate-50 px-3 py-2.5">
+                  <p className="flex items-start gap-2 text-xs text-slate-700">
+                    <Info className="h-3.5 w-3.5 mt-0.5 shrink-0 text-slate-500" />
+                    O produto lista os planos vinculados ao contrato selecionado.
+                    {contratoComOpcoesCompletas
+                      ? " As opções de vencimento e vigência já estão configuradas para este contrato."
+                      : " Se o contrato ainda não tiver opções configuradas, o sistema usa valores padrão temporários."}
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 max-w-6xl">
+                  <div className="rounded-md border border-gray-200 bg-white p-3">
                     <label className="block text-sm font-medium text-gray-700 mb-2">Grupo de clientes <span className="text-red-500">*</span></label>
                     <Select value={grupoId} onValueChange={setGrupoId}>
                       <SelectTrigger className="h-10 w-full rounded-md border border-gray-300 bg-background px-3 py-2 text-sm">
@@ -1156,7 +1243,7 @@ export default function ImportacaoVidasPage() {
                       </SelectContent>
                     </Select>
                   </div>
-                  <div>
+                  <div className="rounded-md border border-gray-200 bg-white p-3">
                     <label className="block text-sm font-medium text-gray-700 mb-2">Contrato <span className="text-red-500">*</span></label>
                     <Select value={contratoId} onValueChange={setContratoId}>
                       <SelectTrigger className="h-10 w-full rounded-md border border-gray-300 bg-background px-3 py-2 text-sm">
@@ -1171,7 +1258,7 @@ export default function ImportacaoVidasPage() {
                       </SelectContent>
                     </Select>
                   </div>
-                  <div>
+                  <div className="rounded-md border border-gray-200 bg-white p-3">
                     <label className="block text-sm font-medium text-gray-700 mb-2">Produto (planos dos contratos) <span className="text-red-500">*</span></label>
                     <Select value={produtoId} onValueChange={setProdutoId}>
                       <SelectTrigger className="h-10 w-full rounded-md border border-gray-300 bg-background px-3 py-2 text-sm">
@@ -1184,40 +1271,59 @@ export default function ImportacaoVidasPage() {
                       </SelectContent>
                     </Select>
                     {contratoId && produtos.length === 0 && (
-                      <p className="text-xs text-amber-700 mt-1.5">Nenhum produto encontrado para o contrato selecionado.</p>
+                      <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2">
+                        <p className="flex items-start gap-2 text-xs text-amber-800">
+                          <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                          Nenhum produto encontrado para o contrato selecionado.
+                        </p>
+                      </div>
                     )}
                   </div>
-                  <div>
+                  <div className="rounded-md border border-gray-200 bg-white p-3">
                     <label className="block text-sm font-medium text-gray-700 mb-2">Dia de vencimento <span className="text-red-500">*</span></label>
                     <Select value={diaVencimento} onValueChange={setDiaVencimento}>
                       <SelectTrigger className="h-10 w-full rounded-md border border-gray-300 bg-background px-3 py-2 text-sm">
                         <SelectValue placeholder="Selecione o dia" />
                       </SelectTrigger>
                       <SelectContent>
-                        {(contratos.find((c) => c.id === contratoId)?.opcoes_dia_vencimento || []).map((dia) => (
+                        {diasContrato.map((dia) => (
                           <SelectItem key={dia} value={dia}>{dia}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
-                    <p className="text-xs text-amber-700 mt-1.5">
-                      Opções conforme cadastro do contrato selecionado.
-                    </p>
+                    <p className="text-xs text-slate-500 mt-2">Opções conforme cadastro do contrato selecionado.</p>
+                    {usandoFallbackDiaContrato && (
+                      <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2">
+                        <p className="flex items-start gap-2 text-xs text-amber-800">
+                          <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                          Este contrato ainda não tem dias de vencimento cadastrados. Usando fallback 01 e 10.
+                        </p>
+                      </div>
+                    )}
                   </div>
-                  <div>
+                  <div className="rounded-md border border-gray-200 bg-white p-3">
                     <label className="block text-sm font-medium text-gray-700 mb-2">Vigência (referência) <span className="text-red-500">*</span></label>
                     <Select value={dataVigencia} onValueChange={setDataVigencia}>
                       <SelectTrigger className="h-10 w-full rounded-md border border-gray-300 bg-background px-3 py-2 text-sm">
                         <SelectValue placeholder="Selecione a vigência" />
                       </SelectTrigger>
                       <SelectContent>
-                        {(contratos.find((c) => c.id === contratoId)?.opcoes_data_vigencia || []).map((vig) => (
+                        {vigenciasContratoComFallback.map((vig) => (
                           <SelectItem key={vig} value={vig}>{vig}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
-                    <p className="text-xs text-amber-700 mt-1.5">
+                    <p className="text-xs text-slate-500 mt-2">
                       Aqui é uma referência de vigência do contrato. A data formal é validada na ficha do beneficiário.
                     </p>
+                    {usandoFallbackVigenciaContrato && (
+                      <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2">
+                        <p className="flex items-start gap-2 text-xs text-amber-800">
+                          <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                          Este contrato ainda não tem vigências de referência cadastradas. Usando fallback A DEFINIR.
+                        </p>
+                      </div>
+                    )}
                   </div>
                 </div>
                 <div className="mt-6 flex justify-end">
