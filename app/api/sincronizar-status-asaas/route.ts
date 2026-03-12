@@ -6,6 +6,8 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
+export const maxDuration = 60
+
 interface ResultadoSincronizacao {
   faturas_atualizadas: number
   faturas_verificadas: number
@@ -17,6 +19,38 @@ interface ResultadoSincronizacao {
     de: string
     para: string
   }>
+}
+
+function extrairColunaInexistente(mensagem: string | undefined): string | null {
+  const txt = String(mensagem || '')
+  const m = txt.match(/column\s+"?([a-zA-Z0-9_]+)"?\s+of relation/i)
+  return m?.[1] || null
+}
+
+async function atualizarFaturaComFallback(
+  faturaId: string,
+  payloadInicial: Record<string, unknown>
+): Promise<{ ok: boolean; error?: string }> {
+  const payload = { ...payloadInicial }
+  const tentativas = 6
+  for (let i = 0; i < tentativas; i++) {
+    const { error } = await supabase
+      .from('faturas')
+      .update(payload)
+      .eq('id', faturaId)
+
+    if (!error) return { ok: true }
+
+    const coluna = extrairColunaInexistente(error.message)
+    if (coluna && Object.prototype.hasOwnProperty.call(payload, coluna)) {
+      delete payload[coluna]
+      continue
+    }
+
+    return { ok: false, error: error.message }
+  }
+
+  return { ok: false, error: 'Falha ao atualizar fatura após múltiplos fallbacks de colunas.' }
 }
 
 function normalizarStatusLocal(status: string | null | undefined): string {
@@ -157,11 +191,22 @@ export async function POST(request: NextRequest) {
       : 'https://api.asaas.com/v3'
 
     // 2. Buscar faturas com asaas_charge_id
-    const { data: faturas, error: faturasError } = await supabase
+    let { data: faturas, error: faturasError } = await supabase
       .from('faturas')
-      .select('id, numero_fatura, cliente_nome, asaas_charge_id, gateway_id, status, valor, vencimento')
+      .select('id, numero_fatura, cliente_nome, asaas_charge_id, gateway_id, status')
       .eq('administradora_id', administradora_id)
       .or('asaas_charge_id.not.is.null,gateway_id.not.is.null')
+
+    if (faturasError) {
+      // Fallback para schemas legados com divergência de colunas.
+      const fallback = await supabase
+        .from('faturas')
+        .select('id, asaas_charge_id, gateway_id, status')
+        .eq('administradora_id', administradora_id)
+        .or('asaas_charge_id.not.is.null,gateway_id.not.is.null')
+      faturas = fallback.data as any
+      faturasError = fallback.error as any
+    }
 
     if (faturasError) {
       return NextResponse.json(
@@ -209,16 +254,20 @@ export async function POST(request: NextRequest) {
           continue
         }
 
-        // Verificar se QUALQUER dado mudou (não apenas o status)
-        const valorMudou = Math.abs(charge.value - fatura.valor) > 0.01
+        // Em produção com schema heterogêneo, priorizamos sincronização de status.
+        const valorAtualLocal = Number((fatura as any)?.valor ?? (fatura as any)?.valor_total ?? 0)
+        const vencimentoAtualLocal = String((fatura as any)?.vencimento ?? (fatura as any)?.data_vencimento ?? '')
+        const valorMudou = Math.abs(Number(charge?.value || 0) - valorAtualLocal) > 0.01
         const statusMudou = novoStatus !== statusAtualNormalizado
-        const vencimentoMudou = charge.dueDate !== fatura.vencimento
+        const vencimentoMudou = String(charge?.dueDate || '') !== vencimentoAtualLocal
 
         if (statusMudou || valorMudou || vencimentoMudou) {
           const updateData: any = {
             status: novoStatus,
             valor: charge.value,
             vencimento: charge.dueDate,
+            valor_total: charge.value,
+            data_vencimento: charge.dueDate,
             asaas_boleto_url: charge.bankSlipUrl || null,
             asaas_invoice_url: charge.invoiceUrl || null,
             asaas_payment_link: charge.invoiceUrl || null,
@@ -233,27 +282,23 @@ export async function POST(request: NextRequest) {
             updateData.pagamento_valor = charge.value
           }
 
-          const { error: updateError } = await supabase
-            .from('faturas')
-            .update(updateData)
-            .eq('id', fatura.id)
-
-          if (updateError) {
-            console.error(`❌ Erro ao atualizar fatura ${fatura.id}:`, updateError)
-            resultado.erros.push(`Fatura ${fatura.id}: ${updateError.message}`)
+          const updateRes = await atualizarFaturaComFallback(String((fatura as any).id), updateData)
+          if (!updateRes.ok) {
+            console.error(`❌ Erro ao atualizar fatura ${(fatura as any).id}:`, updateRes.error)
+            resultado.erros.push(`Fatura ${(fatura as any).id}: ${String(updateRes.error || 'erro ao atualizar')}`)
           } else {
             resultado.faturas_atualizadas++
             const mudancas = []
-            if (statusMudou) mudancas.push(`status: ${fatura.status} → ${novoStatus}`)
-            if (valorMudou) mudancas.push(`valor: R$ ${fatura.valor} → R$ ${charge.value}`)
-            if (vencimentoMudou) mudancas.push(`vencimento: ${fatura.vencimento} → ${charge.dueDate}`)
+            if (statusMudou) mudancas.push(`status: ${(fatura as any).status} → ${novoStatus}`)
+            if (valorMudou) mudancas.push(`valor: R$ ${valorAtualLocal} → R$ ${charge.value}`)
+            if (vencimentoMudou) mudancas.push(`vencimento: ${vencimentoAtualLocal || '-'} → ${charge.dueDate}`)
             console.log(`✅ Fatura ${idBase} atualizada: ${mudancas.join(', ')}`)
             if (statusMudou) {
               resultado.alteracoes_status.push({
-                fatura_id: String(fatura.id),
-                numero_fatura: (fatura as any).numero_fatura ?? null,
-                cliente_nome: (fatura as any).cliente_nome ?? null,
-                de: statusAtualNormalizado || String(fatura.status || ""),
+                fatura_id: String((fatura as any).id),
+                numero_fatura: (fatura as any)?.numero_fatura ?? null,
+                cliente_nome: (fatura as any)?.cliente_nome ?? null,
+                de: statusAtualNormalizado || String((fatura as any)?.status || ""),
                 para: novoStatus,
               })
             }
@@ -261,9 +306,9 @@ export async function POST(request: NextRequest) {
         }
 
         // Pequeno delay para não sobrecarregar a API
-        await new Promise(resolve => setTimeout(resolve, 500))
+        await new Promise(resolve => setTimeout(resolve, 150))
       } catch (error: any) {
-        resultado.erros.push(`Erro ao processar fatura ${fatura.id}: ${error.message}`)
+        resultado.erros.push(`Erro ao processar fatura ${(fatura as any)?.id}: ${error.message}`)
       }
     }
 
