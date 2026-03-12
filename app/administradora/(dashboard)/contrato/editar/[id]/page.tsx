@@ -74,6 +74,10 @@ export default function EditarContratoPage() {
 
   const [operadoraInfo, setOperadoraInfo] = useState({ cnpj: "", razao_social: "", nome_fantasia: "" })
   const [produtos, setProdutos] = useState<ProdutoContrato[]>([])
+  const [novoDiaVencimento, setNovoDiaVencimento] = useState("")
+  const [novaDataVigencia, setNovaDataVigencia] = useState("")
+  const [opcoesDiaVencimento, setOpcoesDiaVencimento] = useState<string[]>([])
+  const [opcoesDataVigencia, setOpcoesDataVigencia] = useState<string[]>([])
   const [confirmExcluirOpen, setConfirmExcluirOpen] = useState(false)
   const [excluirContexto, setExcluirContexto] = useState<{ tipo: "produto"; id: string; nome?: string } | { tipo: "faixa"; produtoId: string; produtoNome?: string; tipoAcomodacao: TipoAcomodacao; index: number } | null>(null)
 
@@ -101,6 +105,8 @@ export default function EditarContratoPage() {
         razao_social: data.razao_social || "",
         nome_fantasia: data.nome_fantasia || "",
       })
+      setOpcoesDiaVencimento(Array.isArray(data.opcoes_dia_vencimento) ? data.opcoes_dia_vencimento : [])
+      setOpcoesDataVigencia(Array.isArray(data.opcoes_data_vigencia) ? data.opcoes_data_vigencia : [])
       const prods = (data.produtos || []).map((p: {
         id: string
         nome: string
@@ -208,6 +214,8 @@ export default function EditarContratoPage() {
           numero: formData.numero,
           observacao: formData.observacao || null,
           logo: formData.logo || null,
+          opcoes_dia_vencimento: opcoesDiaVencimento,
+          opcoes_data_vigencia: opcoesDataVigencia,
           produtos: produtos
             .filter((p) => (p.nome || "").trim())
             .map((p) => ({
@@ -328,6 +336,88 @@ export default function EditarContratoPage() {
                     maxLength={500}
                   />
                   <p className="text-xs text-gray-500 mt-1">Restam {500 - formData.observacao.length} caracteres.</p>
+                </div>
+
+                <div className="md:col-span-2 border border-gray-200 rounded-sm p-4 bg-gray-50/40">
+                  <h3 className="text-sm font-medium text-gray-800 mb-3">Opções para importação de vidas</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs text-gray-600 mb-1">Adicionar dia de vencimento</label>
+                      <div className="flex gap-2">
+                        <Input
+                          value={novoDiaVencimento}
+                          onChange={(e) => setNovoDiaVencimento(e.target.value)}
+                          placeholder="Ex.: 01, 10, 15"
+                          className="h-9 text-sm border-gray-300 rounded-sm"
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="h-9"
+                          onClick={() => {
+                            const dia = novoDiaVencimento.replace(/\D/g, "").padStart(2, "0").slice(-2)
+                            const n = Number(dia)
+                            if (!dia || !Number.isFinite(n) || n < 1 || n > 31) return
+                            setOpcoesDiaVencimento((prev) => Array.from(new Set([...prev, dia])).sort((a, b) => Number(a) - Number(b)))
+                            setNovoDiaVencimento("")
+                          }}
+                        >
+                          Adicionar
+                        </Button>
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {opcoesDiaVencimento.map((dia) => (
+                          <button
+                            key={dia}
+                            type="button"
+                            onClick={() => setOpcoesDiaVencimento((prev) => prev.filter((d) => d !== dia))}
+                            className="text-xs px-2.5 py-1 rounded-full border border-gray-300 hover:bg-gray-100"
+                            title="Remover"
+                          >
+                            {dia} ×
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs text-gray-600 mb-1">Adicionar opção de vigência</label>
+                      <div className="flex gap-2">
+                        <Input
+                          value={novaDataVigencia}
+                          onChange={(e) => setNovaDataVigencia(e.target.value)}
+                          placeholder="Ex.: MAI/2026, 2026-05, INICIO IMEDIATO"
+                          className="h-9 text-sm border-gray-300 rounded-sm"
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="h-9"
+                          onClick={() => {
+                            const vig = String(novaDataVigencia || "").trim()
+                            if (!vig) return
+                            setOpcoesDataVigencia((prev) => Array.from(new Set([...prev, vig])))
+                            setNovaDataVigencia("")
+                          }}
+                        >
+                          Adicionar
+                        </Button>
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {opcoesDataVigencia.map((vig) => (
+                          <button
+                            key={vig}
+                            type="button"
+                            onClick={() => setOpcoesDataVigencia((prev) => prev.filter((d) => d !== vig))}
+                            className="text-xs px-2.5 py-1 rounded-full border border-gray-300 hover:bg-gray-100"
+                            title="Remover"
+                          >
+                            {vig} ×
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>

@@ -11,9 +11,12 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const grupoId = searchParams.get("grupo_id")
     const administradoraId = searchParams.get("administradora_id")
+    const somenteAtivos = ["1", "true", "sim"].includes(
+      String(searchParams.get("somente_ativos") || "").toLowerCase()
+    )
 
-    if (!grupoId) {
-      return NextResponse.json({ error: "grupo_id é obrigatório" }, { status: 400 })
+    if (!grupoId && !administradoraId) {
+      return NextResponse.json({ error: "grupo_id ou administradora_id é obrigatório" }, { status: 400 })
     }
 
     let tenantId = await getCurrentTenantId()
@@ -38,13 +41,18 @@ export async function GET(request: NextRequest) {
       let query = supabaseAdmin
         .from("vidas_importadas")
         .select("*")
-        .eq("grupo_id", grupoId)
         .eq("tenant_id", tenantId)
         .order("tipo", { ascending: true })
         .order("nome", { ascending: true })
         .range(from, from + PAGE_SIZE - 1)
+      if (grupoId) {
+        query = query.eq("grupo_id", grupoId)
+      }
       if (administradoraId) {
         query = query.eq("administradora_id", administradoraId)
+      }
+      if (somenteAtivos) {
+        query = query.neq("ativo", false)
       }
       const { data: chunk, error } = await query
 

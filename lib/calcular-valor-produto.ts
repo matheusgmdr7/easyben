@@ -6,25 +6,87 @@
 
 import { supabaseAdmin } from "@/lib/supabase-admin"
 
+function parseValorMonetario(raw: unknown): number {
+  if (raw == null) return 0
+  if (typeof raw === "number" && !isNaN(raw)) return raw
+  let s = String(raw).trim()
+  if (!s) return 0
+  s = s.replace(/[^\d,.-]/g, "")
+  if (!s) return 0
+  const temVirgula = s.includes(",")
+  const temPonto = s.includes(".")
+  if (temVirgula && temPonto) {
+    s = s.replace(/\./g, "").replace(",", ".")
+  } else if (temVirgula) {
+    s = s.replace(",", ".")
+  }
+  const n = parseFloat(s)
+  return !isNaN(n) && n >= 0 ? n : 0
+}
+
+function extrairFaixaRegistro(item: Record<string, unknown>): string {
+  return String(
+    item?.faixa_etaria ??
+      item?.faixa ??
+      item?.faixaIdade ??
+      item?.idade ??
+      ""
+  ).trim()
+}
+
+function parseFaixaEtaria(
+  faixaRaw: unknown
+): { tipo: "range"; min: number; max: number } | { tipo: "min"; min: number } | { tipo: "exact"; idade: number } | null {
+  const faixa = String(faixaRaw ?? "").trim()
+  if (!faixa) return null
+
+  const normalizada = faixa
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim()
+
+  const nums = normalizada.match(/\d+/g)?.map((n) => parseInt(n, 10)).filter((n) => !isNaN(n)) || []
+
+  const rangeComHifen = normalizada.match(/(\d+)\s*[-–]\s*(\d+)/)
+  if (rangeComHifen) {
+    const min = parseInt(rangeComHifen[1], 10)
+    const max = parseInt(rangeComHifen[2], 10)
+    if (!isNaN(min) && !isNaN(max)) return { tipo: "range", min, max }
+  }
+
+  if ((normalizada.includes(" a ") || normalizada.includes(" ate ") || normalizada.includes("até ")) && nums.length >= 2) {
+    return { tipo: "range", min: nums[0], max: nums[1] }
+  }
+
+  if (
+    normalizada.includes("+") ||
+    normalizada.includes("ou mais") ||
+    normalizada.includes("acima de") ||
+    normalizada.includes("maior que") ||
+    normalizada.includes(">=")
+  ) {
+    if (nums.length >= 1) return { tipo: "min", min: nums[0] }
+  }
+
+  if (nums.length === 1) return { tipo: "exact", idade: nums[0] }
+  return null
+}
+
 function calcularValorPorFaixas(faixas: unknown[], idade: number): number {
   if (!Array.isArray(faixas)) return 0
   for (const f of faixas) {
-    const faixa = String((f as Record<string, unknown>)?.faixa_etaria ?? "").trim()
+    const item = (f as Record<string, unknown>) || {}
+    const faixa = extrairFaixaRegistro(item)
     const rawValor = (f as Record<string, unknown>)?.valor
-    const valor = typeof rawValor === "number" ? rawValor : Number(String(rawValor ?? "").replace(",", ".")) || 0
+    const valor = parseValorMonetario(rawValor)
     if (!faixa) continue
-    if (faixa.includes("-")) {
-      const parts = faixa.split("-")
-      const min = parseInt(parts[0]?.trim() ?? "", 10)
-      const max = parseInt(parts[1]?.trim() ?? "", 10)
-      if (!isNaN(min) && !isNaN(max) && idade >= min && idade <= max) return valor
-    } else if (faixa.endsWith("+")) {
-      const min = parseInt(faixa.replace("+", "").trim(), 10)
-      if (!isNaN(min) && idade >= min) return valor
-    } else {
-      const exata = parseInt(faixa, 10)
-      if (!isNaN(exata) && idade === exata) return valor
-    }
+    const parse = parseFaixaEtaria(faixa)
+    if (!parse) continue
+    if (parse.tipo === "range" && idade >= parse.min && idade <= parse.max) return valor
+    if (parse.tipo === "min" && idade >= parse.min) return valor
+    if (parse.tipo === "exact" && idade === parse.idade) return valor
   }
   return 0
 }
@@ -105,6 +167,18 @@ export async function obterValorProdutoPorIdade(
       } else if (raw && typeof raw === "object" && "Enfermaria" in raw && "Apartamento" in raw) {
         const obj = raw as Record<string, unknown[]>
         faixas = Array.isArray(obj[acomodacao]) ? obj[acomodacao] : []
+      } else if (raw && typeof raw === "object") {
+        const obj = raw as Record<string, unknown>
+        const chaves = Object.keys(obj)
+        const chaveAcomodacao = chaves.find((k) => k.toLowerCase() === acomodacao.toLowerCase())
+        const chaveFallback = chaves.find((k) => k.toLowerCase().includes("enferm")) || chaves.find((k) => k.toLowerCase().includes("apart"))
+        const arrAcomodacao = chaveAcomodacao ? obj[chaveAcomodacao] : chaveFallback ? obj[chaveFallback] : null
+        if (Array.isArray(arrAcomodacao)) faixas = arrAcomodacao
+      }
+      if (faixas.length === 0 && raw && typeof raw === "object" && !Array.isArray(raw)) {
+        const obj = raw as Record<string, unknown>
+        const todosArrays = Object.values(obj).filter((v) => Array.isArray(v)) as unknown[][]
+        faixas = todosArrays.flat()
       }
       const valor = calcularValorPorFaixas(faixas, idade)
       return valor > 0 ? valor : null

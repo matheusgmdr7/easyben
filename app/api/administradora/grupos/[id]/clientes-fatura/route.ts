@@ -62,13 +62,14 @@ export async function GET(
       cliente_administradora_id: string
       produto_nome?: string
       dependentes_nomes?: string[]
+      dia_vencimento?: string
     }> = []
 
     // Vidas importadas: apenas TITULARES; valor = titular + dependentes vinculados (cpf_titular)
     let vidasGrupo: Array<Record<string, unknown>> | null = null
     const fullSelect = await supabaseAdmin
       .from("vidas_importadas")
-      .select("id, nome, cpf, valor_mensal, emails, dados_adicionais, cliente_administradora_id, tipo, cpf_titular, produto_id, plano")
+      .select("id, nome, cpf, valor_mensal, emails, dados_adicionais, cliente_administradora_id, tipo, cpf_titular, produto_id, plano, idade, acomodacao, ativo")
       .eq("grupo_id", grupoId)
       .eq("administradora_id", administradoraId)
       .eq("tenant_id", tenantId)
@@ -77,14 +78,14 @@ export async function GET(
     } else {
       const minimalSelect = await supabaseAdmin
         .from("vidas_importadas")
-        .select("id, nome, cpf, tipo, cpf_titular, valor_mensal, cliente_administradora_id, plano")
+        .select("id, nome, cpf, tipo, cpf_titular, valor_mensal, cliente_administradora_id, plano, idade, acomodacao, produto_id, ativo")
         .eq("grupo_id", grupoId)
         .eq("administradora_id", administradoraId)
         .eq("tenant_id", tenantId)
       if (!minimalSelect.error) vidasGrupo = minimalSelect.data as Array<Record<string, unknown>>
     }
 
-    const vidas = vidasGrupo || []
+    const vidas = (vidasGrupo || []).filter((v) => (v as Record<string, unknown>)?.ativo !== false)
     const tipo = (v: Record<string, unknown>) => String((v.tipo ?? "titular") ?? "").toLowerCase()
     const cpfNorm = (v: Record<string, unknown>) => (v.cpf ? String(v.cpf).replace(/\D/g, "") : "")
 
@@ -125,6 +126,7 @@ export async function GET(
 
       // Plano: usar coluna nativa "plano" (cadastrado na importação) ou Dados adicionais > Plano; fallback para nome do produto do contrato
       let planoOuProdutoNome: string | undefined
+      let diaVencimento: string | undefined
       if (vidaAny.plano != null && String(vidaAny.plano).trim() !== "") {
         planoOuProdutoNome = String(vidaAny.plano).trim()
       } else {
@@ -146,6 +148,15 @@ export async function GET(
           if (prod && (prod as any).nome) planoOuProdutoNome = (prod as any).nome
         }
       }
+      {
+        const adic = vidaAny.dados_adicionais
+        if (adic && typeof adic === "object") {
+          const rec = adic as Record<string, unknown>
+          const diaRaw = rec["dia_vencimento"] ?? rec["Dia Vencimento"] ?? rec["diaVencimento"]
+          const diaNorm = String(diaRaw || "").replace(/\D/g, "").padStart(2, "0").slice(-2)
+          if (diaNorm === "01" || diaNorm === "10") diaVencimento = diaNorm
+        }
+      }
 
       resultado.push({
         id: vida.id as string,
@@ -156,6 +167,7 @@ export async function GET(
         valor_mensal: valorMensal,
         produto_nome: planoOuProdutoNome,
         dependentes_nomes: dependentesNomes.length > 0 ? dependentesNomes : undefined,
+        dia_vencimento: diaVencimento,
       })
     }
 
@@ -163,7 +175,7 @@ export async function GET(
       if (v.cliente_tipo === "cliente_administradora") {
         const { data: ca } = await supabaseAdmin
           .from("clientes_administradoras")
-          .select("id, valor_mensal")
+          .select("id, valor_mensal, dia_vencimento")
           .eq("id", v.cliente_id)
           .eq("tenant_id", tenantId)
           .maybeSingle()
@@ -183,6 +195,7 @@ export async function GET(
             cliente_email: (vw as any)?.cliente_email,
             cliente_cpf: (vw as any)?.cliente_cpf,
             valor_mensal: Number((vw as any)?.valor_mensal ?? ca.valor_mensal ?? 0),
+            dia_vencimento: (ca as any)?.dia_vencimento ? String((ca as any).dia_vencimento).padStart(2, "0") : undefined,
           })
         }
         continue
@@ -191,7 +204,7 @@ export async function GET(
       if (v.cliente_tipo === "proposta") {
         const { data: clienteAdm } = await supabaseAdmin
           .from("clientes_administradoras")
-          .select("id, valor_mensal")
+          .select("id, valor_mensal, dia_vencimento")
           .eq("proposta_id", v.cliente_id)
           .eq("tenant_id", tenantId)
           .maybeSingle()
@@ -212,6 +225,7 @@ export async function GET(
           cliente_email: (vw as any)?.cliente_email,
           cliente_cpf: (vw as any)?.cliente_cpf,
           valor_mensal: Number((vw as any)?.valor_mensal ?? clienteAdm.valor_mensal ?? 0),
+          dia_vencimento: (clienteAdm as any)?.dia_vencimento ? String((clienteAdm as any).dia_vencimento).padStart(2, "0") : undefined,
         })
         continue
       }

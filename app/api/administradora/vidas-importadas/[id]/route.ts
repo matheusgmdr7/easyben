@@ -7,6 +7,7 @@ const CAMPOS_EDITAVEIS = [
   "nome", "cpf", "nome_mae", "nome_pai", "tipo", "data_nascimento", "idade", "parentesco",
   "cpf_titular", "produto_id", "plano", "acomodacao", "ativo", "sexo", "estado_civil", "identidade", "cns", "observacoes", "corretor_id",
   "cep", "cidade", "estado", "bairro", "logradouro", "numero", "complemento", "telefones", "emails",
+  "valor_mensal", "dados_adicionais",
 ] as const
 
 /**
@@ -89,6 +90,16 @@ export async function PUT(
     if ("emails" in updates && !Array.isArray(updates.emails)) {
       updates.emails = Array.isArray(body.emails) ? body.emails : []
     }
+    if ("valor_mensal" in updates && updates.valor_mensal != null) {
+      const n = typeof updates.valor_mensal === "number"
+        ? updates.valor_mensal
+        : parseFloat(String(updates.valor_mensal).replace(",", "."))
+      updates.valor_mensal = typeof n === "number" && !isNaN(n) && n >= 0 ? n : null
+    }
+    if ("dados_adicionais" in updates) {
+      const da = updates.dados_adicionais
+      updates.dados_adicionais = da && typeof da === "object" && !Array.isArray(da) ? da : {}
+    }
 
     const administradoraId = typeof body?.administradora_id === "string" ? body.administradora_id : ""
     let tenantId: string | null = null
@@ -124,7 +135,11 @@ export async function PUT(
     }
 
     const precisaRecalcularValor = "produto_id" in updates || "data_nascimento" in updates || "idade" in updates || "acomodacao" in updates
-    if (precisaRecalcularValor) {
+    const valorManualInformado =
+      "valor_mensal" in updates &&
+      updates.valor_mensal != null &&
+      Number.isFinite(Number(updates.valor_mensal))
+    if (precisaRecalcularValor && !valorManualInformado) {
       try {
         const merge = { ...atual, ...updates }
         const pid = merge.produto_id

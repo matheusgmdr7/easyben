@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase-admin"
-import { getCurrentTenantId } from "@/lib/tenant-query-helper"
-
 /**
  * GET /api/administradora/contratos?administradora_id=xxx
  * Lista contratos da administradora (contratos_administradora) criados em contrato/novo.
@@ -15,20 +13,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "administradora_id é obrigatório" }, { status: 400 })
     }
 
-    // Priorizar tenant da administradora para evitar mismatch de contexto.
-    let tenantId: string
-    const { data: adm } = await supabaseAdmin
-      .from("administradoras")
-      .select("tenant_id")
-      .eq("id", administradoraId)
-      .maybeSingle()
-    if (adm?.tenant_id) {
-      tenantId = adm.tenant_id
-    } else {
-      tenantId = await getCurrentTenantId()
-    }
-
-    let { data: contratos, error } = await supabaseAdmin
+    const { data: contratos, error } = await supabaseAdmin
       .from("contratos_administradora")
       .select(`
         id,
@@ -41,29 +26,7 @@ export async function GET(request: NextRequest) {
         created_at
       `)
       .eq("administradora_id", administradoraId)
-      .eq("tenant_id", tenantId)
       .order("created_at", { ascending: false })
-
-    if (!error && (!contratos || contratos.length === 0)) {
-      // Fallback para dados legados sem tenant_id preenchido
-      const fallback = await supabaseAdmin
-        .from("contratos_administradora")
-        .select(`
-          id,
-          numero,
-          descricao,
-          razao_social,
-          nome_fantasia,
-          logo,
-          observacao,
-          created_at
-        `)
-        .eq("administradora_id", administradoraId)
-        .order("created_at", { ascending: false })
-
-      contratos = fallback.data || []
-      error = fallback.error as any
-    }
 
     if (error) {
       console.error("Erro ao buscar contratos:", error)
@@ -95,6 +58,33 @@ export async function GET(request: NextRequest) {
       operadora_nome: c.nome_fantasia || c.razao_social || "-",
       produtos_count: produtosCount[c.id] || 0,
     }))
+
+    try {
+      const idsContratos = result.map((r) => r.id).filter(Boolean)
+      if (idsContratos.length > 0) {
+        const { data: opcoes } = await supabaseAdmin
+          .from("contratos_opcoes_administradora")
+          .select("contrato_id, opcoes_dia_vencimento, opcoes_data_vigencia")
+          .in("contrato_id", idsContratos)
+        const mapOpcoes = new Map(
+          (opcoes || []).map((o: any) => [
+            String(o.contrato_id),
+            {
+              opcoes_dia_vencimento: Array.isArray(o.opcoes_dia_vencimento) ? o.opcoes_dia_vencimento : [],
+              opcoes_data_vigencia: Array.isArray(o.opcoes_data_vigencia) ? o.opcoes_data_vigencia : [],
+            },
+          ])
+        )
+        return NextResponse.json(
+          result.map((r) => ({
+            ...r,
+            ...(mapOpcoes.get(r.id) || { opcoes_dia_vencimento: [], opcoes_data_vigencia: [] }),
+          }))
+        )
+      }
+    } catch {
+      // tabela opcional
+    }
 
     return NextResponse.json(result)
   } catch (e: unknown) {

@@ -61,10 +61,13 @@ function parseDataNascimento(s: string | number | null | undefined): string | nu
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { administradora_id, grupo_id, produto_id, linhas } = body as {
+    const { administradora_id, grupo_id, contrato_id, produto_id, dia_vencimento, data_vigencia, linhas } = body as {
       administradora_id?: string
       grupo_id?: string
+      contrato_id?: string | null
       produto_id?: string | null
+      dia_vencimento?: string
+      data_vigencia?: string
       linhas?: Array<{
         nome?: string
         cpf?: string
@@ -102,6 +105,14 @@ export async function POST(request: NextRequest) {
     if (!Array.isArray(linhas) || linhas.length === 0) {
       return NextResponse.json({ error: "Nenhuma linha para importar" }, { status: 400 })
     }
+    const diaVencimentoNorm = String(dia_vencimento || "").replace(/\D/g, "").padStart(2, "0").slice(-2)
+    if (!diaVencimentoNorm || Number(diaVencimentoNorm) < 1 || Number(diaVencimentoNorm) > 31) {
+      return NextResponse.json({ error: "dia_vencimento é obrigatório e deve estar entre 01 e 31" }, { status: 400 })
+    }
+    const vigenciaRef = String(data_vigencia || "").trim()
+    if (!vigenciaRef) {
+      return NextResponse.json({ error: "vigência é obrigatória" }, { status: 400 })
+    }
 
     const errosDependente: { linha: number; nome: string }[] = []
     linhas.forEach((l, idx) => {
@@ -118,7 +129,72 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: msg }, { status: 400 })
     }
 
-    const tenantId = await getCurrentTenantId()
+    // Usar sempre o tenant da administradora para evitar imports em contexto incorreto.
+    let tenantId: string
+    const { data: administradora } = await supabaseAdmin
+      .from("administradoras")
+      .select("tenant_id")
+      .eq("id", administradora_id)
+      .maybeSingle()
+
+    if (administradora?.tenant_id) {
+      tenantId = administradora.tenant_id
+    } else {
+      tenantId = await getCurrentTenantId()
+    }
+
+    // Validar se o grupo pertence à administradora no tenant resolvido.
+    const { data: grupoValido } = await supabaseAdmin
+      .from("grupos_beneficiarios")
+      .select("id")
+      .eq("id", grupo_id)
+      .eq("administradora_id", administradora_id)
+      .eq("tenant_id", tenantId)
+      .maybeSingle()
+
+    if (!grupoValido) {
+      return NextResponse.json(
+        { error: "Grupo não pertence à administradora selecionada no tenant atual." },
+        { status: 400 }
+      )
+    }
+
+    // Validar contrato, quando informado.
+    if (contrato_id) {
+      const { data: contratoValido } = await supabaseAdmin
+        .from("contratos_administradora")
+        .select("id")
+        .eq("id", contrato_id)
+        .eq("administradora_id", administradora_id)
+        .eq("tenant_id", tenantId)
+        .maybeSingle()
+      if (!contratoValido) {
+        return NextResponse.json({ error: "Contrato não encontrado para a administradora selecionada." }, { status: 400 })
+      }
+    }
+
+    // Validar produto, quando informado.
+    if (produto_id) {
+      const { data: produtoValido } = await supabaseAdmin
+        .from("produtos_contrato_administradora")
+        .select("id, contrato_id")
+        .eq("id", produto_id)
+        .eq("tenant_id", tenantId)
+        .maybeSingle()
+
+      if (!produtoValido) {
+        return NextResponse.json(
+          { error: "Produto não encontrado para o tenant da administradora selecionada." },
+          { status: 400 }
+        )
+      }
+      if (contrato_id && String(produtoValido.contrato_id || "") !== String(contrato_id)) {
+        return NextResponse.json(
+          { error: "O produto selecionado não pertence ao contrato informado." },
+          { status: 400 }
+        )
+      }
+    }
 
     const acomodacaoNorm = (s: string | undefined): "Enfermaria" | "Apartamento" => {
       const t = String(s ?? "").trim().toLowerCase()
@@ -190,14 +266,18 @@ export async function POST(request: NextRequest) {
           telefones: telefonesJson,
           emails: emailsJson,
           observacoes: l.observacoes ? String(l.observacoes).trim().slice(0, 2000) || null : null,
-          dados_adicionais:
-            l.dados_adicionais && typeof l.dados_adicionais === "object"
+          dados_adicionais: {
+            ...(l.dados_adicionais && typeof l.dados_adicionais === "object"
               ? Object.fromEntries(
                   Object.entries(l.dados_adicionais)
                     .filter(([, v]) => v != null && String(v).trim() !== "")
                     .map(([k, v]) => [k.slice(0, 100), String(v).trim().slice(0, 500)])
                 )
-              : {},
+              : {}),
+            dia_vencimento: diaVencimentoNorm,
+            vigencia_referencia: vigenciaRef.slice(0, 50),
+            ...( /^\d{4}-\d{2}-\d{2}$/.test(vigenciaRef) ? { data_vigencia: vigenciaRef } : {} ),
+          },
           plano: (l.plano ? String(l.plano).trim().slice(0, 150) : null) || (l.dados_adicionais && typeof l.dados_adicionais === "object" && (l.dados_adicionais.Plano ?? l.dados_adicionais.plano) ? String((l.dados_adicionais.Plano ?? l.dados_adicionais.plano)).trim().slice(0, 150) : null) || null,
           corretor_id,
           tenant_id: tenantId,

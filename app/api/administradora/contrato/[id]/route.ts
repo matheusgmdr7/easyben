@@ -126,10 +126,30 @@ export async function GET(
       return { ...p, faixas: { Enfermaria: [], Apartamento: [] } as FaixasPorAcomodacao }
     })
 
+    let opcoesDiaVencimento: string[] = []
+    let opcoesDataVigencia: string[] = []
+    try {
+      const { data: opcoesRow } = await supabaseAdmin
+        .from("contratos_opcoes_administradora")
+        .select("opcoes_dia_vencimento, opcoes_data_vigencia")
+        .eq("contrato_id", id)
+        .maybeSingle()
+      opcoesDiaVencimento = Array.isArray((opcoesRow as any)?.opcoes_dia_vencimento)
+        ? ((opcoesRow as any).opcoes_dia_vencimento as string[])
+        : []
+      opcoesDataVigencia = Array.isArray((opcoesRow as any)?.opcoes_data_vigencia)
+        ? ((opcoesRow as any).opcoes_data_vigencia as string[])
+        : []
+    } catch {
+      // tabela opcional
+    }
+
     return NextResponse.json({
       ...contrato,
       operadora_nome: contrato.nome_fantasia || contrato.razao_social || "-",
       produtos: faixasParsed,
+      opcoes_dia_vencimento: opcoesDiaVencimento,
+      opcoes_data_vigencia: opcoesDataVigencia,
     })
   } catch (e: unknown) {
     console.error("Erro buscar contrato:", e)
@@ -156,11 +176,13 @@ export async function PUT(
     }
 
     const body = await request.json()
-    const { descricao, numero, observacao, logo, produtos = [] } = body as {
+    const { descricao, numero, observacao, logo, opcoes_dia_vencimento = [], opcoes_data_vigencia = [], produtos = [] } = body as {
       descricao?: string
       numero?: string
       observacao?: string
       logo?: string
+      opcoes_dia_vencimento?: Array<string | number>
+      opcoes_data_vigencia?: string[]
       produtos?: Array<{
         id?: string
         nome: string
@@ -214,6 +236,41 @@ export async function PUT(
         console.error("Erro ao atualizar contrato:", errUpd)
         return NextResponse.json({ error: "Erro ao atualizar contrato" }, { status: 500 })
       }
+    }
+
+    const normalizarDiaVencimento = (v: unknown): string | null => {
+      const dig = String(v ?? "").replace(/\D/g, "").padStart(2, "0").slice(-2)
+      if (!dig) return null
+      const n = Number(dig)
+      if (!Number.isFinite(n) || n < 1 || n > 31) return null
+      return dig
+    }
+    const normalizarOpcaoVigencia = (v: unknown): string | null => {
+      const t = String(v ?? "").trim()
+      if (!t) return null
+      return t.slice(0, 50)
+    }
+    const opcoesDias = Array.from(
+      new Set((Array.isArray(opcoes_dia_vencimento) ? opcoes_dia_vencimento : []).map(normalizarDiaVencimento).filter(Boolean) as string[])
+    ).sort((a, b) => Number(a) - Number(b))
+    const opcoesVigencias = Array.from(
+      new Set((Array.isArray(opcoes_data_vigencia) ? opcoes_data_vigencia : []).map(normalizarOpcaoVigencia).filter(Boolean) as string[])
+    )
+
+    try {
+      await supabaseAdmin
+        .from("contratos_opcoes_administradora")
+        .upsert(
+          {
+            contrato_id: id,
+            tenant_id: tenantContrato || tenantIdAtual,
+            opcoes_dia_vencimento: opcoesDias,
+            opcoes_data_vigencia: opcoesVigencias,
+          },
+          { onConflict: "contrato_id" }
+        )
+    } catch {
+      // tabela opcional
     }
 
     if (Array.isArray(produtos)) {
@@ -318,6 +375,98 @@ export async function PUT(
     console.error("Erro atualizar contrato:", e)
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "Erro ao atualizar contrato" },
+      { status: 500 }
+    )
+  }
+}
+
+/**
+ * DELETE /api/administradora/contrato/[id]?administradora_id=xxx
+ * Remove contrato e seus produtos quando não estiverem em uso por vidas importadas.
+ */
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params
+    const administradoraId = String(new URL(request.url).searchParams.get("administradora_id") || "").trim()
+    if (!id || !administradoraId) {
+      return NextResponse.json({ error: "id e administradora_id são obrigatórios" }, { status: 400 })
+    }
+
+    const tenantIdAtual = await getCurrentTenantId()
+
+    let { data: contrato, error: errContrato } = await supabaseAdmin
+      .from("contratos_administradora")
+      .select("id, tenant_id, administradora_id")
+      .eq("id", id)
+      .eq("administradora_id", administradoraId)
+      .eq("tenant_id", tenantIdAtual)
+      .maybeSingle()
+
+    if (errContrato || !contrato) {
+      const fallback = await supabaseAdmin
+        .from("contratos_administradora")
+        .select("id, tenant_id, administradora_id")
+        .eq("id", id)
+        .eq("administradora_id", administradoraId)
+        .maybeSingle()
+      contrato = fallback.data as any
+      errContrato = fallback.error as any
+    }
+
+    if (errContrato || !contrato) {
+      return NextResponse.json({ error: "Contrato não encontrado" }, { status: 404 })
+    }
+
+    const tenantContrato = String((contrato as any)?.tenant_id || tenantIdAtual)
+
+    // Segurança: impedir exclusão quando qualquer produto do contrato estiver em uso por vidas importadas.
+    const { data: produtosContrato, error: errProdutos } = await supabaseAdmin
+      .from("produtos_contrato_administradora")
+      .select("id")
+      .eq("contrato_id", id)
+      .eq("tenant_id", tenantContrato)
+    if (errProdutos) throw errProdutos
+
+    const produtoIds = (produtosContrato || []).map((p: any) => String(p.id)).filter(Boolean)
+    if (produtoIds.length > 0) {
+      const { count: vidasVinculadas, error: errUso } = await supabaseAdmin
+        .from("vidas_importadas")
+        .select("*", { count: "exact", head: true })
+        .eq("tenant_id", tenantContrato)
+        .eq("administradora_id", administradoraId)
+        .in("produto_id", produtoIds)
+      if (errUso) throw errUso
+      if ((vidasVinculadas || 0) > 0) {
+        return NextResponse.json(
+          { error: "Não é possível excluir: há beneficiários vinculados a produtos deste contrato." },
+          { status: 409 }
+        )
+      }
+    }
+
+    // Remove produtos (defensivo; se houver ON DELETE CASCADE, essa etapa é idempotente)
+    await supabaseAdmin
+      .from("produtos_contrato_administradora")
+      .delete()
+      .eq("contrato_id", id)
+      .eq("tenant_id", tenantContrato)
+
+    const { error: errDeleteContrato } = await supabaseAdmin
+      .from("contratos_administradora")
+      .delete()
+      .eq("id", id)
+      .eq("administradora_id", administradoraId)
+      .eq("tenant_id", tenantContrato)
+    if (errDeleteContrato) throw errDeleteContrato
+
+    return NextResponse.json({ success: true })
+  } catch (e: unknown) {
+    console.error("Erro excluir contrato:", e)
+    return NextResponse.json(
+      { error: e instanceof Error ? e.message : "Erro ao excluir contrato" },
       { status: 500 }
     )
   }

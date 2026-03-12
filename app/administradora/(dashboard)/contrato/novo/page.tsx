@@ -9,8 +9,10 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { ModalConfirmacaoExclusao } from "@/components/administradora/modal-confirmacao-exclusao"
-import { Search, Check, Plus, Trash2, Package, ImagePlus, X } from "lucide-react"
+import { Search, Check, Plus, Trash2, Package, ImagePlus, X, ChevronsUpDown } from "lucide-react"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 
 // --- Tipos e constantes da aba Produtos ---
@@ -25,6 +27,13 @@ interface ProdutoContrato {
   segmentacao: string
   acomodacao: string
   faixas: FaixaEtaria[]
+}
+
+interface OperadoraSugestao {
+  id: string
+  nome: string | null
+  fantasia: string | null
+  cnpj: string | null
 }
 
 const SEGMENTACOES = [
@@ -50,6 +59,10 @@ export default function NovoContratoPage() {
   const [loading, setLoading] = useState(false)
   const [cnpjBusca, setCnpjBusca] = useState("")
   const [buscandoOperadora, setBuscandoOperadora] = useState(false)
+  const [operadoraQuery, setOperadoraQuery] = useState("")
+  const [operadorasEncontradas, setOperadorasEncontradas] = useState<OperadoraSugestao[]>([])
+  const [buscandoSugestoesOperadora, setBuscandoSugestoesOperadora] = useState(false)
+  const [popoverOperadoraAberto, setPopoverOperadoraAberto] = useState(false)
 
   // Formulário
   const [formData, setFormData] = useState({
@@ -65,8 +78,93 @@ export default function NovoContratoPage() {
 
   const [uploadLogoLoading, setUploadLogoLoading] = useState(false)
   const [produtos, setProdutos] = useState<ProdutoContrato[]>([])
+  const [novoDiaVencimento, setNovoDiaVencimento] = useState("")
+  const [novaDataVigencia, setNovaDataVigencia] = useState("")
+  const [opcoesDiaVencimento, setOpcoesDiaVencimento] = useState<string[]>(["01", "10"])
+  const [opcoesDataVigencia, setOpcoesDataVigencia] = useState<string[]>([])
   const [confirmExcluirOpen, setConfirmExcluirOpen] = useState(false)
   const [excluirContexto, setExcluirContexto] = useState<{ tipo: "produto"; id: string; nome?: string } | { tipo: "faixa"; produtoId: string; produtoNome?: string; index: number } | null>(null)
+
+  useEffect(() => {
+    const adm = getAdministradoraLogada()
+    if (adm?.id) {
+      void preencherProximoNumero(adm.id)
+    }
+  }, [])
+
+  useEffect(() => {
+    const termo = operadoraQuery.trim()
+    if (termo.length < 2) {
+      setOperadorasEncontradas([])
+      return
+    }
+
+    const timer = setTimeout(() => {
+      void buscarSugestoesOperadora(termo)
+    }, 250)
+
+    return () => clearTimeout(timer)
+  }, [operadoraQuery])
+
+  async function preencherProximoNumero(admId: string) {
+    try {
+      const res = await fetch(`/api/administradora/contratos?administradora_id=${encodeURIComponent(admId)}`)
+      const data = await res.json().catch(() => [])
+      if (!res.ok || !Array.isArray(data)) return
+      const proximo = obterProximoNumeroContrato(
+        data.map((item: { numero?: unknown }) => item?.numero)
+      )
+      setFormData((prev) => (prev.numero ? prev : { ...prev, numero: proximo }))
+    } catch {
+      // silencioso para não bloquear cadastro
+    }
+  }
+
+  function obterProximoNumeroContrato(numeros: Array<unknown>): string {
+    let maior = 0
+    let largura = 4
+    for (const valor of numeros) {
+      const txt = String(valor || "").trim()
+      const match = txt.match(/(\d+)(?!.*\d)/)
+      if (!match) continue
+      const atual = Number(match[1])
+      if (!Number.isFinite(atual)) continue
+      if (atual > maior) maior = atual
+      if (match[1].length > largura) largura = match[1].length
+    }
+    return String(maior + 1).padStart(largura, "0")
+  }
+
+  async function buscarSugestoesOperadora(termo: string) {
+    setBuscandoSugestoesOperadora(true)
+    try {
+      const res = await fetch(`/api/administradora/operadoras?query=${encodeURIComponent(termo)}`)
+      const data = await res.json().catch(() => [])
+      if (!res.ok || !Array.isArray(data)) {
+        setOperadorasEncontradas([])
+        return
+      }
+      setOperadorasEncontradas(data)
+    } catch {
+      setOperadorasEncontradas([])
+    } finally {
+      setBuscandoSugestoesOperadora(false)
+    }
+  }
+
+  function selecionarOperadora(operadora: OperadoraSugestao) {
+    const cnpj = String(operadora.cnpj || "").replace(/\D/g, "")
+    setFormData((prev) => ({
+      ...prev,
+      operadora_id: operadora.id,
+      cnpj_operadora: cnpj,
+      razao_social: String(operadora.nome || "").toUpperCase(),
+      nome_fantasia: String(operadora.fantasia || "").toUpperCase(),
+    }))
+    setCnpjBusca(cnpj)
+    setOperadoraQuery(String(operadora.fantasia || operadora.nome || ""))
+    setPopoverOperadoraAberto(false)
+  }
 
   async function handleLogoChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -227,11 +325,6 @@ export default function NovoContratoPage() {
         toast.error("Descrição é obrigatória")
         return
       }
-      if (!formData.numero) {
-        toast.error("Número é obrigatório")
-        return
-      }
-
       const payload = {
         administradora_id: adm.id,
         operadora_id: formData.operadora_id || null,
@@ -242,6 +335,8 @@ export default function NovoContratoPage() {
         descricao: formData.descricao,
         numero: formData.numero,
         observacao: formData.observacao || null,
+        opcoes_dia_vencimento: opcoesDiaVencimento,
+        opcoes_data_vigencia: opcoesDataVigencia,
         produtos: produtos
           .filter((p) => (p.nome || "").trim())
           .map((p) => ({
@@ -266,7 +361,7 @@ export default function NovoContratoPage() {
         throw new Error(json?.error || "Erro ao salvar contrato")
       }
 
-      toast.success("Contrato criado com sucesso!")
+      toast.success(`Contrato criado com sucesso! Número: ${json?.numero || formData.numero || "-"}`)
       router.push("/administradora/contrato/pesquisar")
     } catch (error: unknown) {
       console.error("Erro ao salvar contrato:", error)
@@ -322,6 +417,64 @@ export default function NovoContratoPage() {
             <div className="bg-white border border-gray-200 rounded-sm p-6 space-y-4">
               {/* Campos do formulário */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="md:col-span-2">
+                  <label className="block text-xs text-gray-600 mb-1">Operadora já cadastrada (opcional)</label>
+                  <Popover open={popoverOperadoraAberto} onOpenChange={setPopoverOperadoraAberto}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        role="combobox"
+                        aria-expanded={popoverOperadoraAberto}
+                        className="h-9 w-full justify-between border-gray-300 rounded-sm font-normal"
+                      >
+                        <span className="truncate text-sm">
+                          {operadoraQuery?.trim() ? operadoraQuery : "Digite nome fantasia, razão social ou CNPJ"}
+                        </span>
+                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                      <Command shouldFilter={false}>
+                        <CommandInput
+                          placeholder="Buscar operadora..."
+                          value={operadoraQuery}
+                          onValueChange={setOperadoraQuery}
+                        />
+                        <CommandList>
+                          {buscandoSugestoesOperadora ? (
+                            <div className="py-3 px-3 text-sm text-gray-500">Buscando...</div>
+                          ) : null}
+                          {!buscandoSugestoesOperadora ? (
+                            <CommandEmpty>Nenhuma operadora encontrada.</CommandEmpty>
+                          ) : null}
+                          <CommandGroup>
+                            {operadorasEncontradas.map((op) => (
+                              <CommandItem
+                                key={op.id}
+                                value={`${op.fantasia || op.nome || ""} ${op.cnpj || ""}`}
+                                onSelect={() => selecionarOperadora(op)}
+                              >
+                                <div className="flex flex-col">
+                                  <span className="text-sm font-medium">
+                                    {op.fantasia || op.nome || "Operadora sem nome"}
+                                  </span>
+                                  <span className="text-xs text-gray-500">
+                                    {op.nome || "-"} | CNPJ: {op.cnpj || "-"}
+                                  </span>
+                                </div>
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+                  <p className="mt-1 text-xs text-gray-500">
+                    Ao selecionar, os dados da operadora são preenchidos automaticamente.
+                  </p>
+                </div>
+
                 <div>
                   <label className="block text-xs text-gray-600 mb-1">
                     CNPJ da Operadora <span className="text-red-500">*</span>
@@ -342,6 +495,91 @@ export default function NovoContratoPage() {
                       <Search className="h-4 w-4" />
                     </Button>
                   </div>
+                </div>
+
+                <div className="md:col-span-2 border border-gray-200 rounded-sm p-4 bg-gray-50/40">
+                  <h3 className="text-sm font-medium text-gray-800 mb-3">Opções para importação de vidas</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs text-gray-600 mb-1">Adicionar dia de vencimento</label>
+                      <div className="flex gap-2">
+                        <Input
+                          value={novoDiaVencimento}
+                          onChange={(e) => setNovoDiaVencimento(e.target.value)}
+                          placeholder="Ex.: 01, 10, 15"
+                          className="h-9 text-sm border-gray-300 rounded-sm"
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="h-9"
+                          onClick={() => {
+                            const dia = novoDiaVencimento.replace(/\D/g, "").padStart(2, "0").slice(-2)
+                            const n = Number(dia)
+                            if (!dia || !Number.isFinite(n) || n < 1 || n > 31) return
+                            setOpcoesDiaVencimento((prev) => Array.from(new Set([...prev, dia])).sort((a, b) => Number(a) - Number(b)))
+                            setNovoDiaVencimento("")
+                          }}
+                        >
+                          Adicionar
+                        </Button>
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {opcoesDiaVencimento.map((dia) => (
+                          <button
+                            key={dia}
+                            type="button"
+                            onClick={() => setOpcoesDiaVencimento((prev) => prev.filter((d) => d !== dia))}
+                            className="text-xs px-2.5 py-1 rounded-full border border-gray-300 hover:bg-gray-100"
+                            title="Remover"
+                          >
+                            {dia} ×
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs text-gray-600 mb-1">Adicionar opção de vigência</label>
+                      <div className="flex gap-2">
+                        <Input
+                          value={novaDataVigencia}
+                          onChange={(e) => setNovaDataVigencia(e.target.value)}
+                          placeholder="Ex.: MAI/2026, 2026-05, INICIO IMEDIATO"
+                          className="h-9 text-sm border-gray-300 rounded-sm"
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="h-9"
+                          onClick={() => {
+                            const vig = String(novaDataVigencia || "").trim()
+                            if (!vig) return
+                            setOpcoesDataVigencia((prev) => Array.from(new Set([...prev, vig])))
+                            setNovaDataVigencia("")
+                          }}
+                        >
+                          Adicionar
+                        </Button>
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {opcoesDataVigencia.map((vig) => (
+                          <button
+                            key={vig}
+                            type="button"
+                            onClick={() => setOpcoesDataVigencia((prev) => prev.filter((d) => d !== vig))}
+                            className="text-xs px-2.5 py-1 rounded-full border border-gray-300 hover:bg-gray-100"
+                            title="Remover"
+                          >
+                            {vig} ×
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                  <p className="mt-3 text-xs text-gray-500">
+                    Essas opções aparecem na importação de vidas quando este contrato for selecionado.
+                  </p>
                 </div>
 
                 <div>
@@ -432,9 +670,12 @@ export default function NovoContratoPage() {
                   <Input
                     value={formData.numero}
                     onChange={(e) => setFormData({ ...formData, numero: e.target.value.toUpperCase() })}
-                    placeholder="Número"
+                    placeholder="Número (sequencial automático)"
                     className="h-9 text-sm border-gray-300 rounded-sm"
                   />
+                  <p className="mt-1 text-xs text-gray-500">
+                    Preenchido automaticamente em ordem crescente. Você pode ajustar, se necessário.
+                  </p>
                 </div>
 
                 <div className="md:col-span-2">

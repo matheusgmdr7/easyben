@@ -36,6 +36,24 @@ function obterSlugCharge(baseId: string): string {
   return String(baseId || "").trim().replace(/^pay_/, "")
 }
 
+function normalizarStatusLocal(status: string | null | undefined): string {
+  const s = String(status || "").trim().toLowerCase()
+  if (s === "paid") return "paga"
+  if (s === "overdue") return "atrasada"
+  if (s === "cancelled" || s === "canceled") return "cancelada"
+  return s
+}
+
+function deveBloquearRegressaoStatus(
+  statusAtual: string | null | undefined,
+  novoStatus: string
+): boolean {
+  const atual = normalizarStatusLocal(statusAtual)
+  if (atual !== "paga") return false
+  // Webhook pode chegar fora de ordem. Se já está paga, só aceita paga/cancelada.
+  return novoStatus !== "paga" && novoStatus !== "cancelada"
+}
+
 export async function POST(request: NextRequest) {
   try {
     const expectedToken = (process.env.ASAAS_WEBHOOK_TOKEN || "").trim()
@@ -82,17 +100,33 @@ export async function POST(request: NextRequest) {
     const chargeIds = obterChargeIds(chargeId)
     let totalAtualizadas = 0
     for (const id of chargeIds) {
-      const { data, error } = await supabaseAdmin
+      const { data: candidatas, error: erroBusca } = await supabaseAdmin
         .from("faturas")
-        .update(updateData)
+        .select("id, status, pagamento_data")
         .or(`asaas_charge_id.eq.${id},gateway_id.eq.${id}`)
-        .select("id")
 
-      if (error) {
-        console.error("[webhook-asaas] erro ao atualizar fatura", { id, error: error.message })
+      if (erroBusca) {
+        console.error("[webhook-asaas] erro ao buscar faturas candidatas", { id, error: erroBusca.message })
         continue
       }
-      totalAtualizadas += (data || []).length
+
+      for (const fatura of candidatas || []) {
+        if (deveBloquearRegressaoStatus((fatura as any).status, statusInterno)) {
+          continue
+        }
+
+        const { data, error } = await supabaseAdmin
+          .from("faturas")
+          .update(updateData)
+          .eq("id", (fatura as any).id)
+          .select("id")
+
+        if (error) {
+          console.error("[webhook-asaas] erro ao atualizar fatura", { id: (fatura as any).id, error: error.message })
+          continue
+        }
+        totalAtualizadas += (data || []).length
+      }
     }
 
     // Fallback para legado: algumas faturas antigas ficaram sem asaas_charge_id/gateway_id,
@@ -102,31 +136,45 @@ export async function POST(request: NextRequest) {
 
       const invoiceNumber = String(payment?.invoiceNumber || "").trim()
       if (invoiceNumber) {
-        const { data: dataPorNumero, error: errorPorNumero } = await supabaseAdmin
+        const { data: candNumero, error: errorBuscaNumero } = await supabaseAdmin
           .from("faturas")
-          .update(updateData)
+          .select("id, status")
           .eq("numero_fatura", invoiceNumber)
-          .select("id")
 
-        if (errorPorNumero) {
-          console.error("[webhook-asaas] erro fallback por numero_fatura", { error: errorPorNumero.message })
+        if (errorBuscaNumero) {
+          console.error("[webhook-asaas] erro fallback por numero_fatura", { error: errorBuscaNumero.message })
         } else {
-          totalAtualizadas += (dataPorNumero || []).length
+          for (const fatura of candNumero || []) {
+            if (deveBloquearRegressaoStatus((fatura as any).status, statusInterno)) continue
+            const { data: upd } = await supabaseAdmin
+              .from("faturas")
+              .update(updateData)
+              .eq("id", (fatura as any).id)
+              .select("id")
+            totalAtualizadas += (upd || []).length
+          }
         }
       }
 
       const externalReference = String(payment?.externalReference || "").trim()
       if (totalAtualizadas === 0 && externalReference) {
-        const { data: dataPorRef, error: errorPorRef } = await supabaseAdmin
+        const { data: candRef, error: errorPorRef } = await supabaseAdmin
           .from("faturas")
-          .update(updateData)
+          .select("id, status")
           .eq("cliente_administradora_id", externalReference)
-          .select("id")
 
         if (errorPorRef) {
           console.error("[webhook-asaas] erro fallback por externalReference", { error: errorPorRef.message })
         } else {
-          totalAtualizadas += (dataPorRef || []).length
+          for (const fatura of candRef || []) {
+            if (deveBloquearRegressaoStatus((fatura as any).status, statusInterno)) continue
+            const { data: upd } = await supabaseAdmin
+              .from("faturas")
+              .update(updateData)
+              .eq("id", (fatura as any).id)
+              .select("id")
+            totalAtualizadas += (upd || []).length
+          }
         }
       }
 
@@ -136,16 +184,23 @@ export async function POST(request: NextRequest) {
         // coluna historicamente presente para localizar faturas legadas.
         const filtros = [`boleto_url.ilike.${slugBusca}`]
 
-        const { data: dataLegado, error: errorLegado } = await supabaseAdmin
+        const { data: candLegado, error: errorLegado } = await supabaseAdmin
           .from("faturas")
-          .update(updateData)
+          .select("id, status")
           .or(filtros.join(","))
-          .select("id")
 
         if (errorLegado) {
           console.error("[webhook-asaas] erro fallback legado por URL", { error: errorLegado.message })
         } else {
-          totalAtualizadas += (dataLegado || []).length
+          for (const fatura of candLegado || []) {
+            if (deveBloquearRegressaoStatus((fatura as any).status, statusInterno)) continue
+            const { data: upd } = await supabaseAdmin
+              .from("faturas")
+              .update(updateData)
+              .eq("id", (fatura as any).id)
+              .select("id")
+            totalAtualizadas += (upd || []).length
+          }
         }
       }
     }

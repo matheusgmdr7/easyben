@@ -196,6 +196,14 @@ type LinhaPreview = {
   observacoes: string
 }
 
+type ContratoImportacao = {
+  id: string
+  numero?: string
+  descricao?: string
+  opcoes_dia_vencimento?: string[]
+  opcoes_data_vigencia?: string[]
+}
+
 const CAMPOS_TABELA: (keyof LinhaPreview)[] = [
   "nome", "cpf", "nome_mae", "nome_pai", "tipo", "data_nascimento", "idade", "sexo", "estado_civil",
   "parentesco", "cpf_titular", "identidade", "cns", "acomodacao",
@@ -213,13 +221,17 @@ export default function ImportacaoVidasPage() {
   const router = useRouter()
   const [administradoraId, setAdministradoraId] = useState<string | null>(null)
   const [grupos, setGrupos] = useState<GrupoBeneficiarios[]>([])
+  const [contratos, setContratos] = useState<ContratoImportacao[]>([])
   const [produtos, setProdutos] = useState<{ id: string; nome?: string }[]>([])
   const [file, setFile] = useState<File | null>(null)
   const [headers, setHeaders] = useState<string[]>([])
   const [rows, setRows] = useState<Record<string, unknown>[]>([])
   const [mapCol, setMapCol] = useState<Record<string, string>>({})
   const [grupoId, setGrupoId] = useState("")
+  const [contratoId, setContratoId] = useState("")
   const [produtoId, setProdutoId] = useState("")
+  const [diaVencimento, setDiaVencimento] = useState("")
+  const [dataVigencia, setDataVigencia] = useState("")
   const [loading, setLoading] = useState(false)
   const [importing, setImporting] = useState(false)
   const [drag, setDrag] = useState(false)
@@ -269,17 +281,53 @@ export default function ImportacaoVidasPage() {
     GruposBeneficiariosService.buscarTodos(adm.id).then(setGrupos).catch(() => toast.error("Erro ao carregar grupos"))
   }, [router])
 
-  // Produtos dos contratos da administradora (só quando temos administradora e vamos usar)
+  // Contratos da administradora (com opções de vencimento/vigência)
   useEffect(() => {
     if (!administradoraId) return
-    fetch(`/api/administradora/produtos-contrato?administradora_id=${encodeURIComponent(administradoraId)}`)
+    fetch(`/api/administradora/contratos?administradora_id=${encodeURIComponent(administradoraId)}`)
+      .then((r) => r.json())
+      .then((d) => setContratos(Array.isArray(d) ? d : []))
+      .catch(() => {
+        toast.error("Erro ao carregar contratos")
+        setContratos([])
+      })
+  }, [administradoraId])
+
+  useEffect(() => {
+    if (!administradoraId || !contratoId) {
+      setProdutos([])
+      setProdutoId("")
+      return
+    }
+    fetch(
+      `/api/administradora/produtos-contrato?administradora_id=${encodeURIComponent(administradoraId)}&contrato_id=${encodeURIComponent(contratoId)}`
+    )
       .then((r) => r.json())
       .then((d) => setProdutos(Array.isArray(d) ? d : []))
       .catch(() => {
-        toast.error("Erro ao carregar produtos dos contratos")
+        toast.error("Erro ao carregar produtos do contrato")
         setProdutos([])
       })
-  }, [administradoraId])
+  }, [administradoraId, contratoId])
+
+  useEffect(() => {
+    if (!produtoId) return
+    const existe = produtos.some((p) => p.id === produtoId)
+    if (!existe) setProdutoId("")
+  }, [produtos, produtoId])
+
+  useEffect(() => {
+    const contrato = contratos.find((c) => c.id === contratoId)
+    if (!contrato) {
+      setDiaVencimento("")
+      setDataVigencia("")
+      return
+    }
+    const dias = Array.isArray(contrato.opcoes_dia_vencimento) ? contrato.opcoes_dia_vencimento : []
+    const vigs = Array.isArray(contrato.opcoes_data_vigencia) ? contrato.opcoes_data_vigencia : []
+    setDiaVencimento((prev) => (prev && dias.includes(prev) ? prev : (dias[0] || "")))
+    setDataVigencia((prev) => (prev && vigs.includes(prev) ? prev : (vigs[0] || "")))
+  }, [contratoId, contratos])
 
   const onFile = useCallback((f: File | null) => {
     setEditedOverrides({})
@@ -423,7 +471,15 @@ export default function ImportacaoVidasPage() {
     setEditingCell(null)
   }, [])
 
-  const podemImportar = administradoraId && grupoId && produtoId && linhasParaImportar.length > 0 && linhasParaImportar.some((l) => (l.nome || "").trim().length > 0)
+  const podemImportar =
+    administradoraId &&
+    grupoId &&
+    contratoId &&
+    produtoId &&
+    diaVencimento &&
+    dataVigencia &&
+    linhasParaImportar.length > 0 &&
+    linhasParaImportar.some((l) => (l.nome || "").trim().length > 0)
 
   const handleImport = async () => {
     if (!podemImportar || !administradoraId) return
@@ -445,7 +501,10 @@ export default function ImportacaoVidasPage() {
         body: JSON.stringify({
           administradora_id: administradoraId,
           grupo_id: grupoId,
+          contrato_id: contratoId,
           produto_id: produtoId || null,
+          dia_vencimento: diaVencimento,
+          data_vigencia: dataVigencia,
           linhas: linhasComAdicionais,
         }),
       })
@@ -462,7 +521,10 @@ export default function ImportacaoVidasPage() {
       setEditedOverrides({})
       setEditingCell(null)
       setGrupoId("")
+      setContratoId("")
       setProdutoId("")
+      setDiaVencimento("")
+      setDataVigencia("")
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : (typeof e === "string" ? e : "Erro ao importar")
       toast.error(msg)
@@ -474,7 +536,10 @@ export default function ImportacaoVidasPage() {
   const podeIncluirManual =
     !!administradoraId &&
     !!grupoId &&
+    !!contratoId &&
     !!produtoId &&
+    !!diaVencimento &&
+    !!dataVigencia &&
     (manualForm.nome || "").trim().length > 0 &&
     (manualForm.cpf || "").replace(/\D/g, "").length >= 11 &&
     ((manualForm.tipo || "titular") !== "dependente" || (manualForm.cpf_titular || "").replace(/\D/g, "").length >= 11)
@@ -563,7 +628,10 @@ export default function ImportacaoVidasPage() {
         body: JSON.stringify({
           administradora_id: administradoraId,
           grupo_id: grupoId,
+          contrato_id: contratoId,
           produto_id: produtoId,
+          dia_vencimento: diaVencimento,
+          data_vigencia: dataVigencia,
           linhas: [payloadLinha],
         }),
       })
@@ -607,13 +675,59 @@ export default function ImportacaoVidasPage() {
     }
   }
 
+  function baixarTemplateImportacaoVidas() {
+    try {
+      const linhas = [
+        {
+          Nome: "NOME DO BENEFICIARIO",
+          CPF: "00000000000",
+          "Nome da mãe": "",
+          "Nome do pai": "",
+          "Tipo (Titular/Dependente)": "titular",
+          "Data de nascimento": "1990-01-01",
+          Idade: 34,
+          Sexo: "Masculino",
+          "Estado civil": "Solteiro(a)",
+          "Grau de parentesco": "",
+          "CPF do titular": "",
+          "RG (Identidade)": "",
+          CNS: "",
+          "Acomodação (Enfermaria/Apartamento)": "Enfermaria",
+          CEP: "",
+          Logradouro: "",
+          Número: "",
+          Complemento: "",
+          Bairro: "",
+          Cidade: "",
+          "Estado (UF)": "AM",
+          Telefone: "",
+          "E-mail": "",
+          Observações: "",
+        },
+      ]
+      const ws = XLSX.utils.json_to_sheet(linhas)
+      const wb = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(wb, ws, "ImportacaoVidas")
+      XLSX.writeFile(wb, "template-importacao-vidas.xlsx")
+    } catch (e: any) {
+      toast.error("Erro ao gerar template: " + (e?.message || "desconhecido"))
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="bg-white border-b border-gray-200 px-6 py-4">
-        <h1 className="text-xl font-semibold text-gray-800">Beneficiários › Importação de vidas</h1>
-        <p className="text-sm text-gray-500 mt-1">
-          Envie um arquivo Excel ou CSV, mapeie as colunas, confira a prévia e selecione grupo e produto para cadastrar as vidas.
-        </p>
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <h1 className="text-xl font-semibold text-gray-800">Beneficiários › Importação de vidas</h1>
+            <p className="text-sm text-gray-500 mt-1">
+              Envie um arquivo Excel ou CSV, mapeie as colunas, confira a prévia e selecione grupo, produto e dia de vencimento para cadastrar as vidas.
+            </p>
+          </div>
+          <Button type="button" variant="outline" size="sm" onClick={baixarTemplateImportacaoVidas}>
+            Download template Excel
+          </Button>
+        </div>
       </div>
 
       <div className="p-6 space-y-6">
@@ -739,7 +853,7 @@ export default function ImportacaoVidasPage() {
 
               <div className="border border-gray-200 rounded-lg bg-gray-50 p-4">
                 <h3 className="text-sm font-semibold text-gray-800 mb-3">Vinculação do beneficiário</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-2xl">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 max-w-6xl">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">Grupo de clientes <span className="text-red-500">*</span></label>
                     <Select value={grupoId} onValueChange={setGrupoId}>
@@ -749,6 +863,21 @@ export default function ImportacaoVidasPage() {
                       <SelectContent>
                         {grupos.map((g) => (
                           <SelectItem key={g.id} value={g.id}>{g.nome}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Contrato <span className="text-red-500">*</span></label>
+                    <Select value={contratoId} onValueChange={setContratoId}>
+                      <SelectTrigger className="h-10 w-full rounded-md border border-gray-300 bg-background px-3 py-2 text-sm">
+                        <SelectValue placeholder="Selecione o contrato" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {contratos.map((c) => (
+                          <SelectItem key={c.id} value={c.id}>
+                            {(c.numero ? `#${c.numero} - ` : "") + (c.descricao || "Sem descrição")}
+                          </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
@@ -765,6 +894,38 @@ export default function ImportacaoVidasPage() {
                         ))}
                       </SelectContent>
                     </Select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Dia de vencimento <span className="text-red-500">*</span></label>
+                    <Select value={diaVencimento} onValueChange={setDiaVencimento}>
+                      <SelectTrigger className="h-10 w-full rounded-md border border-gray-300 bg-background px-3 py-2 text-sm">
+                        <SelectValue placeholder="Selecione o dia" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {(contratos.find((c) => c.id === contratoId)?.opcoes_dia_vencimento || []).map((dia) => (
+                          <SelectItem key={dia} value={dia}>{dia}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-amber-700 mt-1.5">
+                      Opções conforme cadastro do contrato selecionado.
+                    </p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Vigência (referência) <span className="text-red-500">*</span></label>
+                    <Select value={dataVigencia} onValueChange={setDataVigencia}>
+                      <SelectTrigger className="h-10 w-full rounded-md border border-gray-300 bg-background px-3 py-2 text-sm">
+                        <SelectValue placeholder="Selecione a vigência" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {(contratos.find((c) => c.id === contratoId)?.opcoes_data_vigencia || []).map((vig) => (
+                          <SelectItem key={vig} value={vig}>{vig}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-amber-700 mt-1.5">
+                      Aqui é uma referência de vigência do contrato. A data formal é validada na ficha do beneficiário.
+                    </p>
                   </div>
                 </div>
               </div>
@@ -981,7 +1142,7 @@ export default function ImportacaoVidasPage() {
               </div>
               <div className="p-6">
                 <p className="text-xs text-gray-500 mb-4">O produto lista apenas planos já utilizados nos contratos desta administradora (sessão Contrato / Clientes).</p>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-2xl">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 max-w-6xl">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">Grupo de clientes <span className="text-red-500">*</span></label>
                     <Select value={grupoId} onValueChange={setGrupoId}>
@@ -991,6 +1152,21 @@ export default function ImportacaoVidasPage() {
                       <SelectContent>
                         {grupos.map((g) => (
                           <SelectItem key={g.id} value={g.id}>{g.nome}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Contrato <span className="text-red-500">*</span></label>
+                    <Select value={contratoId} onValueChange={setContratoId}>
+                      <SelectTrigger className="h-10 w-full rounded-md border border-gray-300 bg-background px-3 py-2 text-sm">
+                        <SelectValue placeholder="Selecione o contrato" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {contratos.map((c) => (
+                          <SelectItem key={c.id} value={c.id}>
+                            {(c.numero ? `#${c.numero} - ` : "") + (c.descricao || "Sem descrição")}
+                          </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
@@ -1007,9 +1183,41 @@ export default function ImportacaoVidasPage() {
                         ))}
                       </SelectContent>
                     </Select>
-                    {produtos.length === 0 && (
-                      <p className="text-xs text-amber-700 mt-1.5">Nenhum produto nos contratos desta administradora. Ao vincular clientes em Clientes, os planos passam a aparecer aqui.</p>
+                    {contratoId && produtos.length === 0 && (
+                      <p className="text-xs text-amber-700 mt-1.5">Nenhum produto encontrado para o contrato selecionado.</p>
                     )}
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Dia de vencimento <span className="text-red-500">*</span></label>
+                    <Select value={diaVencimento} onValueChange={setDiaVencimento}>
+                      <SelectTrigger className="h-10 w-full rounded-md border border-gray-300 bg-background px-3 py-2 text-sm">
+                        <SelectValue placeholder="Selecione o dia" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {(contratos.find((c) => c.id === contratoId)?.opcoes_dia_vencimento || []).map((dia) => (
+                          <SelectItem key={dia} value={dia}>{dia}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-amber-700 mt-1.5">
+                      Opções conforme cadastro do contrato selecionado.
+                    </p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Vigência (referência) <span className="text-red-500">*</span></label>
+                    <Select value={dataVigencia} onValueChange={setDataVigencia}>
+                      <SelectTrigger className="h-10 w-full rounded-md border border-gray-300 bg-background px-3 py-2 text-sm">
+                        <SelectValue placeholder="Selecione a vigência" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {(contratos.find((c) => c.id === contratoId)?.opcoes_data_vigencia || []).map((vig) => (
+                          <SelectItem key={vig} value={vig}>{vig}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-amber-700 mt-1.5">
+                      Aqui é uma referência de vigência do contrato. A data formal é validada na ficha do beneficiário.
+                    </p>
                   </div>
                 </div>
                 <div className="mt-6 flex justify-end">

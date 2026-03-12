@@ -17,12 +17,21 @@ export async function GET(
 
     const tenantId = await getCurrentTenantId()
 
-    const { data: pca } = await supabaseAdmin
+    let { data: pca } = await supabaseAdmin
       .from("produtos_contrato_administradora")
       .select("id, nome, segmentacao, acomodacao, faixas")
       .eq("id", id)
       .eq("tenant_id", tenantId)
       .maybeSingle()
+
+    if (!pca) {
+      const fallback = await supabaseAdmin
+        .from("produtos_contrato_administradora")
+        .select("id, nome, segmentacao, acomodacao, faixas")
+        .eq("id", id)
+        .maybeSingle()
+      pca = fallback.data || null
+    }
 
     if (pca) {
       return NextResponse.json(pca)

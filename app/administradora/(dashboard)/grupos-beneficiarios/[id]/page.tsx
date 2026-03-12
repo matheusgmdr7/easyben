@@ -13,8 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { ModalConfirmacaoExclusao } from "@/components/administradora/modal-confirmacao-exclusao"
-import { ArrowLeft, FileText, FileSearch, UserMinus, Search, ChevronLeft, ChevronRight, UserPlus, Loader2 } from "lucide-react"
+import { ArrowLeft, FileText, FileSearch, Search, ChevronLeft, ChevronRight, UserX, Loader2 } from "lucide-react"
 
 export default function DetalhesGrupoPage() {
   const params = useParams()
@@ -39,9 +38,10 @@ export default function DetalhesGrupoPage() {
   const [filtroCorretora, setFiltroCorretora] = useState<string>("todas")
   const [paginaAtual, setPaginaAtual] = useState(1)
   const [itensPorPagina, setItensPorPagina] = useState(25)
-  const [confirmExcluirOpen, setConfirmExcluirOpen] = useState(false)
-  const [itemParaExcluir, setItemParaExcluir] = useState<any>(null)
-  const [excluindoBeneficiario, setExcluindoBeneficiario] = useState(false)
+  const [confirmSolicitarCancelamentoOpen, setConfirmSolicitarCancelamentoOpen] = useState(false)
+  const [itemParaSolicitarCancelamento, setItemParaSolicitarCancelamento] = useState<any>(null)
+  const [motivoSolicitacaoCancelamento, setMotivoSolicitacaoCancelamento] = useState("")
+  const [solicitandoCancelamento, setSolicitandoCancelamento] = useState(false)
   const [corretores, setCorretores] = useState<{ id: string; nome: string }[]>([])
   const [modalCorretorOpen, setModalCorretorOpen] = useState(false)
   const [itemCorretor, setItemCorretor] = useState<any>(null)
@@ -129,7 +129,7 @@ export default function DetalhesGrupoPage() {
 
       const adm = getAdministradoraLogada()
       const qAdmin = adm?.id ? `&administradora_id=${encodeURIComponent(adm.id)}` : ""
-      const res = await fetch(`/api/administradora/vidas-importadas?grupo_id=${encodeURIComponent(grupoId)}${qAdmin}`)
+      const res = await fetch(`/api/administradora/vidas-importadas?grupo_id=${encodeURIComponent(grupoId)}${qAdmin}&somente_ativos=1`)
       const vidas = (await res.json().catch(() => [])) || []
       const vidasArray = Array.isArray(vidas) ? vidas : []
       const vidaPorClienteAdmId = new Map<string, any>()
@@ -487,57 +487,57 @@ export default function DetalhesGrupoPage() {
     }
   }
 
-  async function handleExcluir(item: any) {
-    try {
-      setExcluindoBeneficiario(true)
-      if (item.cliente_tipo === "vida_importada") {
-        const observacoesAntigas = String(item?.cliente?.observacoes || item?._vida?.observacoes || "").trim()
-        const carimbo = new Date().toLocaleString("pt-BR")
-        const notaCancelamento = `Cancelado no grupo em ${carimbo}`
-        const observacoesNovas = observacoesAntigas
-          ? `${observacoesAntigas}\n${notaCancelamento}`
-          : notaCancelamento
-        const res = await fetch(`/api/administradora/vidas-importadas/${item.id}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            ativo: false,
-            observacoes: observacoesNovas,
-          }),
-        })
-        const data = await res.json().catch(() => ({}))
-        if (!res.ok) throw new Error(data?.error || "Erro ao desativar")
-      } else {
-        const { supabase } = await import("@/lib/supabase")
-        if (item.cliente_tipo === "cliente_administradora") {
-          const { error } = await supabase
-            .from("clientes_administradoras")
-            .update({ status: "cancelado" })
-            .eq("id", item.cliente_id)
-          if (error) throw error
-        } else {
-          const { error } = await supabase
-            .from("propostas")
-            .update({
-              status: "cancelada",
-              motivo_rejeicao: "Cancelado no grupo de beneficiários",
-            })
-            .eq("id", item.cliente_id)
-          if (error) throw error
-        }
-      }
-      await carregarClientes()
-      toast.success("Beneficiário desativado/cancelado com sucesso.")
-    } catch (e: any) {
-      toast.error(e?.message || "Erro ao desativar/cancelar beneficiário.")
-    } finally {
-      setExcluindoBeneficiario(false)
-    }
+  function abrirConfirmSolicitarCancelamento(item: any) {
+    setItemParaSolicitarCancelamento(item)
+    setMotivoSolicitacaoCancelamento("")
+    setConfirmSolicitarCancelamentoOpen(true)
   }
 
-  function abrirConfirmExcluir(item: any) {
-    setItemParaExcluir(item)
-    setConfirmExcluirOpen(true)
+  async function handleSolicitarCancelamento(item: any) {
+    const adm = getAdministradoraLogada()
+    if (!adm?.id) {
+      toast.error("Administradora não identificada.")
+      return
+    }
+    if (item?.cliente_tipo !== "vida_importada") {
+      toast.error("Solicitação de cancelamento está disponível apenas para vidas importadas.")
+      return
+    }
+    try {
+      setSolicitandoCancelamento(true)
+      const res = await fetch("/api/administradora/beneficiarios/cancelamentos/solicitar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          administradora_id: adm.id,
+          grupo_id: grupoId,
+          beneficiario_id: item.id,
+          motivo_solicitacao: motivoSolicitacaoCancelamento || undefined,
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data?.error || "Erro ao solicitar cancelamento")
+
+      const idsAfetados = new Set(
+        Array.isArray(data?.beneficiarios_afetados)
+          ? data.beneficiarios_afetados.map((b: { id?: string }) => String(b?.id || "")).filter(Boolean)
+          : []
+      )
+      if (idsAfetados.size > 0) {
+        setClientes((prev) => prev.filter((c) => !idsAfetados.has(String(c.id))))
+      } else {
+        await carregarClientes()
+      }
+
+      toast.success("Cancelamento solicitado com sucesso.")
+      setConfirmSolicitarCancelamentoOpen(false)
+      setItemParaSolicitarCancelamento(null)
+      setMotivoSolicitacaoCancelamento("")
+    } catch (e: any) {
+      toast.error(e?.message || "Erro ao solicitar cancelamento")
+    } finally {
+      setSolicitandoCancelamento(false)
+    }
   }
 
   const clientesFiltrados = clientes.filter((item) => {
@@ -872,11 +872,12 @@ export default function DetalhesGrupoPage() {
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => abrirConfirmExcluir(item)}
-                          className="h-8 w-8 p-0 border-slate-200 text-slate-500 hover:border-red-200 hover:bg-red-50 hover:text-red-700 rounded-md"
-                          title="Desativar/cancelar beneficiário"
+                          onClick={() => abrirConfirmSolicitarCancelamento(item)}
+                          className="h-8 w-8 p-0 border-slate-200 text-amber-600 hover:border-amber-200 hover:bg-amber-50 hover:text-amber-700 rounded-md"
+                          title="Solicitar cancelamento"
+                          disabled={item.cliente_tipo !== "vida_importada"}
                         >
-                          <UserMinus className="h-4 w-4" />
+                          <UserX className="h-4 w-4" />
                         </Button>
                     </div>
                   </TableCell>
@@ -941,17 +942,63 @@ export default function DetalhesGrupoPage() {
         )}
       </div>
 
-      <ModalConfirmacaoExclusao
-        open={confirmExcluirOpen}
-        onOpenChange={(open) => { setConfirmExcluirOpen(open); if (!open) setItemParaExcluir(null) }}
-        titulo="Desativar/cancelar beneficiário"
-        descricao={itemParaExcluir
-          ? `Tem certeza que deseja desativar/cancelar "${itemParaExcluir.cliente?.nome || "este beneficiário"}"?${itemParaExcluir.cliente_tipo === "vida_importada" ? " O cadastro será mantido e marcado como inativo com registro no histórico." : " O cadastro será mantido e marcado como cancelado."}`
-          : ""}
-        textoConfirmar="Desativar"
-        onConfirm={() => itemParaExcluir && handleExcluir(itemParaExcluir)}
-        carregando={excluindoBeneficiario}
-      />
+      <Dialog
+        open={confirmSolicitarCancelamentoOpen}
+        onOpenChange={(open) => {
+          setConfirmSolicitarCancelamentoOpen(open)
+          if (!open) {
+            setItemParaSolicitarCancelamento(null)
+            setMotivoSolicitacaoCancelamento("")
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Solicitar cancelamento</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <p className="text-sm text-gray-600">
+              Beneficiário:{" "}
+              <span className="font-medium text-gray-900">
+                {itemParaSolicitarCancelamento?.cliente?.nome || "—"}
+              </span>
+            </p>
+            <p className="text-xs text-amber-700">
+              Se for titular, os dependentes vinculados também serão desativados imediatamente.
+            </p>
+            <div>
+              <Label className="text-sm">Motivo da solicitação (opcional)</Label>
+              <Input
+                value={motivoSolicitacaoCancelamento}
+                onChange={(e) => setMotivoSolicitacaoCancelamento(e.target.value)}
+                placeholder="Ex: solicitado pelo cliente em 01/03"
+                className="mt-1.5"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmSolicitarCancelamentoOpen(false)} disabled={solicitandoCancelamento}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={() =>
+                itemParaSolicitarCancelamento && handleSolicitarCancelamento(itemParaSolicitarCancelamento)
+              }
+              disabled={solicitandoCancelamento}
+              className="bg-amber-600 hover:bg-amber-700 text-white"
+            >
+              {solicitandoCancelamento ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Solicitando...
+                </>
+              ) : (
+                "Confirmar solicitação"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={modalCorretorOpen} onOpenChange={setModalCorretorOpen}>
         <DialogContent className="sm:max-w-md">

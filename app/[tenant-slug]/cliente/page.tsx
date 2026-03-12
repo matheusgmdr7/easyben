@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Loader2, Download, ExternalLink, UserRound, LogOut } from "lucide-react"
 import { toast } from "sonner"
 import { formatarCPF, formatarData, formatarMoeda } from "@/utils/formatters"
@@ -23,6 +24,8 @@ type ResultadoCliente = {
     nome?: string
     tipo?: string
     produto?: string | null
+    plano?: string | null
+    numero_carteirinha?: string | null
     grupo_nome?: string | null
     numero_contrato?: string | null
     data_vigencia?: string | null
@@ -149,27 +152,27 @@ export default function ClienteDashboardPage({ params }: ClienteDashboardPagePro
           </div>
         </div>
       ) : (
-        <div className="bg-gray-50 min-h-screen py-8">
-          <div className="container max-w-6xl px-4 md:px-6 space-y-6">
+        <div className="bg-gray-50 min-h-screen py-4 sm:py-8">
+          <div className="container max-w-6xl px-3 sm:px-4 md:px-6 space-y-4 sm:space-y-6">
             {resultado && cliente && (
               <>
                 <Card className="border border-gray-200 shadow-sm overflow-hidden">
                   <CardContent className="p-0">
-                    <div className="bg-[#0F172A] text-white px-4 py-3">
+                    <div className="bg-[#0F172A] text-white px-3 sm:px-4 py-3">
                       <h2 className="text-sm font-semibold tracking-wide">Portal do Cliente</h2>
                     </div>
 
-                    <div className="pt-6 px-6 pb-6">
-                      <div className="flex items-center justify-between mb-4">
-                        <p className="text-sm text-gray-600">
+                    <div className="pt-4 sm:pt-6 px-3 sm:px-6 pb-4 sm:pb-6">
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+                        <p className="text-sm text-gray-600 leading-relaxed">
                           Bem-vindo(a), <span className="font-semibold text-gray-900">{cliente.nome || "Cliente"}</span>
                         </p>
-                        <Button variant="outline" size="sm" onClick={handleSair}>
+                        <Button variant="outline" size="sm" onClick={handleSair} className="w-full sm:w-auto">
                           <LogOut className="h-3.5 w-3.5 mr-1" />
                           Sair
                         </Button>
                       </div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                         <div className="rounded-md border border-gray-200 bg-white p-3">
                           <p className="text-xs text-gray-500 mb-1">Nome</p>
                           <p className="text-sm font-semibold text-gray-900 break-words">{cliente.nome || "-"}</p>
@@ -177,10 +180,6 @@ export default function ClienteDashboardPage({ params }: ClienteDashboardPagePro
                         <div className="rounded-md border border-gray-200 bg-white p-3">
                           <p className="text-xs text-gray-500 mb-1">CPF</p>
                           <p className="text-sm font-semibold text-gray-900">{formatarCPF(cliente.cpf || "") || "-"}</p>
-                        </div>
-                        <div className="rounded-md border border-gray-200 bg-white p-3">
-                          <p className="text-xs text-gray-500 mb-1">Produto</p>
-                          <p className="text-sm font-semibold text-gray-900 break-words">{cliente.produto || "-"}</p>
                         </div>
                         <div className="rounded-md border border-gray-200 bg-white p-3">
                           <p className="text-xs text-gray-500 mb-1">Status</p>
@@ -194,67 +193,165 @@ export default function ClienteDashboardPage({ params }: ClienteDashboardPagePro
                 </Card>
 
                 <Card className="border border-gray-200 shadow-sm">
-                  <CardContent className="pt-6">
-                    <h3 className="text-sm font-semibold text-gray-900 mb-3">Boletos</h3>
-                    {faturas.length > 0 ? (
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Nº Fatura</TableHead>
-                            <TableHead>Valor</TableHead>
-                            <TableHead>Vencimento</TableHead>
-                            <TableHead>Status</TableHead>
-                            <TableHead className="text-right">Boleto</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {faturas.map((f: any, i: number) => {
-                            const valorF = Number(f.valor_total ?? f.valor ?? 0)
-                            const vencF = f.data_vencimento ?? f.vencimento
-                            const boletoUrl = f.boleto_link ?? f.asaas_boleto_url ?? f.boleto_url ?? f.asaas_invoice_url ?? f.invoice_url
-                            return (
-                              <TableRow key={f.id || `${i}`} className={i % 2 === 0 ? "bg-gray-50" : "bg-white"}>
-                                <TableCell>{f.numero_fatura || "-"}</TableCell>
-                                <TableCell>{formatarMoeda(valorF)}</TableCell>
-                                <TableCell>{vencF ? formatarData(String(vencF).slice(0, 10)) : "-"}</TableCell>
-                                <TableCell>
-                                  <Badge variant="outline" className="capitalize">
-                                    {f.status || "-"}
-                                  </Badge>
-                                </TableCell>
-                                <TableCell className="text-right">
-                                  {boletoUrl ? (
-                                    <div className="flex items-center justify-end gap-1">
-                                      <Button variant="outline" size="sm" className="h-8" asChild>
-                                        <a href={boletoUrl} target="_blank" rel="noopener noreferrer">
-                                          <ExternalLink className="h-3.5 w-3.5 mr-1" />
-                                          Visualizar
-                                        </a>
-                                      </Button>
-                                      <Button variant="outline" size="sm" className="h-8" asChild>
-                                        <a
-                                          href={boletoUrl}
-                                          target="_blank"
-                                          rel="noopener noreferrer"
-                                          download={`boleto-${f.numero_fatura || f.id || i}.pdf`}
-                                        >
-                                          <Download className="h-3.5 w-3.5 mr-1" />
-                                          Baixar
-                                        </a>
-                                      </Button>
+                  <CardContent className="pt-4 sm:pt-6 px-3 sm:px-6 pb-4 sm:pb-6">
+                    <Tabs defaultValue="plano" className="w-full">
+                      <TabsList className="mb-4 w-full grid grid-cols-2 h-auto p-1">
+                        <TabsTrigger value="plano" className="text-xs sm:text-sm px-2 py-2.5">
+                          Informações do plano
+                        </TabsTrigger>
+                        <TabsTrigger value="financeiro" className="text-xs sm:text-sm px-2 py-2.5">
+                          Financeiro
+                        </TabsTrigger>
+                      </TabsList>
+
+                      <TabsContent value="plano">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          <div className="rounded-md border border-gray-200 bg-white p-3">
+                            <p className="text-xs text-gray-500 mb-1">Plano</p>
+                            <p className="text-sm font-semibold text-gray-900 break-words">
+                              {cliente.plano || cliente.produto || "-"}
+                            </p>
+                          </div>
+                          <div className="rounded-md border border-gray-200 bg-white p-3">
+                            <p className="text-xs text-gray-500 mb-1">Número da carteirinha</p>
+                            <p className="text-sm font-semibold text-gray-900">
+                              {cliente.numero_carteirinha || "-"}
+                            </p>
+                          </div>
+                          <div className="rounded-md border border-gray-200 bg-white p-3">
+                            <p className="text-xs text-gray-500 mb-1">Data de vigência</p>
+                            <p className="text-sm font-semibold text-gray-900">
+                              {cliente.data_vigencia ? formatarData(String(cliente.data_vigencia).slice(0, 10)) : "-"}
+                            </p>
+                          </div>
+                          <div className="rounded-md border border-gray-200 bg-white p-3">
+                            <p className="text-xs text-gray-500 mb-1">Valor mensal</p>
+                            <p className="text-sm font-semibold text-gray-900">
+                              {cliente.valor_mensal != null ? formatarMoeda(Number(cliente.valor_mensal)) : "-"}
+                            </p>
+                          </div>
+                        </div>
+                      </TabsContent>
+
+                      <TabsContent value="financeiro">
+                        {faturas.length > 0 ? (
+                          <>
+                            <div className="space-y-3 md:hidden">
+                              {faturas.map((f: any, i: number) => {
+                                const valorF = Number(f.valor_total ?? f.valor ?? 0)
+                                const vencF = f.data_vencimento ?? f.vencimento
+                                const boletoUrl = f.boleto_link ?? f.asaas_boleto_url ?? f.boleto_url ?? f.asaas_invoice_url ?? f.invoice_url
+                                return (
+                                  <div key={f.id || `${i}`} className="rounded-md border border-gray-200 bg-white p-3">
+                                    <div className="flex items-start justify-between gap-2">
+                                      <p className="text-sm font-semibold text-gray-900">{f.numero_fatura || "Fatura"}</p>
+                                      <Badge variant="outline" className="capitalize text-xs">
+                                        {f.status || "-"}
+                                      </Badge>
                                     </div>
-                                  ) : (
-                                    <span className="text-xs text-gray-500">Indisponível</span>
-                                  )}
-                                </TableCell>
-                              </TableRow>
-                            )
-                          })}
-                        </TableBody>
-                      </Table>
-                    ) : (
-                      <div className="text-sm text-gray-500 py-4">Nenhum boleto/fatura encontrado para este cliente.</div>
-                    )}
+                                    <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+                                      <div>
+                                        <p className="text-gray-500">Valor</p>
+                                        <p className="text-gray-900 font-medium">{formatarMoeda(valorF)}</p>
+                                      </div>
+                                      <div>
+                                        <p className="text-gray-500">Vencimento</p>
+                                        <p className="text-gray-900 font-medium">{vencF ? formatarData(String(vencF).slice(0, 10)) : "-"}</p>
+                                      </div>
+                                    </div>
+                                    <div className="mt-3 flex gap-2">
+                                      {boletoUrl ? (
+                                        <>
+                                          <Button variant="outline" size="sm" className="h-8 flex-1" asChild>
+                                            <a href={boletoUrl} target="_blank" rel="noopener noreferrer">
+                                              <ExternalLink className="h-3.5 w-3.5 mr-1" />
+                                              Visualizar
+                                            </a>
+                                          </Button>
+                                          <Button variant="outline" size="sm" className="h-8 flex-1" asChild>
+                                            <a
+                                              href={boletoUrl}
+                                              target="_blank"
+                                              rel="noopener noreferrer"
+                                              download={`boleto-${f.numero_fatura || f.id || i}.pdf`}
+                                            >
+                                              <Download className="h-3.5 w-3.5 mr-1" />
+                                              Baixar
+                                            </a>
+                                          </Button>
+                                        </>
+                                      ) : (
+                                        <span className="text-xs text-gray-500">Indisponível</span>
+                                      )}
+                                    </div>
+                                  </div>
+                                )
+                              })}
+                            </div>
+
+                            <div className="hidden md:block">
+                              <Table>
+                                <TableHeader>
+                                  <TableRow>
+                                    <TableHead>Nº Fatura</TableHead>
+                                    <TableHead>Valor</TableHead>
+                                    <TableHead>Vencimento</TableHead>
+                                    <TableHead>Status</TableHead>
+                                    <TableHead className="text-right">Boleto</TableHead>
+                                  </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                  {faturas.map((f: any, i: number) => {
+                                    const valorF = Number(f.valor_total ?? f.valor ?? 0)
+                                    const vencF = f.data_vencimento ?? f.vencimento
+                                    const boletoUrl = f.boleto_link ?? f.asaas_boleto_url ?? f.boleto_url ?? f.asaas_invoice_url ?? f.invoice_url
+                                    return (
+                                      <TableRow key={f.id || `${i}`} className={i % 2 === 0 ? "bg-gray-50" : "bg-white"}>
+                                        <TableCell>{f.numero_fatura || "-"}</TableCell>
+                                        <TableCell>{formatarMoeda(valorF)}</TableCell>
+                                        <TableCell>{vencF ? formatarData(String(vencF).slice(0, 10)) : "-"}</TableCell>
+                                        <TableCell>
+                                          <Badge variant="outline" className="capitalize">
+                                            {f.status || "-"}
+                                          </Badge>
+                                        </TableCell>
+                                        <TableCell className="text-right">
+                                          {boletoUrl ? (
+                                            <div className="flex items-center justify-end gap-1">
+                                              <Button variant="outline" size="sm" className="h-8" asChild>
+                                                <a href={boletoUrl} target="_blank" rel="noopener noreferrer">
+                                                  <ExternalLink className="h-3.5 w-3.5 mr-1" />
+                                                  Visualizar
+                                                </a>
+                                              </Button>
+                                              <Button variant="outline" size="sm" className="h-8" asChild>
+                                                <a
+                                                  href={boletoUrl}
+                                                  target="_blank"
+                                                  rel="noopener noreferrer"
+                                                  download={`boleto-${f.numero_fatura || f.id || i}.pdf`}
+                                                >
+                                                  <Download className="h-3.5 w-3.5 mr-1" />
+                                                  Baixar
+                                                </a>
+                                              </Button>
+                                            </div>
+                                          ) : (
+                                            <span className="text-xs text-gray-500">Indisponível</span>
+                                          )}
+                                        </TableCell>
+                                      </TableRow>
+                                    )
+                                  })}
+                                </TableBody>
+                              </Table>
+                            </div>
+                          </>
+                        ) : (
+                          <div className="text-sm text-gray-500 py-4">Nenhum boleto/fatura encontrado para este cliente.</div>
+                        )}
+                      </TabsContent>
+                    </Tabs>
                   </CardContent>
                 </Card>
               </>

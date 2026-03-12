@@ -10,6 +10,31 @@ interface ResultadoSincronizacao {
   faturas_atualizadas: number
   faturas_verificadas: number
   erros: string[]
+  alteracoes_status: Array<{
+    fatura_id: string
+    numero_fatura: string | null
+    cliente_nome: string | null
+    de: string
+    para: string
+  }>
+}
+
+function normalizarStatusLocal(status: string | null | undefined): string {
+  const s = String(status || '').trim().toLowerCase()
+  if (s === 'paid') return 'paga'
+  if (s === 'overdue') return 'atrasada'
+  if (s === 'cancelled' || s === 'canceled') return 'cancelada'
+  return s
+}
+
+function deveBloquearRegressaoStatus(
+  statusAtual: string | null | undefined,
+  novoStatus: string
+): boolean {
+  const atual = normalizarStatusLocal(statusAtual)
+  if (atual !== 'paga') return false
+  // Se já está paga, só permitimos mudança para cancelada (estornos/cancelamentos).
+  return novoStatus !== 'paga' && novoStatus !== 'cancelada'
 }
 
 function mapearStatusAsaas(status: string | null | undefined): string {
@@ -111,7 +136,8 @@ export async function POST(request: NextRequest) {
     const resultado: ResultadoSincronizacao = {
       faturas_atualizadas: 0,
       faturas_verificadas: 0,
-      erros: []
+      erros: [],
+      alteracoes_status: []
     }
 
     console.log('🔄 Iniciando sincronização de status...')
@@ -133,7 +159,7 @@ export async function POST(request: NextRequest) {
     // 2. Buscar faturas com asaas_charge_id
     const { data: faturas, error: faturasError } = await supabase
       .from('faturas')
-      .select('id, asaas_charge_id, gateway_id, status, valor, vencimento')
+      .select('id, numero_fatura, cliente_nome, asaas_charge_id, gateway_id, status, valor, vencimento')
       .eq('administradora_id', administradora_id)
       .or('asaas_charge_id.not.is.null,gateway_id.not.is.null')
 
@@ -177,10 +203,15 @@ export async function POST(request: NextRequest) {
         }
 
         const novoStatus = mapearStatusAsaas(charge.status)
+        const statusAtualNormalizado = normalizarStatusLocal(fatura.status)
+
+        if (deveBloquearRegressaoStatus(statusAtualNormalizado, novoStatus)) {
+          continue
+        }
 
         // Verificar se QUALQUER dado mudou (não apenas o status)
         const valorMudou = Math.abs(charge.value - fatura.valor) > 0.01
-        const statusMudou = novoStatus !== fatura.status
+        const statusMudou = novoStatus !== statusAtualNormalizado
         const vencimentoMudou = charge.dueDate !== fatura.vencimento
 
         if (statusMudou || valorMudou || vencimentoMudou) {
@@ -217,6 +248,15 @@ export async function POST(request: NextRequest) {
             if (valorMudou) mudancas.push(`valor: R$ ${fatura.valor} → R$ ${charge.value}`)
             if (vencimentoMudou) mudancas.push(`vencimento: ${fatura.vencimento} → ${charge.dueDate}`)
             console.log(`✅ Fatura ${idBase} atualizada: ${mudancas.join(', ')}`)
+            if (statusMudou) {
+              resultado.alteracoes_status.push({
+                fatura_id: String(fatura.id),
+                numero_fatura: (fatura as any).numero_fatura ?? null,
+                cliente_nome: (fatura as any).cliente_nome ?? null,
+                de: statusAtualNormalizado || String(fatura.status || ""),
+                para: novoStatus,
+              })
+            }
           }
         }
 

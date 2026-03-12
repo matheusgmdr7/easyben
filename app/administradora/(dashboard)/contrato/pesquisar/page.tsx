@@ -6,7 +6,8 @@ import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Search, X, FileDown, Eye } from "lucide-react"
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Search, X, FileDown, Pencil, Trash2, Loader2 } from "lucide-react"
 import { format } from "date-fns"
 import { ptBR } from "date-fns/locale"
 import { cn } from "@/lib/utils"
@@ -31,6 +32,8 @@ export default function PesquisarContratoPage() {
   const [buscaFiltro, setBuscaFiltro] = useState("")
   const [currentPage, setCurrentPage] = useState(1)
   const [itemsPerPage, setItemsPerPage] = useState(50)
+  const [excluindoId, setExcluindoId] = useState<string | null>(null)
+  const [contratoParaExcluir, setContratoParaExcluir] = useState<Contrato | null>(null)
 
   useEffect(() => {
     const administradora = getAdministradoraLogada()
@@ -80,6 +83,28 @@ export default function PesquisarContratoPage() {
 
   function exportarExcel() {
     toast.info("Funcionalidade de exportação Excel em desenvolvimento")
+  }
+
+  async function excluirContrato(contrato: Contrato) {
+    if (!administradoraId) return
+
+    try {
+      setExcluindoId(contrato.id)
+      const res = await fetch(
+        `/api/administradora/contrato/${encodeURIComponent(contrato.id)}?administradora_id=${encodeURIComponent(administradoraId)}`,
+        { method: "DELETE" }
+      )
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data?.error || "Erro ao excluir contrato")
+
+      setContratos((prev) => prev.filter((c) => c.id !== contrato.id))
+      toast.success("Contrato excluído com sucesso.")
+      setContratoParaExcluir(null)
+    } catch (e: any) {
+      toast.error(e?.message || "Erro ao excluir contrato")
+    } finally {
+      setExcluindoId(null)
+    }
   }
 
   const contratosFiltrados = contratos.filter((c) => {
@@ -161,7 +186,7 @@ export default function PesquisarContratoPage() {
                   <th className="px-4 py-2 text-left text-xs font-semibold text-gray-700 border-r border-gray-300">Descrição</th>
                   <th className="px-4 py-2 text-left text-xs font-semibold text-gray-700 border-r border-gray-300">Operadora</th>
                   <th className="px-4 py-2 text-left text-xs font-semibold text-gray-700 border-r border-gray-300">Produtos</th>
-                  <th className="px-4 py-2 text-left text-xs font-semibold text-gray-700 border-r border-gray-300">Data</th>
+                  <th className="px-4 py-2 text-left text-xs font-semibold text-gray-700 border-r border-gray-300">Data de criação</th>
                   <th className="px-4 py-2 text-center text-xs font-semibold text-gray-700 w-[120px]">Ações</th>
                 </tr>
               </thead>
@@ -193,16 +218,33 @@ export default function PesquisarContratoPage() {
                       <td className="px-4 py-2 text-sm text-gray-800 border-r border-gray-200">{contrato.produtos_count}</td>
                       <td className="px-4 py-2 text-sm text-gray-800 border-r border-gray-200">{formatarData(contrato.created_at)}</td>
                       <td className="px-4 py-2 text-center border-gray-200">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => router.push(`/administradora/contrato/editar/${contrato.id}`)}
-                          className="h-8 px-3 text-xs border-gray-300 rounded-sm gap-1"
-                          title="Analisar e editar contrato"
-                        >
-                          <Eye className="h-4 w-4" />
-                          Analisar
-                        </Button>
+                        <div className="flex items-center justify-center gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => router.push(`/administradora/contrato/editar/${contrato.id}`)}
+                            className="h-8 px-3 text-xs border-gray-300 rounded-sm gap-1"
+                            title="Editar contrato"
+                          >
+                            <Pencil className="h-4 w-4" />
+                            Editar
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setContratoParaExcluir(contrato)}
+                            disabled={excluindoId === contrato.id}
+                            className="h-8 px-3 text-xs border-red-200 text-red-700 hover:bg-red-50 rounded-sm gap-1"
+                            title="Excluir contrato"
+                          >
+                            {excluindoId === contrato.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Trash2 className="h-4 w-4" />
+                            )}
+                            Excluir
+                          </Button>
+                        </div>
                       </td>
                     </tr>
                   ))
@@ -283,6 +325,54 @@ export default function PesquisarContratoPage() {
           </Button>
         </div>
       </div>
+
+      <Dialog
+        open={!!contratoParaExcluir}
+        onOpenChange={(open) => {
+          if (!open && !excluindoId) setContratoParaExcluir(null)
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Excluir contrato</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 text-sm text-gray-700">
+            <p>
+              Tem certeza que deseja excluir o contrato{" "}
+              <span className="font-semibold text-gray-900">
+                {contratoParaExcluir?.numero || "-"}
+              </span>
+              ?
+            </p>
+            <p className="text-xs text-amber-700">
+              Esta ação é permanente. Se houver beneficiários vinculados aos produtos deste contrato, a exclusão será bloqueada.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setContratoParaExcluir(null)}
+              disabled={!!excluindoId}
+            >
+              Cancelar
+            </Button>
+            <Button
+              className="bg-red-600 hover:bg-red-700 text-white"
+              onClick={() => contratoParaExcluir && excluirContrato(contratoParaExcluir)}
+              disabled={!contratoParaExcluir || !!excluindoId}
+            >
+              {excluindoId ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Excluindo...
+                </>
+              ) : (
+                "Confirmar exclusão"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

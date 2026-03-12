@@ -40,6 +40,7 @@ export async function POST(request: NextRequest) {
       cliente_nome: bodyClienteNome,
       cliente_email: bodyClienteEmail,
       cliente_telefone: bodyClienteTelefone,
+      dia_vencimento: bodyDiaVencimento,
       taxa_administracao: bodyTaxaAdministracao,
     } = body
 
@@ -153,6 +154,24 @@ export async function POST(request: NextRequest) {
       }
       const grupoIdVida = vidaAny.grupo_id as string | undefined
       const produtoIdVida = vidaAny.produto_id as string | undefined
+      const dataVigenciaVida = (() => {
+        const adic = vidaAny.dados_adicionais
+        if (!adic || typeof adic !== "object") return null
+        const rec = adic as Record<string, unknown>
+        const vigRaw = rec["data_vigencia"] ?? rec["Data Vigência"] ?? rec["dataVigencia"]
+        const vig = String(vigRaw || "").slice(0, 10)
+        return /^\d{4}-\d{2}-\d{2}$/.test(vig) ? vig : null
+      })()
+      const diaVencimentoVida = (() => {
+        const diaBody = String(bodyDiaVencimento || "").replace(/\D/g, "").padStart(2, "0").slice(-2)
+        if (diaBody === "01" || diaBody === "10") return Number(diaBody)
+        const adic = vidaAny.dados_adicionais
+        if (!adic || typeof adic !== "object") return null
+        const rec = adic as Record<string, unknown>
+        const diaRaw = rec["dia_vencimento"] ?? rec["Dia Vencimento"] ?? rec["diaVencimento"]
+        const dia = String(diaRaw || "").replace(/\D/g, "").padStart(2, "0").slice(-2)
+        return dia === "01" || dia === "10" ? Number(dia) : null
+      })()
       if (produtoIdVida) {
         const { data: prod } = await supabaseAdmin
           .from("produtos_contrato_administradora")
@@ -199,19 +218,29 @@ export async function POST(request: NextRequest) {
         if (ca) {
           clienteAdm = ca as { id: string; administradora_id: string; proposta_id: string | null }
           idParaFatura = ca.id
+          const syncPayload: Record<string, unknown> = {
+            valor_mensal: Number(vidaAny.valor_mensal) || valorNum,
+          }
+          if (diaVencimentoVida) syncPayload.dia_vencimento = diaVencimentoVida
+          if (dataVigenciaVida) syncPayload.data_vigencia = dataVigenciaVida
+          await supabaseAdmin
+            .from("clientes_administradoras")
+            .update(syncPayload)
+            .eq("id", ca.id)
+            .eq("tenant_id", tenantId)
         }
       }
 
       if (!clienteAdm) {
         const dataVig = new Date()
-        const dataVen = new Date()
-        dataVen.setMonth(dataVen.getMonth() + 1)
+        const dataVen = new Date(vencimentoIso)
         const payloadCa: Record<string, unknown> = {
           administradora_id,
           tenant_id: tenantId,
           numero_contrato: `IMP-${vidaId.slice(0, 8)}`,
           data_vencimento: dataVen.toISOString().slice(0, 10),
-          data_vigencia: dataVig.toISOString().slice(0, 10),
+          dia_vencimento: diaVencimentoVida ?? Number(vencimentoIso.slice(8, 10)),
+          data_vigencia: dataVigenciaVida ?? dataVig.toISOString().slice(0, 10),
           valor_mensal: Number(vidaAny.valor_mensal) || valorNum,
           status: "ativo",
         }

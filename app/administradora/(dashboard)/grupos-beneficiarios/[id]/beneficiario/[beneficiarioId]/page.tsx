@@ -37,6 +37,20 @@ export default function BeneficiarioDetalhesPage() {
   const [historico, setHistorico] = useState<any[]>([])
   const [produtoCliente, setProdutoCliente] = useState<any>(null)
   const [valorProdutoCliente, setValorProdutoCliente] = useState<number | null>(null)
+  const [valorBaseFatura, setValorBaseFatura] = useState<number | null>(null)
+  const [diaVencimentoVinculado, setDiaVencimentoVinculado] = useState<string | null>(null)
+  const [editandoContrato, setEditandoContrato] = useState(false)
+  const [salvandoContrato, setSalvandoContrato] = useState(false)
+  const [recalculandoValorContrato, setRecalculandoValorContrato] = useState(false)
+  const [opcoesDataVigenciaContrato, setOpcoesDataVigenciaContrato] = useState<string[]>([])
+  const [opcoesDiaVencimentoContrato, setOpcoesDiaVencimentoContrato] = useState<string[]>([])
+  const [formContrato, setFormContrato] = useState({
+    valor_mensal: "",
+    data_vigencia: "",
+    dia_vencimento: "",
+    acomodacao: "",
+    numero_carteirinha: "",
+  })
   const [corretores, setCorretores] = useState<{ id: string; nome: string }[]>([])
   const [modalCorretorOpen, setModalCorretorOpen] = useState(false)
   const [corretorSelecionadoId, setCorretorSelecionadoId] = useState<string>("__nenhum__")
@@ -80,6 +94,111 @@ export default function BeneficiarioDetalhesPage() {
     return cpf
   }
 
+  function normalizarDiaVencimento(valor: unknown): string | null {
+    const dia = String(valor || "").replace(/\D/g, "").padStart(2, "0").slice(-2)
+    return dia === "01" || dia === "10" ? dia : null
+  }
+
+  function obterPlanoBeneficiario(dados: any, produtoFallback?: string | null): string {
+    const planoDireto = String(
+      dados?.plano ??
+      dados?.plano_nome ??
+      dados?.planoNome ??
+      ""
+    ).trim()
+    if (planoDireto) return planoDireto
+
+    const adic = dados?.dados_adicionais
+    if (adic && typeof adic === "object") {
+      const rec = adic as Record<string, unknown>
+      const planoAdicional = String(rec["Plano"] ?? rec["plano"] ?? "").trim()
+      if (planoAdicional) return planoAdicional
+    }
+
+    const fallback = String(produtoFallback || "").trim()
+    return fallback || "-"
+  }
+
+  function detectarAcomodacaoTexto(valor: unknown): "Enfermaria" | "Apartamento" | null {
+    const t = String(valor || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .trim()
+    if (!t) return null
+    if (t.includes("apart")) return "Apartamento"
+    if (t.includes("enferm")) return "Enfermaria"
+    return null
+  }
+
+  function obterAcomodacaoBeneficiario(dados: any, produtoFallback?: string | null): string {
+    const adic = dados?.dados_adicionais && typeof dados?.dados_adicionais === "object"
+      ? (dados.dados_adicionais as Record<string, unknown>)
+      : {}
+    const candidatos = [
+      dados?.acomodacao,
+      adic["acomodacao"],
+      adic["Acomodação"],
+      adic["acomodacao_plano"],
+      adic["Acomodacao"],
+      obterPlanoBeneficiario(dados, produtoFallback),
+      produtoFallback,
+    ]
+    for (const c of candidatos) {
+      const acom = detectarAcomodacaoTexto(c)
+      if (acom) return acom
+    }
+    return "-"
+  }
+
+  function obterProdutoVinculadoBeneficiario(dados: any, produtoFallback?: string | null): string {
+    const adic = dados?.dados_adicionais && typeof dados?.dados_adicionais === "object"
+      ? (dados.dados_adicionais as Record<string, unknown>)
+      : {}
+    const candidatos = [
+      produtoFallback,
+      dados?.produto_nome,
+      dados?.produto,
+      adic["produto_nome"],
+      adic["produto"],
+      adic["Produto"],
+      dados?.plano,
+      adic["Plano"],
+      adic["plano"],
+    ]
+    for (const c of candidatos) {
+      const txt = String(c || "").trim()
+      if (txt) return txt
+    }
+    return "-"
+  }
+
+  function obterDataVigenciaBeneficiario(dados: any): string {
+    const vigContrato = String(contrato?.data_vigencia || "").slice(0, 10)
+    if (vigContrato) return vigContrato
+    const adic = dados?.dados_adicionais && typeof dados?.dados_adicionais === "object"
+      ? (dados.dados_adicionais as Record<string, unknown>)
+      : {}
+    const vigVida = String(adic["data_vigencia"] ?? adic["Data Vigência"] ?? adic["dataVigencia"] ?? "").slice(0, 10)
+    return vigVida || "-"
+  }
+
+  function obterNumeroCarteirinhaBeneficiario(dados: any): string {
+    const direto = String(dados?.numero_carteirinha || "").trim()
+    if (direto) return direto
+    const adic = dados?.dados_adicionais && typeof dados?.dados_adicionais === "object"
+      ? (dados.dados_adicionais as Record<string, unknown>)
+      : {}
+    const cart = String(
+      adic["numero_carteirinha"] ??
+        adic["Número da carteirinha"] ??
+        adic["Numero da carteirinha"] ??
+        adic["carteirinha"] ??
+        ""
+    ).trim()
+    return cart || "-"
+  }
+
   function normalizarCorretorId(valor: unknown): string | null {
     const raw = String(valor ?? "").trim()
     if (!raw) return null
@@ -120,6 +239,41 @@ export default function BeneficiarioDetalhesPage() {
     return `${dig.slice(0, 5)}-${dig.slice(5)}`
   }
 
+  function parseValorMoeda(valor: string): number | null {
+    let txt = String(valor || "").trim().replace(/\s/g, "")
+    if (!txt) return null
+    txt = txt.replace(/[^\d,.-]/g, "")
+    if (!txt) return null
+    const temVirgula = txt.includes(",")
+    const temPonto = txt.includes(".")
+    if (temVirgula && temPonto) {
+      txt = txt.replace(/\./g, "").replace(",", ".")
+    } else if (temVirgula) {
+      txt = txt.replace(",", ".")
+    }
+    const n = Number(txt)
+    return Number.isFinite(n) && n >= 0 ? n : null
+  }
+
+  function normalizarEscalaValorMonetario(valor: unknown): number | null {
+    const n = Number(valor)
+    if (!Number.isFinite(n) || n < 0) return null
+    if (Number.isInteger(n) && n >= 10000) return n / 100
+    return n
+  }
+
+  function calcularIdadeLocal(dataNascimento?: string | null): number | null {
+    const iso = String(dataNascimento || "").slice(0, 10)
+    if (!iso) return null
+    const [ano, mes, dia] = iso.split("-").map((v) => Number(v))
+    if (!ano || !mes || !dia) return null
+    const hoje = new Date()
+    let idade = hoje.getFullYear() - ano
+    const m = hoje.getMonth() + 1
+    if (m < mes || (m === mes && hoje.getDate() < dia)) idade--
+    return idade >= 0 && idade <= 120 ? idade : null
+  }
+
   function getFormFromDados(dados: any) {
     const email = (Array.isArray(dados?.emails) ? dados?.emails?.[0] : dados?.email) || ""
     const telArray = Array.isArray(dados?.telefones) ? dados?.telefones : []
@@ -152,21 +306,22 @@ export default function BeneficiarioDetalhesPage() {
       const adm = getAdministradoraLogada()
       if (!adm?.id) throw new Error("Administradora não encontrada")
 
-      const corretoresRes = await fetch(`/api/administradora/corretores?administradora_id=${encodeURIComponent(adm.id)}`)
-      const corretoresData = await corretoresRes.json().catch(() => [])
-      setCorretores(Array.isArray(corretoresData) ? corretoresData.map((c: any) => ({ id: String(c.id), nome: String(c.nome || "") })) : [])
-
-      const g = await GruposBeneficiariosService.buscarPorId(grupoId)
-      setGrupo(g)
-
       const { supabase } = await import("@/lib/supabase")
       const qAdmin = adm?.id ? `&administradora_id=${encodeURIComponent(adm.id)}` : ""
-      const [vinculosRes, vidasRes] = await Promise.all([
+      const [corretoresData, g, vinculosRes, vidasRes] = await Promise.all([
+        fetch(`/api/administradora/corretores?administradora_id=${encodeURIComponent(adm.id)}`).then((r) =>
+          r.json().catch(() => [])
+        ),
+        GruposBeneficiariosService.buscarPorId(grupoId),
         supabase.from("clientes_grupos").select("*").eq("grupo_id", grupoId),
         fetch(`/api/administradora/vidas-importadas?grupo_id=${encodeURIComponent(grupoId)}${qAdmin}`).then((r) =>
           r.json().catch(() => [])
         ),
       ])
+      setCorretores(
+        Array.isArray(corretoresData) ? corretoresData.map((c: any) => ({ id: String(c.id), nome: String(c.nome || "") })) : []
+      )
+      setGrupo(g)
       const vinculos = vinculosRes.data || []
       const vidas = Array.isArray(vidasRes) ? vidasRes : []
       const vidaPorClienteAdmId = new Map<string, any>()
@@ -178,57 +333,6 @@ export default function BeneficiarioDetalhesPage() {
           vidaPorClienteAdmId.set(caId, v)
         }
       }
-
-      const clientesCompletos = await Promise.all(
-        vinculos.map(async (vinculo: any) => {
-          if (vinculo.cliente_tipo === "proposta") {
-            const { data: proposta } = await supabase.from("propostas").select("*").eq("id", vinculo.cliente_id).single()
-            const ativo = ["aprovada", "assinada", "finalizada"].includes(String(proposta?.status || "").toLowerCase())
-            return { ...vinculo, cliente: proposta, situacao: ativo ? "Ativo" : "Inativo" }
-          }
-          const { data: clienteAdm } = await supabase.from("clientes_administradoras").select("*").eq("id", vinculo.cliente_id).single()
-          const { data: vwCliente } = await supabase
-            .from("vw_clientes_administradoras_completo")
-            .select("cliente_nome, cliente_cpf, cliente_email")
-            .eq("id", vinculo.cliente_id)
-            .maybeSingle()
-
-          let propostaVinculada: any = null
-          if (clienteAdm?.proposta_id) {
-            const { data: proposta } = await supabase
-              .from("propostas")
-              .select("*")
-              .eq("id", clienteAdm.proposta_id)
-              .maybeSingle()
-            propostaVinculada = proposta || null
-          }
-
-          const cliente = {
-            ...(propostaVinculada || {}),
-            ...(clienteAdm || {}),
-            ...(vwCliente || {}),
-            nome:
-              propostaVinculada?.nome ||
-              clienteAdm?.nome ||
-              clienteAdm?.razao_social ||
-              clienteAdm?.nome_fantasia ||
-              vwCliente?.cliente_nome ||
-              null,
-            cpf: propostaVinculada?.cpf || clienteAdm?.cpf || vwCliente?.cliente_cpf || null,
-            email: propostaVinculada?.email || clienteAdm?.email || vwCliente?.cliente_email || null,
-          }
-          const vidaFallback = vidaPorClienteAdmId.get(String(vinculo.cliente_id || ""))
-          if (!cliente.nome && vidaFallback?.nome) cliente.nome = String(vidaFallback.nome)
-          if (!cliente.cpf && vidaFallback?.cpf) cliente.cpf = String(vidaFallback.cpf)
-          if (!cliente.email) {
-            const emailVida = Array.isArray(vidaFallback?.emails) ? vidaFallback?.emails?.[0] : null
-            if (emailVida) cliente.email = String(emailVida)
-          }
-
-          const ativo = String(clienteAdm?.status || "").toLowerCase() === "ativo"
-          return { ...vinculo, cliente, situacao: ativo ? "Ativo" : "Inativo" }
-        })
-      )
 
       const vidasComoClientes = vidas.map((v: any) => ({
         id: v.id,
@@ -252,6 +356,59 @@ export default function BeneficiarioDetalhesPage() {
       }))
 
       const usaVidasImportadasComoFontePrincipal = vidasComoClientes.length > 0
+      let clientesCompletos: any[] = []
+      if (!usaVidasImportadasComoFontePrincipal) {
+        clientesCompletos = await Promise.all(
+          vinculos.map(async (vinculo: any) => {
+            if (vinculo.cliente_tipo === "proposta") {
+              const { data: proposta } = await supabase.from("propostas").select("*").eq("id", vinculo.cliente_id).single()
+              const ativo = ["aprovada", "assinada", "finalizada"].includes(String(proposta?.status || "").toLowerCase())
+              return { ...vinculo, cliente: proposta, situacao: ativo ? "Ativo" : "Inativo" }
+            }
+            const { data: clienteAdm } = await supabase.from("clientes_administradoras").select("*").eq("id", vinculo.cliente_id).single()
+            const { data: vwCliente } = await supabase
+              .from("vw_clientes_administradoras_completo")
+              .select("cliente_nome, cliente_cpf, cliente_email")
+              .eq("id", vinculo.cliente_id)
+              .maybeSingle()
+
+            let propostaVinculada: any = null
+            if (clienteAdm?.proposta_id) {
+              const { data: proposta } = await supabase
+                .from("propostas")
+                .select("*")
+                .eq("id", clienteAdm.proposta_id)
+                .maybeSingle()
+              propostaVinculada = proposta || null
+            }
+
+            const cliente = {
+              ...(propostaVinculada || {}),
+              ...(clienteAdm || {}),
+              ...(vwCliente || {}),
+              nome:
+                propostaVinculada?.nome ||
+                clienteAdm?.nome ||
+                clienteAdm?.razao_social ||
+                clienteAdm?.nome_fantasia ||
+                vwCliente?.cliente_nome ||
+                null,
+              cpf: propostaVinculada?.cpf || clienteAdm?.cpf || vwCliente?.cliente_cpf || null,
+              email: propostaVinculada?.email || clienteAdm?.email || vwCliente?.cliente_email || null,
+            }
+            const vidaFallback = vidaPorClienteAdmId.get(String(vinculo.cliente_id || ""))
+            if (!cliente.nome && vidaFallback?.nome) cliente.nome = String(vidaFallback.nome)
+            if (!cliente.cpf && vidaFallback?.cpf) cliente.cpf = String(vidaFallback.cpf)
+            if (!cliente.email) {
+              const emailVida = Array.isArray(vidaFallback?.emails) ? vidaFallback?.emails?.[0] : null
+              if (emailVida) cliente.email = String(emailVida)
+            }
+
+            const ativo = String(clienteAdm?.status || "").toLowerCase() === "ativo"
+            return { ...vinculo, cliente, situacao: ativo ? "Ativo" : "Inativo" }
+          })
+        )
+      }
       const itens = usaVidasImportadasComoFontePrincipal
         ? vidasComoClientes
         : clientesCompletos.filter((c: any) => c.cliente)
@@ -262,9 +419,25 @@ export default function BeneficiarioDetalhesPage() {
       )
       if (!item) throw new Error("Beneficiário não encontrado")
       setClienteSelecionado(item)
+      const dadosItem = item.cliente_tipo === "vida_importada" ? (item._vida || item.cliente || {}) : (item.cliente || {})
+      const valorLocalInicial = Number(
+        dadosItem?.valor_mensal ??
+          dadosItem?.valor ??
+          item?._vida?.valor_mensal ??
+          item?.cliente?.valor_mensal ??
+          0
+      )
+      setValorBaseFatura(Number.isFinite(valorLocalInicial) && valorLocalInicial > 0 ? valorLocalInicial : null)
+      setDiaVencimentoVinculado(null)
 
       if (item.cliente_tipo === "vida_importada") {
         const v = item._vida || item.cliente
+        const diaVida = normalizarDiaVencimento(
+          (v?.dados_adicionais && typeof v.dados_adicionais === "object"
+            ? (v.dados_adicionais as Record<string, unknown>).dia_vencimento
+            : null) ?? null
+        )
+        if (diaVida) setDiaVencimentoVinculado(diaVida)
         if (v?.tipo === "titular" && v?.cpf) {
           const { data: deps } = await supabase
             .from("vidas_importadas")
@@ -291,7 +464,22 @@ export default function BeneficiarioDetalhesPage() {
 
         const clienteAdmId = await resolverClienteAdministradoraIdVida(v, adm.id)
         if (clienteAdmId) {
-          await carregarFaturas(clienteAdmId, adm.id)
+          const { data: caInfo } = await supabase
+            .from("clientes_administradoras")
+            .select("dia_vencimento, data_vigencia, valor_mensal")
+            .eq("id", clienteAdmId)
+            .eq("administradora_id", adm.id)
+            .maybeSingle()
+          const diaCa = normalizarDiaVencimento((caInfo as any)?.dia_vencimento)
+          if (diaCa) setDiaVencimentoVinculado(diaCa)
+          if (caInfo) {
+            setContrato((prev: any) => ({
+              ...(prev || {}),
+              data_vigencia: (caInfo as any)?.data_vigencia ?? prev?.data_vigencia ?? null,
+              valor_mensal: (caInfo as any)?.valor_mensal ?? prev?.valor_mensal ?? null,
+            }))
+          }
+          void carregarFaturas(clienteAdmId, adm.id)
         }
       } else {
         const propostaId = item.cliente_tipo === "proposta" ? item.cliente_id : item.cliente?.proposta_id
@@ -303,26 +491,85 @@ export default function BeneficiarioDetalhesPage() {
         if (!clienteAdmId && propostaId) {
           const { data: ca } = await supabase
             .from("clientes_administradoras")
-            .select("id, numero_contrato, data_vigencia, valor_mensal")
+            .select("id, numero_contrato, data_vigencia, valor_mensal, dia_vencimento")
             .eq("proposta_id", propostaId)
             .eq("administradora_id", adm.id)
             .single()
           clienteAdmId = ca?.id
-          if (ca) setContrato(ca)
+          if (ca) {
+            setContrato(ca)
+            setDiaVencimentoVinculado(normalizarDiaVencimento((ca as any)?.dia_vencimento))
+          }
         } else if (clienteAdmId) {
           const { data: ca } = await supabase
             .from("clientes_administradoras")
-            .select("numero_contrato, data_vigencia, valor_mensal")
+            .select("numero_contrato, data_vigencia, valor_mensal, dia_vencimento")
             .eq("id", clienteAdmId)
             .single()
-          if (ca) setContrato(ca)
+          if (ca) {
+            setContrato(ca)
+            setDiaVencimentoVinculado(normalizarDiaVencimento((ca as any)?.dia_vencimento))
+          }
         }
-        if (clienteAdmId) await carregarFaturas(clienteAdmId, adm.id)
+        if (clienteAdmId) void carregarFaturas(clienteAdmId, adm.id)
       }
+
+      void carregarValorBaseComoNaGeracaoFatura(item, adm.id)
     } catch (e: any) {
       toast.error(e?.message || "Erro ao carregar beneficiário")
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function carregarValorBaseComoNaGeracaoFatura(item: any, admId: string) {
+    try {
+      const res = await fetch(
+        `/api/administradora/grupos/${encodeURIComponent(grupoId)}/clientes-fatura?administradora_id=${encodeURIComponent(admId)}`
+      )
+      const data = await res.json().catch(() => [])
+      if (!res.ok || !Array.isArray(data)) return
+
+      const rows = data as Array<{
+        cliente_administradora_id?: string
+        cliente_cpf?: string
+        valor_mensal?: number
+      }>
+
+      const normalizarCpf = (v: unknown) => String(v || "").replace(/\D/g, "")
+
+      let match: (typeof rows)[number] | undefined
+
+      if (item?.cliente_tipo === "vida_importada") {
+        const vida = item?._vida || item?.cliente || {}
+        const tipoVida = String(vida?.tipo || "").toLowerCase()
+        const cpfTitular = normalizarCpf(vida?.cpf_titular)
+        const cpfVida = normalizarCpf(vida?.cpf)
+        const cpfAlvo = tipoVida === "dependente" ? (cpfTitular || cpfVida) : cpfVida
+        if (cpfAlvo) {
+          match = rows.find((r) => normalizarCpf(r?.cliente_cpf) === cpfAlvo)
+        }
+        if (!match && vida?.cliente_administradora_id) {
+          const caId = String(vida.cliente_administradora_id)
+          match = rows.find((r) => String(r?.cliente_administradora_id || "") === caId)
+        }
+      } else {
+        const caIdDireto = item?.cliente_tipo === "cliente_administradora" ? String(item?.cliente_id || "") : ""
+        const caIdCliente = String(item?.cliente?.id || "")
+        if (caIdDireto) {
+          match = rows.find((r) => String(r?.cliente_administradora_id || "") === caIdDireto)
+        }
+        if (!match && caIdCliente) {
+          match = rows.find((r) => String(r?.cliente_administradora_id || "") === caIdCliente)
+        }
+      }
+
+      if (match && Number.isFinite(Number(match.valor_mensal))) {
+        const valorNorm = normalizarEscalaValorMonetario(match.valor_mensal)
+        setValorBaseFatura(valorNorm)
+      }
+    } catch {
+      // Valor mensal segue fallback local quando a consulta de geração não estiver disponível.
     }
   }
 
@@ -443,6 +690,7 @@ export default function BeneficiarioDetalhesPage() {
     if (!clienteAdmId) return
 
     const refresh = () => carregarFaturas(clienteAdmId as string, adm.id)
+    refresh()
     const intervalId = window.setInterval(refresh, 45000)
     const onVisibility = () => {
       if (document.visibilityState === "visible") refresh()
@@ -464,6 +712,47 @@ export default function BeneficiarioDetalhesPage() {
     setFormContato(form.contato)
     setEditandoDadosBasicos(false)
     setEditandoContato(false)
+  }, [clienteSelecionado])
+
+  useEffect(() => {
+    if (!clienteSelecionado) return
+    const dados = clienteSelecionado.cliente_tipo === "vida_importada"
+      ? (clienteSelecionado._vida || clienteSelecionado.cliente)
+      : clienteSelecionado.cliente
+    const valorAtual =
+      valorBaseFatura != null
+        ? normalizarEscalaValorMonetario(valorBaseFatura)
+        : normalizarEscalaValorMonetario(dados?.valor_mensal ?? contrato?.valor_mensal ?? valorProdutoCliente ?? null)
+    setFormContrato({
+      valor_mensal: valorAtual != null && Number.isFinite(Number(valorAtual)) ? Number(valorAtual).toFixed(2) : "",
+      data_vigencia: (() => {
+        const vig = obterDataVigenciaBeneficiario(dados)
+        return vig === "-" ? "" : vig
+      })(),
+      dia_vencimento: String(diaVencimentoVinculado || ""),
+      acomodacao: obterAcomodacaoBeneficiario(dados, produtoCliente?.nome) === "-" ? "" : obterAcomodacaoBeneficiario(dados, produtoCliente?.nome),
+      numero_carteirinha: (() => {
+        const cart = obterNumeroCarteirinhaBeneficiario(dados)
+        return cart === "-" ? "" : cart
+      })(),
+    })
+    setEditandoContrato(false)
+  }, [clienteSelecionado, contrato, valorProdutoCliente, valorBaseFatura, diaVencimentoVinculado])
+
+  useEffect(() => {
+    if (!clienteSelecionado) return
+    const adm = getAdministradoraLogada()
+    if (!adm?.id) return
+    const dados = clienteSelecionado.cliente_tipo === "vida_importada"
+      ? (clienteSelecionado._vida || clienteSelecionado.cliente)
+      : clienteSelecionado.cliente
+    const produtoId = String(dados?.produto_id || "").trim()
+    if (!produtoId) {
+      setOpcoesDataVigenciaContrato([])
+      setOpcoesDiaVencimentoContrato([])
+      return
+    }
+    void carregarOpcoesContratoPorVidas(produtoId, adm.id)
   }, [clienteSelecionado])
 
   async function buscarCep() {
@@ -565,6 +854,247 @@ export default function BeneficiarioDetalhesPage() {
       toast.error(e?.message || "Erro ao salvar edição")
     } finally {
       setSalvandoEdicao(false)
+    }
+  }
+
+  async function carregarOpcoesContratoPorVidas(produtoId: string, administradoraId: string) {
+    try {
+      const { supabase } = await import("@/lib/supabase")
+      const { data: produtoBase } = await supabase
+        .from("produtos_contrato_administradora")
+        .select("contrato_id")
+        .eq("id", produtoId)
+        .single()
+      const contratoId = String((produtoBase as any)?.contrato_id || "").trim()
+      if (!contratoId) {
+        setOpcoesDataVigenciaContrato([])
+        setOpcoesDiaVencimentoContrato([])
+        return
+      }
+
+      const { data: produtosContrato } = await supabase
+        .from("produtos_contrato_administradora")
+        .select("id")
+        .eq("contrato_id", contratoId)
+
+      const produtoIds = (produtosContrato || []).map((p: any) => p.id).filter(Boolean)
+      if (produtoIds.length === 0) {
+        setOpcoesDataVigenciaContrato([])
+        setOpcoesDiaVencimentoContrato([])
+        return
+      }
+
+      const { data: vidasContrato } = await supabase
+        .from("vidas_importadas")
+        .select("cliente_administradora_id, dados_adicionais")
+        .eq("administradora_id", administradoraId)
+        .in("produto_id", produtoIds)
+        .neq("ativo", false)
+
+      const clienteAdmIds = Array.from(
+        new Set((vidasContrato || []).map((v: any) => String(v?.cliente_administradora_id || "").trim()).filter(Boolean))
+      )
+
+      const dias = new Set<string>()
+      const vigencias = new Set<string>()
+      for (const v of vidasContrato || []) {
+        const rec = v?.dados_adicionais && typeof v.dados_adicionais === "object" ? (v.dados_adicionais as Record<string, unknown>) : {}
+        const diaVida = normalizarDiaVencimento(rec["dia_vencimento"] ?? rec["Dia Vencimento"] ?? rec["diaVencimento"])
+        if (diaVida) dias.add(diaVida)
+        const vigVida = String(rec["data_vigencia"] ?? rec["Data Vigência"] ?? rec["dataVigencia"] ?? "").slice(0, 10)
+        if (vigVida) vigencias.add(vigVida)
+      }
+
+      if (clienteAdmIds.length > 0) {
+        const { data: clientesContrato } = await supabase
+          .from("clientes_administradoras")
+          .select("data_vigencia, dia_vencimento")
+          .eq("administradora_id", administradoraId)
+          .in("id", clienteAdmIds)
+
+        for (const c of clientesContrato || []) {
+          const dia = normalizarDiaVencimento((c as any)?.dia_vencimento)
+          if (dia) dias.add(dia)
+          const vig = String((c as any)?.data_vigencia || "").slice(0, 10)
+          if (vig) vigencias.add(vig)
+        }
+      }
+
+      setOpcoesDiaVencimentoContrato(Array.from(dias).sort())
+      setOpcoesDataVigenciaContrato(Array.from(vigencias).sort())
+    } catch {
+      setOpcoesDataVigenciaContrato([])
+      setOpcoesDiaVencimentoContrato([])
+    }
+  }
+
+  async function recalcularValorFaixaContrato() {
+    if (!clienteSelecionado) return
+    const vida = clienteSelecionado.cliente_tipo === "vida_importada" ? (clienteSelecionado._vida || clienteSelecionado.cliente) : null
+    const produtoId = String(vida?.produto_id || "").trim()
+    if (!produtoId) {
+      toast.error("Beneficiário sem produto vinculado para cálculo por faixa etária.")
+      return
+    }
+    const idade = Number(vida?.idade) || calcularIdadeLocal(vida?.data_nascimento)
+    if (idade == null) {
+      toast.error("Não foi possível identificar a idade do beneficiário.")
+      return
+    }
+    try {
+      setRecalculandoValorContrato(true)
+      const acomodacaoForm = formContrato.acomodacao === "Apartamento" || formContrato.acomodacao === "Enfermaria"
+        ? formContrato.acomodacao
+        : null
+      const acomodacaoDetectada = obterAcomodacaoBeneficiario(vida, produtoCliente?.nome)
+      const acomodacao = (acomodacaoForm || (acomodacaoDetectada === "Apartamento" ? "Apartamento" : "Enfermaria")) as "Apartamento" | "Enfermaria"
+      const adm = getAdministradoraLogada()
+      const qAdmin = adm?.id ? `&administradora_id=${encodeURIComponent(adm.id)}` : ""
+      const res = await fetch(
+        `/api/administradora/produto/${encodeURIComponent(produtoId)}/valor?idade=${encodeURIComponent(String(idade))}&acomodacao=${encodeURIComponent(acomodacao)}${qAdmin}`
+      )
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data?.error || "Erro ao calcular valor por faixa")
+      const valor = data?.valor != null ? Number(data.valor) : NaN
+      const valorNormalizado = normalizarEscalaValorMonetario(valor)
+      if (valorNormalizado == null || valorNormalizado <= 0) {
+        const detalhe = data?.error ? ` (${String(data.error)})` : ""
+        toast.error(`Nenhuma faixa de valor encontrada para esta idade${detalhe}.`)
+        return
+      }
+      setFormContrato((p) => ({ ...p, valor_mensal: valorNormalizado.toFixed(2) }))
+      toast.success("Valor recalculado pela faixa etária do contrato.")
+    } catch (e: any) {
+      toast.error(e?.message || "Erro ao recalcular valor")
+    } finally {
+      setRecalculandoValorContrato(false)
+    }
+  }
+
+  async function salvarContrato() {
+    if (!clienteSelecionado) return
+    const adm = getAdministradoraLogada()
+    if (!adm?.id) {
+      toast.error("Administradora não identificada.")
+      return
+    }
+    const dia = normalizarDiaVencimento(formContrato.dia_vencimento)
+    const vig = String(formContrato.data_vigencia || "").slice(0, 10) || null
+    const valor = normalizarEscalaValorMonetario(parseValorMoeda(formContrato.valor_mensal))
+    const acomodacaoContrato =
+      formContrato.acomodacao === "Apartamento" || formContrato.acomodacao === "Enfermaria"
+        ? formContrato.acomodacao
+        : null
+    const numeroCarteirinha = String(formContrato.numero_carteirinha || "").trim()
+
+    if (formContrato.valor_mensal.trim() && valor == null) {
+      toast.error("Valor mensal inválido.")
+      return
+    }
+
+    if (numeroCarteirinha && !vig) {
+      toast.error("Para informar número da carteirinha, preencha também a data de vigência.")
+      return
+    }
+    if (vig && !/^\d{4}-\d{2}-\d{2}$/.test(vig)) {
+      toast.error("Data de vigência inválida. Use o formato de data antes de salvar.")
+      return
+    }
+
+    try {
+      setSalvandoContrato(true)
+      const clienteAdmId = await resolverClienteAdministradoraIdAtual(adm.id)
+      if (clienteSelecionado.cliente_tipo === "vida_importada") {
+        const vida = clienteSelecionado._vida || clienteSelecionado.cliente || {}
+        const dadosAdicionaisAtuais = vida?.dados_adicionais && typeof vida.dados_adicionais === "object"
+          ? (vida.dados_adicionais as Record<string, unknown>)
+          : {}
+        const novosDadosAdicionais: Record<string, unknown> = {
+          ...dadosAdicionaisAtuais,
+          ...(dia ? { dia_vencimento: dia } : {}),
+          ...(vig ? { data_vigencia: vig } : {}),
+          ...(numeroCarteirinha ? { numero_carteirinha: numeroCarteirinha } : {}),
+        }
+
+        const resVida = await fetch(`/api/administradora/vidas-importadas/${encodeURIComponent(clienteSelecionado.id)}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            administradora_id: adm.id,
+            ...(valor != null ? { valor_mensal: valor } : {}),
+            ...(acomodacaoContrato ? { acomodacao: acomodacaoContrato } : {}),
+            dados_adicionais: novosDadosAdicionais,
+          }),
+        })
+        const jsonVida = await resVida.json().catch(() => ({}))
+        if (!resVida.ok) throw new Error(jsonVida?.error || "Erro ao salvar contrato no beneficiário")
+      }
+
+      if (clienteAdmId) {
+        const resCliente = await fetch(`/api/administradora/clientes/${encodeURIComponent(clienteAdmId)}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            administradora_id: adm.id,
+            ...(valor != null ? { valor_mensal: valor } : {}),
+            ...(dia ? { dia_vencimento: dia } : {}),
+            ...(vig ? { data_vigencia: vig } : {}),
+          }),
+        })
+        const jsonCliente = await resCliente.json().catch(() => ({}))
+        if (!resCliente.ok) throw new Error(jsonCliente?.error || "Erro ao salvar dados contratuais do cliente")
+      }
+
+      if (valor != null) setValorBaseFatura(valor)
+      if (dia) setDiaVencimentoVinculado(dia)
+      if (vig || valor != null) {
+        setContrato((prev: any) => ({
+          ...(prev || {}),
+          ...(vig ? { data_vigencia: vig } : {}),
+          ...(valor != null ? { valor_mensal: valor } : {}),
+        }))
+      }
+
+      setClienteSelecionado((prev: any) => {
+        if (!prev || prev.cliente_tipo !== "vida_importada") return prev
+        const vida = prev._vida || prev.cliente || {}
+        const dadosAdicionaisAtuais = vida?.dados_adicionais && typeof vida.dados_adicionais === "object"
+          ? (vida.dados_adicionais as Record<string, unknown>)
+          : {}
+        const dadosAdicionaisNovo = {
+          ...dadosAdicionaisAtuais,
+          ...(vig ? { data_vigencia: vig } : {}),
+          ...(dia ? { dia_vencimento: dia } : {}),
+          ...(numeroCarteirinha ? { numero_carteirinha: numeroCarteirinha } : {}),
+        }
+        const vidaNova = {
+          ...vida,
+          ...(valor != null ? { valor_mensal: valor } : {}),
+          ...(acomodacaoContrato ? { acomodacao: acomodacaoContrato } : {}),
+          ...(numeroCarteirinha ? { numero_carteirinha: numeroCarteirinha } : {}),
+          dados_adicionais: dadosAdicionaisNovo,
+        }
+        return { ...prev, _vida: vidaNova, cliente: { ...(prev.cliente || {}), ...vidaNova } }
+      })
+
+      if (clienteAdmId) {
+        await Promise.all([
+          carregarFaturas(clienteAdmId, adm.id),
+          carregarValorBaseComoNaGeracaoFatura(clienteSelecionado, adm.id),
+        ])
+      }
+
+      const vigMsg = vig ? formatarData(vig) : "—"
+      const valorMsg = valor != null ? formatarMoeda(valor) : "—"
+      const diaMsg = dia || "—"
+      const acomMsg = acomodacaoContrato || "—"
+      const cartMsg = numeroCarteirinha || "—"
+      toast.success(`Contrato atualizado. Valor: ${valorMsg} | Vigência: ${vigMsg} | Vencimento: ${diaMsg} | Acomodação: ${acomMsg} | Carteirinha: ${cartMsg}`)
+      setEditandoContrato(false)
+    } catch (e: any) {
+      toast.error(e?.message || "Erro ao salvar contrato")
+    } finally {
+      setSalvandoContrato(false)
     }
   }
 
@@ -1001,20 +1531,202 @@ export default function BeneficiarioDetalhesPage() {
               {contrato || produtoCliente || valorProdutoCliente != null ? (
                 <>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-0 text-sm border border-gray-200 rounded-lg overflow-hidden">
-                    {[
-                      { label: "Número", val: contrato?.numero || contrato?.numero_contrato || "-" },
-                      { label: "Data Vigência", val: contrato?.data_vigencia ? String(contrato.data_vigencia).slice(0, 10) : "-" },
-                      { label: "Valor Mensal", val: (valorProdutoCliente ?? contrato?.valor_mensal) != null ? `R$ ${Number(valorProdutoCliente ?? contrato?.valor_mensal).toFixed(2)}` : "-" },
-                      { label: "Produto vinculado", val: produtoCliente?.nome || "-" },
-                      { label: "Corretor", val: obterNomeCorretorAtual() },
-                    ].map((c, i) => (
-                      <div key={`${c.label}-${i}`} className={`p-3 ${Math.floor(i / 2) % 2 === 0 ? "bg-gray-50" : "bg-white"}`}>
-                        <span className="text-gray-500 block text-xs font-medium">{c.label}</span>
-                        <span className="text-gray-900">{c.val}</span>
-                      </div>
-                    ))}
+                    <div className="p-3 bg-gray-50">
+                      <span className="text-gray-500 block text-xs font-medium">Número</span>
+                      <span className="text-gray-900">{contrato?.numero || contrato?.numero_contrato || "-"}</span>
+                    </div>
+                    <div className="p-3 bg-gray-50">
+                      <span className="text-gray-500 block text-xs font-medium">Data Vigência</span>
+                      {editandoContrato ? (
+                        <div className="space-y-2 mt-1">
+                          <Input
+                            type="date"
+                            value={formContrato.data_vigencia}
+                            onChange={(e) => setFormContrato((p) => ({ ...p, data_vigencia: e.target.value }))}
+                            className="h-9"
+                          />
+                          {opcoesDataVigenciaContrato.length > 0 && (
+                            <Select
+                              value="__selecionar__"
+                              onValueChange={(v) => {
+                                if (v !== "__selecionar__") {
+                                  setFormContrato((p) => ({ ...p, data_vigencia: v }))
+                                }
+                              }}
+                            >
+                              <SelectTrigger className="h-8">
+                                <SelectValue placeholder="Usar vigência do contrato" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="__selecionar__">Selecionar vigência</SelectItem>
+                                {opcoesDataVigenciaContrato.map((v) => (
+                                  <SelectItem key={v} value={v}>
+                                    {v}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-gray-900">
+                          {(() => {
+                            const vig = obterDataVigenciaBeneficiario(d)
+                            return vig !== "-" ? formatarData(vig) : "-"
+                          })()}
+                        </span>
+                      )}
+                    </div>
+                    <div className="p-3 bg-white">
+                      <span className="text-gray-500 block text-xs font-medium">Valor Mensal</span>
+                      {editandoContrato ? (
+                        <div className="space-y-2 mt-1">
+                          <Input
+                            value={formContrato.valor_mensal}
+                            onChange={(e) => setFormContrato((p) => ({ ...p, valor_mensal: e.target.value }))}
+                            placeholder="Ex: 199.90"
+                            className="h-9"
+                          />
+                          {clienteSelecionado?.cliente_tipo === "vida_importada" && (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="h-8"
+                              onClick={recalcularValorFaixaContrato}
+                              disabled={recalculandoValorContrato}
+                            >
+                              {recalculandoValorContrato && <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />}
+                              Recalcular por faixa etária
+                            </Button>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-gray-900">
+                          {valorBaseFatura != null
+                            ? formatarMoeda(valorBaseFatura)
+                            : (normalizarEscalaValorMonetario(d?.valor_mensal ?? valorProdutoCliente ?? contrato?.valor_mensal)) != null
+                              ? formatarMoeda(Number(normalizarEscalaValorMonetario(d?.valor_mensal ?? valorProdutoCliente ?? contrato?.valor_mensal)))
+                              : "-"}
+                        </span>
+                      )}
+                    </div>
+                    <div className="p-3 bg-white">
+                      <span className="text-gray-500 block text-xs font-medium">Dia de Vencimento</span>
+                      {editandoContrato ? (
+                        <Select
+                          value={formContrato.dia_vencimento || "__vazio__"}
+                          onValueChange={(v) => setFormContrato((p) => ({ ...p, dia_vencimento: v === "__vazio__" ? "" : v }))}
+                        >
+                          <SelectTrigger className="h-9 mt-1">
+                            <SelectValue placeholder="Selecione o dia" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="__vazio__">Sem vínculo</SelectItem>
+                            {Array.from(new Set(["01", "10", ...opcoesDiaVencimentoContrato])).map((dia) => (
+                              <SelectItem key={dia} value={dia}>
+                                {dia}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <span className="text-gray-900">{diaVencimentoVinculado || "-"}</span>
+                      )}
+                    </div>
+                    <div className="p-3 bg-gray-50">
+                      <span className="text-gray-500 block text-xs font-medium">Acomodação</span>
+                      {editandoContrato ? (
+                        <Select
+                          value={formContrato.acomodacao || "__vazio__"}
+                          onValueChange={(v) => setFormContrato((p) => ({ ...p, acomodacao: v === "__vazio__" ? "" : v }))}
+                        >
+                          <SelectTrigger className="h-9 mt-1">
+                            <SelectValue placeholder="Selecione a acomodação" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="__vazio__">Sem vínculo</SelectItem>
+                            <SelectItem value="Enfermaria">Enfermaria</SelectItem>
+                            <SelectItem value="Apartamento">Apartamento</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <span className="text-gray-900">{obterAcomodacaoBeneficiario(d, produtoCliente?.nome)}</span>
+                      )}
+                    </div>
+                    <div className="p-3 bg-gray-50">
+                      <span className="text-gray-500 block text-xs font-medium">Número da carteirinha</span>
+                      {editandoContrato ? (
+                        <Input
+                          value={formContrato.numero_carteirinha}
+                          onChange={(e) => setFormContrato((p) => ({ ...p, numero_carteirinha: e.target.value }))}
+                          placeholder="Ex: 1234567890"
+                          className="h-9 mt-1"
+                        />
+                      ) : (
+                        <span className="text-gray-900">{obterNumeroCarteirinhaBeneficiario(d)}</span>
+                      )}
+                    </div>
+                    <div className="p-3 bg-gray-50">
+                      <span className="text-gray-500 block text-xs font-medium">Produto vinculado</span>
+                      <span className="text-gray-900">{obterProdutoVinculadoBeneficiario(d, produtoCliente?.nome)}</span>
+                    </div>
+                    <div className="p-3 bg-gray-50">
+                      <span className="text-gray-500 block text-xs font-medium">Plano</span>
+                      <span className="text-gray-900">{obterPlanoBeneficiario(d, produtoCliente?.nome)}</span>
+                    </div>
+                    <div className="p-3 bg-white">
+                      <span className="text-gray-500 block text-xs font-medium">Corretor</span>
+                      <span className="text-gray-900">{obterNomeCorretorAtual()}</span>
+                    </div>
                   </div>
-                  <div className="flex justify-end">
+                  {editandoContrato && (
+                    <p className="text-xs text-amber-700">
+                      As opções de vigência e vencimento são sugeridas com base nos clientes já vinculados ao mesmo contrato/produto.
+                    </p>
+                  )}
+                  <div className="flex justify-end gap-2">
+                    {!editandoContrato ? (
+                      <Button variant="outline" size="sm" onClick={() => setEditandoContrato(true)}>
+                        <Pencil className="h-3.5 w-3.5 mr-1" />
+                        Editar contrato
+                      </Button>
+                    ) : (
+                      <>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setFormContrato({
+                              valor_mensal: valorBaseFatura != null
+                                ? Number(normalizarEscalaValorMonetario(valorBaseFatura) ?? 0).toFixed(2)
+                                : (normalizarEscalaValorMonetario(valorProdutoCliente ?? contrato?.valor_mensal)) != null
+                                  ? Number(normalizarEscalaValorMonetario(valorProdutoCliente ?? contrato?.valor_mensal)).toFixed(2)
+                                  : "",
+                              data_vigencia: (() => {
+                                const vig = obterDataVigenciaBeneficiario(d)
+                                return vig === "-" ? "" : vig
+                              })(),
+                              dia_vencimento: String(diaVencimentoVinculado || ""),
+                              acomodacao: obterAcomodacaoBeneficiario(d, produtoCliente?.nome) === "-" ? "" : obterAcomodacaoBeneficiario(d, produtoCliente?.nome),
+                              numero_carteirinha: (() => {
+                                const cart = obterNumeroCarteirinhaBeneficiario(d)
+                                return cart === "-" ? "" : cart
+                              })(),
+                            })
+                            setEditandoContrato(false)
+                          }}
+                        >
+                          <X className="h-3.5 w-3.5 mr-1" />
+                          Cancelar
+                        </Button>
+                        <Button size="sm" onClick={salvarContrato} disabled={salvandoContrato}>
+                          {salvandoContrato && <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />}
+                          {!salvandoContrato && <Save className="h-3.5 w-3.5 mr-1" />}
+                          Salvar contrato
+                        </Button>
+                      </>
+                    )}
                     <Button
                       variant="outline"
                       size="sm"

@@ -35,6 +35,10 @@ function formatarData(data: string | null | undefined): string {
   return `${partes[2]}/${partes[1]}/${partes[0]}`
 }
 
+function limparDigitos(valor: string | null | undefined): string {
+  return String(valor || "").replace(/\D/g, "")
+}
+
 function valorCampo(obj: BeneficiarioRow, chaves: string[]): string {
   for (const chave of chaves) {
     const valor = obj?.[chave]
@@ -80,20 +84,74 @@ function valorCampoRobusto(obj: BeneficiarioRow, chaves: string[]): string {
 }
 
 function extrairTelefone(obj: BeneficiarioRow): string {
-  const direto = valorCampoRobusto(obj, ["telefone", "celular", "fone", "telefone_principal"])
+  const direto = valorCampoRobusto(obj, [
+    "telefone",
+    "telefone 1",
+    "telefone1",
+    "celular",
+    "celular 1",
+    "celular1",
+    "fone",
+    "telefone_principal",
+    "telefone_comercial",
+    "telefone_residencial",
+    "whatsapp",
+    "whats app",
+  ])
   if (direto) return direto
 
+  const extrairDeObjetoTelefone = (telefoneObj: Record<string, unknown>): string => {
+    const numero = valorCampo(telefoneObj as BeneficiarioRow, ["numero", "telefone", "phone", "celular", "whatsapp"])
+    const ddd = valorCampo(telefoneObj as BeneficiarioRow, ["ddd", "codigo_area", "area_code"]).replace(/\D/g, "")
+    const numeroLimpo = String(numero || "").trim()
+    if (!numeroLimpo) return ""
+    if (ddd && !numeroLimpo.startsWith(ddd)) return `${ddd}${numeroLimpo}`
+    return numeroLimpo
+  }
+
+  const lerTelefones = (valor: unknown): string => {
+    if (!Array.isArray(valor)) return ""
+    for (const item of valor) {
+      if (typeof item === "string" && item.trim()) return item.trim()
+      if (item && typeof item === "object") {
+        const extraido = extrairDeObjetoTelefone(item as Record<string, unknown>)
+        if (extraido) return extraido
+      }
+    }
+    return ""
+  }
+
   const telefones = obj?.telefones
-  if (Array.isArray(telefones) && telefones.length > 0) {
-    const primeiro = telefones[0]
-    if (typeof primeiro === "string" && primeiro.trim()) return primeiro.trim()
-    if (primeiro && typeof primeiro === "object") {
-      const numero = (primeiro as any).numero
-      if (numero != null && String(numero).trim()) return String(numero).trim()
+  const telefoneLista = lerTelefones(telefones)
+  if (telefoneLista) return telefoneLista
+
+  if (typeof telefones === "string" && telefones.trim()) {
+    try {
+      const parseado = JSON.parse(telefones)
+      const telefoneParseado = lerTelefones(parseado)
+      if (telefoneParseado) return telefoneParseado
+    } catch {
+      // Mantém fluxo; em alguns registros o campo pode vir como texto simples.
+      return telefones.trim()
     }
   }
 
   return ""
+}
+
+function formatarTelefone(valor: string | null | undefined): string {
+  const bruto = String(valor || "").trim()
+  if (!bruto) return ""
+
+  const digitos = bruto.replace(/\D/g, "")
+  if (digitos.length === 11) {
+    return digitos.replace(/^(\d{2})(\d{5})(\d{4})$/, "($1) $2-$3")
+  }
+  if (digitos.length === 10) {
+    return digitos.replace(/^(\d{2})(\d{4})(\d{4})$/, "($1) $2-$3")
+  }
+
+  return bruto
 }
 
 function extrairEmail(obj: BeneficiarioRow): string {
@@ -129,7 +187,7 @@ const EXTRA_COLUMN_OPTIONS: ExtraColumnOption[] = [
   { key: "sexo", label: "Sexo", getValue: (b) => normalizarSexo(valorCampoRobusto(b, ["sexo", "genero"])) || "-" },
   { key: "estado_civil", label: "Estado Civil", getValue: (b) => valorCampoRobusto(b, ["estado_civil", "estado civil"]) || "-" },
   { key: "nome_mae", label: "Nome da Mae", getValue: (b) => valorCampoRobusto(b, ["nome_mae", "nome mae"]) || "-" },
-  { key: "telefone", label: "Telefone", getValue: (b) => extrairTelefone(b) || "-" },
+  { key: "telefone", label: "Telefone", getValue: (b) => formatarTelefone(extrairTelefone(b)) || "-" },
   { key: "email", label: "Email", getValue: (b) => extrairEmail(b) || "-" },
   { key: "cep", label: "CEP", getValue: (b) => valorCampoRobusto(b, ["cep"]) || "-" },
   { key: "logradouro", label: "Logradouro", getValue: (b) => valorCampoRobusto(b, ["endereco", "logradouro", "rua"]) || "-" },
@@ -155,20 +213,95 @@ const DEFAULT_EXTRA_COLUMNS = [
   "uf",
 ]
 
+function ordenarBeneficiariosPorTitular(beneficiarios: BeneficiarioRow[]): BeneficiarioRow[] {
+  const titulares: BeneficiarioRow[] = []
+  const dependentes: BeneficiarioRow[] = []
+  const outros: BeneficiarioRow[] = []
+
+  beneficiarios.forEach((b) => {
+    const tipo = String(b?.tipo || "").toLowerCase()
+    if (tipo === "titular") {
+      titulares.push(b)
+      return
+    }
+    if (tipo === "dependente") {
+      dependentes.push(b)
+      return
+    }
+    outros.push(b)
+  })
+
+  const titularesPorCpf = new Map<string, BeneficiarioRow>()
+  titulares.forEach((t) => {
+    const cpf = limparDigitos(valorCampoRobusto(t, ["cpf"]))
+    if (cpf) titularesPorCpf.set(cpf, t)
+  })
+
+  const dependentesPorTitular = new Map<string, BeneficiarioRow[]>()
+  dependentes.forEach((d) => {
+    const cpfTitular = limparDigitos(valorCampoRobusto(d, ["cpf_titular", "cpf titular"]))
+    if (!cpfTitular || !titularesPorCpf.has(cpfTitular)) return
+    const lista = dependentesPorTitular.get(cpfTitular) || []
+    lista.push(d)
+    dependentesPorTitular.set(cpfTitular, lista)
+  })
+
+  const ordenarPorNome = (a: BeneficiarioRow, b: BeneficiarioRow) =>
+    String(a?.nome || "").localeCompare(String(b?.nome || ""), "pt-BR", { sensitivity: "base" })
+
+  const resultado: BeneficiarioRow[] = []
+  titulares.sort(ordenarPorNome).forEach((titular) => {
+    resultado.push(titular)
+    const cpfTitular = limparDigitos(valorCampoRobusto(titular, ["cpf"]))
+    const deps = (dependentesPorTitular.get(cpfTitular) || []).sort(ordenarPorNome)
+    resultado.push(...deps)
+  })
+
+  const dependentesOrfaos = dependentes
+    .filter((d) => {
+      const cpfTitular = limparDigitos(valorCampoRobusto(d, ["cpf_titular", "cpf titular"]))
+      return !cpfTitular || !titularesPorCpf.has(cpfTitular)
+    })
+    .sort(ordenarPorNome)
+
+  return [...resultado, ...dependentesOrfaos, ...outros.sort(ordenarPorNome)]
+}
+
+function montarMapaTitularesPorCpf(beneficiarios: BeneficiarioRow[]): Map<string, string> {
+  const mapa = new Map<string, string>()
+  beneficiarios.forEach((b) => {
+    const tipo = String(b?.tipo || "").toLowerCase()
+    if (tipo !== "titular") return
+    const cpf = limparDigitos(valorCampoRobusto(b, ["cpf"]))
+    const nome = valorCampo(b, ["nome"]).trim()
+    if (cpf && nome) mapa.set(cpf, nome)
+  })
+  return mapa
+}
+
 function getLinhasExportacao(
   beneficiarios: BeneficiarioRow[],
   nomeGrupo: string,
-  colunasExtrasSelecionadas: string[]
+  colunasExtrasSelecionadas: string[],
+  titularesPorCpf: Map<string, string>
 ) {
   const extrasSelecionadas = EXTRA_COLUMN_OPTIONS.filter((opt) => colunasExtrasSelecionadas.includes(opt.key))
 
   return beneficiarios.map((b) => {
     const cpf = valorCampoRobusto(b, ["cpf"])
     const status = b?.ativo === false ? "Cancelado" : "Ativo"
-    const tipo = valorCampoRobusto(b, ["tipo"]) || "-"
+    const tipoRaw = String(valorCampoRobusto(b, ["tipo"]) || "").toLowerCase()
+    const tipo = tipoRaw || "-"
+    const cpfTitular = limparDigitos(valorCampoRobusto(b, ["cpf_titular", "cpf titular"]))
+    const nomeTitular = titularesPorCpf.get(cpfTitular) || ""
+    const nomeBase = valorCampo(b, ["nome"]) || "-"
+    const nomeComVinculo =
+      tipoRaw === "dependente"
+        ? nomeBase
+        : nomeBase
     const linhaBase: Record<string, string | number> = {
       Grupo: nomeGrupo,
-      Nome: valorCampo(b, ["nome"]) || "-",
+      Nome: nomeComVinculo,
       CPF: formatarCpf(cpf),
       Tipo: tipo,
       Parentesco: valorCampo(b, ["parentesco"]) || "-",
@@ -270,9 +403,22 @@ export default function RelatoriosBeneficiariosPage() {
     })
   }, [beneficiarios, filtroStatus, filtroTipo])
 
+  const titularesPorCpf = useMemo(() => montarMapaTitularesPorCpf(beneficiarios), [beneficiarios])
+
+  const beneficiariosOrdenados = useMemo(
+    () => ordenarBeneficiariosPorTitular(beneficiariosFiltrados),
+    [beneficiariosFiltrados]
+  )
+
   const linhasExportacao = useMemo(
-    () => getLinhasExportacao(beneficiariosFiltrados, grupoSelecionado?.nome || "-", colunasExtrasSelecionadas),
-    [beneficiariosFiltrados, grupoSelecionado, colunasExtrasSelecionadas]
+    () =>
+      getLinhasExportacao(
+        beneficiariosOrdenados,
+        grupoSelecionado?.nome || "-",
+        colunasExtrasSelecionadas,
+        titularesPorCpf
+      ),
+    [beneficiariosOrdenados, grupoSelecionado, colunasExtrasSelecionadas, titularesPorCpf]
   )
 
   const totalTitulares = useMemo(

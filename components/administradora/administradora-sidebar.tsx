@@ -500,7 +500,7 @@ export default function AdministradoraSidebar() {
                         onClick={closeSidebar}
                       >
                         <DocumentDuplicateIcon className="h-4 w-4" />
-                        <span>Relatório de faturas</span>
+                        <span>Devedores</span>
                       </Link>
                     </li>
                   </ul>
@@ -596,6 +596,36 @@ export default function AdministradoraSidebar() {
                       >
                         <MagnifyingGlassIcon className="h-4 w-4" />
                         <span>Contrato</span>
+                      </Link>
+                    </li>
+                    <li>
+                      <Link
+                        href="/administradora/beneficiarios/cancelamento-em-grupo"
+                        className={cn(
+                          "flex items-center gap-2 px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm rounded-md transition-all duration-300",
+                          isActive("/administradora/beneficiarios/cancelamento-em-grupo")
+                            ? "bg-[#1E293B]/80 text-white"
+                            : "text-gray-300 hover:bg-[#1E293B]/50 hover:text-white"
+                        )}
+                        onClick={closeSidebar}
+                      >
+                        <ArrowUpTrayIcon className="h-4 w-4" />
+                        <span>Cancelamento em grupo</span>
+                      </Link>
+                    </li>
+                    <li>
+                      <Link
+                        href="/administradora/beneficiarios/cancelados"
+                        className={cn(
+                          "flex items-center gap-2 px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm rounded-md transition-all duration-300",
+                          isActive("/administradora/beneficiarios/cancelados")
+                            ? "bg-[#1E293B]/80 text-white"
+                            : "text-gray-300 hover:bg-[#1E293B]/50 hover:text-white"
+                        )}
+                        onClick={closeSidebar}
+                      >
+                        <DocumentDuplicateIcon className="h-4 w-4" />
+                        <span>Cancelados</span>
                       </Link>
                     </li>
                     <li>

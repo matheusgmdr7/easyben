@@ -338,16 +338,42 @@ export default function BeneficiariosTitularPage() {
         return
       }
       const XLSX = await import("xlsx")
-      const dados = resultados.map((r: any) => ({
-        Nome: r.nome || "-",
-        CPF: formatarCpf(r.cpf),
-        Grupo: r.grupo_nome || "-",
-        Cidade: r.cidade || "-",
-        UF: r.estado || "-",
-        Idade: r.idade != null ? Number(r.idade) : "",
-        Status: r.ativo ? "Ativo" : "Cancelado",
-      }))
-      const ws = XLSX.utils.json_to_sheet(dados)
+      const headers = ["Nome", "CPF", "Grupo", "Cidade", "UF", "Idade", "Status"]
+      const body = resultados.map((r: any) => [
+        r.nome || "-",
+        formatarCpf(r.cpf),
+        r.grupo_nome || "-",
+        r.cidade || "-",
+        r.estado || "-",
+        r.idade != null ? Number(r.idade) : "",
+        r.ativo ? "Ativo" : "Cancelado",
+      ])
+
+      const ws = XLSX.utils.aoa_to_sheet([headers, ...body])
+      ws["!cols"] = [{ wch: 36 }, { wch: 16 }, { wch: 30 }, { wch: 24 }, { wch: 8 }, { wch: 10 }, { wch: 14 }]
+
+      for (let c = 0; c < headers.length; c++) {
+        const addr = XLSX.utils.encode_cell({ r: 0, c })
+        const cell = ws[addr]
+        if (!cell) continue
+        ;(cell as any).s = {
+          font: { bold: true, color: { rgb: "FFFFFF" } },
+          fill: { patternType: "solid", fgColor: { rgb: "1E293B" } },
+          alignment: { vertical: "center", horizontal: "center" },
+        }
+      }
+      for (let r = 1; r <= body.length; r++) {
+        const zebra = r % 2 === 0 ? "F8FAFC" : "FFFFFF"
+        for (let c = 0; c < headers.length; c++) {
+          const addr = XLSX.utils.encode_cell({ r, c })
+          const cell = ws[addr]
+          if (!cell) continue
+          ;(cell as any).s = {
+            fill: { patternType: "solid", fgColor: { rgb: zebra } },
+            alignment: { vertical: "top", horizontal: c === 1 ? "center" : "left", wrapText: true },
+          }
+        }
+      }
       const wb = XLSX.utils.book_new()
       XLSX.utils.book_append_sheet(wb, ws, "Titulares")
       XLSX.writeFile(wb, `beneficiarios-titulares-${new Date().toISOString().slice(0, 10)}.xlsx`)
@@ -364,70 +390,69 @@ export default function BeneficiariosTitularPage() {
       }
       const jsPDF = (await import("jspdf")).default
       const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" })
-      const margin = 10
-      const rowHeight = 6
-      const maxY = 185
-      const headers = ["Nº", "Nome", "CPF", "Grupo", "Cidade/UF", "Idade", "Status"]
-      const colWidths = [10, 55, 35, 45, 35, 15, 20]
-      let y = 15
+      const margem = 8
+      const larguraPagina = 297
+      const larguraUtil = larguraPagina - margem * 2
+      const colWidths = [78, 26, 72, 48, 12, 14]
+      const headers = ["Nome", "CPF", "Grupo", "Cidade/UF", "Idade", "Status"]
+      const rowH = 6
+      let y = 12
 
-      const desenharCabecalho = (primeiraPagina = false) => {
-        if (primeiraPagina) {
-          doc.setFontSize(14)
-          doc.setFont(undefined, "bold")
-          doc.text("RELATORIO DE TITULARES", margin, y)
-          y += 6
-          doc.setFontSize(10)
-          doc.setFont(undefined, "normal")
-          doc.text(`Total de registros: ${resultados.length}`, margin, y)
-          y += 5
-          doc.text(`Gerado em: ${new Date().toLocaleString("pt-BR")}`, margin, y)
-          y += 8
-        }
-        doc.setFontSize(9)
-        doc.setFont(undefined, "bold")
-        let x = margin
+      doc.setFontSize(12)
+      doc.setTextColor(15, 23, 42)
+      doc.text("Relatório de Titulares", margem, y)
+      y += 5
+      doc.setFontSize(8)
+      doc.setTextColor(100, 116, 139)
+      doc.text(`Emitido em: ${new Date().toLocaleString("pt-BR")}`, margem, y)
+      y += 6
+
+      const drawHeader = () => {
+        let x = margem
+        doc.setFillColor(30, 41, 59)
+        doc.rect(margem, y, larguraUtil, rowH, "F")
+        doc.setTextColor(255, 255, 255)
+        doc.setFontSize(7)
         headers.forEach((h, i) => {
-          doc.text(h, x, y)
+          doc.text(h, x + 1.5, y + 4.1)
           x += colWidths[i]
         })
-        y += 5
-        doc.setFont(undefined, "normal")
+        y += rowH
       }
 
-      desenharCabecalho(true)
+      drawHeader()
 
-      resultados.forEach((r: any, index: number) => {
-        if (y > maxY) {
-          doc.addPage("a4", "landscape")
-          y = 15
-          desenharCabecalho(false)
+      resultados.forEach((r: any, idx: number) => {
+        if (y > 196) {
+          doc.addPage()
+          y = 10
+          drawHeader()
         }
-        if (index % 2 === 1) {
-          doc.setFillColor(245, 245, 245)
-          doc.rect(margin, y - 4, colWidths.reduce((a, b) => a + b, 0), rowHeight, "F")
+
+        if (idx % 2 === 0) {
+          doc.setFillColor(248, 250, 252)
+          doc.rect(margem, y, larguraUtil, rowH, "F")
         }
-        let x = margin
-        const linha = [
-          String(index + 1),
-          String(r.nome || "-"),
+
+        doc.setTextColor(30, 41, 59)
+        doc.setFontSize(7)
+        const valores = [
+          String(r.nome || "-").slice(0, 44),
           formatarCpf(r.cpf),
-          String(r.grupo_nome || "-"),
-          `${String(r.cidade || "-")} / ${String(r.estado || "-")}`,
+          String(r.grupo_nome || "-").slice(0, 40),
+          `${String(r.cidade || "-")} / ${String(r.estado || "-")}`.slice(0, 24),
           r.idade != null ? String(r.idade) : "-",
           r.ativo ? "Ativo" : "Cancelado",
         ]
-        linha.forEach((valor, i) => {
-          const texto = doc.splitTextToSize(valor, colWidths[i] - 2)?.[0] || "-"
-          doc.text(texto, x, y)
+
+        let x = margem
+        valores.forEach((valor, i) => {
+          doc.text(valor, x + 1.5, y + 4.1)
           x += colWidths[i]
         })
-        y += rowHeight
+        y += rowH
       })
 
-      y += 4
-      doc.setFont(undefined, "bold")
-      doc.text(`Total de registros: ${resultados.length}`, margin, y)
       doc.save(`beneficiarios-titulares-${new Date().toISOString().slice(0, 10)}.pdf`)
     } catch (e: any) {
       toast.error("Erro ao exportar PDF: " + (e?.message || "erro desconhecido"))

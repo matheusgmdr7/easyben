@@ -141,7 +141,9 @@ export class GruposBeneficiariosService {
             .from("vidas_importadas")
             .select("*", { count: "exact", head: true })
             .eq("grupo_id", grupo.id)
+            .eq("administradora_id", administradoraId)
             .eq("tenant_id", tenantId)
+            .neq("ativo", false)
 
           // Evita dupla contagem:
           // quando há vidas_importadas no grupo, elas já representam o universo de beneficiários.

@@ -17,6 +17,14 @@ function isUuid(value: string | null | undefined): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value).trim())
 }
 
+function normalizarEscalaValorMonetario(valor: unknown): number | null {
+  const n = Number(valor)
+  if (!Number.isFinite(n) || n < 0) return null
+  // Alguns legados foram salvos em centavos (ex.: 99500 => 995.00)
+  if (Number.isInteger(n) && n >= 10000) return n / 100
+  return n
+}
+
 async function buscarProdutoNome(produtoId: string | null | undefined, tenantId: string): Promise<string | null> {
   if (!produtoId) return null
   const { data } = await supabaseAdmin
@@ -153,6 +161,44 @@ export async function GET(request: NextRequest) {
       proposta?.produto_nome ||
       null
 
+    const planoNome =
+      (vida?.plano as string | null) ||
+      (vida?.dados_adicionais && typeof vida.dados_adicionais === "object"
+        ? String(
+            (vida.dados_adicionais as Record<string, unknown>)["Plano"] ??
+              (vida.dados_adicionais as Record<string, unknown>)["plano"] ??
+              ""
+          ).trim() || null
+        : null) ||
+      produtoNome ||
+      null
+
+    const numeroCarteirinha =
+      String((vida as any)?.numero_carteirinha || "").trim() ||
+      (vida?.dados_adicionais && typeof vida.dados_adicionais === "object"
+        ? String(
+            (vida.dados_adicionais as Record<string, unknown>)["numero_carteirinha"] ??
+              (vida.dados_adicionais as Record<string, unknown>)["Número da carteirinha"] ??
+              (vida.dados_adicionais as Record<string, unknown>)["carteirinha"] ??
+              ""
+          ).trim() || null
+        : null)
+
+    const dataVigencia =
+      clienteAdm?.data_vigencia ||
+      (vida?.dados_adicionais && typeof vida.dados_adicionais === "object"
+        ? String(
+            (vida.dados_adicionais as Record<string, unknown>)["data_vigencia"] ??
+              (vida.dados_adicionais as Record<string, unknown>)["Data Vigência"] ??
+              (vida.dados_adicionais as Record<string, unknown>)["dataVigencia"] ??
+              ""
+          ).slice(0, 10) || null
+        : null)
+
+    const valorMensal =
+      normalizarEscalaValorMonetario(clienteAdm?.valor_mensal ?? null) ??
+      normalizarEscalaValorMonetario(vida?.valor_mensal ?? null)
+
     // Busca de faturas alinhada ao fluxo administrativo:
     // - usa cliente_administradora_id válido (UUID)
     // - considera múltiplos vínculos possíveis do mesmo CPF no tenant
@@ -237,10 +283,12 @@ export async function GET(request: NextRequest) {
         nome: vida?.nome || proposta?.nome || null,
         tipo: vida?.tipo || "titular",
         produto: produtoNome,
+        plano: planoNome,
+        numero_carteirinha: numeroCarteirinha || null,
         grupo_nome: grupoNome,
         numero_contrato: clienteAdm?.numero_contrato || null,
-        data_vigencia: clienteAdm?.data_vigencia || null,
-        valor_mensal: clienteAdm?.valor_mensal ?? null,
+        data_vigencia: dataVigencia || null,
+        valor_mensal: valorMensal,
         status: clienteAdm?.status || proposta?.status || (vida?.ativo === false ? "cancelado" : "ativo"),
       },
       faturas,
