@@ -4,6 +4,47 @@ import { getCurrentTenantId } from "@/lib/tenant-query-helper"
 
 export const maxDuration = 60
 
+type RegistroGenerico = Record<string, unknown>
+
+async function carregarVidasGrupo(
+  grupoId: string,
+  administradoraId: string,
+  tenantId?: string
+): Promise<Array<RegistroGenerico>> {
+  const filtrosBase = (query: any) => query.eq("grupo_id", grupoId).eq("administradora_id", administradoraId)
+  const filtrosComTenant = (query: any) => (tenantId ? filtrosBase(query).eq("tenant_id", tenantId) : filtrosBase(query))
+
+  // 1) Select completo
+  let fullSelect = await filtrosComTenant(
+    supabaseAdmin
+      .from("vidas_importadas")
+      .select("id, nome, cpf, valor_mensal, emails, dados_adicionais, cliente_administradora_id, tipo, cpf_titular, produto_id, plano, idade, acomodacao, ativo")
+  )
+  if (!fullSelect.error) return (fullSelect.data || []) as Array<RegistroGenerico>
+
+  // 2) Select mínimo com tenant
+  let minimalSelect = await filtrosComTenant(
+    supabaseAdmin
+      .from("vidas_importadas")
+      .select("id, nome, cpf, tipo, cpf_titular, valor_mensal, cliente_administradora_id, dados_adicionais, emails, produto_id, ativo")
+  )
+  if (!minimalSelect.error) return (minimalSelect.data || []) as Array<RegistroGenerico>
+
+  // 3) Select mínimo sem tenant
+  minimalSelect = await filtrosBase(
+    supabaseAdmin
+      .from("vidas_importadas")
+      .select("id, nome, cpf, tipo, cpf_titular, valor_mensal, cliente_administradora_id, dados_adicionais, emails, produto_id, ativo")
+  )
+  if (!minimalSelect.error) return (minimalSelect.data || []) as Array<RegistroGenerico>
+
+  // 4) Último fallback: tudo sem depender de colunas específicas
+  const starSelect = await filtrosBase(supabaseAdmin.from("vidas_importadas").select("*"))
+  if (!starSelect.error) return (starSelect.data || []) as Array<RegistroGenerico>
+
+  return []
+}
+
 /**
  * GET /api/administradora/grupos/[id]/clientes-fatura?administradora_id=xxx
  * Retorna apenas TITULARES do grupo para geração de fatura (dependentes ficam vinculados ao titular).
@@ -86,48 +127,14 @@ export async function GET(
       dia_vencimento?: string
     }> = []
 
-    // Vidas importadas: apenas TITULARES; valor = titular + dependentes vinculados (cpf_titular)
-    let vidasGrupo: Array<Record<string, unknown>> | null = null
-    let fullSelect = await supabaseAdmin
-      .from("vidas_importadas")
-      .select("id, nome, cpf, valor_mensal, emails, dados_adicionais, cliente_administradora_id, tipo, cpf_titular, produto_id, plano, idade, acomodacao, ativo")
-      .eq("grupo_id", grupoId)
-      .eq("administradora_id", administradoraId)
-      .eq("tenant_id", tenantId)
-    if (fullSelect.error) {
-      fullSelect = await supabaseAdmin
-        .from("vidas_importadas")
-        .select("id, nome, cpf, valor_mensal, emails, dados_adicionais, cliente_administradora_id, tipo, cpf_titular, produto_id, plano, idade, acomodacao, ativo")
-        .eq("grupo_id", grupoId)
-        .eq("administradora_id", administradoraId)
-    }
-    if (!fullSelect.error) {
-      vidasGrupo = fullSelect.data as Array<Record<string, unknown>>
-    } else {
-      let minimalSelect = await supabaseAdmin
-        .from("vidas_importadas")
-        .select("id, nome, cpf, tipo, cpf_titular, valor_mensal, cliente_administradora_id, plano, idade, acomodacao, produto_id, ativo")
-        .eq("grupo_id", grupoId)
-        .eq("administradora_id", administradoraId)
-        .eq("tenant_id", tenantId)
-      if (minimalSelect.error) {
-        minimalSelect = await supabaseAdmin
-          .from("vidas_importadas")
-          .select("id, nome, cpf, tipo, cpf_titular, valor_mensal, cliente_administradora_id, plano, idade, acomodacao, produto_id, ativo")
-          .eq("grupo_id", grupoId)
-          .eq("administradora_id", administradoraId)
-      }
-      if (!minimalSelect.error) vidasGrupo = minimalSelect.data as Array<Record<string, unknown>>
-    }
-
-    const vidas = (vidasGrupo || []).filter((v) => (v as Record<string, unknown>)?.ativo !== false)
-    const tipo = (v: Record<string, unknown>) => String((v.tipo ?? "titular") ?? "").toLowerCase()
-    const cpfNorm = (v: Record<string, unknown>) => (v.cpf ? String(v.cpf).replace(/\D/g, "") : "")
+    const vidas = (await carregarVidasGrupo(grupoId, administradoraId, tenantId)).filter((v) => v?.ativo !== false)
+    const tipo = (v: RegistroGenerico) => String((v.tipo ?? "titular") ?? "").toLowerCase()
+    const cpfNorm = (v: RegistroGenerico) => (v.cpf ? String(v.cpf).replace(/\D/g, "") : "")
 
     const produtoIds = Array.from(
       new Set(
         vidas
-          .map((v) => String((v as Record<string, unknown>)?.produto_id || "").trim())
+          .map((v) => String(v?.produto_id || "").trim())
           .filter(Boolean)
       )
     )
@@ -151,7 +158,7 @@ export async function GET(
 
     // Só listar titulares (dependentes entram no valor/descrição do titular)
     for (const vida of vidas) {
-      const vidaAny = vida as Record<string, unknown>
+      const vidaAny = vida as RegistroGenerico
       if (tipo(vidaAny) === "dependente") continue
 
       const nome = (vidaAny.nome as string) || "Beneficiário"
@@ -171,7 +178,7 @@ export async function GET(
       const dependentesNomes: string[] = []
       if (cpf) {
         for (const d of vidas) {
-          const dAny = d as Record<string, unknown>
+          const dAny = d as RegistroGenerico
           if (tipo(dAny) !== "dependente") continue
           const cpfTit = String((dAny.cpf_titular ?? "")).replace(/\D/g, "")
           if (cpfTit === cpf) {
@@ -227,77 +234,116 @@ export async function GET(
       })
     }
 
+    const idsClienteAdm = Array.from(
+      new Set((vinculos || []).filter((v) => v.cliente_tipo === "cliente_administradora").map((v) => String(v.cliente_id || "")))
+    ).filter(Boolean)
+    const idsPropostas = Array.from(
+      new Set((vinculos || []).filter((v) => v.cliente_tipo === "proposta").map((v) => String(v.cliente_id || "")))
+    ).filter(Boolean)
+
+    const carregarClientesAdm = async () => {
+      if (idsClienteAdm.length === 0) return [] as Array<RegistroGenerico>
+      let res = await supabaseAdmin
+        .from("clientes_administradoras")
+        .select("id, proposta_id, valor_mensal, dia_vencimento")
+        .in("id", idsClienteAdm)
+        .eq("tenant_id", tenantId)
+      if (res.error) {
+        res = await supabaseAdmin
+          .from("clientes_administradoras")
+          .select("id, proposta_id, valor_mensal, dia_vencimento")
+          .in("id", idsClienteAdm)
+      }
+      if (res.error) {
+        const fallback = await supabaseAdmin
+          .from("clientes_administradoras")
+          .select("id, proposta_id, valor_mensal")
+          .in("id", idsClienteAdm)
+        return (fallback.data || []) as Array<RegistroGenerico>
+      }
+      return (res.data || []) as Array<RegistroGenerico>
+    }
+
+    const carregarClientesAdmPorProposta = async () => {
+      if (idsPropostas.length === 0) return [] as Array<RegistroGenerico>
+      let res = await supabaseAdmin
+        .from("clientes_administradoras")
+        .select("id, proposta_id, valor_mensal, dia_vencimento")
+        .in("proposta_id", idsPropostas)
+        .eq("tenant_id", tenantId)
+      if (res.error) {
+        res = await supabaseAdmin
+          .from("clientes_administradoras")
+          .select("id, proposta_id, valor_mensal, dia_vencimento")
+          .in("proposta_id", idsPropostas)
+      }
+      if (res.error) {
+        const fallback = await supabaseAdmin
+          .from("clientes_administradoras")
+          .select("id, proposta_id, valor_mensal")
+          .in("proposta_id", idsPropostas)
+        return (fallback.data || []) as Array<RegistroGenerico>
+      }
+      return (res.data || []) as Array<RegistroGenerico>
+    }
+
+    const [clientesAdmDireto, clientesAdmPorProposta] = await Promise.all([
+      carregarClientesAdm(),
+      carregarClientesAdmPorProposta(),
+    ])
+    const todosClientesAdm = [...clientesAdmDireto, ...clientesAdmPorProposta]
+
+    const clientesAdmMap = new Map<string, RegistroGenerico>()
+    const clientesAdmPorPropostaMap = new Map<string, RegistroGenerico>()
+    for (const item of todosClientesAdm) {
+      const id = String(item.id || "")
+      if (id && !clientesAdmMap.has(id)) clientesAdmMap.set(id, item)
+      const propostaId = String(item.proposta_id || "")
+      if (propostaId && !clientesAdmPorPropostaMap.has(propostaId)) clientesAdmPorPropostaMap.set(propostaId, item)
+    }
+
+    const idsParaView = Array.from(clientesAdmMap.keys())
+    const viewMap = new Map<string, RegistroGenerico>()
+    if (idsParaView.length > 0) {
+      const vwRes = await supabaseAdmin
+        .from("vw_clientes_administradoras_completo")
+        .select("id, cliente_nome, cliente_email, cliente_cpf, valor_mensal")
+        .in("id", idsParaView)
+      for (const row of vwRes.data || []) {
+        const id = String((row as any).id || "")
+        if (id) viewMap.set(id, row as RegistroGenerico)
+      }
+    }
+
     for (const v of vinculos || []) {
       if (v.cliente_tipo === "cliente_administradora") {
-        let { data: ca } = await supabaseAdmin
-          .from("clientes_administradoras")
-          .select("id, valor_mensal, dia_vencimento")
-          .eq("id", v.cliente_id)
-          .eq("tenant_id", tenantId)
-          .maybeSingle()
-        if (!ca) {
-          const caFallback = await supabaseAdmin
-            .from("clientes_administradoras")
-            .select("id, valor_mensal, dia_vencimento")
-            .eq("id", v.cliente_id)
-            .maybeSingle()
-          ca = caFallback.data
-        }
-
-        const { data: vw } = await supabaseAdmin
-          .from("vw_clientes_administradoras_completo")
-          .select("cliente_nome, cliente_email, cliente_cpf, valor_mensal")
-          .eq("id", v.cliente_id)
-          .maybeSingle()
-
-        if (ca) {
-          resultado.push({
-            id: ca.id,
-            cliente_administradora_id: ca.id,
-            cliente_nome: (vw as any)?.cliente_nome || "Cliente",
-            cliente_email: (vw as any)?.cliente_email,
-            cliente_cpf: (vw as any)?.cliente_cpf,
-            valor_mensal: Number((vw as any)?.valor_mensal ?? ca.valor_mensal ?? 0),
-            dia_vencimento: (ca as any)?.dia_vencimento ? String((ca as any).dia_vencimento).padStart(2, "0") : undefined,
-          })
-        }
-        continue
+        const ca = clientesAdmMap.get(String(v.cliente_id || ""))
+        if (!ca) continue
+        const vw = viewMap.get(String(ca.id || ""))
+        resultado.push({
+          id: String(ca.id || ""),
+          cliente_administradora_id: String(ca.id || ""),
+          cliente_nome: String(vw?.cliente_nome || "Cliente"),
+          cliente_email: vw?.cliente_email ? String(vw.cliente_email) : undefined,
+          cliente_cpf: vw?.cliente_cpf ? String(vw.cliente_cpf) : undefined,
+          valor_mensal: Number(vw?.valor_mensal ?? ca.valor_mensal ?? 0),
+          dia_vencimento: ca.dia_vencimento ? String(ca.dia_vencimento).padStart(2, "0") : undefined,
+        })
       }
 
       if (v.cliente_tipo === "proposta") {
-        let { data: clienteAdm } = await supabaseAdmin
-          .from("clientes_administradoras")
-          .select("id, valor_mensal, dia_vencimento")
-          .eq("proposta_id", v.cliente_id)
-          .eq("tenant_id", tenantId)
-          .maybeSingle()
-        if (!clienteAdm) {
-          const clienteAdmFallback = await supabaseAdmin
-            .from("clientes_administradoras")
-            .select("id, valor_mensal, dia_vencimento")
-            .eq("proposta_id", v.cliente_id)
-            .maybeSingle()
-          clienteAdm = clienteAdmFallback.data
-        }
-
-        if (!clienteAdm) continue
-
-        const { data: vw } = await supabaseAdmin
-          .from("vw_clientes_administradoras_completo")
-          .select("cliente_nome, cliente_email, cliente_cpf, valor_mensal")
-          .eq("id", clienteAdm.id)
-          .maybeSingle()
-
+        const ca = clientesAdmPorPropostaMap.get(String(v.cliente_id || ""))
+        if (!ca) continue
+        const vw = viewMap.get(String(ca.id || ""))
         resultado.push({
-          id: clienteAdm.id,
-          cliente_administradora_id: clienteAdm.id,
-          cliente_nome: (vw as any)?.cliente_nome || "Cliente",
-          cliente_email: (vw as any)?.cliente_email,
-          cliente_cpf: (vw as any)?.cliente_cpf,
-          valor_mensal: Number((vw as any)?.valor_mensal ?? clienteAdm.valor_mensal ?? 0),
-          dia_vencimento: (clienteAdm as any)?.dia_vencimento ? String((clienteAdm as any).dia_vencimento).padStart(2, "0") : undefined,
+          id: String(ca.id || ""),
+          cliente_administradora_id: String(ca.id || ""),
+          cliente_nome: String(vw?.cliente_nome || "Cliente"),
+          cliente_email: vw?.cliente_email ? String(vw.cliente_email) : undefined,
+          cliente_cpf: vw?.cliente_cpf ? String(vw.cliente_cpf) : undefined,
+          valor_mensal: Number(vw?.valor_mensal ?? ca.valor_mensal ?? 0),
+          dia_vencimento: ca.dia_vencimento ? String(ca.dia_vencimento).padStart(2, "0") : undefined,
         })
-        continue
       }
     }
 

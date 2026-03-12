@@ -76,6 +76,7 @@ export default function FaturaGerarPage() {
   const [financeiras, setFinanceiras] = useState<Financeira[]>([])
   const [loadingGrupos, setLoadingGrupos] = useState(true)
   const [loadingClientes, setLoadingClientes] = useState(false)
+  const [erroCarregarClientes, setErroCarregarClientes] = useState<string | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
   const [clienteSelecionado, setClienteSelecionado] = useState<ClienteFatura | null>(null)
   const [financeiraId, setFinanceiraId] = useState("")
@@ -136,6 +137,7 @@ export default function FaturaGerarPage() {
     if (!administradoraId) return
     try {
       setLoadingClientes(true)
+      setErroCarregarClientes(null)
       setClientes([])
       const res = await fetch(
         `/api/administradora/grupos/${grupoId}/clientes-fatura?administradora_id=${encodeURIComponent(administradoraId)}`
@@ -144,8 +146,10 @@ export default function FaturaGerarPage() {
       if (!res.ok) throw new Error((data as { error?: string })?.error || "Erro ao carregar clientes do grupo")
       setClientes(Array.isArray(data) ? data : [])
     } catch (e) {
+      const msg = e instanceof Error ? e.message : "Erro ao carregar clientes do grupo"
+      setErroCarregarClientes(msg)
       if (!options?.silent) {
-        toast.error(e instanceof Error ? e.message : "Erro ao carregar clientes do grupo")
+        toast.error(msg)
       }
       setClientes([])
     } finally {
@@ -847,6 +851,21 @@ export default function FaturaGerarPage() {
                     {Array.from({ length: 6 }).map((_, i) => (
                       <div key={i} className="h-12 rounded-md bg-gray-100 animate-pulse" />
                     ))}
+                  </div>
+                </div>
+              ) : erroCarregarClientes ? (
+                <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3">
+                  <p className="text-sm font-medium text-amber-800">Falha ao carregar clientes deste grupo.</p>
+                  <p className="text-xs text-amber-700 mt-1 break-words">{erroCarregarClientes}</p>
+                  <div className="mt-3">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => grupoSelecionado && carregarClientesDoGrupo(grupoSelecionado.id)}
+                    >
+                      Tentar novamente
+                    </Button>
                   </div>
                 </div>
               ) : clientes.length === 0 ? (
