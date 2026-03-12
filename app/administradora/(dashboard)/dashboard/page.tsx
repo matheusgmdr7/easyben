@@ -111,6 +111,11 @@ export default function AdministradoraDashboard() {
         `Sincronização concluída: ${atualizadas} atualizadas de ${verificadas} verificadas (${alteradas} com troca de status).`
       )
 
+      if (Array.isArray(payload?.erros) && payload.erros.length > 0) {
+        const primeira = String(payload.erros[0] || "")
+        toast.info(`Sincronização concluída com avisos: ${primeira}`)
+      }
+
       if (alteradas > 0) {
         const top = alteracoes.slice(0, 8)
         const linhas = top.map((a: any) => {

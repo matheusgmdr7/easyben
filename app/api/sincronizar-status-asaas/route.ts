@@ -21,6 +21,8 @@ interface ResultadoSincronizacao {
   }>
 }
 
+const LIMITE_FATURAS_POR_EXECUCAO = 180
+
 function extrairColunaInexistente(mensagem: string | undefined): string | null {
   const txt = String(mensagem || '')
   const m = txt.match(/column\s+"?([a-zA-Z0-9_]+)"?\s+of relation/i)
@@ -180,7 +182,7 @@ export async function POST(request: NextRequest) {
     const config = await buscarConfigAsaas(administradora_id)
     if (!config?.api_key) {
       return NextResponse.json(
-        { error: 'Configuração do Asaas não encontrada' },
+        { error: 'Configuração do Asaas não encontrada ou sem API key ativa para esta administradora.' },
         { status: 404 }
       )
     }
@@ -215,10 +217,20 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    console.log(`📊 Total de faturas para verificar: ${faturas?.length || 0}`)
+    const todas = Array.isArray(faturas) ? faturas : []
+    const pendentes = todas.filter((f: any) => {
+      const s = normalizarStatusLocal(f?.status)
+      return s !== 'paga' && s !== 'cancelada'
+    })
+    const filaBase = pendentes.length > 0 ? pendentes : todas
+    const fila = filaBase.slice(0, LIMITE_FATURAS_POR_EXECUCAO)
+    const ignoradasPorLimite = Math.max(0, filaBase.length - fila.length)
+
+    console.log(`📊 Total de faturas encontradas: ${todas.length}`)
+    console.log(`📊 Faturas na fila de sincronização: ${fila.length}${ignoradasPorLimite > 0 ? ` (ignoradas por limite: ${ignoradasPorLimite})` : ''}`)
 
     // 3. Verificar status de cada fatura no Asaas
-    for (const fatura of faturas || []) {
+    for (const fatura of fila) {
       try {
         resultado.faturas_verificadas++
 
@@ -229,12 +241,15 @@ export async function POST(request: NextRequest) {
         let charge: any = null
         let ultimoStatusHttp: number | null = null
         for (const id of idsCandidatos) {
+          const controller = new AbortController()
+          const timeout = setTimeout(() => controller.abort(), 8000)
           const response = await fetch(`${BASE_URL}/payments/${id}`, {
             headers: {
               access_token: API_KEY,
               'Content-Type': 'application/json',
             },
-          })
+            signal: controller.signal,
+          }).finally(() => clearTimeout(timeout))
           ultimoStatusHttp = response.status
           if (response.ok) {
             charge = await response.json()
@@ -305,11 +320,17 @@ export async function POST(request: NextRequest) {
           }
         }
 
-        // Pequeno delay para não sobrecarregar a API
-        await new Promise(resolve => setTimeout(resolve, 150))
+        // Delay curto para reduzir risco de rate limit no Asaas.
+        await new Promise(resolve => setTimeout(resolve, 40))
       } catch (error: any) {
         resultado.erros.push(`Erro ao processar fatura ${(fatura as any)?.id}: ${error.message}`)
       }
+    }
+
+    if (ignoradasPorLimite > 0) {
+      resultado.erros.push(
+        `Sincronização parcial: ${ignoradasPorLimite} fatura(s) ficaram para a próxima execução (limite de ${LIMITE_FATURAS_POR_EXECUCAO} por rodada).`
+      )
     }
 
     console.log(`✅ Sincronização concluída: ${resultado.faturas_atualizadas} faturas atualizadas`)
