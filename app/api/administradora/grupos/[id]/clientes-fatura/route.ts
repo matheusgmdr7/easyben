@@ -229,12 +229,20 @@ export async function GET(
 
     for (const v of vinculos || []) {
       if (v.cliente_tipo === "cliente_administradora") {
-        const { data: ca } = await supabaseAdmin
+        let { data: ca } = await supabaseAdmin
           .from("clientes_administradoras")
           .select("id, valor_mensal, dia_vencimento")
           .eq("id", v.cliente_id)
           .eq("tenant_id", tenantId)
           .maybeSingle()
+        if (!ca) {
+          const caFallback = await supabaseAdmin
+            .from("clientes_administradoras")
+            .select("id, valor_mensal, dia_vencimento")
+            .eq("id", v.cliente_id)
+            .maybeSingle()
+          ca = caFallback.data
+        }
 
         const { data: vw } = await supabaseAdmin
           .from("vw_clientes_administradoras_completo")
@@ -257,12 +265,20 @@ export async function GET(
       }
 
       if (v.cliente_tipo === "proposta") {
-        const { data: clienteAdm } = await supabaseAdmin
+        let { data: clienteAdm } = await supabaseAdmin
           .from("clientes_administradoras")
           .select("id, valor_mensal, dia_vencimento")
           .eq("proposta_id", v.cliente_id)
           .eq("tenant_id", tenantId)
           .maybeSingle()
+        if (!clienteAdm) {
+          const clienteAdmFallback = await supabaseAdmin
+            .from("clientes_administradoras")
+            .select("id, valor_mensal, dia_vencimento")
+            .eq("proposta_id", v.cliente_id)
+            .maybeSingle()
+          clienteAdm = clienteAdmFallback.data
+        }
 
         if (!clienteAdm) continue
 

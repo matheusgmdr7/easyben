@@ -32,7 +32,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
-import { AlertTriangle, Banknote, Loader2, ExternalLink, ChevronRight, FileCheck, CheckCircle2, FileText, CheckSquare, Square, Search } from "lucide-react"
+import { AlertTriangle, Banknote, Loader2, ExternalLink, ChevronRight, FileCheck, CheckCircle2, FileText, CheckSquare, Square, Search, Minus, Plus } from "lucide-react"
 import { formatarMoeda, formatarData } from "@/utils/formatters"
 
 interface ClienteFatura {
@@ -105,6 +105,8 @@ export default function FaturaGerarPage() {
   const [salvandoDiaCliente, setSalvandoDiaCliente] = useState<Record<string, boolean>>({})
   const [paginaClientes, setPaginaClientes] = useState(1)
   const [itensPorPaginaClientes] = useState(10)
+  const [boletosMinimizado, setBoletosMinimizado] = useState(false)
+  const [clientesMinimizado, setClientesMinimizado] = useState(false)
 
   useEffect(() => {
     const adm = getAdministradoraLogada()
@@ -189,6 +191,8 @@ export default function FaturaGerarPage() {
 
   async function selecionarGrupo(grupo: GrupoBeneficiarios) {
     setGrupoSelecionado(grupo)
+    setBoletosMinimizado(false)
+    setClientesMinimizado(false)
     setBuscaBoletos("")
     setBuscaClientes("")
     setPaginaBoletos(1)
@@ -608,16 +612,38 @@ export default function FaturaGerarPage() {
             {/* Boletos já gerados do grupo */}
             {grupoSelecionado && (boletosGrupo.length > 0 || loadingBoletos) && (
               <Card className="rounded-md">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-lg">
-                <FileCheck className="h-5 w-5" />
-                Boletos já gerados — {grupoSelecionado.nome}
-              </CardTitle>
-              <p className="text-sm text-gray-500 font-normal">
-                Faturas/boletos já gerados na financeira para os clientes deste grupo. Pago, em aberto e vencimentos.
-              </p>
-            </CardHeader>
-            <CardContent>
+                <CardHeader className="space-y-2">
+                  <div className="flex items-start justify-between gap-3">
+                    <CardTitle className="flex items-center gap-2 text-lg">
+                      <FileCheck className="h-5 w-5" />
+                      Boletos Gerados
+                    </CardTitle>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setBoletosMinimizado((v) => !v)}
+                      className="shrink-0"
+                    >
+                      {boletosMinimizado ? (
+                        <>
+                          <Plus className="h-4 w-4 mr-1" />
+                          Expandir
+                        </>
+                      ) : (
+                        <>
+                          <Minus className="h-4 w-4 mr-1" />
+                          Minimizar
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                  <p className="text-sm font-medium text-gray-800">{grupoSelecionado.nome}</p>
+                  <p className="text-sm text-gray-500 font-normal">
+                    Faturas e boletos gerados na financeira para os clientes deste grupo, com vencimento, status e link.
+                  </p>
+                </CardHeader>
+                {!boletosMinimizado && <CardContent>
               {loadingBoletos ? (
                 <div className="space-y-3">
                   <div className="flex items-center gap-2 text-sm text-slate-600">
@@ -650,21 +676,21 @@ export default function FaturaGerarPage() {
                     <p className="text-sm text-gray-500 py-4 text-center">Nenhum boleto encontrado para a busca informada.</p>
                   ) : (
                     <>
-                      <div className="w-full overflow-x-auto rounded-md border border-gray-100">
-                        <Table className="min-w-[860px]">
+                      <div className="w-full rounded-md border border-gray-100">
+                        <Table className="w-full table-fixed">
                           <TableHeader>
                             <TableRow className="bg-gray-100">
-                              <TableHead className="font-semibold">Cliente</TableHead>
-                              <TableHead className="font-semibold">Vencimento</TableHead>
-                              <TableHead className="font-semibold">Valor</TableHead>
-                              <TableHead className="font-semibold">Status</TableHead>
-                              <TableHead className="font-semibold w-28 text-right">Link</TableHead>
+                              <TableHead className="font-semibold w-[34%]">Cliente</TableHead>
+                              <TableHead className="font-semibold w-[18%]">Vencimento</TableHead>
+                              <TableHead className="font-semibold w-[18%]">Valor</TableHead>
+                              <TableHead className="font-semibold w-[16%]">Status</TableHead>
+                              <TableHead className="font-semibold w-[14%] text-right">Link</TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
                             {boletosGrupoPaginados.map((b) => (
                               <TableRow key={b.id}>
-                                <TableCell className="font-medium">{b.cliente_nome || "—"}</TableCell>
+                                <TableCell className="font-medium break-words">{b.cliente_nome || "—"}</TableCell>
                                 <TableCell className="text-gray-600">
                                   {b.data_vencimento
                                     ? formatarData(b.data_vencimento)
@@ -742,21 +768,43 @@ export default function FaturaGerarPage() {
                   )}
                 </div>
               )}
-            </CardContent>
+                </CardContent>}
               </Card>
             )}
 
             {/* Clientes do grupo selecionado */}
             {grupoSelecionado && (
               <Card className="rounded-md">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-lg">
-                <Banknote className="h-5 w-5" />
-                Clientes do grupo: {grupoSelecionado.nome}
-              </CardTitle>
+            <CardHeader className="space-y-2">
+              <div className="flex items-start justify-between gap-3">
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  <Banknote className="h-5 w-5" />
+                  Clientes do Grupo
+                </CardTitle>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setClientesMinimizado((v) => !v)}
+                  className="shrink-0"
+                >
+                  {clientesMinimizado ? (
+                    <>
+                      <Plus className="h-4 w-4 mr-1" />
+                      Expandir
+                    </>
+                  ) : (
+                    <>
+                      <Minus className="h-4 w-4 mr-1" />
+                      Minimizar
+                    </>
+                  )}
+                </Button>
+              </div>
+              <p className="text-sm font-medium text-gray-800">{grupoSelecionado.nome}</p>
               <p className="text-sm text-gray-500 font-normal">
-                Lista apenas titulares. O valor já inclui titular e dependentes vinculados. Ao gerar o boleto, a taxa de administração é somada ao valor. Selecione vários e use &quot;Gerar em lote&quot; para mesma financeira, vencimento e taxa.
-                Regra mensal: cada cliente pode ser faturado uma vez por mês (libera novamente ao excluir o boleto/fatura).
+                Lista apenas titulares. O valor inclui titular e dependentes vinculados. Ao gerar boleto, a taxa de administração é somada.
+                Regra mensal: cada cliente pode ser faturado uma vez por mês.
               </p>
               {clientesDisponiveisLote.length > 0 && (
                 <div className="flex flex-wrap items-center gap-2 pt-2">
@@ -784,7 +832,7 @@ export default function FaturaGerarPage() {
                 </div>
               )}
             </CardHeader>
-            <CardContent>
+            {!clientesMinimizado && <CardContent>
               {loadingClientes ? (
                 <div className="space-y-4 py-2">
                   <div className="flex items-center gap-2 text-sm text-slate-600">
@@ -845,15 +893,15 @@ export default function FaturaGerarPage() {
                     <p className="text-sm text-gray-500 py-4 text-center">Nenhum cliente encontrado para a busca informada.</p>
                   ) : (
                     <>
-                      <div className="w-full overflow-x-auto rounded-md border border-gray-100">
-                        <Table className="min-w-[1040px]">
+                      <div className="w-full rounded-md border border-gray-100">
+                        <Table className="w-full table-fixed">
                           <TableHeader>
                             <TableRow className="bg-gray-100">
-                              <TableHead className="font-semibold w-10">Lote</TableHead>
-                              <TableHead className="font-semibold">Titular / Plano</TableHead>
-                              <TableHead className="font-semibold">Dia venc.</TableHead>
-                              <TableHead className="font-semibold">Valor (titular + dependentes)</TableHead>
-                              <TableHead className="font-semibold w-48 text-right">Ação</TableHead>
+                              <TableHead className="font-semibold w-[8%]">Lote</TableHead>
+                              <TableHead className="font-semibold w-[34%]">Titular / Plano</TableHead>
+                              <TableHead className="font-semibold w-[12%]">Dia</TableHead>
+                              <TableHead className="font-semibold w-[18%]">Valor</TableHead>
+                              <TableHead className="font-semibold w-[28%] text-right">Ação</TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
@@ -879,20 +927,20 @@ export default function FaturaGerarPage() {
                                   <TableCell className="font-medium">
                                     <span>{c.cliente_nome || "—"}</span>
                                     {c.produto_nome && (
-                                      <span className="block text-xs text-gray-500">Plano: {c.produto_nome}</span>
+                                      <span className="block text-xs text-gray-500 break-words">Plano: {c.produto_nome}</span>
                                     )}
                                     {c.dependentes_nomes && c.dependentes_nomes.length > 0 && (
-                                      <span className="block text-xs text-gray-500">Dependentes: {c.dependentes_nomes.join(", ")}</span>
+                                      <span className="block text-xs text-gray-500 break-words">Dependentes: {c.dependentes_nomes.join(", ")}</span>
                                     )}
                                     {c.cliente_email && !c.produto_nome && (
-                                      <span className="block text-xs text-gray-500">{c.cliente_email}</span>
+                                      <span className="block text-xs text-gray-500 break-all">{c.cliente_email}</span>
                                     )}
                                   </TableCell>
                                   <TableCell>{c.dia_vencimento || "—"}</TableCell>
                                   <TableCell>{formatarMoeda(c.valor_mensal || 0)}</TableCell>
                                   <TableCell className="text-right">
                                     {isFaturado ? (
-                                      <div className="flex items-center justify-end gap-2">
+                                      <div className="flex flex-col xl:flex-row items-end justify-end gap-2">
                                         <span className="inline-flex items-center gap-1 text-sm font-medium text-green-700">
                                           <CheckCircle2 className="h-4 w-4" />
                                       Faturado no mês
@@ -908,7 +956,7 @@ export default function FaturaGerarPage() {
                                         </Button>
                                       </div>
                                     ) : (
-                                      <div className="flex justify-end gap-2">
+                                      <div className="flex flex-col xl:flex-row justify-end items-end gap-2">
                                         {!c.dia_vencimento && (
                                           <>
                                             <Select
@@ -985,7 +1033,7 @@ export default function FaturaGerarPage() {
                   )}
                 </div>
               )}
-            </CardContent>
+            </CardContent>}
               </Card>
             )}
           </div>
