@@ -32,7 +32,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
-import { AlertTriangle, Banknote, Loader2, ExternalLink, Users, ChevronRight, FileCheck, CheckCircle2, FileText, CheckSquare, Square, Search } from "lucide-react"
+import { AlertTriangle, Banknote, Loader2, ExternalLink, ChevronRight, FileCheck, CheckCircle2, FileText, CheckSquare, Square, Search } from "lucide-react"
 import { formatarMoeda, formatarData } from "@/utils/formatters"
 
 interface ClienteFatura {
@@ -130,7 +130,7 @@ export default function FaturaGerarPage() {
     }
   }
 
-  async function carregarClientesDoGrupo(grupoId: string) {
+  async function carregarClientesDoGrupo(grupoId: string, options?: { silent?: boolean }) {
     if (!administradoraId) return
     try {
       setLoadingClientes(true)
@@ -142,10 +142,35 @@ export default function FaturaGerarPage() {
       if (!res.ok) throw new Error((data as { error?: string })?.error || "Erro ao carregar clientes do grupo")
       setClientes(Array.isArray(data) ? data : [])
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Erro ao carregar clientes do grupo")
+      if (!options?.silent) {
+        toast.error(e instanceof Error ? e.message : "Erro ao carregar clientes do grupo")
+      }
       setClientes([])
     } finally {
       setLoadingClientes(false)
+    }
+  }
+
+  async function carregarBoletosDoGrupo(grupoId: string, options?: { silent?: boolean }) {
+    if (!administradoraId) return
+    try {
+      setLoadingBoletos(true)
+      const res = await fetch(
+        `/api/administradora/fatura/boletos-grupo?grupo_id=${encodeURIComponent(grupoId)}&administradora_id=${encodeURIComponent(administradoraId)}`
+      )
+      if (res.ok) {
+        const list = await res.json()
+        setBoletosGrupo(Array.isArray(list) ? list : [])
+      } else {
+        setBoletosGrupo([])
+      }
+    } catch (e) {
+      if (!options?.silent) {
+        toast.error(e instanceof Error ? e.message : "Erro ao carregar boletos do grupo")
+      }
+      setBoletosGrupo([])
+    } finally {
+      setLoadingBoletos(false)
     }
   }
 
@@ -168,22 +193,10 @@ export default function FaturaGerarPage() {
     setBuscaClientes("")
     setPaginaBoletos(1)
     setPaginaClientes(1)
-    setLoadingBoletos(true)
-    await carregarClientesDoGrupo(grupo.id)
-    if (administradoraId) {
-      try {
-        const res = await fetch(
-          `/api/administradora/fatura/boletos-grupo?grupo_id=${encodeURIComponent(grupo.id)}&administradora_id=${encodeURIComponent(administradoraId)}`
-        )
-        if (res.ok) {
-          const list = await res.json()
-          setBoletosGrupo(Array.isArray(list) ? list : [])
-        } else setBoletosGrupo([])
-      } catch {
-        setBoletosGrupo([])
-      }
-    }
-    setLoadingBoletos(false)
+    await Promise.all([
+      carregarClientesDoGrupo(grupo.id, { silent: true }),
+      carregarBoletosDoGrupo(grupo.id, { silent: true }),
+    ])
   }
 
   function abrirModal(cliente: ClienteFatura) {
@@ -321,13 +334,7 @@ export default function FaturaGerarPage() {
         }
         setBoletosGrupo((prev) => [novoBoleto, ...prev])
       } else if (grupoSelecionado && administradoraId) {
-        const resList = await fetch(
-          `/api/administradora/fatura/boletos-grupo?grupo_id=${encodeURIComponent(grupoSelecionado.id)}&administradora_id=${encodeURIComponent(administradoraId)}`
-        )
-        if (resList.ok) {
-          const list = await resList.json()
-          setBoletosGrupo(Array.isArray(list) ? list : [])
-        }
+        await carregarBoletosDoGrupo(grupoSelecionado.id, { silent: true })
       }
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Erro ao gerar boleto")
@@ -500,14 +507,10 @@ export default function FaturaGerarPage() {
       const sucessos = (data.results || []).filter((r: { success: boolean }) => r.success)
       if (sucessos.length > 0) {
         if (grupoSelecionado && administradoraId) {
-          const resList = await fetch(
-            `/api/administradora/fatura/boletos-grupo?grupo_id=${encodeURIComponent(grupoSelecionado.id)}&administradora_id=${encodeURIComponent(administradoraId)}`
-          )
-          if (resList.ok) {
-            const list = await resList.json()
-            setBoletosGrupo(Array.isArray(list) ? list : [])
-          }
-          await carregarClientesDoGrupo(grupoSelecionado.id)
+          await Promise.all([
+            carregarBoletosDoGrupo(grupoSelecionado.id, { silent: true }),
+            carregarClientesDoGrupo(grupoSelecionado.id, { silent: true }),
+          ])
         }
       }
       setSelecionadosLote(new Set())
@@ -532,61 +535,79 @@ export default function FaturaGerarPage() {
         </p>
       </div>
 
-      <div className="px-6 py-6 space-y-6">
+      <div className="px-6 py-6">
         {financeirasAtivas.length === 0 && !loadingGrupos && (
           <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-sm">
             Cadastre e ative pelo menos uma financeira (menu &quot;Financeira&quot;) para gerar boletos.
           </div>
         )}
 
-        {/* Lista de grupos */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-lg">
-              <Users className="h-5 w-5" />
-              Grupos de beneficiários
-            </CardTitle>
-            <p className="text-sm text-gray-500 font-normal">
-              Selecione um grupo para ver os clientes e gerar faturas.
-            </p>
-          </CardHeader>
-          <CardContent>
-            {loadingGrupos ? (
-              <p className="text-sm text-gray-500 py-6 text-center">Carregando grupos...</p>
-            ) : grupos.length === 0 ? (
-              <p className="text-sm text-gray-500 py-6 text-center">
-                Nenhum grupo de beneficiários encontrado.
-              </p>
-            ) : (
-              <div className="space-y-2">
-                {grupos.map((g) => (
-                  <button
-                    key={g.id}
-                    type="button"
-                    onClick={() => selecionarGrupo(g)}
-                    className={`w-full flex items-center justify-between p-4 rounded-lg border text-left transition-colors ${
-                      grupoSelecionado?.id === g.id
-                        ? "border-slate-700 bg-slate-100 hover:bg-slate-100"
-                        : "border-gray-200 hover:bg-gray-50"
-                    }`}
-                  >
-                    <span className={`font-medium ${grupoSelecionado?.id === g.id ? "text-slate-900" : "text-gray-800"}`}>
-                      {g.nome}
-                    </span>
-                    <span className={`text-sm ${grupoSelecionado?.id === g.id ? "text-slate-600" : "text-gray-500"}`}>
-                      {g.total_clientes != null ? `${g.total_clientes} beneficiário(s)` : ""}
-                    </span>
-                    <ChevronRight className={`h-5 w-5 ${grupoSelecionado?.id === g.id ? "text-slate-600" : "text-gray-400"}`} />
-                  </button>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 mt-6">
+          <div className="xl:col-span-3 2xl:col-span-3">
+            <Card className="xl:sticky xl:top-6 rounded-md">
+              <CardHeader>
+                <CardTitle className="text-xl font-semibold tracking-tight">
+                  Grupos de beneficiários
+                </CardTitle>
+                <p className="text-[15px] leading-relaxed text-gray-600 font-normal">
+                  Selecione um grupo para carregar clientes e faturas.
+                </p>
+              </CardHeader>
+              <CardContent>
+                {loadingGrupos ? (
+                  <div className="space-y-2 py-2">
+                    {Array.from({ length: 5 }).map((_, i) => (
+                      <div key={i} className="h-12 rounded-lg bg-gray-100 animate-pulse" />
+                    ))}
+                  </div>
+                ) : grupos.length === 0 ? (
+                  <p className="text-sm text-gray-500 py-6 text-center">
+                    Nenhum grupo de beneficiários encontrado.
+                  </p>
+                ) : (
+                  <div className="space-y-2.5 max-h-[60vh] overflow-y-auto pr-1">
+                    {grupos.map((g) => (
+                      <button
+                        key={g.id}
+                        type="button"
+                        onClick={() => selecionarGrupo(g)}
+                        className={`w-full flex items-center justify-between gap-3 px-4 py-3.5 rounded-md border text-left transition-colors ${
+                          grupoSelecionado?.id === g.id
+                            ? "border-slate-700 bg-slate-100 hover:bg-slate-100"
+                            : "border-gray-200 hover:bg-gray-50"
+                        }`}
+                      >
+                        <div className="min-w-0 flex-1">
+                          <span className={`block text-[15px] font-semibold leading-snug ${grupoSelecionado?.id === g.id ? "text-slate-900" : "text-gray-800"}`}>
+                            {g.nome}
+                          </span>
+                          <span className={`block text-xs mt-1 ${grupoSelecionado?.id === g.id ? "text-slate-600" : "text-gray-500"}`}>
+                            {g.total_clientes != null ? `${g.total_clientes} beneficiário(s)` : ""}
+                          </span>
+                        </div>
+                        <ChevronRight className={`h-4 w-4 shrink-0 ${grupoSelecionado?.id === g.id ? "text-slate-600" : "text-gray-400"}`} />
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
 
-        {/* Boletos já gerados do grupo */}
-        {grupoSelecionado && (boletosGrupo.length > 0 || loadingBoletos) && (
-          <Card>
+          <div className="xl:col-span-9 2xl:col-span-9 space-y-6">
+            {!grupoSelecionado && (
+              <Card className="rounded-md">
+                <CardContent className="py-10">
+                  <p className="text-sm text-center text-gray-500">
+                    Selecione um grupo para carregar os dados de faturamento.
+                  </p>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Boletos já gerados do grupo */}
+            {grupoSelecionado && (boletosGrupo.length > 0 || loadingBoletos) && (
+              <Card className="rounded-md">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-lg">
                 <FileCheck className="h-5 w-5" />
@@ -598,7 +619,18 @@ export default function FaturaGerarPage() {
             </CardHeader>
             <CardContent>
               {loadingBoletos ? (
-                <p className="text-sm text-gray-500 py-4 text-center">Carregando boletos...</p>
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2 text-sm text-slate-600">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Carregando histórico de boletos...
+                  </div>
+                  <div className="h-10 rounded-md bg-gray-100 animate-pulse max-w-md" />
+                  <div className="space-y-2">
+                    {Array.from({ length: 4 }).map((_, i) => (
+                      <div key={i} className="h-11 rounded-md bg-gray-100 animate-pulse" />
+                    ))}
+                  </div>
+                </div>
               ) : boletosGrupo.length === 0 ? null : (
                 <div className="space-y-3">
                   <div className="relative max-w-md">
@@ -618,63 +650,65 @@ export default function FaturaGerarPage() {
                     <p className="text-sm text-gray-500 py-4 text-center">Nenhum boleto encontrado para a busca informada.</p>
                   ) : (
                     <>
-                      <Table>
-                        <TableHeader>
-                          <TableRow className="bg-gray-100">
-                            <TableHead className="font-semibold">Cliente</TableHead>
-                            <TableHead className="font-semibold">Vencimento</TableHead>
-                            <TableHead className="font-semibold">Valor</TableHead>
-                            <TableHead className="font-semibold">Status</TableHead>
-                            <TableHead className="font-semibold w-28 text-right">Link</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {boletosGrupoPaginados.map((b) => (
-                            <TableRow key={b.id}>
-                              <TableCell className="font-medium">{b.cliente_nome || "—"}</TableCell>
-                              <TableCell className="text-gray-600">
-                                {b.data_vencimento
-                                  ? formatarData(b.data_vencimento)
-                                  : "—"}
-                                {b.data_pagamento && (
-                                  <span className="block text-xs text-green-600">
-                                    Pago em {formatarData(b.data_pagamento)}
-                                  </span>
-                                )}
-                              </TableCell>
-                              <TableCell>{formatarMoeda(b.valor_total)}</TableCell>
-                              <TableCell>
-                                <span
-                                  className={`inline-flex px-2 py-0.5 text-xs font-medium rounded ${
-                                    b.status === "paga"
-                                      ? "bg-green-100 text-green-800"
-                                      : b.status === "atrasada"
-                                        ? "bg-amber-100 text-amber-800"
-                                        : "bg-gray-100 text-gray-800"
-                                  }`}
-                                >
-                                  {b.status === "paga" ? "Pago" : b.status === "atrasada" ? "Atrasada" : "Em aberto"}
-                                </span>
-                              </TableCell>
-                              <TableCell className="text-right">
-                                {(b.boleto_url || b.invoice_url) ? (
-                                  <a
-                                    href={b.boleto_url || b.invoice_url || "#"}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="inline-flex items-center gap-1 text-sm text-blue-600 hover:underline"
-                                  >
-                                    <ExternalLink className="h-4 w-4" />
-                                    Boleto
-                                  </a>
-                                ) : (
-                                  <span className="text-gray-400">—</span>
-                                )}
-                              </TableCell>
+                      <div className="w-full overflow-x-auto rounded-md border border-gray-100">
+                        <Table className="min-w-[860px]">
+                          <TableHeader>
+                            <TableRow className="bg-gray-100">
+                              <TableHead className="font-semibold">Cliente</TableHead>
+                              <TableHead className="font-semibold">Vencimento</TableHead>
+                              <TableHead className="font-semibold">Valor</TableHead>
+                              <TableHead className="font-semibold">Status</TableHead>
+                              <TableHead className="font-semibold w-28 text-right">Link</TableHead>
                             </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
+                          </TableHeader>
+                          <TableBody>
+                            {boletosGrupoPaginados.map((b) => (
+                              <TableRow key={b.id}>
+                                <TableCell className="font-medium">{b.cliente_nome || "—"}</TableCell>
+                                <TableCell className="text-gray-600">
+                                  {b.data_vencimento
+                                    ? formatarData(b.data_vencimento)
+                                    : "—"}
+                                  {b.data_pagamento && (
+                                    <span className="block text-xs text-green-600">
+                                      Pago em {formatarData(b.data_pagamento)}
+                                    </span>
+                                  )}
+                                </TableCell>
+                                <TableCell>{formatarMoeda(b.valor_total)}</TableCell>
+                                <TableCell>
+                                  <span
+                                    className={`inline-flex px-2 py-0.5 text-xs font-medium rounded ${
+                                      b.status === "paga"
+                                        ? "bg-green-100 text-green-800"
+                                        : b.status === "atrasada"
+                                          ? "bg-amber-100 text-amber-800"
+                                          : "bg-gray-100 text-gray-800"
+                                    }`}
+                                  >
+                                    {b.status === "paga" ? "Pago" : b.status === "atrasada" ? "Atrasada" : "Em aberto"}
+                                  </span>
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  {(b.boleto_url || b.invoice_url) ? (
+                                    <a
+                                      href={b.boleto_url || b.invoice_url || "#"}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="inline-flex items-center gap-1 text-sm text-blue-600 hover:underline"
+                                    >
+                                      <ExternalLink className="h-4 w-4" />
+                                      Boleto
+                                    </a>
+                                  ) : (
+                                    <span className="text-gray-400">—</span>
+                                  )}
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
 
                       <div className="flex items-center justify-between pt-2">
                         <p className="text-sm text-gray-500">
@@ -709,12 +743,12 @@ export default function FaturaGerarPage() {
                 </div>
               )}
             </CardContent>
-          </Card>
-        )}
+              </Card>
+            )}
 
-        {/* Clientes do grupo selecionado */}
-        {grupoSelecionado && (
-          <Card>
+            {/* Clientes do grupo selecionado */}
+            {grupoSelecionado && (
+              <Card className="rounded-md">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-lg">
                 <Banknote className="h-5 w-5" />
@@ -752,7 +786,21 @@ export default function FaturaGerarPage() {
             </CardHeader>
             <CardContent>
               {loadingClientes ? (
-                <p className="text-sm text-gray-500 py-8 text-center">Carregando clientes...</p>
+                <div className="space-y-4 py-2">
+                  <div className="flex items-center gap-2 text-sm text-slate-600">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Carregando clientes do grupo...
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="h-10 rounded-md bg-gray-100 animate-pulse" />
+                    <div className="h-10 rounded-md bg-gray-100 animate-pulse" />
+                  </div>
+                  <div className="space-y-2">
+                    {Array.from({ length: 6 }).map((_, i) => (
+                      <div key={i} className="h-12 rounded-md bg-gray-100 animate-pulse" />
+                    ))}
+                  </div>
+                </div>
               ) : clientes.length === 0 ? (
                 <p className="text-sm text-gray-500 py-8 text-center">
                   Nenhum cliente com vínculo de fatura neste grupo. Vincule clientes ao grupo na
@@ -797,111 +845,113 @@ export default function FaturaGerarPage() {
                     <p className="text-sm text-gray-500 py-4 text-center">Nenhum cliente encontrado para a busca informada.</p>
                   ) : (
                     <>
-                      <Table>
-                        <TableHeader>
-                          <TableRow className="bg-gray-100">
-                            <TableHead className="font-semibold w-10">Lote</TableHead>
-                            <TableHead className="font-semibold">Titular / Plano</TableHead>
-                            <TableHead className="font-semibold">Dia venc.</TableHead>
-                            <TableHead className="font-semibold">Valor (titular + dependentes)</TableHead>
-                            <TableHead className="font-semibold w-48 text-right">Ação</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {clientesPaginados.map((c) => {
-                            const isFaturado = clienteFaturadoNoMesAtual(c.cliente_administradora_id)
-                            const isSelecionado = selecionadosLote.has(c.id) || selecionadosLote.has(c.cliente_administradora_id)
-                            return (
-                              <TableRow key={c.id}>
-                                <TableCell className="w-10">
-                                  {!isFaturado ? (
-                                    <button
-                                      type="button"
-                                      onClick={() => toggleSelecaoLote(c)}
-                                      className="p-1 rounded hover:bg-gray-100"
-                                      aria-label={isSelecionado ? "Desmarcar" : "Selecionar para lote"}
-                                    >
-                                      {isSelecionado ? <CheckSquare className="h-5 w-5 text-[#0F172A]" /> : <Square className="h-5 w-5 text-gray-400" />}
-                                    </button>
-                                  ) : (
-                                    <span className="text-gray-300">—</span>
-                                  )}
-                                </TableCell>
-                                <TableCell className="font-medium">
-                                  <span>{c.cliente_nome || "—"}</span>
-                                  {c.produto_nome && (
-                                    <span className="block text-xs text-gray-500">Plano: {c.produto_nome}</span>
-                                  )}
-                                  {c.dependentes_nomes && c.dependentes_nomes.length > 0 && (
-                                    <span className="block text-xs text-gray-500">Dependentes: {c.dependentes_nomes.join(", ")}</span>
-                                  )}
-                                  {c.cliente_email && !c.produto_nome && (
-                                    <span className="block text-xs text-gray-500">{c.cliente_email}</span>
-                                  )}
-                                </TableCell>
-                                <TableCell>{c.dia_vencimento || "—"}</TableCell>
-                                <TableCell>{formatarMoeda(c.valor_mensal || 0)}</TableCell>
-                                <TableCell className="text-right">
-                                  {isFaturado ? (
-                                    <div className="flex items-center justify-end gap-2">
-                                      <span className="inline-flex items-center gap-1 text-sm font-medium text-green-700">
-                                        <CheckCircle2 className="h-4 w-4" />
-                                    Faturado no mês
-                                      </span>
-                                      <Button
-                                        size="sm"
-                                        variant="outline"
-                                        onClick={() => irParaAbaFinanceiroCliente(c)}
-                                        className="border-green-200 text-green-800 hover:bg-green-50"
+                      <div className="w-full overflow-x-auto rounded-md border border-gray-100">
+                        <Table className="min-w-[1040px]">
+                          <TableHeader>
+                            <TableRow className="bg-gray-100">
+                              <TableHead className="font-semibold w-10">Lote</TableHead>
+                              <TableHead className="font-semibold">Titular / Plano</TableHead>
+                              <TableHead className="font-semibold">Dia venc.</TableHead>
+                              <TableHead className="font-semibold">Valor (titular + dependentes)</TableHead>
+                              <TableHead className="font-semibold w-48 text-right">Ação</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {clientesPaginados.map((c) => {
+                              const isFaturado = clienteFaturadoNoMesAtual(c.cliente_administradora_id)
+                              const isSelecionado = selecionadosLote.has(c.id) || selecionadosLote.has(c.cliente_administradora_id)
+                              return (
+                                <TableRow key={c.id}>
+                                  <TableCell className="w-10">
+                                    {!isFaturado ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => toggleSelecaoLote(c)}
+                                        className="p-1 rounded hover:bg-gray-100"
+                                        aria-label={isSelecionado ? "Desmarcar" : "Selecionar para lote"}
                                       >
-                                        <FileText className="h-4 w-4 mr-1" />
-                                        Editar fatura
-                                      </Button>
-                                    </div>
-                                  ) : (
-                                    <div className="flex justify-end gap-2">
-                                      {!c.dia_vencimento && (
-                                        <>
-                                          <Select
-                                            value={draftDiaVencimento[c.id] || ""}
-                                            onValueChange={(v) =>
-                                              setDraftDiaVencimento((prev) => ({ ...prev, [c.id]: v }))
-                                            }
-                                          >
-                                            <SelectTrigger className="h-8 w-24">
-                                              <SelectValue placeholder="Dia" />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                              <SelectItem value="01">Dia 01</SelectItem>
-                                              <SelectItem value="10">Dia 10</SelectItem>
-                                            </SelectContent>
-                                          </Select>
-                                          <Button
-                                            size="sm"
-                                            variant="outline"
-                                            onClick={() => vincularDiaVencimentoCliente(c)}
-                                            disabled={!!salvandoDiaCliente[c.id]}
-                                          >
-                                            {salvandoDiaCliente[c.id] ? "Salvando..." : "Vincular"}
-                                          </Button>
-                                        </>
-                                      )}
-                                      <Button
-                                        size="sm"
-                                        onClick={() => abrirModal(c)}
-                                        disabled={financeirasAtivas.length === 0}
-                                        className="bg-[#0F172A] hover:bg-[#1E293B] text-white"
-                                      >
-                                        Gerar boleto
-                                      </Button>
-                                    </div>
-                                  )}
-                                </TableCell>
-                              </TableRow>
-                            )
-                          })}
-                        </TableBody>
-                      </Table>
+                                        {isSelecionado ? <CheckSquare className="h-5 w-5 text-[#0F172A]" /> : <Square className="h-5 w-5 text-gray-400" />}
+                                      </button>
+                                    ) : (
+                                      <span className="text-gray-300">—</span>
+                                    )}
+                                  </TableCell>
+                                  <TableCell className="font-medium">
+                                    <span>{c.cliente_nome || "—"}</span>
+                                    {c.produto_nome && (
+                                      <span className="block text-xs text-gray-500">Plano: {c.produto_nome}</span>
+                                    )}
+                                    {c.dependentes_nomes && c.dependentes_nomes.length > 0 && (
+                                      <span className="block text-xs text-gray-500">Dependentes: {c.dependentes_nomes.join(", ")}</span>
+                                    )}
+                                    {c.cliente_email && !c.produto_nome && (
+                                      <span className="block text-xs text-gray-500">{c.cliente_email}</span>
+                                    )}
+                                  </TableCell>
+                                  <TableCell>{c.dia_vencimento || "—"}</TableCell>
+                                  <TableCell>{formatarMoeda(c.valor_mensal || 0)}</TableCell>
+                                  <TableCell className="text-right">
+                                    {isFaturado ? (
+                                      <div className="flex items-center justify-end gap-2">
+                                        <span className="inline-flex items-center gap-1 text-sm font-medium text-green-700">
+                                          <CheckCircle2 className="h-4 w-4" />
+                                      Faturado no mês
+                                        </span>
+                                        <Button
+                                          size="sm"
+                                          variant="outline"
+                                          onClick={() => irParaAbaFinanceiroCliente(c)}
+                                          className="border-green-200 text-green-800 hover:bg-green-50"
+                                        >
+                                          <FileText className="h-4 w-4 mr-1" />
+                                          Editar fatura
+                                        </Button>
+                                      </div>
+                                    ) : (
+                                      <div className="flex justify-end gap-2">
+                                        {!c.dia_vencimento && (
+                                          <>
+                                            <Select
+                                              value={draftDiaVencimento[c.id] || ""}
+                                              onValueChange={(v) =>
+                                                setDraftDiaVencimento((prev) => ({ ...prev, [c.id]: v }))
+                                              }
+                                            >
+                                              <SelectTrigger className="h-8 w-24">
+                                                <SelectValue placeholder="Dia" />
+                                              </SelectTrigger>
+                                              <SelectContent>
+                                                <SelectItem value="01">Dia 01</SelectItem>
+                                                <SelectItem value="10">Dia 10</SelectItem>
+                                              </SelectContent>
+                                            </Select>
+                                            <Button
+                                              size="sm"
+                                              variant="outline"
+                                              onClick={() => vincularDiaVencimentoCliente(c)}
+                                              disabled={!!salvandoDiaCliente[c.id]}
+                                            >
+                                              {salvandoDiaCliente[c.id] ? "Salvando..." : "Vincular"}
+                                            </Button>
+                                          </>
+                                        )}
+                                        <Button
+                                          size="sm"
+                                          onClick={() => abrirModal(c)}
+                                          disabled={financeirasAtivas.length === 0}
+                                          className="bg-[#0F172A] hover:bg-[#1E293B] text-white"
+                                        >
+                                          Gerar boleto
+                                        </Button>
+                                      </div>
+                                    )}
+                                  </TableCell>
+                                </TableRow>
+                              )
+                            })}
+                          </TableBody>
+                        </Table>
+                      </div>
 
                       <div className="flex items-center justify-between pt-2">
                         <p className="text-sm text-gray-500">
@@ -936,20 +986,22 @@ export default function FaturaGerarPage() {
                 </div>
               )}
             </CardContent>
-          </Card>
-        )}
+              </Card>
+            )}
+          </div>
+        </div>
       </div>
 
       <Dialog open={modalOpen} onOpenChange={setModalOpen}>
-        <DialogContent className="sm:max-w-xl md:max-w-2xl rounded-xl shadow-xl border border-gray-200">
-          <DialogHeader className="space-y-1 pb-2 border-b border-gray-100">
+        <DialogContent className="w-[95vw] max-w-[95vw] lg:max-w-4xl xl:max-w-5xl rounded-xl shadow-xl border border-gray-200 p-0 max-h-[92vh] overflow-hidden">
+          <DialogHeader className="space-y-1 px-6 py-4 border-b border-gray-100 bg-gradient-to-r from-gray-50 to-white">
             <DialogTitle className="text-lg font-semibold text-gray-900">Gerar fatura</DialogTitle>
             <DialogDescription className="text-sm text-gray-500">
               Preencha a financeira, valor e vencimento. O total será valor base + taxa de administração.
             </DialogDescription>
           </DialogHeader>
           {clienteSelecionado && (
-            <div className="space-y-5 py-3">
+            <div className="px-6 py-5 overflow-y-auto space-y-5">
               {(() => {
                 const diaVinculado = String(clienteSelecionado.dia_vencimento || draftDiaVencimento[clienteSelecionado.id] || "").replace(/\D/g, "").padStart(2, "0").slice(-2)
                 const diaSelecionado = String(vencimento || "").slice(8, 10)
@@ -963,91 +1015,100 @@ export default function FaturaGerarPage() {
                   </div>
                 )
               })()}
-              <div className="rounded-lg bg-gray-50 p-4 space-y-3">
-                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Beneficiário</p>
-                <div>
-                  <Label className="text-gray-500 text-xs">Titular</Label>
-                  <p className="mt-0.5 font-semibold text-gray-900">{clienteSelecionado.cliente_nome || "—"}</p>
-                </div>
-                {clienteSelecionado.produto_nome && (
-                  <div>
-                    <Label className="text-gray-500 text-xs">Plano</Label>
-                    <p className="mt-0.5 text-gray-700">{clienteSelecionado.produto_nome}</p>
-                  </div>
-                )}
-                {(clienteSelecionado.dependentes_nomes?.length ?? 0) > 0 && (
-                  <div>
-                    <Label className="text-gray-500 text-xs">Dependentes vinculados</Label>
-                    <p className="mt-0.5 text-sm text-gray-700">
-                      {clienteSelecionado.dependentes_nomes!.length} dependente(s): {clienteSelecionado.dependentes_nomes!.join(", ")}
-                    </p>
-                  </div>
-                )}
-              </div>
 
-              <div className="space-y-4">
-                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Dados da fatura</p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+                <div className="lg:col-span-5 rounded-lg border border-gray-200 bg-gray-50 p-4 space-y-3 h-fit">
+                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Beneficiário</p>
                   <div>
-                    <Label className="text-sm">Financeira *</Label>
-                    <Select value={financeiraId} onValueChange={setFinanceiraId}>
-                      <SelectTrigger className="mt-1.5 h-10">
-                        <SelectValue placeholder="Selecione..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {financeirasAtivas.map((f) => (
-                          <SelectItem key={f.id} value={f.id}>
-                            {f.nome}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <Label className="text-gray-500 text-xs">Titular</Label>
+                    <p className="mt-0.5 font-semibold text-gray-900">{clienteSelecionado.cliente_nome || "—"}</p>
                   </div>
+                  {clienteSelecionado.produto_nome && (
+                    <div>
+                      <Label className="text-gray-500 text-xs">Plano</Label>
+                      <p className="mt-0.5 text-gray-700">{clienteSelecionado.produto_nome}</p>
+                    </div>
+                  )}
+                  {(clienteSelecionado.dependentes_nomes?.length ?? 0) > 0 && (
+                    <div>
+                      <Label className="text-gray-500 text-xs">Dependentes vinculados</Label>
+                      <p className="mt-0.5 text-sm text-gray-700">
+                        {clienteSelecionado.dependentes_nomes!.length} dependente(s): {clienteSelecionado.dependentes_nomes!.join(", ")}
+                      </p>
+                    </div>
+                  )}
                   <div>
-                    <Label className="text-sm">Vencimento *</Label>
-                    <Input
-                      type="date"
-                      value={vencimento}
-                      onChange={(e) => setVencimento(e.target.value)}
-                      className="mt-1.5 h-10"
-                    />
+                    <Label className="text-gray-500 text-xs">Dia de vencimento vinculado</Label>
+                    <p className="mt-0.5 text-sm font-medium text-gray-800">{clienteSelecionado.dia_vencimento || "Não vinculado"}</p>
                   </div>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+
+                <div className="lg:col-span-7 space-y-4 rounded-lg border border-gray-200 bg-white p-4">
+                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Dados da fatura</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <Label className="text-sm">Financeira *</Label>
+                      <Select value={financeiraId} onValueChange={setFinanceiraId}>
+                        <SelectTrigger className="mt-1.5 h-10">
+                          <SelectValue placeholder="Selecione..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {financeirasAtivas.map((f) => (
+                            <SelectItem key={f.id} value={f.id}>
+                              {f.nome}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label className="text-sm">Vencimento *</Label>
+                      <Input
+                        type="date"
+                        value={vencimento}
+                        onChange={(e) => setVencimento(e.target.value)}
+                        className="mt-1.5 h-10"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <Label className="text-sm">Valor base (R$) *</Label>
+                      <Input
+                        type="text"
+                        value={valor}
+                        onChange={(e) => setValor(e.target.value)}
+                        placeholder="0,00"
+                        className="mt-1.5 h-10"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-sm">Taxa de administração (R$)</Label>
+                      <Input
+                        type="text"
+                        value={taxaAdministracao}
+                        onChange={(e) => setTaxaAdministracao(e.target.value)}
+                        placeholder="0,00"
+                        className="mt-1.5 h-10"
+                      />
+                    </div>
+                  </div>
+                  {(valor || taxaAdministracao) && (
+                    <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
+                      <p className="text-sm font-semibold text-gray-900">
+                        Total da fatura: {formatarMoeda((parseFloat(String(valor).replace(",", ".")) || 0) + (parseFloat(String(taxaAdministracao).replace(",", ".")) || 0))}
+                      </p>
+                    </div>
+                  )}
                   <div>
-                    <Label className="text-sm">Valor base (R$) *</Label>
+                    <Label className="text-sm">Descrição (opcional)</Label>
                     <Input
-                      type="text"
-                      value={valor}
-                      onChange={(e) => setValor(e.target.value)}
-                      placeholder="0,00"
+                      value={descricao}
+                      onChange={(e) => setDescricao(e.target.value)}
+                      placeholder="Produto, titular e dependentes"
                       className="mt-1.5 h-10"
                     />
                   </div>
-                  <div>
-                    <Label className="text-sm">Taxa de administração (R$)</Label>
-                    <Input
-                      type="text"
-                      value={taxaAdministracao}
-                      onChange={(e) => setTaxaAdministracao(e.target.value)}
-                      placeholder="0,00"
-                      className="mt-1.5 h-10"
-                    />
-                  </div>
-                </div>
-                {(valor || taxaAdministracao) && (
-                  <p className="text-sm font-semibold text-gray-900 py-1">
-                    Total da fatura: {formatarMoeda((parseFloat(String(valor).replace(",", ".")) || 0) + (parseFloat(String(taxaAdministracao).replace(",", ".")) || 0))}
-                  </p>
-                )}
-                <div>
-                  <Label className="text-sm">Descrição (opcional)</Label>
-                  <Input
-                    value={descricao}
-                    onChange={(e) => setDescricao(e.target.value)}
-                    placeholder="Produto, titular e dependentes"
-                    className="mt-1.5 h-10"
-                  />
                 </div>
               </div>
 
@@ -1076,7 +1137,7 @@ export default function FaturaGerarPage() {
               )}
             </div>
           )}
-          <DialogFooter>
+          <DialogFooter className="px-6 py-4 border-t border-gray-100 bg-white">
             <Button variant="outline" onClick={() => setModalOpen(false)} disabled={gerando}>
               Cancelar
             </Button>

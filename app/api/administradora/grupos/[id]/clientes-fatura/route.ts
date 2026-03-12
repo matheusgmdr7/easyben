@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase-admin"
 import { getCurrentTenantId } from "@/lib/tenant-query-helper"
 
+export const maxDuration = 60
+
 /**
  * GET /api/administradora/grupos/[id]/clientes-fatura?administradora_id=xxx
  * Retorna apenas TITULARES do grupo para geração de fatura (dependentes ficam vinculados ao titular).
@@ -35,7 +37,7 @@ export async function GET(
     }
 
     // Garantir que o grupo pertence à administradora
-    const { data: grupo, error: errGrupo } = await supabaseAdmin
+    let { data: grupo, error: errGrupo } = await supabaseAdmin
       .from("grupos_beneficiarios")
       .select("id, nome")
       .eq("id", grupoId)
@@ -44,14 +46,33 @@ export async function GET(
       .maybeSingle()
 
     if (errGrupo || !grupo) {
+      const fallbackGrupo = await supabaseAdmin
+        .from("grupos_beneficiarios")
+        .select("id, nome")
+        .eq("id", grupoId)
+        .eq("administradora_id", administradoraId)
+        .maybeSingle()
+      grupo = fallbackGrupo.data
+      errGrupo = fallbackGrupo.error as any
+    }
+
+    if (errGrupo || !grupo) {
       return NextResponse.json({ error: "Grupo não encontrado" }, { status: 404 })
     }
 
-    const { data: vinculos } = await supabaseAdmin
+    let { data: vinculos } = await supabaseAdmin
       .from("clientes_grupos")
       .select("id, cliente_id, cliente_tipo")
       .eq("grupo_id", grupoId)
       .eq("tenant_id", tenantId)
+
+    if (!vinculos || vinculos.length === 0) {
+      const fallbackVinculos = await supabaseAdmin
+        .from("clientes_grupos")
+        .select("id, cliente_id, cliente_tipo")
+        .eq("grupo_id", grupoId)
+      vinculos = fallbackVinculos.data || []
+    }
 
     const resultado: Array<{
       id: string
@@ -67,27 +88,66 @@ export async function GET(
 
     // Vidas importadas: apenas TITULARES; valor = titular + dependentes vinculados (cpf_titular)
     let vidasGrupo: Array<Record<string, unknown>> | null = null
-    const fullSelect = await supabaseAdmin
+    let fullSelect = await supabaseAdmin
       .from("vidas_importadas")
       .select("id, nome, cpf, valor_mensal, emails, dados_adicionais, cliente_administradora_id, tipo, cpf_titular, produto_id, plano, idade, acomodacao, ativo")
       .eq("grupo_id", grupoId)
       .eq("administradora_id", administradoraId)
       .eq("tenant_id", tenantId)
+    if (fullSelect.error) {
+      fullSelect = await supabaseAdmin
+        .from("vidas_importadas")
+        .select("id, nome, cpf, valor_mensal, emails, dados_adicionais, cliente_administradora_id, tipo, cpf_titular, produto_id, plano, idade, acomodacao, ativo")
+        .eq("grupo_id", grupoId)
+        .eq("administradora_id", administradoraId)
+    }
     if (!fullSelect.error) {
       vidasGrupo = fullSelect.data as Array<Record<string, unknown>>
     } else {
-      const minimalSelect = await supabaseAdmin
+      let minimalSelect = await supabaseAdmin
         .from("vidas_importadas")
         .select("id, nome, cpf, tipo, cpf_titular, valor_mensal, cliente_administradora_id, plano, idade, acomodacao, produto_id, ativo")
         .eq("grupo_id", grupoId)
         .eq("administradora_id", administradoraId)
         .eq("tenant_id", tenantId)
+      if (minimalSelect.error) {
+        minimalSelect = await supabaseAdmin
+          .from("vidas_importadas")
+          .select("id, nome, cpf, tipo, cpf_titular, valor_mensal, cliente_administradora_id, plano, idade, acomodacao, produto_id, ativo")
+          .eq("grupo_id", grupoId)
+          .eq("administradora_id", administradoraId)
+      }
       if (!minimalSelect.error) vidasGrupo = minimalSelect.data as Array<Record<string, unknown>>
     }
 
     const vidas = (vidasGrupo || []).filter((v) => (v as Record<string, unknown>)?.ativo !== false)
     const tipo = (v: Record<string, unknown>) => String((v.tipo ?? "titular") ?? "").toLowerCase()
     const cpfNorm = (v: Record<string, unknown>) => (v.cpf ? String(v.cpf).replace(/\D/g, "") : "")
+
+    const produtoIds = Array.from(
+      new Set(
+        vidas
+          .map((v) => String((v as Record<string, unknown>)?.produto_id || "").trim())
+          .filter(Boolean)
+      )
+    )
+    const produtosMap = new Map<string, string>()
+    if (produtoIds.length > 0) {
+      let produtosRes = await supabaseAdmin
+        .from("produtos_contrato_administradora")
+        .select("id, nome")
+        .in("id", produtoIds)
+        .eq("tenant_id", tenantId)
+      if (produtosRes.error) {
+        produtosRes = await supabaseAdmin
+          .from("produtos_contrato_administradora")
+          .select("id, nome")
+          .in("id", produtoIds)
+      }
+      for (const p of produtosRes.data || []) {
+        produtosMap.set(String((p as any).id), String((p as any).nome || ""))
+      }
+    }
 
     // Só listar titulares (dependentes entram no valor/descrição do titular)
     for (const vida of vidas) {
@@ -140,12 +200,8 @@ export async function GET(
       if (!planoOuProdutoNome) {
         const produtoId = vidaAny.produto_id
         if (produtoId) {
-          const { data: prod } = await supabaseAdmin
-            .from("produtos_contrato_administradora")
-            .select("nome")
-            .eq("id", produtoId)
-            .maybeSingle()
-          if (prod && (prod as any).nome) planoOuProdutoNome = (prod as any).nome
+          const nomeProduto = produtosMap.get(String(produtoId))
+          if (nomeProduto) planoOuProdutoNome = nomeProduto
         }
       }
       {
@@ -184,7 +240,6 @@ export async function GET(
           .from("vw_clientes_administradoras_completo")
           .select("cliente_nome, cliente_email, cliente_cpf, valor_mensal")
           .eq("id", v.cliente_id)
-          .eq("tenant_id", tenantId)
           .maybeSingle()
 
         if (ca) {
@@ -215,7 +270,6 @@ export async function GET(
           .from("vw_clientes_administradoras_completo")
           .select("cliente_nome, cliente_email, cliente_cpf, valor_mensal")
           .eq("id", clienteAdm.id)
-          .eq("tenant_id", tenantId)
           .maybeSingle()
 
         resultado.push({
