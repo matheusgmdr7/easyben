@@ -1188,6 +1188,13 @@ export default function BeneficiarioDetalhesPage() {
   }
 
   const d = clienteSelecionado.cliente_tipo === "vida_importada" ? (clienteSelecionado._vida || clienteSelecionado.cliente) : clienteSelecionado.cliente
+  const possuiDadosContrato =
+    Boolean(contrato || produtoCliente || valorProdutoCliente != null) ||
+    Boolean(d?.produto_id || d?.plano || d?.valor_mensal != null) ||
+    obterDataVigenciaBeneficiario(d) !== "-" ||
+    obterNumeroCarteirinhaBeneficiario(d) !== "-" ||
+    obterAcomodacaoBeneficiario(d, produtoCliente?.nome) !== "-" ||
+    String(diaVencimentoVinculado || "").trim() !== ""
 
   return (
     <div className="space-y-6">
@@ -1528,7 +1535,7 @@ export default function BeneficiarioDetalhesPage() {
             </TabsContent>
 
             <TabsContent value="contrato" className="space-y-4">
-              {contrato || produtoCliente || valorProdutoCliente != null ? (
+              {possuiDadosContrato ? (
                 <>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-0 text-sm border border-gray-200 rounded-lg overflow-hidden">
                     <div className="p-3 bg-gray-50">
