@@ -38,6 +38,7 @@ type RegistroCancelamento = {
     cpf?: string | null
     ativo?: boolean | null
     corretor_id?: string | null
+    valor_mensal?: number | null
   } | null
 }
 
@@ -59,6 +60,12 @@ function formatarCpf(v?: string | null) {
   const d = String(v || "").replace(/\D/g, "")
   if (d.length !== 11) return "—"
   return d.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4")
+}
+
+function formatarMoeda(v?: number | string | null) {
+  const n = Number(v ?? 0)
+  if (!Number.isFinite(n)) return "—"
+  return n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
 }
 
 function textoStatus(status: RegistroCancelamento["status_fluxo"]) {
@@ -206,6 +213,7 @@ export default function BeneficiariosCanceladosPage() {
       const headers = [
         "Beneficiário",
         "CPF",
+        "Valor mensal",
         "Tipo",
         "Status",
         "Data solicitação",
@@ -220,6 +228,7 @@ export default function BeneficiariosCanceladosPage() {
       const body = registros.map((r) => [
         r.vida?.nome || "-",
         formatarCpf(r.vida?.cpf),
+        formatarMoeda(r.vida?.valor_mensal ?? 0),
         r.tipo_registro === "titular" ? "Titular" : "Dependente",
         textoStatus(r.status_fluxo),
         formatarDataHora(r.data_solicitacao),
@@ -231,10 +240,31 @@ export default function BeneficiariosCanceladosPage() {
         r.observacao_processamento || "-",
         r.observacao_reativacao || "-",
       ])
+      const totalBeneficiarios = registros.length
+      const totalValorMensal = registros.reduce(
+        (acc, r) => acc + (Number(r.vida?.valor_mensal ?? 0) || 0),
+        0
+      )
+      body.push([])
+      body.push([
+        "Totais",
+        "",
+        formatarMoeda(totalValorMensal),
+        `${totalBeneficiarios} beneficiário(s)`,
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+      ])
 
       const ws = XLSX.utils.aoa_to_sheet([headers, ...body])
       ws["!cols"] = [
         { wch: 34 },
+        { wch: 16 },
         { wch: 16 },
         { wch: 13 },
         { wch: 14 },
@@ -292,9 +322,14 @@ export default function BeneficiariosCanceladosPage() {
       const margem = 8
       const larguraPagina = 297
       const larguraUtil = larguraPagina - margem * 2
-      const colWidths = [58, 22, 24, 36, 26, 46, 46, 30]
-      const headers = ["Beneficiário", "Tipo", "Status", "Solicitação", "Operadora", "Grupo origem", "Grupo destino", "Corretor"]
+      const colWidths = [54, 19, 20, 22, 30, 22, 40, 40, 28]
+      const headers = ["Beneficiário", "Valor mensal", "Tipo", "Status", "Solicitação", "Operadora", "Grupo origem", "Grupo destino", "Corretor"]
       const rowH = 6
+      const totalBeneficiarios = registros.length
+      const totalValorMensal = registros.reduce(
+        (acc, r) => acc + (Number(r.vida?.valor_mensal ?? 0) || 0),
+        0
+      )
       let y = 12
 
       doc.setFontSize(12)
@@ -304,6 +339,8 @@ export default function BeneficiariosCanceladosPage() {
       doc.setFontSize(8)
       doc.setTextColor(100, 116, 139)
       doc.text(`Emitido em: ${new Date().toLocaleString("pt-BR")}`, margem, y)
+      doc.text(`Total de beneficiários: ${totalBeneficiarios}`, margem + 95, y)
+      doc.text(`Soma valor mensal: ${formatarMoeda(totalValorMensal)}`, margem + 170, y)
       y += 6
 
       const drawHeader = () => {
@@ -338,6 +375,7 @@ export default function BeneficiariosCanceladosPage() {
         doc.setFontSize(7)
         const valores = [
           String(r.vida?.nome || "-").slice(0, 36),
+          formatarMoeda(r.vida?.valor_mensal ?? 0),
           r.tipo_registro === "titular" ? "Titular" : "Dependente",
           textoStatus(r.status_fluxo),
           formatarDataHora(r.data_solicitacao).slice(0, 16),
@@ -354,6 +392,18 @@ export default function BeneficiariosCanceladosPage() {
         })
         y += rowH
       })
+
+      if (y > 192) {
+        doc.addPage()
+        y = 12
+      }
+      doc.setDrawColor(203, 213, 225)
+      doc.line(margem, y + 1, margem + larguraUtil, y + 1)
+      y += 5
+      doc.setTextColor(30, 41, 59)
+      doc.setFontSize(9)
+      doc.text(`Total de beneficiários: ${totalBeneficiarios}`, margem, y)
+      doc.text(`Soma do valor mensal: ${formatarMoeda(totalValorMensal)}`, margem + 95, y)
 
       doc.save(`cancelamentos-beneficiarios-${new Date().toISOString().slice(0, 10)}.pdf`)
     } catch (e: any) {
@@ -669,6 +719,7 @@ export default function BeneficiariosCanceladosPage() {
                     <TableHead className="w-[40px]">Sel.</TableHead>
                     <TableHead>Beneficiário</TableHead>
                     <TableHead>CPF</TableHead>
+                    <TableHead>Valor mensal</TableHead>
                     <TableHead>Tipo</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Solicitado</TableHead>
@@ -692,6 +743,7 @@ export default function BeneficiariosCanceladosPage() {
                       </TableCell>
                       <TableCell>{r.vida?.nome || "—"}</TableCell>
                       <TableCell>{formatarCpf(r.vida?.cpf)}</TableCell>
+                      <TableCell>{formatarMoeda(r.vida?.valor_mensal ?? 0)}</TableCell>
                       <TableCell>{r.tipo_registro === "titular" ? "Titular" : "Dependente"}</TableCell>
                       <TableCell>{renderStatusBadge(r.status_fluxo)}</TableCell>
                       <TableCell>{formatarDataHora(r.data_solicitacao)}</TableCell>

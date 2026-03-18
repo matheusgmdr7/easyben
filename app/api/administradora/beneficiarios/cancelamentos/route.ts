@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
       .from("cancelamentos_beneficiarios")
       .select(`
         *,
-        vida:vidas_importadas(id, nome, cpf, tipo, ativo, grupo_id, corretor_id),
+        vida:vidas_importadas(id, nome, cpf, tipo, ativo, grupo_id, corretor_id, valor_mensal),
         grupo_origem:grupos_beneficiarios!cancelamentos_beneficiarios_grupo_origem_id_fkey(id, nome),
         grupo_destino:grupos_beneficiarios!cancelamentos_beneficiarios_grupo_destino_reativacao_id_fkey(id, nome)
       `)

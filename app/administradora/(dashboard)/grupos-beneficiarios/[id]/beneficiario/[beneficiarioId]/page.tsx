@@ -32,6 +32,7 @@ export default function BeneficiarioDetalhesPage() {
   const [clienteSelecionado, setClienteSelecionado] = useState<ClienteItem | null>(null)
   const [tabAtiva, setTabAtiva] = useState("dados-basicos")
   const [dependentes, setDependentes] = useState<any[]>([])
+  const [titularesDoGrupoCpfs, setTitularesDoGrupoCpfs] = useState<string[]>([])
   const [faturas, setFaturas] = useState<any[]>([])
   const [contrato, setContrato] = useState<any>(null)
   const [historico, setHistorico] = useState<any[]>([])
@@ -51,6 +52,11 @@ export default function BeneficiarioDetalhesPage() {
     acomodacao: "",
     numero_carteirinha: "",
   })
+  const [contratosVinculo, setContratosVinculo] = useState<Array<{ id: string; numero?: string; operadora_nome?: string }>>([])
+  const [produtosVinculo, setProdutosVinculo] = useState<Array<{ id: string; nome: string; contrato_id: string }>>([])
+  const [contratoVinculoId, setContratoVinculoId] = useState("")
+  const [produtoVinculoId, setProdutoVinculoId] = useState("")
+  const [carregandoVinculoProduto, setCarregandoVinculoProduto] = useState(false)
   const [corretores, setCorretores] = useState<{ id: string; nome: string }[]>([])
   const [modalCorretorOpen, setModalCorretorOpen] = useState(false)
   const [corretorSelecionadoId, setCorretorSelecionadoId] = useState<string>("__nenhum__")
@@ -222,11 +228,6 @@ export default function BeneficiarioDetalhesPage() {
     return nome || "Corretor não encontrado"
   }
 
-  const titularesDoGrupo = useMemo(() => {
-    if (!clienteSelecionado) return []
-    return [clienteSelecionado]
-  }, [clienteSelecionado])
-
   function normalizarTelefone(valor: string | null | undefined): string {
     if (!valor) return ""
     return String(valor)
@@ -324,6 +325,15 @@ export default function BeneficiarioDetalhesPage() {
       setGrupo(g)
       const vinculos = vinculosRes.data || []
       const vidas = Array.isArray(vidasRes) ? vidasRes : []
+      const cpfsTitulares = Array.from(
+        new Set(
+          vidas
+            .filter((v: any) => String(v?.tipo || "titular").toLowerCase() !== "dependente")
+            .map((v: any) => String(v?.cpf || "").replace(/\D/g, ""))
+            .filter((cpf: string) => cpf.length >= 11)
+        )
+      )
+      setTitularesDoGrupoCpfs(cpfsTitulares)
       const vidaPorClienteAdmId = new Map<string, any>()
       for (const v of vidas) {
         const caId = String(v?.cliente_administradora_id || "").trim()
@@ -755,6 +765,27 @@ export default function BeneficiarioDetalhesPage() {
     void carregarOpcoesContratoPorVidas(produtoId, adm.id)
   }, [clienteSelecionado])
 
+  useEffect(() => {
+    if (!editandoContrato || !clienteSelecionado || clienteSelecionado.cliente_tipo !== "vida_importada") return
+    const adm = getAdministradoraLogada()
+    if (!adm?.id) return
+    const vida = clienteSelecionado._vida || clienteSelecionado.cliente || {}
+    const produtoAtualId = String(vida?.produto_id || "").trim()
+    void carregarContratosEProdutosParaVinculo(adm.id).then(({ produtos }) => {
+      if (!produtoAtualId) {
+        setContratoVinculoId("")
+        setProdutoVinculoId("")
+        return
+      }
+      setProdutoVinculoId(produtoAtualId)
+      setContratoVinculoId((prev) => {
+        if (prev) return prev
+        const p = produtos.find((x) => String(x.id) === produtoAtualId)
+        return p?.contrato_id ? String(p.contrato_id) : ""
+      })
+    })
+  }, [editandoContrato, clienteSelecionado])
+
   async function buscarCep() {
     try {
       const cepDigitos = String(formContato.cep || "").replace(/\D/g, "")
@@ -817,6 +848,7 @@ export default function BeneficiarioDetalhesPage() {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
+            administradora_id: adm.id,
             ...payloadBasicos,
             ...payloadContato,
             emails: payloadContato.email ? [payloadContato.email] : [],
@@ -928,10 +960,33 @@ export default function BeneficiarioDetalhesPage() {
     }
   }
 
+  async function carregarContratosEProdutosParaVinculo(administradoraId: string) {
+    try {
+      setCarregandoVinculoProduto(true)
+      const [resContratos, resProdutos] = await Promise.all([
+        fetch(`/api/administradora/contratos?administradora_id=${encodeURIComponent(administradoraId)}`),
+        fetch(`/api/administradora/produtos-contrato?administradora_id=${encodeURIComponent(administradoraId)}`),
+      ])
+      const dataContratos = await resContratos.json().catch(() => [])
+      const dataProdutos = await resProdutos.json().catch(() => [])
+      const contratos = Array.isArray(dataContratos) ? dataContratos : []
+      const produtos = Array.isArray(dataProdutos) ? dataProdutos : []
+      setContratosVinculo(contratos)
+      setProdutosVinculo(produtos)
+      return { contratos, produtos }
+    } catch {
+      setContratosVinculo([])
+      setProdutosVinculo([])
+      return { contratos: [], produtos: [] as Array<{ id: string; nome: string; contrato_id: string }> }
+    } finally {
+      setCarregandoVinculoProduto(false)
+    }
+  }
+
   async function recalcularValorFaixaContrato() {
     if (!clienteSelecionado) return
     const vida = clienteSelecionado.cliente_tipo === "vida_importada" ? (clienteSelecionado._vida || clienteSelecionado.cliente) : null
-    const produtoId = String(vida?.produto_id || "").trim()
+    const produtoId = String(produtoVinculoId || vida?.produto_id || "").trim()
     if (!produtoId) {
       toast.error("Beneficiário sem produto vinculado para cálculo por faixa etária.")
       return
@@ -986,6 +1041,9 @@ export default function BeneficiarioDetalhesPage() {
         ? formContrato.acomodacao
         : null
     const numeroCarteirinha = String(formContrato.numero_carteirinha || "").trim()
+    const vidaAtual = clienteSelecionado.cliente_tipo === "vida_importada" ? (clienteSelecionado._vida || clienteSelecionado.cliente || {}) : {}
+    const produtoAtualId = String((vidaAtual as any)?.produto_id || "").trim()
+    const produtoSelecionadoFinal = String(produtoVinculoId || produtoAtualId || "").trim()
 
     if (formContrato.valor_mensal.trim() && valor == null) {
       toast.error("Valor mensal inválido.")
@@ -1023,6 +1081,7 @@ export default function BeneficiarioDetalhesPage() {
             administradora_id: adm.id,
             ...(valor != null ? { valor_mensal: valor } : {}),
             ...(acomodacaoContrato ? { acomodacao: acomodacaoContrato } : {}),
+            ...(produtoSelecionadoFinal ? { produto_id: produtoSelecionadoFinal } : {}),
             dados_adicionais: novosDadosAdicionais,
           }),
         })
@@ -1071,6 +1130,7 @@ export default function BeneficiarioDetalhesPage() {
           ...vida,
           ...(valor != null ? { valor_mensal: valor } : {}),
           ...(acomodacaoContrato ? { acomodacao: acomodacaoContrato } : {}),
+          ...(produtoSelecionadoFinal ? { produto_id: produtoSelecionadoFinal } : {}),
           ...(numeroCarteirinha ? { numero_carteirinha: numeroCarteirinha } : {}),
           dados_adicionais: dadosAdicionaisNovo,
         }
@@ -1195,6 +1255,10 @@ export default function BeneficiarioDetalhesPage() {
     obterNumeroCarteirinhaBeneficiario(d) !== "-" ||
     obterAcomodacaoBeneficiario(d, produtoCliente?.nome) !== "-" ||
     String(diaVencimentoVinculado || "").trim() !== ""
+  const semProdutoVinculado = !String((d as any)?.produto_id || "").trim()
+  const produtosVinculoFiltrados = contratoVinculoId
+    ? produtosVinculo.filter((p) => String(p.contrato_id) === String(contratoVinculoId))
+    : produtosVinculo
 
   return (
     <div className="space-y-6">
@@ -1237,7 +1301,7 @@ export default function BeneficiarioDetalhesPage() {
             <TabsContent value="dados-basicos" className="space-y-4">
               {clienteSelecionado.cliente_tipo === "vida_importada" && getTipoItem(clienteSelecionado) === "dependente" && (() => {
                 const cpfTit = String((clienteSelecionado._vida?.cpf_titular ?? clienteSelecionado.cliente?.cpf_titular ?? "")).replace(/\D/g, "")
-                const vinculado = cpfTit.length >= 11 && titularesDoGrupo.some((t: any) => t.cpf === cpfTit)
+                const vinculado = cpfTit.length >= 11 && titularesDoGrupoCpfs.includes(cpfTit)
                 if (vinculado) return null
                 return (
                   <div className="mb-4 p-4 rounded-lg border border-amber-200 bg-amber-50 text-amber-800 text-sm flex flex-wrap items-center gap-2">
@@ -1676,7 +1740,53 @@ export default function BeneficiarioDetalhesPage() {
                     </div>
                     <div className="p-3 bg-gray-50">
                       <span className="text-gray-500 block text-xs font-medium">Produto vinculado</span>
-                      <span className="text-gray-900">{obterProdutoVinculadoBeneficiario(d, produtoCliente?.nome)}</span>
+                      {editandoContrato && clienteSelecionado?.cliente_tipo === "vida_importada" && semProdutoVinculado ? (
+                        <div className="space-y-2 mt-1">
+                          <Select
+                            value={contratoVinculoId || "__todos__"}
+                            onValueChange={(v) => {
+                              const id = v === "__todos__" ? "" : v
+                              setContratoVinculoId(id)
+                              setProdutoVinculoId("")
+                            }}
+                            disabled={carregandoVinculoProduto}
+                          >
+                            <SelectTrigger className="h-9">
+                              <SelectValue placeholder="Selecione o contrato" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="__todos__">Todos os contratos</SelectItem>
+                              {contratosVinculo.map((c: any) => (
+                                <SelectItem key={c.id} value={c.id}>
+                                  {`${c.numero || "-"} - ${c.operadora_nome || c.descricao || "Contrato"}`}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <Select
+                            value={produtoVinculoId || "__vazio__"}
+                            onValueChange={(v) => setProdutoVinculoId(v === "__vazio__" ? "" : v)}
+                            disabled={carregandoVinculoProduto}
+                          >
+                            <SelectTrigger className="h-9">
+                              <SelectValue placeholder="Selecione o produto do contrato" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="__vazio__">Sem vínculo</SelectItem>
+                              {produtosVinculoFiltrados.map((p) => (
+                                <SelectItem key={p.id} value={p.id}>
+                                  {p.nome}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <p className="text-xs text-gray-500">
+                            Sem produto vinculado: selecione um contrato e o produto para habilitar cálculo por faixa etária.
+                          </p>
+                        </div>
+                      ) : (
+                        <span className="text-gray-900">{obterProdutoVinculadoBeneficiario(d, produtoCliente?.nome)}</span>
+                      )}
                     </div>
                     <div className="p-3 bg-gray-50">
                       <span className="text-gray-500 block text-xs font-medium">Plano</span>

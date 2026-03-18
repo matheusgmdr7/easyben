@@ -121,7 +121,18 @@ export async function PUT(
       .eq("id", id)
     if (tenantId) queryAtual = queryAtual.eq("tenant_id", tenantId)
     if (administradoraId) queryAtual = queryAtual.eq("administradora_id", administradoraId)
-    const { data: atual } = await queryAtual.maybeSingle()
+    let { data: atual } = await queryAtual.maybeSingle()
+
+    // Fallback para registros legados com tenant_id inconsistente
+    if (!atual) {
+      let queryAtualLegado = supabaseAdmin
+        .from("vidas_importadas")
+        .select("*")
+        .eq("id", id)
+      if (administradoraId) queryAtualLegado = queryAtualLegado.eq("administradora_id", administradoraId)
+      const { data: atualLegado } = await queryAtualLegado.maybeSingle()
+      if (atualLegado) atual = atualLegado
+    }
 
     if (!atual) return NextResponse.json({ error: "Não encontrado" }, { status: 404 })
 
@@ -152,7 +163,8 @@ export async function PUT(
             : calcularIdade(dataNasc)
         const acomodacao = (merge.acomodacao === "Apartamento" ? "Apartamento" : "Enfermaria") as "Enfermaria" | "Apartamento"
         if (pid && idade != null && !isNaN(idade)) {
-          const novoValor = await obterValorProdutoPorIdade(String(pid), idade, tenantId, acomodacao)
+          const tenantParaCalculo = (atual as any)?.tenant_id || tenantId || undefined
+          const novoValor = await obterValorProdutoPorIdade(String(pid), idade, tenantParaCalculo, acomodacao)
           updates.valor_mensal = novoValor
         } else {
           updates.valor_mensal = null
@@ -169,7 +181,21 @@ export async function PUT(
       .eq("id", id)
     if (tenantId) queryUpdate = queryUpdate.eq("tenant_id", tenantId)
     if (administradoraId) queryUpdate = queryUpdate.eq("administradora_id", administradoraId)
-    const { data, error } = await queryUpdate.select().maybeSingle()
+    let { data, error } = await queryUpdate.select().maybeSingle()
+
+    // Fallback para atualização em registros legados sem tenant_id consistente
+    if ((!data || error) && administradoraId) {
+      let queryUpdateLegado = supabaseAdmin
+        .from("vidas_importadas")
+        .update(updates)
+        .eq("id", id)
+        .eq("administradora_id", administradoraId)
+      const retry = await queryUpdateLegado.select().maybeSingle()
+      if (retry.data) {
+        data = retry.data
+        error = null as any
+      }
+    }
 
     if (error) {
       console.error("Erro ao atualizar vida importada:", error)
