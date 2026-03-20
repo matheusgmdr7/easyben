@@ -15,7 +15,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { AlertTriangle, ArrowLeft, Download, ExternalLink, Loader2, Pencil, Save, Trash2, X } from "lucide-react"
-import { formatarData, formatarMoeda } from "@/utils/formatters"
+import { formatarData, formatarMoeda, formatarTelefone } from "@/utils/formatters"
 import { toast } from "sonner"
 
 type ClienteItem = any
@@ -230,7 +230,11 @@ export default function BeneficiarioDetalhesPage() {
 
   function normalizarTelefone(valor: string | null | undefined): string {
     if (!valor) return ""
-    return String(valor)
+    const dig = String(valor).replace(/\D/g, "").slice(0, 11)
+    if (dig.length <= 2) return dig
+    if (dig.length <= 6) return `(${dig.slice(0, 2)}) ${dig.slice(2)}`
+    if (dig.length <= 10) return `(${dig.slice(0, 2)}) ${dig.slice(2, 6)}-${dig.slice(6)}`
+    return `(${dig.slice(0, 2)}) ${dig.slice(2, 7)}-${dig.slice(7, 11)}`
   }
 
   function normalizarCep(valor: string | null | undefined): string {
@@ -451,7 +455,7 @@ export default function BeneficiarioDetalhesPage() {
         if (v?.tipo === "titular" && v?.cpf) {
           const { data: deps } = await supabase
             .from("vidas_importadas")
-            .select("id, nome, cpf, tipo, data_nascimento, parentesco")
+            .select("id, nome, cpf, tipo, data_nascimento, parentesco, valor_mensal")
             .eq("grupo_id", grupoId)
             .eq("cpf_titular", String(v.cpf).replace(/\D/g, ""))
             .eq("tipo", "dependente")
@@ -1343,7 +1347,7 @@ export default function BeneficiarioDetalhesPage() {
                   {editandoDadosBasicos ? (
                     <Input type="date" value={formDadosBasicos.data_nascimento} onChange={(e) => setFormDadosBasicos((p) => ({ ...p, data_nascimento: e.target.value }))} className="h-9 mt-1" />
                   ) : (
-                    <span className="text-gray-900">{d?.data_nascimento ? String(d.data_nascimento).slice(0, 10) : "-"}</span>
+                    <span className="text-gray-900">{d?.data_nascimento ? formatarData(String(d.data_nascimento).slice(0, 10)) : "-"}</span>
                   )}
                 </div>
                 <div className="p-3 bg-gray-50">
@@ -1409,9 +1413,19 @@ export default function BeneficiarioDetalhesPage() {
                 <div className="p-3 bg-gray-50">
                   <span className="text-gray-500 block text-xs font-medium">Telefone</span>
                   {editandoContato ? (
-                    <Input value={formContato.telefone} onChange={(e) => setFormContato((p) => ({ ...p, telefone: e.target.value }))} className="h-9 mt-1" />
+                    <Input
+                      value={formContato.telefone}
+                      onChange={(e) => setFormContato((p) => ({ ...p, telefone: normalizarTelefone(e.target.value) }))}
+                      className="h-9 mt-1"
+                      placeholder="(11) 99999-9999"
+                    />
                   ) : (
-                    <span className="text-gray-900">{(Array.isArray(d?.telefones) ? d?.telefones?.[0]?.numero : d?.telefone) || "-"}</span>
+                    <span className="text-gray-900">
+                      {(() => {
+                        const tel = (Array.isArray(d?.telefones) ? d?.telefones?.[0]?.numero : d?.telefone) || ""
+                        return tel ? formatarTelefone(String(tel)) : "-"
+                      })()}
+                    </span>
                   )}
                 </div>
                 <div className="p-3 bg-white">
@@ -1512,6 +1526,7 @@ export default function BeneficiarioDetalhesPage() {
                       <TableHead>Nome</TableHead>
                       <TableHead>CPF</TableHead>
                       <TableHead>Parentesco</TableHead>
+                      <TableHead>Valor</TableHead>
                       <TableHead>Data Nasc.</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -1521,7 +1536,12 @@ export default function BeneficiarioDetalhesPage() {
                         <TableCell>{dep.nome || "-"}</TableCell>
                         <TableCell>{formatarCpf(dep.cpf)}</TableCell>
                         <TableCell>{dep.parentesco || "-"}</TableCell>
-                        <TableCell>{dep.data_nascimento ? String(dep.data_nascimento).slice(0, 10) : "-"}</TableCell>
+                        <TableCell>
+                          {dep?.valor_mensal != null && Number.isFinite(Number(dep.valor_mensal))
+                            ? formatarMoeda(Number(dep.valor_mensal))
+                            : "-"}
+                        </TableCell>
+                        <TableCell>{dep.data_nascimento ? formatarData(String(dep.data_nascimento).slice(0, 10)) : "-"}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>

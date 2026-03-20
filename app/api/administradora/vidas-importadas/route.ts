@@ -4,19 +4,25 @@ import { getCurrentTenantId } from "@/lib/tenant-query-helper"
 
 /**
  * GET /api/administradora/vidas-importadas?grupo_id=xxx
- * Lista vidas importadas para o grupo (usado na página de detalhes do grupo).
+ * GET /api/administradora/vidas-importadas?grupo_ids=id1,id2,id3
+ * Lista vidas importadas para um grupo ou multiplos grupos.
  */
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const grupoId = searchParams.get("grupo_id")
+    const grupoIdsRaw = searchParams.get("grupo_ids")
+    const grupoIds = (grupoIdsRaw || "")
+      .split(",")
+      .map((id) => id.trim())
+      .filter(Boolean)
     const administradoraId = searchParams.get("administradora_id")
     const somenteAtivos = ["1", "true", "sim"].includes(
       String(searchParams.get("somente_ativos") || "").toLowerCase()
     )
 
-    if (!grupoId && !administradoraId) {
-      return NextResponse.json({ error: "grupo_id ou administradora_id é obrigatório" }, { status: 400 })
+    if (!grupoId && grupoIds.length === 0 && !administradoraId) {
+      return NextResponse.json({ error: "grupo_id, grupo_ids ou administradora_id é obrigatório" }, { status: 400 })
     }
 
     let tenantId = await getCurrentTenantId()
@@ -45,7 +51,9 @@ export async function GET(request: NextRequest) {
         .order("tipo", { ascending: true })
         .order("nome", { ascending: true })
         .range(from, from + PAGE_SIZE - 1)
-      if (grupoId) {
+      if (grupoIds.length > 0) {
+        query = query.in("grupo_id", grupoIds)
+      } else if (grupoId) {
         query = query.eq("grupo_id", grupoId)
       }
       if (administradoraId) {

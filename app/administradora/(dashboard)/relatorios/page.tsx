@@ -281,7 +281,7 @@ function montarMapaTitularesPorCpf(beneficiarios: BeneficiarioRow[]): Map<string
 
 function getLinhasExportacao(
   beneficiarios: BeneficiarioRow[],
-  nomeGrupo: string,
+  nomesGruposPorId: Map<string, string>,
   colunasExtrasSelecionadas: string[],
   titularesPorCpf: Map<string, string>
 ) {
@@ -299,8 +299,9 @@ function getLinhasExportacao(
       tipoRaw === "dependente"
         ? nomeBase
         : nomeBase
+    const grupoNome = nomesGruposPorId.get(String(b?.grupo_id || "")) || "-"
     const linhaBase: Record<string, string | number> = {
-      Grupo: nomeGrupo,
+      Grupo: grupoNome,
       Nome: nomeComVinculo,
       CPF: formatarCpf(cpf),
       Tipo: tipo,
@@ -319,7 +320,7 @@ function getLinhasExportacao(
 export default function RelatoriosBeneficiariosPage() {
   const [administradoraId, setAdministradoraId] = useState<string | null>(null)
   const [grupos, setGrupos] = useState<GrupoBeneficiarios[]>([])
-  const [grupoId, setGrupoId] = useState("")
+  const [grupoIdsSelecionados, setGrupoIdsSelecionados] = useState<string[]>([])
   const [beneficiarios, setBeneficiarios] = useState<BeneficiarioRow[]>([])
   const [filtroStatus, setFiltroStatus] = useState<"todos" | "ativo" | "cancelado">("todos")
   const [filtroTipo, setFiltroTipo] = useState<"todos" | "titular" | "dependente">("todos")
@@ -348,8 +349,8 @@ export default function RelatoriosBeneficiariosPage() {
   }
 
   async function carregarBeneficiarios() {
-    if (!grupoId) {
-      toast.info("Selecione um grupo de beneficiários.")
+    if (grupoIdsSelecionados.length === 0) {
+      toast.info("Selecione ao menos um grupo de beneficiários.")
       return
     }
     if (!administradoraId) {
@@ -359,8 +360,9 @@ export default function RelatoriosBeneficiariosPage() {
 
     try {
       setLoading(true)
+      const grupoIdsQuery = grupoIdsSelecionados.join(",")
       const res = await fetch(
-        `/api/administradora/vidas-importadas?grupo_id=${encodeURIComponent(grupoId)}&administradora_id=${encodeURIComponent(administradoraId)}`,
+        `/api/administradora/vidas-importadas?grupo_ids=${encodeURIComponent(grupoIdsQuery)}&administradora_id=${encodeURIComponent(administradoraId)}`,
         { cache: "no-store" }
       )
       const data = await res.json()
@@ -373,7 +375,7 @@ export default function RelatoriosBeneficiariosPage() {
       setBeneficiarios(lista)
 
       if (lista.length === 0) {
-        toast.info("Nenhum beneficiário encontrado para este grupo.")
+        toast.info("Nenhum beneficiário encontrado para os grupos selecionados.")
       }
     } catch (error: any) {
       console.error("Erro ao carregar beneficiários do relatório:", error)
@@ -383,10 +385,11 @@ export default function RelatoriosBeneficiariosPage() {
     }
   }
 
-  const grupoSelecionado = useMemo(
-    () => grupos.find((g) => g.id === grupoId) || null,
-    [grupos, grupoId]
-  )
+  const nomesGruposPorId = useMemo(() => {
+    const mapa = new Map<string, string>()
+    grupos.forEach((g) => mapa.set(g.id, g.nome))
+    return mapa
+  }, [grupos])
 
   const beneficiariosFiltrados = useMemo(() => {
     return beneficiarios.filter((b) => {
@@ -414,11 +417,16 @@ export default function RelatoriosBeneficiariosPage() {
     () =>
       getLinhasExportacao(
         beneficiariosOrdenados,
-        grupoSelecionado?.nome || "-",
+        nomesGruposPorId,
         colunasExtrasSelecionadas,
         titularesPorCpf
       ),
-    [beneficiariosOrdenados, grupoSelecionado, colunasExtrasSelecionadas, titularesPorCpf]
+    [beneficiariosOrdenados, nomesGruposPorId, colunasExtrasSelecionadas, titularesPorCpf]
+  )
+
+  const nomesGruposSelecionados = useMemo(
+    () => grupos.filter((g) => grupoIdsSelecionados.includes(g.id)).map((g) => g.nome),
+    [grupos, grupoIdsSelecionados]
   )
 
   const totalTitulares = useMemo(
@@ -443,9 +451,13 @@ export default function RelatoriosBeneficiariosPage() {
       const ws = XLSX.utils.json_to_sheet(linhasExportacao)
       const wb = XLSX.utils.book_new()
       XLSX.utils.book_append_sheet(wb, ws, "Beneficiarios")
+      const sufixoGrupos =
+        nomesGruposSelecionados.length === 1
+          ? nomesGruposSelecionados[0]
+          : `multiplos-grupos-${nomesGruposSelecionados.length}`
       XLSX.writeFile(
         wb,
-        `relatorio-beneficiarios-${(grupoSelecionado?.nome || "grupo").replace(/\s+/g, "-").toLowerCase()}-${new Date().toISOString().slice(0, 10)}.xlsx`
+        `relatorio-beneficiarios-${sufixoGrupos.replace(/\s+/g, "-").toLowerCase()}-${new Date().toISOString().slice(0, 10)}.xlsx`
       )
     } catch (error: any) {
       toast.error("Erro ao exportar Excel: " + (error?.message || "erro desconhecido"))
@@ -474,7 +486,13 @@ export default function RelatoriosBeneficiariosPage() {
       y += 6
       doc.setFontSize(9)
       doc.setFont(undefined, "normal")
-      doc.text(`Grupo: ${grupoSelecionado?.nome || "-"}`, margin, y)
+      doc.text(
+        `Grupos: ${
+          nomesGruposSelecionados.length > 0 ? nomesGruposSelecionados.join(", ") : "-"
+        }`,
+        margin,
+        y
+      )
       y += 4
       doc.text(`Total: ${linhasExportacao.length} | Titulares: ${totalTitulares} | Dependentes: ${totalDependentes}`, margin, y)
       y += 4
@@ -514,8 +532,12 @@ export default function RelatoriosBeneficiariosPage() {
         y += 5
       })
 
+      const sufixoGrupos =
+        nomesGruposSelecionados.length === 1
+          ? nomesGruposSelecionados[0]
+          : `multiplos-grupos-${nomesGruposSelecionados.length}`
       doc.save(
-        `relatorio-beneficiarios-${(grupoSelecionado?.nome || "grupo").replace(/\s+/g, "-").toLowerCase()}-${new Date().toISOString().slice(0, 10)}.pdf`
+        `relatorio-beneficiarios-${sufixoGrupos.replace(/\s+/g, "-").toLowerCase()}-${new Date().toISOString().slice(0, 10)}.pdf`
       )
     } catch (error: any) {
       toast.error("Erro ao exportar PDF: " + (error?.message || "erro desconhecido"))
@@ -529,7 +551,7 @@ export default function RelatoriosBeneficiariosPage() {
       <div className="bg-white border-b border-gray-200 px-6 py-4">
         <h1 className="text-xl font-semibold text-gray-800">Relatório Layout</h1>
         <p className="text-sm text-gray-500 mt-1">
-          Selecione o grupo de beneficiários e exporte o relatório de layout em Excel ou PDF.
+          Selecione um ou mais grupos de beneficiários e exporte o relatório de layout em Excel ou PDF.
         </p>
       </div>
 
@@ -537,24 +559,67 @@ export default function RelatoriosBeneficiariosPage() {
         <div className="bg-white border border-gray-200 rounded-sm p-6 space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3">
             <div>
-              <label className="block text-xs text-gray-600 mb-1">Grupo de beneficiários</label>
-              <Select value={grupoId} onValueChange={setGrupoId}>
-                <SelectTrigger className="h-10 w-full rounded-md border border-gray-300 bg-background px-3 py-2 text-sm">
-                  <SelectValue placeholder="Selecione um grupo" />
-                </SelectTrigger>
-                <SelectContent>
-                  {grupos.map((grupo) => (
-                    <SelectItem key={grupo.id} value={grupo.id}>
-                      {grupo.nome}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <label className="block text-xs text-gray-600 mb-1">Grupos de beneficiários</label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className="h-10 w-full justify-between font-normal">
+                    <span className="truncate">
+                      {grupoIdsSelecionados.length === 0
+                        ? "Selecione um ou mais grupos"
+                        : `${grupoIdsSelecionados.length} grupo(s) selecionado(s)`}
+                    </span>
+                    <ChevronDown className="h-4 w-4 ml-2 opacity-60" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent align="start" className="w-[420px] max-w-[90vw] p-3">
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap gap-2 pb-2 border-b border-gray-200">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-xs"
+                        onClick={() => setGrupoIdsSelecionados(grupos.map((g) => g.id))}
+                      >
+                        Selecionar todos
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-xs"
+                        onClick={() => setGrupoIdsSelecionados([])}
+                      >
+                        Limpar
+                      </Button>
+                    </div>
+                    <div className="max-h-56 overflow-auto space-y-2 pr-1">
+                      {grupos.map((grupo) => {
+                        const checked = grupoIdsSelecionados.includes(grupo.id)
+                        return (
+                          <label key={grupo.id} className="flex items-center gap-2 text-sm cursor-pointer">
+                            <Checkbox
+                              checked={checked}
+                              onCheckedChange={(valor) => {
+                                setGrupoIdsSelecionados((prev) => {
+                                  if (valor) return prev.includes(grupo.id) ? prev : [...prev, grupo.id]
+                                  return prev.filter((id) => id !== grupo.id)
+                                })
+                              }}
+                            />
+                            <span>{grupo.nome}</span>
+                          </label>
+                        )
+                      })}
+                    </div>
+                  </div>
+                </PopoverContent>
+              </Popover>
             </div>
             <div className="flex items-end">
               <Button
                 onClick={carregarBeneficiarios}
-                disabled={loading || !grupoId}
+                disabled={loading || grupoIdsSelecionados.length === 0}
                 className="h-10 px-4 text-sm bg-gray-700 hover:bg-gray-800 text-white rounded-sm w-full md:w-auto"
               >
                 <RefreshCw className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`} />
