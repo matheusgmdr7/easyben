@@ -14,6 +14,16 @@ export interface LinhaFaturamento {
   mudanca_faixa: boolean
 }
 
+function limparDigitos(valor: string | null | undefined): string {
+  return String(valor || "").replace(/\D/g, "")
+}
+
+function normalizarCpf(valor: string | null | undefined): string {
+  const dig = limparDigitos(valor)
+  if (!dig) return ""
+  return dig.slice(-11).padStart(11, "0")
+}
+
 /**
  * GET /api/administradora/faturamento/grupo?grupo_id=xxx&referencia=YYYY-MM&produto_id=xxx (opcional)
  * Gera dados de faturamento para um grupo na referência (mês/ano).
@@ -79,7 +89,7 @@ export async function GET(request: NextRequest) {
     while (hasMore) {
       const { data: chunk } = await supabaseAdmin
         .from("vidas_importadas")
-        .select("id, nome, cpf, tipo, data_nascimento, idade, produto_id, valor_mensal, acomodacao, ativo")
+        .select("id, nome, cpf, cpf_titular, tipo, data_nascimento, idade, produto_id, valor_mensal, acomodacao, ativo")
         .eq("grupo_id", grupoId)
         .eq("tenant_id", tenantId)
         .order("tipo", { ascending: true })
@@ -114,17 +124,20 @@ export async function GET(request: NextRequest) {
       .eq("tenant_id", tenantId)
 
     const mapaProduto = new Map((produtos || []).map((p) => [p.id, (p.acomodacao === "Apartamento" ? "Apartamento" : "Enfermaria") as "Enfermaria" | "Apartamento" ]))
+    void mapaProduto
 
-    const linhas: LinhaFaturamento[] = []
+    const linhasComVinculo: Array<LinhaFaturamento & { cpf_norm: string; cpf_titular_norm: string }> = []
     for (const v of vidasAtivas) {
-      const idadeRef = calcularIdadeAteData(v.data_nascimento, { ano: refAno, mes: refMes }) ??
-        (typeof v.idade === "number" && !isNaN(v.idade) ? v.idade : null)
-
-      if (idadeRef == null) continue
+      const idadeBase =
+        typeof v.idade === "number"
+          ? v.idade
+          : (v.idade != null && !isNaN(Number(v.idade)) ? Number(v.idade) : null)
+      const idadeRefCalculada = calcularIdadeAteData(v.data_nascimento, { ano: refAno, mes: refMes })
+      const idadeRef = idadeRefCalculada ?? idadeBase
 
       const mesAnt = refMes === 1 ? 12 : refMes - 1
       const anoAnt = refMes === 1 ? refAno - 1 : refAno
-      const idadeAnt = calcularIdadeAteData(v.data_nascimento, { ano: anoAnt, mes: mesAnt })
+      const idadeAnt = calcularIdadeAteData(v.data_nascimento, { ano: anoAnt, mes: mesAnt }) ?? idadeBase
 
       let valor = 0
       let mudanca_faixa = false
@@ -132,35 +145,89 @@ export async function GET(request: NextRequest) {
       const acomodacaoVida = (v as { acomodacao?: string }).acomodacao === "Apartamento" ? "Apartamento" : "Enfermaria"
       const produtoParaPreco = usarTabelaProdutoSelecionado ? produtoIdFiltro! : (v.produto_id ? String(v.produto_id) : null)
 
-      if (produtoParaPreco) {
-        const valorRef = await obterValorProdutoPorIdade(produtoParaPreco, idadeRef, tenantId, acomodacaoVida)
+      const obterValorComFallback = async (produtoId: string, idade: number): Promise<number | null> => {
+        const acomodacaoAlternativa = acomodacaoVida === "Apartamento" ? "Enfermaria" : "Apartamento"
+
+        const tentativas: Array<{ tenant: string | null | undefined; acomodacao: "Enfermaria" | "Apartamento" }> = [
+          { tenant: tenantId, acomodacao: acomodacaoVida },
+          { tenant: tenantId, acomodacao: acomodacaoAlternativa },
+          { tenant: null, acomodacao: acomodacaoVida },
+          { tenant: null, acomodacao: acomodacaoAlternativa },
+        ]
+
+        for (const tentativa of tentativas) {
+          const valorTentativa = await obterValorProdutoPorIdade(
+            produtoId,
+            idade,
+            tentativa.tenant,
+            tentativa.acomodacao
+          )
+          if (valorTentativa != null && valorTentativa > 0) return valorTentativa
+        }
+        return null
+      }
+
+      if (produtoParaPreco && idadeRef != null) {
+        const valorRef = await obterValorComFallback(produtoParaPreco, idadeRef)
         valor = valorRef ?? (v.valor_mensal ? Number(v.valor_mensal) : 0)
 
         if (idadeAnt != null && idadeAnt !== idadeRef) {
-          const valorAnt = await obterValorProdutoPorIdade(produtoParaPreco, idadeAnt, tenantId, acomodacaoVida)
+          const valorAnt = await obterValorComFallback(produtoParaPreco, idadeAnt)
           if (valorAnt != null && Math.abs((valorAnt ?? 0) - valor) > 0.001) {
             mudanca_faixa = true
           }
         }
-      } else if (v.valor_mensal) {
-        valor = Number(v.valor_mensal)
+      } else {
+        valor = v.valor_mensal ? Number(v.valor_mensal) : 0
       }
 
       const acomodacao = produtoParaPreco ? acomodacaoVida : "-"
 
-      const cpfStr = v.cpf ? String(v.cpf).replace(/\D/g, "") : ""
+      const cpfStr = normalizarCpf(v.cpf ? String(v.cpf) : "")
       const cpfFormatado = cpfStr.length === 11 ? cpfStr.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4") : (v.cpf ? String(v.cpf) : "-")
-      linhas.push({
+      linhasComVinculo.push({
         id: v.id,
         cpf: cpfFormatado,
         tipo: (v.tipo === "dependente" ? "dependente" : "titular") as "titular" | "dependente",
         nome: v.nome || "-",
-        idade: idadeRef,
+        idade: idadeRef ?? 0,
         valor,
         acomodacao,
         mudanca_faixa,
+        cpf_norm: cpfStr,
+        cpf_titular_norm: normalizarCpf((v as { cpf_titular?: string | null }).cpf_titular || ""),
       })
     }
+
+    const ordenarPorNome = (a: { nome: string }, b: { nome: string }) =>
+      String(a.nome || "").localeCompare(String(b.nome || ""), "pt-BR", { sensitivity: "base" })
+
+    const titulares = linhasComVinculo.filter((l) => l.tipo === "titular").sort(ordenarPorNome)
+    const dependentes = linhasComVinculo.filter((l) => l.tipo === "dependente").sort(ordenarPorNome)
+    const titularesPorCpf = new Map(titulares.map((t) => [t.cpf_norm, t]))
+    const dependentesPorTitular = new Map<string, Array<LinhaFaturamento & { cpf_norm: string; cpf_titular_norm: string }>>()
+
+    dependentes.forEach((dep) => {
+      const cpfTit = dep.cpf_titular_norm
+      if (!cpfTit || !titularesPorCpf.has(cpfTit)) return
+      const lista = dependentesPorTitular.get(cpfTit) || []
+      lista.push(dep)
+      dependentesPorTitular.set(cpfTit, lista)
+    })
+
+    const linhasOrdenadasComVinculo: Array<LinhaFaturamento & { cpf_norm: string; cpf_titular_norm: string }> = []
+    titulares.forEach((titular) => {
+      linhasOrdenadasComVinculo.push(titular)
+      const deps = dependentesPorTitular.get(titular.cpf_norm) || []
+      linhasOrdenadasComVinculo.push(...deps.sort(ordenarPorNome))
+    })
+
+    const dependentesOrfaos = dependentes.filter((dep) => !dep.cpf_titular_norm || !titularesPorCpf.has(dep.cpf_titular_norm))
+    linhasOrdenadasComVinculo.push(...dependentesOrfaos)
+
+    const linhas: LinhaFaturamento[] = linhasOrdenadasComVinculo.map(
+      ({ cpf_norm: _cpfNorm, cpf_titular_norm: _cpfTitularNorm, ...linha }) => linha
+    )
 
     const total = linhas.reduce((s, l) => s + l.valor, 0)
 

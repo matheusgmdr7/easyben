@@ -170,6 +170,61 @@ function aplicarMascaraTelefoneParcial(valor: string): string {
   return `(${dig.slice(0, 2)}) ${dig.slice(2, 7)}-${dig.slice(7)}`
 }
 
+function aplicarMascaraCpfParcial(valor: string): string {
+  const dig = String(valor || "").replace(/\D/g, "").slice(0, 11)
+  if (dig.length <= 3) return dig
+  if (dig.length <= 6) return `${dig.slice(0, 3)}.${dig.slice(3)}`
+  if (dig.length <= 9) return `${dig.slice(0, 3)}.${dig.slice(3, 6)}.${dig.slice(6)}`
+  return `${dig.slice(0, 3)}.${dig.slice(3, 6)}.${dig.slice(6, 9)}-${dig.slice(9)}`
+}
+
+function normalizarCpf(valor: string | number | null | undefined): string {
+  const dig = String(valor ?? "").replace(/\D/g, "")
+  if (!dig) return ""
+  return dig.slice(-11).padStart(11, "0")
+}
+
+function formatarCpf(valor: string | number | null | undefined): string {
+  const cpf = normalizarCpf(valor)
+  if (!cpf) return ""
+  return `${cpf.slice(0, 3)}.${cpf.slice(3, 6)}.${cpf.slice(6, 9)}-${cpf.slice(9, 11)}`
+}
+
+function cpfTemBaseValida(valor: string | null | undefined): boolean {
+  const dig = String(valor || "").replace(/\D/g, "")
+  return dig.length === 10 || dig.length === 11
+}
+
+function linhaPreviewEstaVazia(l: LinhaPreview): boolean {
+  const valores = [
+    l.nome,
+    l.cpf,
+    l.nome_mae,
+    l.nome_pai,
+    l.tipo,
+    l.data_nascimento,
+    l.idade == null ? "" : String(l.idade),
+    l.sexo,
+    l.estado_civil,
+    l.parentesco,
+    l.cpf_titular,
+    l.identidade,
+    l.cns,
+    l.acomodacao,
+    l.cep,
+    l.logradouro,
+    l.numero,
+    l.complemento,
+    l.bairro,
+    l.cidade,
+    l.estado,
+    l.telefone,
+    l.email,
+    l.observacoes,
+  ]
+  return valores.every((v) => String(v ?? "").trim() === "")
+}
+
 type LinhaPreview = {
   nome: string
   cpf: string
@@ -203,6 +258,13 @@ type ContratoImportacao = {
   descricao?: string
   opcoes_dia_vencimento?: string[]
   opcoes_data_vigencia?: string[]
+}
+
+type ErrosLinhaPreview = {
+  cpf?: string
+  cpf_titular?: string
+  nome?: string
+  idade?: string
 }
 
 const CAMPOS_TABELA: (keyof LinhaPreview)[] = [
@@ -248,6 +310,8 @@ export default function ImportacaoVidasPage() {
   const [manualOpen, setManualOpen] = useState(false)
   const [incluindoManual, setIncluindoManual] = useState(false)
   const [consultandoCepManual, setConsultandoCepManual] = useState(false)
+  const [cpfsAtivosSistema, setCpfsAtivosSistema] = useState<string[]>([])
+  const [linhasExcluidasPreview, setLinhasExcluidasPreview] = useState<number[]>([])
   const [manualForm, setManualForm] = useState<Record<string, string>>({
     nome: "",
     cpf: "",
@@ -285,6 +349,40 @@ export default function ImportacaoVidasPage() {
     setAdministradoraId(adm.id)
     GruposBeneficiariosService.buscarTodos(adm.id).then(setGrupos).catch(() => toast.error("Erro ao carregar grupos"))
   }, [router])
+
+  useEffect(() => {
+    if (!administradoraId) {
+      setCpfsAtivosSistema([])
+      return
+    }
+
+    let ativo = true
+    fetch(
+      `/api/administradora/vidas-importadas?administradora_id=${encodeURIComponent(administradoraId)}&somente_ativos=true`,
+      { cache: "no-store" }
+    )
+      .then((r) => r.json())
+      .then((data) => {
+        if (!ativo) return
+        const lista = Array.isArray(data) ? data : []
+        const cpfs = Array.from(
+          new Set(
+            lista
+              .map((item: any) => normalizarCpf(item?.cpf))
+              .filter((cpf) => cpf.length === 11)
+          )
+        )
+        setCpfsAtivosSistema(cpfs)
+      })
+      .catch(() => {
+        if (!ativo) return
+        setCpfsAtivosSistema([])
+      })
+
+    return () => {
+      ativo = false
+    }
+  }, [administradoraId])
 
   // Contratos da administradora (com opções de vencimento/vigência)
   useEffect(() => {
@@ -375,6 +473,7 @@ export default function ImportacaoVidasPage() {
   const onFile = useCallback((f: File | null) => {
     setEditedOverrides({})
     setEditingCell(null)
+    setLinhasExcluidasPreview([])
     if (!f) {
       setCamposAdicionais([])
       setFile(null)
@@ -438,7 +537,7 @@ export default function ImportacaoVidasPage() {
       const acomodacao = ACOMODACAO_NORMALIZE[acomodacaoRaw] || (acomodacaoRaw.toLowerCase() === "apartamento" ? "Apartamento" : "Enfermaria")
       return {
         nome: getVal(row, "nome", mapCol),
-        cpf: (getVal(row, "cpf", mapCol) || "").replace(/\D/g, ""),
+        cpf: normalizarCpf(getVal(row, "cpf", mapCol)),
         nome_mae: getVal(row, "nome_mae", mapCol),
         nome_pai: getVal(row, "nome_pai", mapCol),
         tipo: tipo === "dependente" ? "dependente" : "titular",
@@ -452,7 +551,7 @@ export default function ImportacaoVidasPage() {
         sexo: getVal(row, "sexo", mapCol),
         estado_civil: getVal(row, "estado_civil", mapCol),
         parentesco: getVal(row, "parentesco", mapCol),
-        cpf_titular: tipo === "dependente" ? (getVal(row, "cpf_titular", mapCol) || "").replace(/\D/g, "") : "",
+        cpf_titular: tipo === "dependente" ? normalizarCpf(getVal(row, "cpf_titular", mapCol)) : "",
         identidade: getVal(row, "identidade", mapCol),
         cns: getVal(row, "cns", mapCol),
         acomodacao: acomodacao || "Enfermaria",
@@ -482,7 +581,7 @@ export default function ImportacaoVidasPage() {
           out.idade = ov === null || ov === "" || (typeof ov === "string" && !ov.trim()) ? null : (typeof ov === "number" ? ov : parseInt(String(ov), 10))
           if (isNaN(out.idade as number)) out.idade = null
         } else if (f === "cpf" || f === "cpf_titular") {
-          out[f] = String(ov ?? "").replace(/\D/g, "")
+          out[f] = normalizarCpf(String(ov ?? ""))
         } else if (f === "tipo") {
           const t = TIPO_NORMALIZE[String(ov).trim()] || String(ov).toLowerCase()
           out.tipo = t === "dependente" ? "dependente" : "titular"
@@ -503,6 +602,114 @@ export default function ImportacaoVidasPage() {
     })
   }, [linhasPreview, editedOverrides])
 
+  const obterValorBrutoComOverride = useCallback(
+    (i: number, field: keyof LinhaPreview): string => {
+      const k = `${i}:${field}`
+      if (editedOverrides[k] !== undefined) return String(editedOverrides[k] ?? "")
+      const row = rows[i] || {}
+      if (field === "cpf" || field === "cpf_titular") return String(getVal(row, field, mapCol) || "")
+      return String((linhasPreview[i]?.[field] as string | number | null | undefined) ?? "")
+    },
+    [editedOverrides, rows, getVal, mapCol, linhasPreview]
+  )
+
+  const obterCpfExibicaoPreview = useCallback(
+    (i: number, field: "cpf" | "cpf_titular"): string => {
+      const bruto = obterValorBrutoComOverride(i, field)
+      const dig = String(bruto || "").replace(/\D/g, "")
+      if (!dig) return "-"
+      if (dig.length < 11) return aplicarMascaraCpfParcial(dig)
+      return formatarCpf(dig)
+    },
+    [obterValorBrutoComOverride]
+  )
+
+  const validacaoPreview = useMemo(() => {
+    const porLinha: Record<number, ErrosLinhaPreview> = {}
+    const cpfsAtivosSet = new Set(cpfsAtivosSistema)
+    const linhasExcluidasSet = new Set(linhasExcluidasPreview)
+
+    const titularesPorCpf = new Map<string, number[]>()
+    linhasParaImportar.forEach((l, i) => {
+      if (linhasExcluidasSet.has(i)) return
+      if (linhaPreviewEstaVazia(l)) return
+
+      const tipo = String(l.tipo || "titular").toLowerCase()
+      const cpfBruto = obterValorBrutoComOverride(i, "cpf")
+      const cpfDig = String(cpfBruto || "").replace(/\D/g, "")
+
+      if (!String(l.nome || "").trim()) {
+        porLinha[i] = { ...(porLinha[i] || {}), nome: "Nome obrigatório" }
+      }
+
+      if (!(cpfDig.length === 10 || cpfDig.length === 11)) {
+        porLinha[i] = {
+          ...(porLinha[i] || {}),
+          cpf: `CPF inválido (${cpfDig.length} dígitos). Informe 11 dígitos.`,
+        }
+      }
+
+      const idadeValida = l.idade != null && Number.isFinite(Number(l.idade)) && Number(l.idade) >= 0 && Number(l.idade) <= 120
+      const dataNascValida = /^\d{4}-\d{1,2}-\d{1,2}$/.test(String(l.data_nascimento || ""))
+      if (!idadeValida && !dataNascValida) {
+        porLinha[i] = {
+          ...(porLinha[i] || {}),
+          idade: "Informe idade válida ou data de nascimento válida para calcular idade.",
+        }
+      }
+
+      if (tipo === "dependente") {
+        const cpfTitBruto = obterValorBrutoComOverride(i, "cpf_titular")
+        const cpfTitDig = String(cpfTitBruto || "").replace(/\D/g, "")
+        if (!(cpfTitDig.length === 10 || cpfTitDig.length === 11)) {
+          porLinha[i] = {
+            ...(porLinha[i] || {}),
+            cpf_titular: `CPF do titular inválido (${cpfTitDig.length} dígitos).`,
+          }
+        }
+      }
+
+      if (tipo === "titular" && cpfDig.length >= 10) {
+        const cpfNorm = normalizarCpf(cpfDig)
+        const lista = titularesPorCpf.get(cpfNorm) || []
+        lista.push(i)
+        titularesPorCpf.set(cpfNorm, lista)
+
+        if (cpfsAtivosSet.has(cpfNorm)) {
+          porLinha[i] = {
+            ...(porLinha[i] || {}),
+            cpf: "CPF de titular já cadastrado como ativo no sistema.",
+          }
+        }
+      }
+    })
+
+    titularesPorCpf.forEach((linhasIdx) => {
+      if (linhasIdx.length <= 1) return
+      linhasIdx.forEach((idx) => {
+        porLinha[idx] = {
+          ...(porLinha[idx] || {}),
+          cpf: "CPF duplicado entre titulares no arquivo.",
+        }
+      })
+    })
+
+    const linhasComErro = Object.keys(porLinha).length
+    const totalErros = Object.values(porLinha).reduce((acc, e) => acc + Object.keys(e).length, 0)
+
+    return { porLinha, linhasComErro, totalErros }
+  }, [linhasParaImportar, obterValorBrutoComOverride, cpfsAtivosSistema, linhasExcluidasPreview])
+
+  const linhasAtivasComIndice = useMemo(
+    () =>
+      linhasParaImportar
+        .map((linha, idxOriginal) => ({ linha, idxOriginal }))
+        .filter((x) => !linhasExcluidasPreview.includes(x.idxOriginal)),
+    [linhasParaImportar, linhasExcluidasPreview]
+  )
+
+  const possuiErrosCriticosImportacao = validacaoPreview.linhasComErro > 0
+
   const saveOverride = useCallback((i: number, field: keyof LinhaPreview, raw: string) => {
     const k = `${i}:${field}`
     if (field === "idade") {
@@ -521,18 +728,19 @@ export default function ImportacaoVidasPage() {
     produtoId &&
     diaVencimento &&
     dataVigencia &&
-    linhasParaImportar.length > 0 &&
-    linhasParaImportar.some((l) => (l.nome || "").trim().length > 0)
+    !possuiErrosCriticosImportacao &&
+    linhasAtivasComIndice.length > 0 &&
+    linhasAtivasComIndice.some(({ linha }) => (linha.nome || "").trim().length > 0)
 
   const handleImport = async () => {
     if (!podemImportar || !administradoraId) return
     setImporting(true)
     try {
-      const linhasComAdicionais = linhasParaImportar.map((l, i) => {
+      const linhasComAdicionais = linhasAtivasComIndice.map(({ linha: l, idxOriginal }) => {
         const dados_adicionais: Record<string, string> = {}
         camposAdicionais.forEach((c) => {
           if (c.label.trim() && c.coluna) {
-            const v = String(rows[i]?.[c.coluna] ?? "").trim()
+            const v = String(rows[idxOriginal]?.[c.coluna] ?? "").trim()
             if (v) dados_adicionais[c.label.trim()] = v
           }
         })
@@ -563,6 +771,7 @@ export default function ImportacaoVidasPage() {
       setMapCol({})
       setEditedOverrides({})
       setEditingCell(null)
+      setLinhasExcluidasPreview([])
       setGrupoId("")
       setContratoId("")
       setProdutoId("")
@@ -584,8 +793,8 @@ export default function ImportacaoVidasPage() {
     !!diaVencimento &&
     !!dataVigencia &&
     (manualForm.nome || "").trim().length > 0 &&
-    (manualForm.cpf || "").replace(/\D/g, "").length >= 11 &&
-    ((manualForm.tipo || "titular") !== "dependente" || (manualForm.cpf_titular || "").replace(/\D/g, "").length >= 11)
+    cpfTemBaseValida(manualForm.cpf || "") &&
+    ((manualForm.tipo || "titular") !== "dependente" || cpfTemBaseValida(manualForm.cpf_titular || ""))
 
   const buscarCepManual = async () => {
     const cepDig = (manualForm.cep || "").replace(/\D/g, "")
@@ -619,14 +828,14 @@ export default function ImportacaoVidasPage() {
       toast.error("Selecione grupo e produto para vincular o beneficiário.")
       return
     }
-    const cpfDigitos = (manualForm.cpf || "").replace(/\D/g, "")
-    if (cpfDigitos.length < 11) {
+    const cpfDigitos = normalizarCpf(manualForm.cpf || "")
+    if (!cpfTemBaseValida(manualForm.cpf || "") || !cpfDigitos) {
       toast.error("Informe um CPF válido para o beneficiário.")
       return
     }
     if ((manualForm.tipo || "titular") === "dependente") {
-      const cpfTit = (manualForm.cpf_titular || "").replace(/\D/g, "")
-      if (cpfTit.length < 11) {
+      const cpfTit = normalizarCpf(manualForm.cpf_titular || "")
+      if (!cpfTemBaseValida(manualForm.cpf_titular || "") || !cpfTit) {
         toast.error("Para dependente, informe o CPF do titular.")
         return
       }
@@ -646,7 +855,7 @@ export default function ImportacaoVidasPage() {
         sexo: (manualForm.sexo || "").trim(),
         estado_civil: (manualForm.estado_civil || "").trim(),
         parentesco: (manualForm.parentesco || "").trim(),
-        cpf_titular: (manualForm.cpf_titular || "").replace(/\D/g, ""),
+        cpf_titular: normalizarCpf(manualForm.cpf_titular || ""),
         identidade: (manualForm.identidade || "").trim(),
         cns: (manualForm.cns || "").trim(),
         acomodacao: manualForm.acomodacao || "Enfermaria",
@@ -882,11 +1091,18 @@ export default function ImportacaoVidasPage() {
                         onChange={(e) => {
                           let v = e.target.value
                           if (campo.id === "estado") v = v.toUpperCase()
+                          if (campo.id === "cpf" || campo.id === "cpf_titular") v = aplicarMascaraCpfParcial(v)
                           if (campo.id === "cep") v = aplicarMascaraCepParcial(v)
                           if (campo.id === "telefone") v = aplicarMascaraTelefoneParcial(v)
                           setManualForm((p) => ({ ...p, [campo.id]: v }))
                         }}
                         onBlur={() => {
+                          if (campo.id === "cpf" || campo.id === "cpf_titular") {
+                            setManualForm((p) => {
+                              const cpfNorm = normalizarCpf(p[campo.id] || "")
+                              return { ...p, [campo.id]: cpfNorm ? formatarCpf(cpfNorm) : "" }
+                            })
+                          }
                           if (campo.id === "cep") {
                             buscarCepManual()
                             setManualForm((p) => ({ ...p, cep: formatarCEP(p.cep || "") || p.cep || "" }))
@@ -1145,6 +1361,34 @@ export default function ImportacaoVidasPage() {
 
                 <div>
                   <h3 className="text-sm font-medium text-gray-800 mb-2">Prévia ({linhasParaImportar.length} linhas) — atualiza ao alterar o mapeamento. Duplo-clique para editar.</h3>
+                  <div className="mb-3 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-700">
+                    {validacaoPreview.linhasComErro > 0 ? (
+                      <span className="text-red-700">
+                        Foram encontrados {validacaoPreview.totalErros} erro(s) em {validacaoPreview.linhasComErro} linha(s). Corrija os campos destacados em vermelho antes de importar.
+                      </span>
+                    ) : (
+                      <span className="text-emerald-700">Prévia validada: não há erros críticos de CPF/nome para importação.</span>
+                    )}
+                  </div>
+                  <div className="mb-3 flex items-center justify-between gap-2">
+                    <p className="text-xs text-gray-500">
+                      Linhas ativas para importação: <strong>{linhasAtivasComIndice.length}</strong>
+                      {linhasExcluidasPreview.length > 0 ? (
+                        <span> | Excluídas na prévia: <strong>{linhasExcluidasPreview.length}</strong></span>
+                      ) : null}
+                    </p>
+                    {linhasExcluidasPreview.length > 0 && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="h-8 text-xs"
+                        onClick={() => setLinhasExcluidasPreview([])}
+                      >
+                        Restaurar linhas excluídas
+                      </Button>
+                    )}
+                  </div>
                   <div className="overflow-x-auto max-h-[340px] overflow-y-auto border border-gray-200 rounded-md">
                     <table className="w-full text-sm border-collapse min-w-[800px]">
                       <thead className="sticky top-0 bg-gray-100 z-10">
@@ -1157,17 +1401,38 @@ export default function ImportacaoVidasPage() {
                               {c.label.trim() || "(campo adicional)"}
                             </th>
                           ))}
+                          <th className="px-2 py-2 text-left font-medium text-gray-700 whitespace-nowrap border-l border-gray-200">
+                            Ação
+                          </th>
                         </tr>
                       </thead>
                       <tbody>
-                        {linhasParaImportar.map((l, i) => (
+                        {linhasAtivasComIndice.map(({ linha: l, idxOriginal: i }) => (
                           <tr key={i} className="border-t border-gray-200 hover:bg-gray-50/50">
                             {CAMPOS_TABELA.map((field) => {
                               const isEditing = editingCell?.i === i && editingCell?.field === field
-                              const displayVal = field === "idade" ? (l.idade != null ? String(l.idade) : "-") : (l[field] || "-")
+                              const errosLinha = validacaoPreview.porLinha[i] || {}
+                              const temErroNoCampo =
+                                (field === "nome" && !!errosLinha.nome) ||
+                                (field === "cpf" && !!errosLinha.cpf) ||
+                                (field === "cpf_titular" && !!errosLinha.cpf_titular) ||
+                                (field === "idade" && !!errosLinha.idade) ||
+                                (field === "data_nascimento" && !!errosLinha.idade)
+                              const displayVal =
+                                field === "idade"
+                                  ? (l.idade != null ? String(l.idade) : "-")
+                                  : field === "cpf" || field === "cpf_titular"
+                                    ? (() => {
+                                        const bruto = obterValorBrutoComOverride(i, field)
+                                        const dig = String(bruto || "").replace(/\D/g, "")
+                                        if (!dig) return "-"
+                                        if (dig.length === 10 || dig.length === 11) return formatarCpf(normalizarCpf(dig))
+                                        return aplicarMascaraCpfParcial(dig)
+                                      })()
+                                    : (l[field] || "-")
                               const editVal = field === "idade" ? (l.idade != null ? String(l.idade) : "") : (l[field] || "")
                               return (
-                                <td key={field} className="px-3 py-1.5 align-top">
+                                <td key={field} className={`px-3 py-1.5 align-top ${temErroNoCampo ? "bg-red-50" : ""}`}>
                                   {isEditing ? (
                                     <input
                                       autoFocus
@@ -1184,13 +1449,27 @@ export default function ImportacaoVidasPage() {
                                     <span
                                       role="button"
                                       tabIndex={0}
-                                      className="block min-h-[1.25rem] cursor-text rounded px-0.5 -mx-0.5 hover:bg-gray-100"
+                                      className={`block min-h-[1.25rem] cursor-text rounded px-0.5 -mx-0.5 ${
+                                        temErroNoCampo ? "text-red-700 hover:bg-red-100" : "hover:bg-gray-100"
+                                      }`}
                                       title="Duplo-clique para editar"
                                       onDoubleClick={() => setEditingCell({ i, field })}
                                       onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setEditingCell({ i, field }) } }}
                                     >
                                       {displayVal}
                                     </span>
+                                  )}
+                                  {field === "nome" && errosLinha.nome && (
+                                    <p className="mt-1 text-[11px] text-red-700">{errosLinha.nome}</p>
+                                  )}
+                                  {field === "cpf" && errosLinha.cpf && (
+                                    <p className="mt-1 text-[11px] text-red-700">{errosLinha.cpf}</p>
+                                  )}
+                                  {field === "cpf_titular" && errosLinha.cpf_titular && (
+                                    <p className="mt-1 text-[11px] text-red-700">{errosLinha.cpf_titular}</p>
+                                  )}
+                                  {(field === "idade" || field === "data_nascimento") && errosLinha.idade && (
+                                    <p className="mt-1 text-[11px] text-red-700">{errosLinha.idade}</p>
                                   )}
                                 </td>
                               )
@@ -1203,6 +1482,21 @@ export default function ImportacaoVidasPage() {
                                 </td>
                               )
                             })}
+                            <td className="px-3 py-1.5 align-top border-l border-gray-100">
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                className="h-7 text-xs text-red-700 border-red-200 hover:bg-red-50"
+                                onClick={() =>
+                                  setLinhasExcluidasPreview((prev) =>
+                                    prev.includes(i) ? prev : [...prev, i]
+                                  )
+                                }
+                              >
+                                Excluir linha
+                              </Button>
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -1337,6 +1631,11 @@ export default function ImportacaoVidasPage() {
                     {importing ? "Importando..." : "Importar e salvar"}
                   </button>
                 </div>
+                {possuiErrosCriticosImportacao && (
+                  <p className="mt-2 text-xs text-red-700 text-right">
+                    Importação bloqueada até correção dos campos em vermelho na prévia.
+                  </p>
+                )}
               </div>
             </section>
           </>

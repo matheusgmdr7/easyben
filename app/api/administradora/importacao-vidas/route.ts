@@ -58,6 +58,12 @@ function parseDataNascimento(s: string | number | null | undefined): string | nu
   return null
 }
 
+function normalizarCpf(valor: string | number | null | undefined): string {
+  const digitos = String(valor ?? "").replace(/\D/g, "")
+  if (!digitos) return ""
+  return digitos.slice(-11).padStart(11, "0")
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
@@ -105,6 +111,12 @@ export async function POST(request: NextRequest) {
     if (!Array.isArray(linhas) || linhas.length === 0) {
       return NextResponse.json({ error: "Nenhuma linha para importar" }, { status: 400 })
     }
+
+    const linhasNormalizadas = linhas.map((l) => ({
+      ...l,
+      cpf: normalizarCpf(l.cpf),
+      cpf_titular: normalizarCpf(l.cpf_titular),
+    }))
     const diaVencimentoNorm = String(dia_vencimento || "").replace(/\D/g, "").padStart(2, "0").slice(-2)
     if (!diaVencimentoNorm || Number(diaVencimentoNorm) < 1 || Number(diaVencimentoNorm) > 31) {
       return NextResponse.json({ error: "dia_vencimento é obrigatório e deve estar entre 01 e 31" }, { status: 400 })
@@ -114,19 +126,64 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "vigência é obrigatória" }, { status: 400 })
     }
 
+    const errosCpf: { linha: number; nome: string }[] = []
     const errosDependente: { linha: number; nome: string }[] = []
-    linhas.forEach((l, idx) => {
+    const errosIdade: { linha: number; nome: string }[] = []
+    linhasNormalizadas.forEach((l, idx) => {
+      const cpf = normalizarCpf(l.cpf)
+      if (!cpf || cpf.length !== 11) {
+        errosCpf.push({ linha: idx + 1, nome: String(l.nome ?? "").trim() || "(sem nome)" })
+      }
+
+      const dataNasc = parseDataNascimento(l.data_nascimento)
+      const idadeInformada = typeof l.idade === "number" && !isNaN(l.idade) ? l.idade : null
+      const idadeCalculada = idadeInformada ?? calcularIdade(dataNasc)
+      if (idadeCalculada == null || idadeCalculada < 0 || idadeCalculada > 120) {
+        errosIdade.push({ linha: idx + 1, nome: String(l.nome ?? "").trim() || "(sem nome)" })
+      }
+
       const tipo = (l.tipo || "titular").toString().toLowerCase()
       if (tipo === "dependente") {
-        const cpfTit = l.cpf_titular ? String(l.cpf_titular).replace(/\D/g, "").trim() : ""
-        if (!cpfTit || cpfTit.length < 11) {
+        const cpfTit = normalizarCpf(l.cpf_titular)
+        if (!cpfTit || cpfTit.length !== 11) {
           errosDependente.push({ linha: idx + 1, nome: String(l.nome ?? "").trim() || "(sem nome)" })
         }
       }
     })
+    if (errosCpf.length > 0) {
+      const msg = `CPF é obrigatório e deve conter 11 dígitos (aceita ajuste com zero à esquerda quando necessário). Linhas com CPF inválido: ${errosCpf.map((e) => `${e.linha} (${e.nome})`).join("; ")}`
+      return NextResponse.json({ error: msg }, { status: 400 })
+    }
     if (errosDependente.length > 0) {
       const msg = `CPF do titular é obrigatório para dependentes. Linhas sem CPF do titular: ${errosDependente.map((e) => `${e.linha} (${e.nome})`).join("; ")}`
       return NextResponse.json({ error: msg }, { status: 400 })
+    }
+    if (errosIdade.length > 0) {
+      const msg = `Idade não pôde ser definida. Informe idade válida ou data de nascimento válida. Linhas com erro: ${errosIdade.map((e) => `${e.linha} (${e.nome})`).join("; ")}`
+      return NextResponse.json({ error: msg }, { status: 400 })
+    }
+
+    const titularesPorCpf = new Map<string, number[]>()
+    linhasNormalizadas.forEach((l, idx) => {
+      const tipo = String(l.tipo || "titular").toLowerCase()
+      if (tipo !== "titular") return
+      const cpf = normalizarCpf(l.cpf)
+      if (!cpf) return
+      const linhasDoCpf = titularesPorCpf.get(cpf) || []
+      linhasDoCpf.push(idx + 1)
+      titularesPorCpf.set(cpf, linhasDoCpf)
+    })
+
+    const duplicadosTitular = Array.from(titularesPorCpf.entries()).filter(([, linhasCpf]) => linhasCpf.length > 1)
+    if (duplicadosTitular.length > 0) {
+      const detalhe = duplicadosTitular
+        .slice(0, 20)
+        .map(([cpf, linhasCpf]) => `${cpf} (linhas ${linhasCpf.join(", ")})`)
+        .join("; ")
+      return NextResponse.json(
+        { error: `Importação bloqueada: há CPF repetido para mais de um titular no arquivo. Corrija e tente novamente. ${detalhe}` },
+        { status: 400 }
+      )
     }
 
     // Usar sempre o tenant da administradora para evitar imports em contexto incorreto.
@@ -141,6 +198,46 @@ export async function POST(request: NextRequest) {
       tenantId = administradora.tenant_id
     } else {
       tenantId = await getCurrentTenantId()
+    }
+
+    const cpfsImportados = Array.from(
+      new Set(
+        linhasNormalizadas
+          .map((l) => normalizarCpf(l.cpf))
+          .filter((cpf) => cpf.length === 11)
+      )
+    )
+
+    if (cpfsImportados.length > 0) {
+      const { data: existentes, error: erroExistentes } = await supabaseAdmin
+        .from("vidas_importadas")
+        .select("id, nome, cpf, tipo, ativo")
+        .eq("administradora_id", administradora_id)
+        .eq("tenant_id", tenantId)
+        .in("cpf", cpfsImportados)
+        .neq("ativo", false)
+
+      if (erroExistentes) {
+        return NextResponse.json(
+          { error: `Erro ao validar CPFs existentes: ${erroExistentes.message}` },
+          { status: 500 }
+        )
+      }
+
+      if ((existentes || []).length > 0) {
+        const repetidos = (existentes || [])
+          .slice(0, 25)
+          .map((v) => `${normalizarCpf(v.cpf)} (${String(v.nome || "-")} - ${String(v.tipo || "-")})`)
+          .join("; ")
+        return NextResponse.json(
+          {
+            error:
+              `Importação bloqueada: já existem beneficiários ativos com os mesmos CPFs. ` +
+              `Evite duplicidade de cadastro e use edição/reativação quando necessário. ${repetidos}`,
+          },
+          { status: 409 }
+        )
+      }
     }
 
     // Validar se o grupo pertence à administradora no tenant resolvido.
@@ -220,7 +317,7 @@ export async function POST(request: NextRequest) {
     }
 
     const resolved = await Promise.all(
-      linhas.map(async (l) => {
+      linhasNormalizadas.map(async (l) => {
         const dataNasc = parseDataNascimento(l.data_nascimento)
         const idade = typeof l.idade === "number" && !isNaN(l.idade)
           ? l.idade
@@ -243,7 +340,7 @@ export async function POST(request: NextRequest) {
           grupo_id,
           produto_id: produto_id || null,
           nome: String(l.nome ?? "").trim(),
-          cpf: l.cpf ? String(l.cpf).replace(/\D/g, "").slice(0, 14) || null : null,
+          cpf: normalizarCpf(l.cpf) || null,
           nome_mae: l.nome_mae ? String(l.nome_mae).trim() || null : null,
           nome_pai: l.nome_pai ? String(l.nome_pai).trim().slice(0, 255) || null : null,
           tipo: (l.tipo || "titular").toLowerCase() === "dependente" ? "dependente" : "titular",
@@ -252,7 +349,10 @@ export async function POST(request: NextRequest) {
           sexo: l.sexo ? String(l.sexo).trim().slice(0, 20) || null : null,
           estado_civil: l.estado_civil ? String(l.estado_civil).trim().slice(0, 50) || null : null,
           parentesco: l.parentesco ? String(l.parentesco).trim().slice(0, 50) || null : null,
-          cpf_titular: l.cpf_titular ? String(l.cpf_titular).replace(/\D/g, "").slice(0, 14) || null : null,
+          cpf_titular:
+            String(l.tipo || "titular").toLowerCase() === "dependente"
+              ? normalizarCpf(l.cpf_titular) || null
+              : null,
           identidade: l.identidade ? String(l.identidade).trim().slice(0, 20) || null : null,
           cns: l.cns ? String(l.cns).trim().slice(0, 20) || null : null,
           acomodacao,
