@@ -46,6 +46,49 @@ async function carregarVidasGrupo(
 }
 
 /**
+ * A view vw_clientes_administradoras_completo exige JOIN em propostas; clientes sem proposta ou
+ * fora da view precisam de nome vindo direto da proposta ou da vida importada (mesmo cliente_administradora_id).
+ */
+function resolveClienteNomeECampos(
+  ca: RegistroGenerico,
+  vw: RegistroGenerico | undefined,
+  propostaById: Map<string, RegistroGenerico>,
+  nomePorVidaClienteAdmId: Map<string, string>
+): { nome: string; email?: string; cpf?: string } {
+  const pid = ca.proposta_id != null && String(ca.proposta_id).trim() !== "" ? String(ca.proposta_id) : ""
+  const prop = pid ? propostaById.get(pid) : undefined
+
+  let nome = ""
+  if (vw?.cliente_nome != null && String(vw.cliente_nome).trim()) {
+    nome = String(vw.cliente_nome).trim()
+  } else if (prop?.nome != null && String((prop as RegistroGenerico).nome).trim()) {
+    nome = String((prop as RegistroGenerico).nome).trim()
+  } else {
+    const caId = String(ca.id || "")
+    if (caId && nomePorVidaClienteAdmId.has(caId)) {
+      nome = nomePorVidaClienteAdmId.get(caId) || ""
+    }
+  }
+  if (!nome) nome = "Cliente"
+
+  let email: string | undefined
+  if (vw?.cliente_email != null && String(vw.cliente_email).trim()) {
+    email = String(vw.cliente_email).trim()
+  } else if (prop && (prop as RegistroGenerico).email != null && String((prop as RegistroGenerico).email).trim()) {
+    email = String((prop as RegistroGenerico).email).trim()
+  }
+
+  let cpf: string | undefined
+  if (vw?.cliente_cpf != null && String(vw.cliente_cpf).trim()) {
+    cpf = String(vw.cliente_cpf).replace(/\D/g, "")
+  } else if (prop && (prop as RegistroGenerico).cpf != null && String((prop as RegistroGenerico).cpf).trim()) {
+    cpf = String((prop as RegistroGenerico).cpf).replace(/\D/g, "")
+  }
+
+  return { nome, email, cpf }
+}
+
+/**
  * GET /api/administradora/grupos/[id]/clientes-fatura?administradora_id=xxx
  * Retorna apenas TITULARES do grupo para geração de fatura (dependentes ficam vinculados ao titular).
  * Para vidas importadas: valor_mensal = titular + soma dos dependentes vinculados (cpf_titular).
@@ -154,6 +197,18 @@ export async function GET(
       for (const p of produtosRes.data || []) {
         produtosMap.set(String((p as any).id), String((p as any).nome || ""))
       }
+    }
+
+    /** Nome do titular na vida importada por UUID de clientes_administradoras (fallback quando a view não traz a linha). */
+    const nomePorVidaClienteAdmId = new Map<string, string>()
+    for (const v of vidas) {
+      const va = v as RegistroGenerico
+      if (tipo(va) === "dependente") continue
+      const caIdRaw = va.cliente_administradora_id
+      if (caIdRaw == null || String(caIdRaw).trim() === "") continue
+      const key = String(caIdRaw).trim()
+      const nm = typeof va.nome === "string" ? va.nome.trim() : ""
+      if (nm) nomePorVidaClienteAdmId.set(key, nm)
     }
 
     // Só listar titulares (dependentes entram no valor/descrição do titular)
@@ -315,17 +370,41 @@ export async function GET(
       }
     }
 
+    const propostaIdsUnicos = Array.from(
+      new Set(
+        todosClientesAdm
+          .map((x) => x.proposta_id)
+          .filter((x) => x != null && String(x).trim() !== "")
+          .map((x) => String(x))
+      )
+    )
+    const propostaById = new Map<string, RegistroGenerico>()
+    if (propostaIdsUnicos.length > 0) {
+      let pr = await supabaseAdmin
+        .from("propostas")
+        .select("id, nome, email, cpf")
+        .in("id", propostaIdsUnicos)
+      if (pr.error) {
+        pr = await supabaseAdmin.from("propostas").select("id, nome, email, cpf").in("id", propostaIdsUnicos)
+      }
+      for (const row of pr.data || []) {
+        const id = String((row as RegistroGenerico).id || "")
+        if (id) propostaById.set(id, row as RegistroGenerico)
+      }
+    }
+
     for (const v of vinculos || []) {
       if (v.cliente_tipo === "cliente_administradora") {
         const ca = clientesAdmMap.get(String(v.cliente_id || ""))
         if (!ca) continue
         const vw = viewMap.get(String(ca.id || ""))
+        const r = resolveClienteNomeECampos(ca, vw, propostaById, nomePorVidaClienteAdmId)
         resultado.push({
           id: String(ca.id || ""),
           cliente_administradora_id: String(ca.id || ""),
-          cliente_nome: String(vw?.cliente_nome || "Cliente"),
-          cliente_email: vw?.cliente_email ? String(vw.cliente_email) : undefined,
-          cliente_cpf: vw?.cliente_cpf ? String(vw.cliente_cpf) : undefined,
+          cliente_nome: r.nome,
+          cliente_email: r.email,
+          cliente_cpf: r.cpf,
           valor_mensal: Number(vw?.valor_mensal ?? ca.valor_mensal ?? 0),
           dia_vencimento: ca.dia_vencimento ? String(ca.dia_vencimento).padStart(2, "0") : undefined,
         })
@@ -335,12 +414,13 @@ export async function GET(
         const ca = clientesAdmPorPropostaMap.get(String(v.cliente_id || ""))
         if (!ca) continue
         const vw = viewMap.get(String(ca.id || ""))
+        const r = resolveClienteNomeECampos(ca, vw, propostaById, nomePorVidaClienteAdmId)
         resultado.push({
           id: String(ca.id || ""),
           cliente_administradora_id: String(ca.id || ""),
-          cliente_nome: String(vw?.cliente_nome || "Cliente"),
-          cliente_email: vw?.cliente_email ? String(vw.cliente_email) : undefined,
-          cliente_cpf: vw?.cliente_cpf ? String(vw.cliente_cpf) : undefined,
+          cliente_nome: r.nome,
+          cliente_email: r.email,
+          cliente_cpf: r.cpf,
           valor_mensal: Number(vw?.valor_mensal ?? ca.valor_mensal ?? 0),
           dia_vencimento: ca.dia_vencimento ? String(ca.dia_vencimento).padStart(2, "0") : undefined,
         })
