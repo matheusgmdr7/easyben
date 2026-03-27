@@ -14,7 +14,8 @@ import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { AlertTriangle, ArrowLeft, Download, ExternalLink, Loader2, Pencil, Save, Trash2, X } from "lucide-react"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { AlertTriangle, ArrowLeft, Download, ExternalLink, Info, Loader2, Pencil, Save, Trash2, X } from "lucide-react"
 import { formatarData, formatarMoeda, formatarTelefone } from "@/utils/formatters"
 import { toast } from "sonner"
 
@@ -135,6 +136,12 @@ export default function BeneficiarioDetalhesPage() {
     if (t.includes("apart")) return "Apartamento"
     if (t.includes("enferm")) return "Enfermaria"
     return null
+  }
+
+  /** Para comparação titular vs dependente (null se não for possível inferir). */
+  function obterAcomodacaoNormalizada(dados: any, produtoFallback?: string | null): "Apartamento" | "Enfermaria" | null {
+    const v = obterAcomodacaoBeneficiario(dados, produtoFallback)
+    return v === "Apartamento" || v === "Enfermaria" ? v : null
   }
 
   function obterAcomodacaoBeneficiario(dados: any, produtoFallback?: string | null): string {
@@ -455,7 +462,7 @@ export default function BeneficiarioDetalhesPage() {
         if (v?.tipo === "titular" && v?.cpf) {
           const { data: deps } = await supabase
             .from("vidas_importadas")
-            .select("id, nome, cpf, tipo, data_nascimento, parentesco, valor_mensal")
+            .select("id, nome, cpf, tipo, data_nascimento, parentesco, valor_mensal, acomodacao, produto_id, idade, dados_adicionais")
             .eq("grupo_id", grupoId)
             .eq("cpf_titular", String(v.cpf).replace(/\D/g, ""))
             .eq("tipo", "dependente")
@@ -733,10 +740,10 @@ export default function BeneficiarioDetalhesPage() {
     const dados = clienteSelecionado.cliente_tipo === "vida_importada"
       ? (clienteSelecionado._vida || clienteSelecionado.cliente)
       : clienteSelecionado.cliente
-    const valorAtual =
-      valorBaseFatura != null
-        ? normalizarEscalaValorMonetario(valorBaseFatura)
-        : normalizarEscalaValorMonetario(dados?.valor_mensal ?? contrato?.valor_mensal ?? valorProdutoCliente ?? null)
+    /** Sempre valor do titular neste campo — o total da família vem de `valorBaseFatura` / soma (clientes-fatura). */
+    const valorAtual = normalizarEscalaValorMonetario(
+      dados?.valor_mensal ?? contrato?.valor_mensal ?? valorProdutoCliente ?? null
+    )
     setFormContrato({
       valor_mensal: valorAtual != null && Number.isFinite(Number(valorAtual)) ? Number(valorAtual).toFixed(2) : "",
       data_vigencia: (() => {
@@ -751,7 +758,7 @@ export default function BeneficiarioDetalhesPage() {
       })(),
     })
     setEditandoContrato(false)
-  }, [clienteSelecionado, contrato, valorProdutoCliente, valorBaseFatura, diaVencimentoVinculado])
+  }, [clienteSelecionado, contrato, valorProdutoCliente, diaVencimentoVinculado])
 
   useEffect(() => {
     if (!clienteSelecionado) return
@@ -789,6 +796,65 @@ export default function BeneficiarioDetalhesPage() {
       })
     })
   }, [editandoContrato, clienteSelecionado])
+
+  const dadosVidaTitular = useMemo(() => {
+    if (!clienteSelecionado || clienteSelecionado.cliente_tipo !== "vida_importada") return null
+    return (clienteSelecionado._vida || clienteSelecionado.cliente || null) as Record<string, unknown> | null
+  }, [clienteSelecionado])
+
+  /** Soma titular + dependentes; prioriza o total da API de faturamento quando disponível. */
+  const totalFamiliaFaturamento = useMemo(() => {
+    if (valorBaseFatura != null) {
+      const v = normalizarEscalaValorMonetario(valorBaseFatura)
+      return v != null ? v : null
+    }
+    if (!dadosVidaTitular) return null
+    let t = Number(normalizarEscalaValorMonetario((dadosVidaTitular as { valor_mensal?: unknown }).valor_mensal) ?? 0)
+    for (const dep of dependentes) {
+      t += Number(normalizarEscalaValorMonetario(dep?.valor_mensal) ?? 0)
+    }
+    return t > 0 ? t : null
+  }, [valorBaseFatura, dadosVidaTitular, dependentes])
+
+  /** Enquanto edita, estima total com o valor digitado no titular + dependentes atuais na lista. */
+  const totalFamiliaEstimadoEdicao = useMemo(() => {
+    if (!editandoContrato || !dadosVidaTitular) return null
+    const vt = normalizarEscalaValorMonetario(parseValorMoeda(formContrato.valor_mensal))
+    if (vt == null) return null
+    let sum = vt
+    for (const dep of dependentes) {
+      sum += Number(normalizarEscalaValorMonetario(dep?.valor_mensal) ?? 0)
+    }
+    return sum
+  }, [editandoContrato, dadosVidaTitular, formContrato.valor_mensal, dependentes])
+
+  /** Cadastros antigos: dependente com produto ou acomodação divergente do titular. */
+  const alertaInconsistenciaTitularDependentes = useMemo(() => {
+    if (!clienteSelecionado || clienteSelecionado.cliente_tipo !== "vida_importada") return null
+    const vida = dadosVidaTitular as Record<string, unknown> | null
+    if (!vida || String(vida.tipo || "titular").toLowerCase() === "dependente") return null
+    if (!dependentes.length) return null
+
+    const aTit = obterAcomodacaoNormalizada(vida, produtoCliente?.nome)
+    const pidTit = String(vida?.produto_id ?? "").trim()
+    const linhas: { nome: string; detalhes: string }[] = []
+
+    for (const dep of dependentes) {
+      const partes: string[] = []
+      const aDep = obterAcomodacaoNormalizada(dep, null)
+      if (aTit != null && aDep != null && aTit !== aDep) {
+        partes.push(`acomodação do dependente (${aDep}) ≠ acomodação do titular (${aTit})`)
+      }
+      const pidDep = String(dep?.produto_id ?? "").trim()
+      if (pidTit && pidDep && pidTit !== pidDep) {
+        partes.push("produto vinculado diferente do titular")
+      }
+      if (partes.length) {
+        linhas.push({ nome: String(dep?.nome || "Dependente"), detalhes: partes.join(" · ") })
+      }
+    }
+    return linhas.length ? linhas : null
+  }, [clienteSelecionado, dadosVidaTitular, dependentes, produtoCliente?.nome])
 
   async function buscarCep() {
     try {
@@ -990,14 +1056,23 @@ export default function BeneficiarioDetalhesPage() {
   async function recalcularValorFaixaContrato() {
     if (!clienteSelecionado) return
     const vida = clienteSelecionado.cliente_tipo === "vida_importada" ? (clienteSelecionado._vida || clienteSelecionado.cliente) : null
+    if (!vida) {
+      toast.error("Recálculo por faixa etária com dependentes está disponível para beneficiários importados (vida).")
+      return
+    }
     const produtoId = String(produtoVinculoId || vida?.produto_id || "").trim()
     if (!produtoId) {
       toast.error("Beneficiário sem produto vinculado para cálculo por faixa etária.")
       return
     }
-    const idade = Number(vida?.idade) || calcularIdadeLocal(vida?.data_nascimento)
-    if (idade == null) {
-      toast.error("Não foi possível identificar a idade do beneficiário.")
+    const idadeTitular = Number(vida?.idade) || calcularIdadeLocal(vida?.data_nascimento)
+    if (idadeTitular == null || !Number.isFinite(idadeTitular)) {
+      toast.error("Não foi possível identificar a idade do titular.")
+      return
+    }
+    const adm = getAdministradoraLogada()
+    if (!adm?.id) {
+      toast.error("Administradora não identificada.")
       return
     }
     try {
@@ -1007,22 +1082,102 @@ export default function BeneficiarioDetalhesPage() {
         : null
       const acomodacaoDetectada = obterAcomodacaoBeneficiario(vida, produtoCliente?.nome)
       const acomodacao = (acomodacaoForm || (acomodacaoDetectada === "Apartamento" ? "Apartamento" : "Enfermaria")) as "Apartamento" | "Enfermaria"
-      const adm = getAdministradoraLogada()
-      const qAdmin = adm?.id ? `&administradora_id=${encodeURIComponent(adm.id)}` : ""
-      const res = await fetch(
-        `/api/administradora/produto/${encodeURIComponent(produtoId)}/valor?idade=${encodeURIComponent(String(idade))}&acomodacao=${encodeURIComponent(acomodacao)}${qAdmin}`
-      )
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(data?.error || "Erro ao calcular valor por faixa")
-      const valor = data?.valor != null ? Number(data.valor) : NaN
-      const valorNormalizado = normalizarEscalaValorMonetario(valor)
-      if (valorNormalizado == null || valorNormalizado <= 0) {
-        const detalhe = data?.error ? ` (${String(data.error)})` : ""
-        toast.error(`Nenhuma faixa de valor encontrada para esta idade${detalhe}.`)
+      const qAdmin = `&administradora_id=${encodeURIComponent(adm.id)}`
+
+      async function buscarValorFaixa(idade: number): Promise<number | null> {
+        const res = await fetch(
+          `/api/administradora/produto/${encodeURIComponent(produtoId)}/valor?idade=${encodeURIComponent(String(idade))}&acomodacao=${encodeURIComponent(acomodacao)}${qAdmin}`
+        )
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok) throw new Error(data?.error || "Erro ao calcular valor por faixa")
+        const valor = data?.valor != null ? Number(data.valor) : NaN
+        return normalizarEscalaValorMonetario(valor)
+      }
+
+      const valorTitular = await buscarValorFaixa(idadeTitular)
+      if (valorTitular == null || valorTitular <= 0) {
+        toast.error("Nenhuma faixa de valor encontrada para a idade do titular.")
         return
       }
-      setFormContrato((p) => ({ ...p, valor_mensal: valorNormalizado.toFixed(2) }))
-      toast.success("Valor recalculado pela faixa etária do contrato.")
+
+      const atualizacoes: Array<{ id: string; valor: number }> = [{ id: String(clienteSelecionado.id), valor: valorTitular }]
+      const avisosDeps: string[] = []
+
+      for (const dep of dependentes) {
+        const idadeDep = Number(dep?.idade) || calcularIdadeLocal(dep?.data_nascimento)
+        if (idadeDep == null || !Number.isFinite(idadeDep)) {
+          avisosDeps.push(String(dep?.nome || "Dependente sem idade"))
+          continue
+        }
+        const vd = await buscarValorFaixa(idadeDep)
+        if (vd == null || vd <= 0) {
+          avisosDeps.push(`${String(dep?.nome || "Dependente")}: sem faixa para a idade`)
+          continue
+        }
+        atualizacoes.push({ id: String(dep.id), valor: vd })
+      }
+
+      for (const { id, valor } of atualizacoes) {
+        const resPut = await fetch(`/api/administradora/vidas-importadas/${encodeURIComponent(id)}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            administradora_id: adm.id,
+            valor_mensal: valor,
+            acomodacao,
+          }),
+        })
+        const jsonPut = await resPut.json().catch(() => ({}))
+        if (!resPut.ok) throw new Error(jsonPut?.error || `Erro ao atualizar registro ${id}`)
+      }
+
+      const clienteAdmId = await resolverClienteAdministradoraIdVida(vida, adm.id)
+      if (clienteAdmId) {
+        const resCliente = await fetch(`/api/administradora/clientes/${encodeURIComponent(clienteAdmId)}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            administradora_id: adm.id,
+            valor_mensal: valorTitular,
+          }),
+        })
+        if (!resCliente.ok) {
+          const jsonCliente = await resCliente.json().catch(() => ({}))
+          console.warn("[recalc] cliente administradora:", jsonCliente?.error)
+        }
+      }
+
+      const mapValor = new Map(atualizacoes.map((x) => [x.id, x.valor]))
+
+      setFormContrato((p) => ({ ...p, valor_mensal: valorTitular.toFixed(2), acomodacao }))
+      setContrato((prev: any) => ({ ...(prev || {}), valor_mensal: valorTitular }))
+
+      setClienteSelecionado((prev: any) => {
+        if (!prev || prev.cliente_tipo !== "vida_importada") return prev
+        const vAtual = prev._vida || prev.cliente || {}
+        const vidaNova = { ...vAtual, valor_mensal: valorTitular, acomodacao }
+        return { ...prev, _vida: vidaNova, cliente: { ...(prev.cliente || {}), ...vidaNova } }
+      })
+
+      setDependentes((deps) =>
+        deps.map((row: { id?: string; valor_mensal?: number; acomodacao?: string; nome?: string }) => {
+          const nv = mapValor.get(String(row.id))
+          if (nv == null) return row
+          return { ...row, valor_mensal: nv, acomodacao }
+        })
+      )
+
+      await carregarValorBaseComoNaGeracaoFatura(clienteSelecionado, adm.id)
+
+      const msgBase =
+        dependentes.length > 0
+          ? `Titular e dependentes recalculados com acomodação ${acomodacao} (mesma do titular).`
+          : `Valor do titular recalculado (${acomodacao}).`
+      if (avisosDeps.length > 0) {
+        toast.success(`${msgBase} Atenção: ${avisosDeps.slice(0, 4).join("; ")}${avisosDeps.length > 4 ? "…" : ""}`)
+      } else {
+        toast.success(msgBase)
+      }
     } catch (e: any) {
       toast.error(e?.message || "Erro ao recalcular valor")
     } finally {
@@ -1519,6 +1674,36 @@ export default function BeneficiarioDetalhesPage() {
             </TabsContent>
 
             <TabsContent value="dependentes" className="space-y-4">
+              {clienteSelecionado?.cliente_tipo === "vida_importada" &&
+                getTipoItem(clienteSelecionado) === "titular" &&
+                dependentes.length > 0 && (
+                  <div className="flex gap-2 rounded-md border border-slate-200 bg-slate-50/80 px-3 py-2.5 text-sm text-slate-700">
+                    <Info className="h-4 w-4 shrink-0 text-slate-600 mt-0.5" />
+                    <p>
+                      O recálculo de valores (titular e dependentes com a <strong>mesma acomodação</strong> e faixa etária de cada um) fica na aba{" "}
+                      <strong>Contrato</strong>: edite o contrato e use o botão{" "}
+                      <strong>Recalcular titular e dependentes (mesma acomodação)</strong>. Não há botão separado nesta aba.
+                    </p>
+                  </div>
+                )}
+              {alertaInconsistenciaTitularDependentes && (
+                <Alert variant="warning" className="text-sm py-3">
+                  <AlertTriangle className="h-4 w-4" />
+                  <AlertDescription>
+                    <p className="font-medium text-slate-900 mb-2">Dependente(s) com produto ou acomodação diferente do titular</p>
+                    <ul className="list-disc pl-4 space-y-1 text-slate-800">
+                      {alertaInconsistenciaTitularDependentes.map((L) => (
+                        <li key={L.nome}>
+                          <span className="font-medium">{L.nome}</span>: {L.detalhes}
+                        </li>
+                      ))}
+                    </ul>
+                    <p className="mt-2 text-slate-700">
+                      Regra atual: titular e dependentes devem usar o mesmo produto e acomodação. Cadastros antigos podem estar divergentes — use o recálculo na aba Contrato para alinhar valores e acomodação nas vidas vinculadas.
+                    </p>
+                  </AlertDescription>
+                </Alert>
+              )}
               {dependentes.length > 0 ? (
                 <Table>
                   <TableHeader>
@@ -1621,6 +1806,24 @@ export default function BeneficiarioDetalhesPage() {
             <TabsContent value="contrato" className="space-y-4">
               {possuiDadosContrato ? (
                 <>
+                  {alertaInconsistenciaTitularDependentes && (
+                    <Alert variant="warning" className="text-sm py-3">
+                      <AlertTriangle className="h-4 w-4" />
+                      <AlertDescription>
+                        <p className="font-medium text-slate-900 mb-1">Dependente(s) com produto ou acomodação diferente do titular</p>
+                        <ul className="list-disc pl-4 space-y-0.5 text-slate-800">
+                          {alertaInconsistenciaTitularDependentes.map((L) => (
+                            <li key={L.nome}>
+                              <span className="font-medium">{L.nome}</span>: {L.detalhes}
+                            </li>
+                          ))}
+                        </ul>
+                        <p className="mt-2 text-slate-700">
+                          Use <strong>Recalcular titular e dependentes (mesma acomodação)</strong> abaixo para alinhar valores e acomodação.
+                        </p>
+                      </AlertDescription>
+                    </Alert>
+                  )}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-0 text-sm border border-gray-200 rounded-lg overflow-hidden">
                     <div className="p-3 bg-gray-50">
                       <span className="text-gray-500 block text-xs font-medium">Número</span>
@@ -1668,8 +1871,10 @@ export default function BeneficiarioDetalhesPage() {
                         </span>
                       )}
                     </div>
-                    <div className="p-3 bg-white">
-                      <span className="text-gray-500 block text-xs font-medium">Valor Mensal</span>
+                    <div className="p-3 bg-white sm:col-span-2">
+                      <span className="text-gray-500 block text-xs font-medium">
+                        {clienteSelecionado?.cliente_tipo === "vida_importada" ? "Valor mensal (titular)" : "Valor mensal"}
+                      </span>
                       {editandoContrato ? (
                         <div className="space-y-2 mt-1">
                           <Input
@@ -1678,6 +1883,12 @@ export default function BeneficiarioDetalhesPage() {
                             placeholder="Ex: 199.90"
                             className="h-9"
                           />
+                          {clienteSelecionado?.cliente_tipo === "vida_importada" && totalFamiliaEstimadoEdicao != null && (
+                            <p className="text-xs text-gray-600">
+                              Total família (estimado para faturamento):{" "}
+                              <span className="font-medium text-gray-800">{formatarMoeda(totalFamiliaEstimadoEdicao)}</span>
+                            </p>
+                          )}
                           {clienteSelecionado?.cliente_tipo === "vida_importada" && (
                             <Button
                               type="button"
@@ -1688,17 +1899,37 @@ export default function BeneficiarioDetalhesPage() {
                               disabled={recalculandoValorContrato}
                             >
                               {recalculandoValorContrato && <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />}
-                              Recalcular por faixa etária
+                              Recalcular titular e dependentes (mesma acomodação)
                             </Button>
+                          )}
+                        </div>
+                      ) : clienteSelecionado?.cliente_tipo === "vida_importada" ? (
+                        <div className="mt-1 space-y-2">
+                          <div>
+                            <span className="text-gray-500 block text-[11px] font-medium uppercase tracking-wide">Titular</span>
+                            <span className="text-gray-900">
+                              {(normalizarEscalaValorMonetario(d?.valor_mensal ?? valorProdutoCliente ?? contrato?.valor_mensal)) != null
+                                ? formatarMoeda(
+                                    Number(normalizarEscalaValorMonetario(d?.valor_mensal ?? valorProdutoCliente ?? contrato?.valor_mensal))
+                                  )
+                                : "-"}
+                            </span>
+                          </div>
+                          {totalFamiliaFaturamento != null && (
+                            <div className="pt-1 border-t border-gray-100">
+                              <span className="text-gray-500 block text-[11px] font-medium uppercase tracking-wide">
+                                Total família (faturamento)
+                              </span>
+                              <span className="text-gray-900 font-semibold">{formatarMoeda(totalFamiliaFaturamento)}</span>
+                              <p className="text-[11px] text-gray-500 mt-0.5">Soma titular + dependentes; usado em Gerar fatura.</p>
+                            </div>
                           )}
                         </div>
                       ) : (
                         <span className="text-gray-900">
-                          {valorBaseFatura != null
-                            ? formatarMoeda(valorBaseFatura)
-                            : (normalizarEscalaValorMonetario(d?.valor_mensal ?? valorProdutoCliente ?? contrato?.valor_mensal)) != null
-                              ? formatarMoeda(Number(normalizarEscalaValorMonetario(d?.valor_mensal ?? valorProdutoCliente ?? contrato?.valor_mensal)))
-                              : "-"}
+                          {(normalizarEscalaValorMonetario(d?.valor_mensal ?? valorProdutoCliente ?? contrato?.valor_mensal)) != null
+                            ? formatarMoeda(Number(normalizarEscalaValorMonetario(d?.valor_mensal ?? valorProdutoCliente ?? contrato?.valor_mensal)))
+                            : "-"}
                         </span>
                       )}
                     </div>
@@ -1835,10 +2066,11 @@ export default function BeneficiarioDetalhesPage() {
                           size="sm"
                           onClick={() => {
                             setFormContrato({
-                              valor_mensal: valorBaseFatura != null
-                                ? Number(normalizarEscalaValorMonetario(valorBaseFatura) ?? 0).toFixed(2)
-                                : (normalizarEscalaValorMonetario(valorProdutoCliente ?? contrato?.valor_mensal)) != null
-                                  ? Number(normalizarEscalaValorMonetario(valorProdutoCliente ?? contrato?.valor_mensal)).toFixed(2)
+                              valor_mensal:
+                                (normalizarEscalaValorMonetario(d?.valor_mensal ?? valorProdutoCliente ?? contrato?.valor_mensal)) != null
+                                  ? Number(
+                                      normalizarEscalaValorMonetario(d?.valor_mensal ?? valorProdutoCliente ?? contrato?.valor_mensal)
+                                    ).toFixed(2)
                                   : "",
                               data_vigencia: (() => {
                                 const vig = obterDataVigenciaBeneficiario(d)
