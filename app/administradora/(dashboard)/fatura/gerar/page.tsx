@@ -33,6 +33,7 @@ import {
 } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Progress } from "@/components/ui/progress"
 import { AlertTriangle, Banknote, Loader2, ExternalLink, ChevronRight, FileCheck, CheckCircle2, FileText, CheckSquare, Square, Search, Minus, Plus, Info } from "lucide-react"
 import { formatarMoeda, formatarData, formatarDataHora } from "@/utils/formatters"
 
@@ -139,6 +140,15 @@ export default function FaturaGerarPage() {
   const [itensPorPaginaClientes] = useState(10)
   const [boletosMinimizado, setBoletosMinimizado] = useState(false)
   const [clientesMinimizado, setClientesMinimizado] = useState(false)
+  /** Progresso durante geração em lote (chunks sequenciais). */
+  const [progressoLote, setProgressoLote] = useState<{
+    total: number
+    processados: number
+    geradosOk: number
+    comErro: number
+    etapa: number
+    totalEtapas: number
+  } | null>(null)
 
   useEffect(() => {
     const adm = getAdministradoraLogada()
@@ -635,12 +645,14 @@ export default function FaturaGerarPage() {
     try {
       setGerandoLote(true)
       setResultadoLote(null)
-      if (chunks.length > 1) {
-        toast.info(
-          `Gerando ${lista.length} boleto(s) em ${chunks.length} etapas de até ${TAMANHO_CHUNK_LOTE_BOLETOS}.`,
-          { duration: 5000 }
-        )
-      }
+      setProgressoLote({
+        total: lista.length,
+        processados: 0,
+        geradosOk: 0,
+        comErro: 0,
+        etapa: 1,
+        totalEtapas: chunks.length,
+      })
       const todosResults: Array<{
         success: boolean
         cliente_administradora_id?: string
@@ -652,9 +664,33 @@ export default function FaturaGerarPage() {
 
       for (let i = 0; i < chunks.length; i++) {
         const chunk = chunks[i]
+        setProgressoLote((prev) =>
+          prev
+            ? { ...prev, etapa: i + 1 }
+            : {
+                total: lista.length,
+                processados: 0,
+                geradosOk: 0,
+                comErro: 0,
+                etapa: i + 1,
+                totalEtapas: chunks.length,
+              }
+        )
         try {
           const part = await executarUmChunk(chunk)
           todosResults.push(...part)
+          const ok = part.filter((r) => r.success).length
+          const fail = part.length - ok
+          setProgressoLote((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  processados: prev.processados + part.length,
+                  geradosOk: prev.geradosOk + ok,
+                  comErro: prev.comErro + fail,
+                }
+              : null
+          )
         } catch (chunkErr) {
           if (todosResults.length > 0) {
             setResultadoLote(todosResults)
@@ -698,6 +734,7 @@ export default function FaturaGerarPage() {
       }
     } finally {
       setGerandoLote(false)
+      setProgressoLote(null)
     }
   }
 
@@ -1420,7 +1457,13 @@ export default function FaturaGerarPage() {
       </Dialog>
 
       {/* Modal Gerar em lote */}
-      <Dialog open={modalLoteOpen} onOpenChange={setModalLoteOpen}>
+      <Dialog
+        open={modalLoteOpen}
+        onOpenChange={(open) => {
+          if (!open && gerandoLote) return
+          setModalLoteOpen(open)
+        }}
+      >
         <DialogContent className="sm:max-w-xl md:max-w-2xl rounded-xl shadow-xl border border-gray-200 max-h-[90vh] overflow-y-auto">
           <DialogHeader className="space-y-1 pb-2 border-b border-gray-100">
             <DialogTitle className="text-lg font-semibold text-gray-900">Gerar faturas em lote</DialogTitle>
@@ -1478,6 +1521,56 @@ export default function FaturaGerarPage() {
                 className="mt-1.5 h-10"
               />
             </div>
+            {gerandoLote && progressoLote && (
+              <div className="rounded-xl border border-slate-200 bg-gradient-to-br from-slate-50 to-white p-4 shadow-sm space-y-3 overflow-hidden">
+                <div className="flex items-center gap-3">
+                  <Loader2 className="h-10 w-10 shrink-0 text-slate-800 animate-spin" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold text-slate-900">Gerando boletos…</p>
+                    <p className="text-xs text-slate-600 mt-0.5">
+                      Etapa {progressoLote.etapa} de {progressoLote.totalEtapas}
+                      {progressoLote.totalEtapas > 1
+                        ? ` (até ${TAMANHO_CHUNK_LOTE_BOLETOS} por etapa)`
+                        : ""}
+                    </p>
+                    {progressoLote.processados === 0 && (
+                      <p className="text-xs text-slate-500 mt-1">Enviando ao servidor…</p>
+                    )}
+                  </div>
+                </div>
+                <Progress
+                  value={
+                    progressoLote.total > 0
+                      ? Math.min(100, Math.round((progressoLote.processados / progressoLote.total) * 100))
+                      : 0
+                  }
+                  className={`h-2.5 bg-slate-200 [&>div]:bg-slate-800 ${progressoLote.processados === 0 ? "animate-pulse" : ""}`}
+                />
+                <div className="grid grid-cols-2 gap-2 text-center sm:text-left">
+                  <div className="rounded-md bg-white/80 px-2 py-1.5 border border-slate-100">
+                    <p className="text-[11px] uppercase tracking-wide text-slate-500">Gerados com sucesso</p>
+                    <p className="text-lg font-semibold tabular-nums text-emerald-800">
+                      {progressoLote.geradosOk}
+                      <span className="text-sm font-normal text-slate-500"> / {progressoLote.total}</span>
+                    </p>
+                  </div>
+                  <div className="rounded-md bg-white/80 px-2 py-1.5 border border-slate-100">
+                    <p className="text-[11px] uppercase tracking-wide text-slate-500">Faltam na fila</p>
+                    <p className="text-lg font-semibold tabular-nums text-slate-900">
+                      {Math.max(0, progressoLote.total - progressoLote.processados)}
+                    </p>
+                  </div>
+                </div>
+                {progressoLote.comErro > 0 && (
+                  <p className="text-xs text-amber-800 text-center sm:text-left rounded-md bg-amber-50 border border-amber-100 px-2 py-1.5">
+                    Falhas até agora: {progressoLote.comErro} (detalhe ao finalizar)
+                  </p>
+                )}
+                <p className="text-xs text-slate-500 text-center sm:text-left">
+                  A barra avança após cada etapa concluída.
+                </p>
+              </div>
+            )}
             {resultadoLote && resultadoLote.length > 0 && (
               <div className="rounded-lg border border-gray-200 p-3 max-h-56 overflow-y-auto space-y-3">
                 <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Resultado por cliente</p>
