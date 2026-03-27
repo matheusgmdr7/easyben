@@ -47,6 +47,22 @@ export function formatarData(data: Date | string): string {
 }
 
 /**
+ * Data e hora em pt-BR (ex.: criação de fatura/boleto). Aceita ISO com timezone.
+ */
+export function formatarDataHora(data: Date | string | null | undefined): string {
+  if (data == null || data === "") return "—"
+  const dataObj = typeof data === "string" ? new Date(data) : data
+  if (Number.isNaN(dataObj.getTime())) return "—"
+  return dataObj.toLocaleString("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  })
+}
+
+/**
  * Formata um CPF (000.000.000-00)
  * @param cpf CPF a ser formatado
  * @returns String formatada como CPF

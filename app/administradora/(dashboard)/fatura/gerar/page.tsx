@@ -34,7 +34,7 @@ import {
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { AlertTriangle, Banknote, Loader2, ExternalLink, ChevronRight, FileCheck, CheckCircle2, FileText, CheckSquare, Square, Search, Minus, Plus, Info } from "lucide-react"
-import { formatarMoeda, formatarData } from "@/utils/formatters"
+import { formatarMoeda, formatarData, formatarDataHora } from "@/utils/formatters"
 
 interface ClienteFatura {
   id: string
@@ -57,6 +57,8 @@ interface BoletoGrupo {
   status: string
   data_vencimento: string
   data_pagamento?: string
+  /** Quando a fatura/boleto foi registrado no sistema (created_at). */
+  data_geracao?: string | null
   boleto_url?: string
   invoice_url?: string
 }
@@ -345,6 +347,7 @@ export default function FaturaGerarPage() {
           status: "PENDENTE",
           data_vencimento: data.vencimento || vencimento.trim().slice(0, 10),
           data_pagamento: null,
+          data_geracao: new Date().toISOString(),
           boleto_url: linkBoleto,
           invoice_url: data.invoice_url || linkBoleto,
         }
@@ -431,6 +434,7 @@ export default function FaturaGerarPage() {
       b.numero_fatura,
       b.status,
       b.data_vencimento,
+      b.data_geracao,
     ]
       .map((v) => normalizarTexto(v))
       .join(" ")
@@ -683,7 +687,8 @@ export default function FaturaGerarPage() {
                   </div>
                   <p className="text-sm font-medium text-gray-800">{grupoSelecionado.nome}</p>
                   <p className="text-sm text-gray-500 font-normal">
-                    Faturas e boletos gerados na financeira para os clientes deste grupo, com vencimento, status e link.
+                    Faturas e boletos gerados na financeira para os clientes deste grupo. Ordenação: mais recente primeiro
+                    pela data de geração; registros antigos sem essa data usam o vencimento para ordenar, como antes.
                   </p>
                 </CardHeader>
                 {!boletosMinimizado && <CardContent>
@@ -710,7 +715,7 @@ export default function FaturaGerarPage() {
                         setBuscaBoletos(e.target.value)
                         setPaginaBoletos(1)
                       }}
-                      placeholder="Buscar por cliente, status ou número da fatura..."
+                      placeholder="Buscar por cliente, status, nº da fatura ou data de geração..."
                       className="pl-9"
                     />
                   </div>
@@ -719,15 +724,16 @@ export default function FaturaGerarPage() {
                     <p className="text-sm text-gray-500 py-4 text-center">Nenhum boleto encontrado para a busca informada.</p>
                   ) : (
                     <>
-                      <div className="w-full rounded-md border border-gray-100">
-                        <Table className="w-full table-fixed">
+                      <div className="w-full overflow-x-auto rounded-md border border-gray-100">
+                        <Table className="w-full min-w-[720px] table-fixed">
                           <TableHeader>
                             <TableRow className="bg-gray-100">
-                              <TableHead className="font-semibold w-[34%]">Cliente</TableHead>
+                              <TableHead className="font-semibold w-[26%]">Cliente</TableHead>
                               <TableHead className="font-semibold w-[18%]">Vencimento</TableHead>
-                              <TableHead className="font-semibold w-[18%]">Valor</TableHead>
-                              <TableHead className="font-semibold w-[16%]">Status</TableHead>
-                              <TableHead className="font-semibold w-[14%] text-right">Link</TableHead>
+                              <TableHead className="font-semibold w-[14%]">Valor</TableHead>
+                              <TableHead className="font-semibold w-[18%]">Gerado em</TableHead>
+                              <TableHead className="font-semibold w-[12%]">Status</TableHead>
+                              <TableHead className="font-semibold w-[12%] text-right">Link</TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
@@ -745,6 +751,9 @@ export default function FaturaGerarPage() {
                                   )}
                                 </TableCell>
                                 <TableCell>{formatarMoeda(b.valor_total)}</TableCell>
+                                <TableCell className="text-gray-600 text-sm whitespace-nowrap">
+                                  {formatarDataHora(b.data_geracao)}
+                                </TableCell>
                                 <TableCell>
                                   <span
                                     className={`inline-flex px-2 py-0.5 text-xs font-medium rounded ${
