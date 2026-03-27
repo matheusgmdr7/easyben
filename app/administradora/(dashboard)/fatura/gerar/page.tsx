@@ -455,17 +455,18 @@ export default function FaturaGerarPage() {
 
   const termoBuscaClientes = normalizarTexto(buscaClientes)
 
-  function diaVencimentoElegivel(c: ClienteFatura) {
+  /** Dia 01 ou 10 considerando cadastro salvo ou rascunho no seletor (mesmo critério do filtro). */
+  function diaVencimentoEfetivo(c: ClienteFatura): string {
     const dia = String(c.dia_vencimento || draftDiaVencimento[c.id] || "")
       .replace(/\D/g, "")
       .padStart(2, "0")
       .slice(-2)
-    return dia === "01" || dia === "10"
+    return dia === "01" || dia === "10" ? dia : ""
   }
 
   const clientesFiltrados = [...clientes]
     .filter((c) => {
-      if (filtroDiaVencimento !== "todos" && String(c.dia_vencimento || "") !== filtroDiaVencimento) {
+      if (filtroDiaVencimento !== "todos" && diaVencimentoEfetivo(c) !== filtroDiaVencimento) {
         return false
       }
       if (!termoBuscaClientes) return true
@@ -484,8 +485,8 @@ export default function FaturaGerarPage() {
       const fa = clienteJaFaturadoNoMesCompetencia(a)
       const fb = clienteJaFaturadoNoMesCompetencia(b)
       if (fa !== fb) return fa ? 1 : -1
-      const da = diaVencimentoElegivel(a) ? 0 : 1
-      const db = diaVencimentoElegivel(b) ? 0 : 1
+      const da = diaVencimentoEfetivo(a) !== "" ? 0 : 1
+      const db = diaVencimentoEfetivo(b) !== "" ? 0 : 1
       if (da !== db) return da - db
       return (a.cliente_nome || "").localeCompare(b.cliente_nome || "", "pt-BR", { sensitivity: "base" })
     })
@@ -495,8 +496,11 @@ export default function FaturaGerarPage() {
     paginaClientes * itensPorPaginaClientes
   )
 
-  const clientesDisponiveisLote = clientes.filter((c) => !clienteJaFaturadoNoMesCompetencia(c))
-  const selecionadosParaLote = clientesDisponiveisLote.filter(
+  /** Elegíveis para lote na visão atual (filtro de dia + busca aplicados). */
+  const clientesDisponiveisLoteFiltrados = clientesFiltrados.filter(
+    (c) => !clienteJaFaturadoNoMesCompetencia(c)
+  )
+  const selecionadosParaLote = clientesDisponiveisLoteFiltrados.filter(
     (c) => selecionadosLote.has(c.id) || selecionadosLote.has(c.cliente_administradora_id)
   )
 
@@ -516,7 +520,11 @@ export default function FaturaGerarPage() {
     })
   }
   function selecionarTodosLote() {
-    setSelecionadosLote(new Set(clientesDisponiveisLote.flatMap((c) => [c.id, c.cliente_administradora_id])))
+    setSelecionadosLote(
+      new Set(
+        clientesDisponiveisLoteFiltrados.flatMap((c) => [c.id, c.cliente_administradora_id])
+      )
+    )
   }
   function desmarcarTodosLote() {
     setSelecionadosLote(new Set())
@@ -584,6 +592,11 @@ export default function FaturaGerarPage() {
             "Tempo esgotado (504): o lote demorou além do limite do servidor. Reduza a quantidade de clientes por vez ou tente novamente."
           )
         }
+        if (res.status === 502 || res.status === 503) {
+          throw new Error(
+            "502/503: o gateway encerrou a conexão antes do servidor responder o lote inteiro. Alguns boletos podem já ter sido gerados — confira o histórico acima. Gere novamente só para quem faltar ou reduza o tamanho do lote."
+          )
+        }
         throw new Error(
           apiErr ||
             `Falha na geração em lote (HTTP ${res.status}${res.statusText ? ` — ${res.statusText}` : ""}).`
@@ -610,6 +623,12 @@ export default function FaturaGerarPage() {
       setSelecionadosLote(new Set())
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Erro ao gerar boletos em lote")
+      if (grupoSelecionado && administradoraId) {
+        await Promise.all([
+          carregarBoletosDoGrupo(grupoSelecionado.id, { silent: true }),
+          carregarClientesDoGrupo(grupoSelecionado.id, { silent: true }),
+        ])
+      }
     } finally {
       setGerandoLote(false)
     }
@@ -906,12 +925,15 @@ export default function FaturaGerarPage() {
               <p className="text-sm font-medium text-gray-800">{grupoSelecionado.nome}</p>
               <p className="text-sm text-gray-500 font-normal">
                 Lista apenas titulares. O valor inclui titular e dependentes vinculados. Ao gerar boleto, a taxa de administração é somada.
-                Regra mensal: cada cliente pode ser faturado uma vez por mês. A ordem prioriza quem ainda não foi faturado no mês e, entre eles, quem já tem dia 01 ou 10 vinculado (facilita o lote).
+                Regra mensal: cada cliente pode ser faturado uma vez por mês. O filtro de dia de vencimento restringe a lista (inclui rascunho antes de vincular); &quot;Selecionar todos&quot; marca só os que aparecem nessa lista. A ordem prioriza quem ainda não foi faturado no mês e, entre eles, quem já tem dia 01 ou 10.
               </p>
-              {clientesDisponiveisLote.length > 0 && (
+              {clientesDisponiveisLoteFiltrados.length > 0 && (
                 <div className="flex flex-wrap items-center gap-2 pt-2">
                   <span className="text-sm text-gray-600">
-                    {selecionadosParaLote.length} de {clientesDisponiveisLote.length} selecionados
+                    {selecionadosParaLote.length} de {clientesDisponiveisLoteFiltrados.length} selecionados
+                    {filtroDiaVencimento !== "todos" && (
+                      <span className="text-gray-500"> (vencimento dia {filtroDiaVencimento})</span>
+                    )}
                   </span>
                   <Button type="button" variant="outline" size="sm" onClick={selecionarTodosLote}>
                     <CheckSquare className="h-4 w-4 mr-1" />
