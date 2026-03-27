@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
+import { gerarBoletoAdministradora } from "@/lib/gerar-boleto-administradora"
 
-export const maxDuration = 120
+export const maxDuration = 300
 
 /**
  * POST /api/administradora/fatura/gerar-boletos-lote
@@ -37,13 +38,6 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       )
     }
-
-    const origin =
-      request.nextUrl?.origin ||
-      process.env.NEXTAUTH_URL ||
-      (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000")
-    const url = `${origin}/api/administradora/fatura/gerar-boleto`
-    const cookieHeader = request.headers.get("cookie") || ""
 
     const results: Array<{
       success: boolean
@@ -85,15 +79,13 @@ export async function POST(request: NextRequest) {
       }
 
       try {
-        const res = await fetch(url, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Cookie: cookieHeader,
-          },
-          body: JSON.stringify(payload),
-        })
-        const data = await res.json().catch(() => ({}))
+        const res = await gerarBoletoAdministradora(
+          payload as Record<string, unknown>
+        )
+        const data = (await res.json().catch(() => ({}))) as Record<
+          string,
+          unknown
+        >
         if (res.ok) {
           results.push({
             success: true,
