@@ -49,6 +49,8 @@ export async function POST(request: NextRequest) {
       numero_fatura?: string
       valor?: number
       error?: string
+      /** Presente quando a falha veio da API gerar-boleto (status HTTP). */
+      http_status?: number
     }> = []
 
     for (const c of clientes) {
@@ -58,7 +60,7 @@ export async function POST(request: NextRequest) {
           success: false,
           cliente_administradora_id: c.cliente_administradora_id,
           cliente_nome: c.cliente_nome,
-          error: "Valor inválido",
+          error: "Validação: valor do cliente inválido ou zero (informe valor mensal no cadastro).",
         })
         continue
       }
@@ -98,11 +100,16 @@ export async function POST(request: NextRequest) {
             valor: data.valor,
           })
         } else {
+          const apiMsg =
+            typeof data?.error === "string" && data.error.trim()
+              ? data.error.trim()
+              : "Erro sem mensagem do servidor"
           results.push({
             success: false,
             cliente_administradora_id: c.cliente_administradora_id,
             cliente_nome: c.cliente_nome,
-            error: data?.error || `HTTP ${res.status}`,
+            error: `Geração do boleto (HTTP ${res.status}): ${apiMsg}`,
+            http_status: res.status,
           })
         }
       } catch (err) {
@@ -110,7 +117,7 @@ export async function POST(request: NextRequest) {
           success: false,
           cliente_administradora_id: c.cliente_administradora_id,
           cliente_nome: c.cliente_nome,
-          error: err instanceof Error ? err.message : "Erro ao gerar boleto",
+          error: `Falha inesperada ao gerar boleto: ${err instanceof Error ? err.message : "Erro desconhecido"}`,
         })
       }
     }

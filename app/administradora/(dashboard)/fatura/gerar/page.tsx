@@ -103,7 +103,16 @@ export default function FaturaGerarPage() {
   const [selecionadosLote, setSelecionadosLote] = useState<Set<string>>(new Set())
   const [modalLoteOpen, setModalLoteOpen] = useState(false)
   const [gerandoLote, setGerandoLote] = useState(false)
-  const [resultadoLote, setResultadoLote] = useState<Array<{ success: boolean; cliente_nome?: string; boleto_url?: string; error?: string }> | null>(null)
+  const [resultadoLote, setResultadoLote] = useState<
+    Array<{
+      success: boolean
+      cliente_administradora_id?: string
+      cliente_nome?: string
+      boleto_url?: string
+      error?: string
+      http_status?: number
+    }>
+  | null>(null)
   const [financeiraLote, setFinanceiraLote] = useState("")
   const [vencimentoLote, setVencimentoLote] = useState("")
   const [taxaLote, setTaxaLote] = useState("")
@@ -211,10 +220,8 @@ export default function FaturaGerarPage() {
     setBuscaClientes("")
     setPaginaBoletos(1)
     setPaginaClientes(1)
-    await Promise.all([
-      carregarClientesDoGrupo(grupo.id, { silent: true }),
-      carregarBoletosDoGrupo(grupo.id, { silent: true }),
-    ])
+    await carregarBoletosDoGrupo(grupo.id, { silent: true })
+    await carregarClientesDoGrupo(grupo.id, { silent: true })
   }
 
   function abrirModal(cliente: ClienteFatura) {
@@ -447,22 +454,41 @@ export default function FaturaGerarPage() {
   )
 
   const termoBuscaClientes = normalizarTexto(buscaClientes)
-  const clientesFiltrados = clientes.filter((c) => {
-    if (filtroDiaVencimento !== "todos" && String(c.dia_vencimento || "") !== filtroDiaVencimento) {
-      return false
-    }
-    if (!termoBuscaClientes) return true
-    const alvo = [
-      c.cliente_nome,
-      c.cliente_email,
-      c.cliente_cpf,
-      c.produto_nome,
-      ...(c.dependentes_nomes || []),
-    ]
-      .map((v) => normalizarTexto(v))
-      .join(" ")
-    return alvo.includes(termoBuscaClientes)
-  })
+
+  function diaVencimentoElegivel(c: ClienteFatura) {
+    const dia = String(c.dia_vencimento || draftDiaVencimento[c.id] || "")
+      .replace(/\D/g, "")
+      .padStart(2, "0")
+      .slice(-2)
+    return dia === "01" || dia === "10"
+  }
+
+  const clientesFiltrados = [...clientes]
+    .filter((c) => {
+      if (filtroDiaVencimento !== "todos" && String(c.dia_vencimento || "") !== filtroDiaVencimento) {
+        return false
+      }
+      if (!termoBuscaClientes) return true
+      const alvo = [
+        c.cliente_nome,
+        c.cliente_email,
+        c.cliente_cpf,
+        c.produto_nome,
+        ...(c.dependentes_nomes || []),
+      ]
+        .map((v) => normalizarTexto(v))
+        .join(" ")
+      return alvo.includes(termoBuscaClientes)
+    })
+    .sort((a, b) => {
+      const fa = clienteJaFaturadoNoMesCompetencia(a)
+      const fb = clienteJaFaturadoNoMesCompetencia(b)
+      if (fa !== fb) return fa ? 1 : -1
+      const da = diaVencimentoElegivel(a) ? 0 : 1
+      const db = diaVencimentoElegivel(b) ? 0 : 1
+      if (da !== db) return da - db
+      return (a.cliente_nome || "").localeCompare(b.cliente_nome || "", "pt-BR", { sensitivity: "base" })
+    })
   const totalPaginasClientes = Math.max(1, Math.ceil(clientesFiltrados.length / itensPorPaginaClientes))
   const clientesPaginados = clientesFiltrados.slice(
     (paginaClientes - 1) * itensPorPaginaClientes,
@@ -548,10 +574,30 @@ export default function FaturaGerarPage() {
         }),
       })
       const data = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(data?.error || "Erro ao gerar boletos em lote")
+      if (!res.ok) {
+        const apiErr =
+          typeof (data as { error?: string }).error === "string" && (data as { error: string }).error.trim()
+            ? (data as { error: string }).error.trim()
+            : ""
+        if (res.status === 504) {
+          throw new Error(
+            "Tempo esgotado (504): o lote demorou além do limite do servidor. Reduza a quantidade de clientes por vez ou tente novamente."
+          )
+        }
+        throw new Error(
+          apiErr ||
+            `Falha na geração em lote (HTTP ${res.status}${res.statusText ? ` — ${res.statusText}` : ""}).`
+        )
+      }
       setResultadoLote(data.results || [])
       const resumo = data.resumo || {}
-      toast.success(`${resumo.sucesso ?? 0} boleto(s) gerado(s)${resumo.erro > 0 ? `; ${resumo.erro} com erro.` : "."}`)
+      const nOk = resumo.sucesso ?? 0
+      const nErr = resumo.erro ?? 0
+      if (nErr > 0) {
+        toast.warning(`${nOk} boleto(s) gerado(s); ${nErr} falha(s). Veja o detalhe por cliente abaixo.`)
+      } else {
+        toast.success(`${nOk} boleto(s) gerado(s).`)
+      }
       const sucessos = (data.results || []).filter((r: { success: boolean }) => r.success)
       if (sucessos.length > 0) {
         if (grupoSelecionado && administradoraId) {
@@ -656,8 +702,8 @@ export default function FaturaGerarPage() {
               </Card>
             )}
 
-            {/* Boletos já gerados do grupo */}
-            {grupoSelecionado && (boletosGrupo.length > 0 || loadingBoletos) && (
+            {/* Boletos já gerados do grupo — carrega antes da lista de clientes */}
+            {grupoSelecionado && (
               <Card className="rounded-md">
                 <CardHeader className="space-y-2">
                   <div className="flex items-start justify-between gap-3">
@@ -705,7 +751,11 @@ export default function FaturaGerarPage() {
                     ))}
                   </div>
                 </div>
-              ) : boletosGrupo.length === 0 ? null : (
+              ) : boletosGrupo.length === 0 ? (
+                <p className="text-sm text-gray-500 py-6 text-center">
+                  Nenhum boleto gerado ainda para este grupo neste contexto. Após gerar, o histórico aparece aqui.
+                </p>
+              ) : (
                 <div className="space-y-3">
                   <div className="relative max-w-md">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
@@ -824,8 +874,8 @@ export default function FaturaGerarPage() {
               </Card>
             )}
 
-            {/* Clientes do grupo selecionado */}
-            {grupoSelecionado && (
+            {/* Clientes: liberado após o carregamento dos boletos (evita ordem errada de competência no lote) */}
+            {grupoSelecionado && !loadingBoletos && (
               <Card className="rounded-md">
             <CardHeader className="space-y-2">
               <div className="flex items-start justify-between gap-3">
@@ -856,7 +906,7 @@ export default function FaturaGerarPage() {
               <p className="text-sm font-medium text-gray-800">{grupoSelecionado.nome}</p>
               <p className="text-sm text-gray-500 font-normal">
                 Lista apenas titulares. O valor inclui titular e dependentes vinculados. Ao gerar boleto, a taxa de administração é somada.
-                Regra mensal: cada cliente pode ser faturado uma vez por mês.
+                Regra mensal: cada cliente pode ser faturado uma vez por mês. A ordem prioriza quem ainda não foi faturado no mês e, entre eles, quem já tem dia 01 ou 10 vinculado (facilita o lote).
               </p>
               {clientesDisponiveisLote.length > 0 && (
                 <div className="flex flex-wrap items-center gap-2 pt-2">
@@ -1340,21 +1390,43 @@ export default function FaturaGerarPage() {
               />
             </div>
             {resultadoLote && resultadoLote.length > 0 && (
-              <div className="rounded-lg border border-gray-200 p-3 max-h-48 overflow-y-auto space-y-2">
-                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Resultado</p>
+              <div className="rounded-lg border border-gray-200 p-3 max-h-56 overflow-y-auto space-y-3">
+                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Resultado por cliente</p>
                 {resultadoLote.map((r, i) => (
-                  <div key={i} className="flex items-center justify-between gap-2 text-sm">
-                    <span className="truncate">{r.cliente_nome || "—"}</span>
+                  <div
+                    key={`${r.cliente_administradora_id || r.cliente_nome || "x"}-${i}`}
+                    className="border-b border-gray-100 last:border-0 pb-2 last:pb-0 text-sm"
+                  >
+                    <div className="font-medium text-gray-900">
+                      {r.cliente_nome || "Cliente sem nome"}
+                      {r.cliente_administradora_id && (
+                        <span className="block text-xs font-normal text-gray-500 font-mono truncate" title={r.cliente_administradora_id}>
+                          ID: {r.cliente_administradora_id}
+                        </span>
+                      )}
+                    </div>
                     {r.success ? (
-                      r.boleto_url ? (
-                        <a href={r.boleto_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-blue-600 hover:underline shrink-0">
-                          <ExternalLink className="h-4 w-4" /> Boleto
-                        </a>
-                      ) : (
-                        <span className="text-green-700 font-medium shrink-0">OK</span>
-                      )
+                      <div className="mt-1 flex items-center gap-2">
+                        {r.boleto_url ? (
+                          <a
+                            href={r.boleto_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-blue-600 hover:underline text-sm"
+                          >
+                            <ExternalLink className="h-4 w-4" /> Abrir boleto
+                          </a>
+                        ) : (
+                          <span className="text-green-700 font-medium">Gerado com sucesso</span>
+                        )}
+                      </div>
                     ) : (
-                      <span className="text-red-600 shrink-0">{r.error || "Erro"}</span>
+                      <p className="mt-1 text-xs text-red-700 break-words leading-relaxed">
+                        {r.error || "Erro desconhecido"}
+                        {typeof r.http_status === "number" && (
+                          <span className="block text-[11px] text-red-600/90 mt-0.5">Código HTTP: {r.http_status}</span>
+                        )}
+                      </p>
                     )}
                   </div>
                 ))}
