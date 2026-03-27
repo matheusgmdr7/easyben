@@ -32,7 +32,8 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
-import { AlertTriangle, Banknote, Loader2, ExternalLink, ChevronRight, FileCheck, CheckCircle2, FileText, CheckSquare, Square, Search, Minus, Plus } from "lucide-react"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { AlertTriangle, Banknote, Loader2, ExternalLink, ChevronRight, FileCheck, CheckCircle2, FileText, CheckSquare, Square, Search, Minus, Plus, Info } from "lucide-react"
 import { formatarMoeda, formatarData } from "@/utils/formatters"
 
 interface ClienteFatura {
@@ -65,6 +66,13 @@ interface Financeira {
   nome: string
   instituicao_financeira: string
   status_integracao: string
+}
+
+function obterAnoMes(data?: string | null) {
+  if (!data) return ""
+  const base = String(data).slice(0, 10)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(base)) return ""
+  return base.slice(0, 7)
 }
 
 export default function FaturaGerarPage() {
@@ -370,20 +378,50 @@ export default function FaturaGerarPage() {
     return (valor || "").toLowerCase().trim()
   }
 
-  function obterAnoMes(data?: string | null) {
-    if (!data) return ""
-    const base = String(data).slice(0, 10)
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(base)) return ""
-    return base.slice(0, 7)
+  /**
+   * Mês (YYYY-MM) de competência do próximo faturamento, alinhado ao modal individual e à regra do
+   * gerar-boleto (duplicata = já existe fatura com vencimento naquele mês).
+   * Antes usávamos o "mês atual" em UTC, o que não batia com vencimento em outro mês (ex.: boleto em
+   * abril enquanto "hoje" ainda é março → a UI liberava e a API retornava 409).
+   */
+  function obterAnoMesCompetenciaParaCliente(c: ClienteFatura) {
+    const dia = String(c.dia_vencimento || draftDiaVencimento[c.id] || "")
+      .replace(/\D/g, "")
+      .padStart(2, "0")
+      .slice(-2)
+    const hoje = new Date()
+    if (dia === "01" || dia === "10") {
+      const anoAtual = hoje.getFullYear()
+      const mesAtual = hoje.getMonth()
+      const diaNum = Number(dia)
+      const mesRef = hoje.getDate() <= diaNum ? mesAtual : mesAtual + 1
+      const data = new Date(anoAtual, mesRef, diaNum)
+      const y = data.getFullYear()
+      const m = String(data.getMonth() + 1).padStart(2, "0")
+      return `${y}-${m}`
+    }
+    const y = hoje.getFullYear()
+    const m = String(hoje.getMonth() + 1).padStart(2, "0")
+    return `${y}-${m}`
   }
 
-  const anoMesAtual = new Date().toISOString().slice(0, 7)
-  const clienteFaturadoNoMesAtual = (clienteAdministradoraId: string) =>
-    boletosGrupo.some(
+  /** Com modal de lote aberto e data preenchida, o mês do vencimento do lote é o mesmo critério do gerar-boletos-lote / gerar-boleto. */
+  function mesReferenciaFaturamento(c: ClienteFatura) {
+    if (modalLoteOpen && vencimentoLote.trim().length >= 10) {
+      const m = obterAnoMes(vencimentoLote.trim())
+      if (m) return m
+    }
+    return obterAnoMesCompetenciaParaCliente(c)
+  }
+
+  const clienteJaFaturadoNoMesCompetencia = (c: ClienteFatura) => {
+    const mesRef = mesReferenciaFaturamento(c)
+    return boletosGrupo.some(
       (b) =>
-        b.cliente_administradora_id === clienteAdministradoraId &&
-        obterAnoMes(b.data_vencimento) === anoMesAtual
+        b.cliente_administradora_id === c.cliente_administradora_id &&
+        obterAnoMes(b.data_vencimento) === mesRef
     )
+  }
 
   const termoBuscaBoletos = normalizarTexto(buscaBoletos)
   const boletosGrupoFiltrados = boletosGrupo.filter((b) => {
@@ -427,15 +465,13 @@ export default function FaturaGerarPage() {
     paginaClientes * itensPorPaginaClientes
   )
 
-  const clientesDisponiveisLote = clientes.filter(
-    (c) => !clienteFaturadoNoMesAtual(c.cliente_administradora_id)
-  )
+  const clientesDisponiveisLote = clientes.filter((c) => !clienteJaFaturadoNoMesCompetencia(c))
   const selecionadosParaLote = clientesDisponiveisLote.filter(
     (c) => selecionadosLote.has(c.id) || selecionadosLote.has(c.cliente_administradora_id)
   )
 
   function toggleSelecaoLote(c: ClienteFatura) {
-    const isFaturado = clienteFaturadoNoMesAtual(c.cliente_administradora_id)
+    const isFaturado = clienteJaFaturadoNoMesCompetencia(c)
     if (isFaturado) return
     setSelecionadosLote((prev) => {
       const next = new Set(prev)
@@ -545,9 +581,12 @@ export default function FaturaGerarPage() {
 
       <div className="px-6 py-6">
         {financeirasAtivas.length === 0 && !loadingGrupos && (
-          <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-sm">
-            Cadastre e ative pelo menos uma financeira (menu &quot;Financeira&quot;) para gerar boletos.
-          </div>
+          <Alert variant="warning" className="text-sm py-3">
+            <Info className="h-4 w-4" />
+            <AlertDescription>
+              Cadastre e ative pelo menos uma financeira (menu &quot;Financeira&quot;) para gerar boletos.
+            </AlertDescription>
+          </Alert>
         )}
 
         <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 mt-6">
@@ -854,20 +893,23 @@ export default function FaturaGerarPage() {
                   </div>
                 </div>
               ) : erroCarregarClientes ? (
-                <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3">
-                  <p className="text-sm font-medium text-amber-800">Falha ao carregar clientes deste grupo.</p>
-                  <p className="text-xs text-amber-700 mt-1 break-words">{erroCarregarClientes}</p>
-                  <div className="mt-3">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={() => grupoSelecionado && carregarClientesDoGrupo(grupoSelecionado.id)}
-                    >
-                      Tentar novamente
-                    </Button>
-                  </div>
-                </div>
+                <Alert variant="warning" className="py-3">
+                  <AlertTriangle className="h-4 w-4" />
+                  <AlertDescription className="space-y-2">
+                    <p className="text-sm font-medium text-slate-900">Falha ao carregar clientes deste grupo.</p>
+                    <p className="text-xs text-slate-600 break-words">{erroCarregarClientes}</p>
+                    <div className="pt-1">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => grupoSelecionado && carregarClientesDoGrupo(grupoSelecionado.id)}
+                      >
+                        Tentar novamente
+                      </Button>
+                    </div>
+                  </AlertDescription>
+                </Alert>
               ) : clientes.length === 0 ? (
                 <p className="text-sm text-gray-500 py-8 text-center">
                   Nenhum cliente com vínculo de fatura neste grupo. Vincule clientes ao grupo na
@@ -925,7 +967,7 @@ export default function FaturaGerarPage() {
                           </TableHeader>
                           <TableBody>
                             {clientesPaginados.map((c) => {
-                              const isFaturado = clienteFaturadoNoMesAtual(c.cliente_administradora_id)
+                              const isFaturado = clienteJaFaturadoNoMesCompetencia(c)
                               const isSelecionado = selecionadosLote.has(c.id) || selecionadosLote.has(c.cliente_administradora_id)
                               return (
                                 <TableRow key={c.id}>
@@ -968,7 +1010,7 @@ export default function FaturaGerarPage() {
                                           size="sm"
                                           variant="outline"
                                           onClick={() => irParaAbaFinanceiroCliente(c)}
-                                          className="border-green-200 text-green-800 hover:bg-green-50"
+                                          className="border-slate-300 text-slate-800 hover:bg-slate-50"
                                         >
                                           <FileText className="h-4 w-4 mr-1" />
                                           Editar fatura
@@ -1074,12 +1116,12 @@ export default function FaturaGerarPage() {
                 const diaSelecionado = String(vencimento || "").slice(8, 10)
                 if (!diaVinculado || !diaSelecionado || diaVinculado === diaSelecionado) return null
                 return (
-                  <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-amber-800 text-sm flex items-start gap-2">
-                    <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
-                    <span>
+                  <Alert variant="warning" className="py-3 text-sm">
+                    <AlertTriangle className="h-4 w-4" />
+                    <AlertDescription>
                       O vencimento escolhido ({diaSelecionado}) difere do dia vinculado para este cliente ({diaVinculado}).
-                    </span>
-                  </div>
+                    </AlertDescription>
+                  </Alert>
                 )
               })()}
 
@@ -1180,27 +1222,30 @@ export default function FaturaGerarPage() {
               </div>
 
               {faturaGerada && (ultimoBoletoUrl || ultimoInvoiceUrl) && (
-                <div className="rounded-lg border border-green-200 bg-green-50/50 p-4 flex flex-wrap gap-3">
-                  <a
-                    href={ultimoBoletoUrl || ultimoInvoiceUrl || "#"}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 text-sm text-green-800 hover:underline font-medium"
-                  >
-                    <ExternalLink className="h-4 w-4" />
-                    Visualizar boleto
-                  </a>
-                  {grupoSelecionado && (
-                    <button
-                      type="button"
-                      onClick={irParaAbaFinanceiro}
-                      className="inline-flex items-center gap-1.5 text-sm text-green-800 hover:underline font-medium"
+                <Alert variant="success" className="py-3">
+                  <FileCheck className="h-4 w-4" />
+                  <AlertDescription className="flex flex-wrap gap-x-4 gap-y-2 [&_a]:text-slate-800 [&_button]:text-slate-800">
+                    <a
+                      href={ultimoBoletoUrl || ultimoInvoiceUrl || "#"}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 text-sm font-medium hover:underline"
                     >
-                      <FileText className="h-4 w-4" />
-                      Ver na aba Financeiro do beneficiário
-                    </button>
-                  )}
-                </div>
+                      <ExternalLink className="h-4 w-4" />
+                      Visualizar boleto
+                    </a>
+                    {grupoSelecionado && (
+                      <button
+                        type="button"
+                        onClick={irParaAbaFinanceiro}
+                        className="inline-flex items-center gap-1.5 text-sm font-medium hover:underline"
+                      >
+                        <FileText className="h-4 w-4" />
+                        Ver na aba Financeiro do beneficiário
+                      </button>
+                    )}
+                  </AlertDescription>
+                </Alert>
               )}
             </div>
           )}

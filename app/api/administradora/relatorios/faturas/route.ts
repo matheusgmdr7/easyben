@@ -12,6 +12,7 @@ type FaturaRow = {
   valor: number | null
   status: string | null
   vencimento: string | null
+  gateway_nome: string | null
 }
 
 const ASAAS_TO_INTERNO: Record<string, string> = {
@@ -62,6 +63,7 @@ export async function GET(request: NextRequest) {
     const grupoId = request.nextUrl.searchParams.get("grupo_id")
     const corretorId = request.nextUrl.searchParams.get("corretor_id")
     const statusParam = request.nextUrl.searchParams.get("status")
+    const financeiraFiltro = String(request.nextUrl.searchParams.get("financeira") || "").trim().toLowerCase()
 
     if (!administradoraId) {
       return NextResponse.json({ error: "administradora_id é obrigatório" }, { status: 400 })
@@ -78,7 +80,7 @@ export async function GET(request: NextRequest) {
 
     let query = supabaseAdmin
       .from("faturas")
-      .select("id, cliente_administradora_id, cliente_nome, cliente_id, cliente_telefone, numero_fatura, valor, status, vencimento")
+      .select("id, cliente_administradora_id, cliente_nome, cliente_id, cliente_telefone, numero_fatura, valor, status, vencimento, gateway_nome")
       .eq("administradora_id", administradoraId)
       .order("vencimento", { ascending: false })
       .limit(5000)
@@ -171,6 +173,7 @@ export async function GET(request: NextRequest) {
           status: normalizarStatus(String(f.status || "")),
           vencimento: f.vencimento || null,
           numero_fatura: f.numero_fatura || null,
+          financeira_nome: f.gateway_nome || null,
           grupo_id: grupoVida,
           corretor_id: corretorVida,
         }
@@ -178,6 +181,10 @@ export async function GET(request: NextRequest) {
       .filter((item) => {
         if (grupoId && grupoId !== "todos" && item.grupo_id !== grupoId) return false
         if (corretorId && corretorId !== "todos" && item.corretor_id !== corretorId) return false
+        if (financeiraFiltro) {
+          const nome = String(item.financeira_nome || "").toLowerCase()
+          if (!nome.includes(financeiraFiltro)) return false
+        }
         return true
       })
 

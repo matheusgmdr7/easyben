@@ -469,7 +469,7 @@ export async function POST(request: NextRequest) {
 
     const updatePayload: Record<string, unknown> = {
       gateway_id: chargeResponse.id,
-      gateway_nome: "Asaas",
+      gateway_nome: `Asaas - ${String(financeira.nome || "Financeira")}`,
       asaas_charge_id: chargeResponse.id,
       numero_fatura: chargeResponse.invoiceNumber || fatura.numero_fatura,
     };

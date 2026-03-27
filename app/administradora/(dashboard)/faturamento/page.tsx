@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { FileDown, FileSpreadsheet, Search, AlertTriangle } from "lucide-react"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 import { formatarMoeda } from "@/utils/formatters"
 import { cn } from "@/lib/utils"
 import * as XLSX from "xlsx"
@@ -308,13 +309,13 @@ export default function FaturamentoPage() {
       {linhas.length > 0 && (
         <>
           {temMudancaFaixa && (
-            <div className="mx-6 mt-4 p-4 bg-amber-50 border border-amber-200 rounded-lg flex items-center gap-3">
-              <AlertTriangle className="h-5 w-5 text-amber-600 flex-shrink-0" />
-              <p className="text-sm text-amber-800">
+            <Alert variant="warning" className="mx-6 mt-4">
+              <AlertTriangle className="h-5 w-5" />
+              <AlertDescription className="text-sm [&_strong]:font-semibold">
                 <strong>Mudança de faixa etária:</strong> Alguns beneficiários tiveram aniversário e alteraram de faixa.
                 As linhas destacadas indicam mudança no valor.
-              </p>
-            </div>
+              </AlertDescription>
+            </Alert>
           )}
 
           <div className="px-6 py-4 flex flex-wrap items-center gap-3">

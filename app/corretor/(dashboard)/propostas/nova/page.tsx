@@ -2046,9 +2046,9 @@ export default function NovaPropostaPage() {
                   </div>
 
                   {idadeCliente !== null && form.getValues("produto_id") && !valorCalculado && (
-                    <Alert className="bg-amber-50 border-amber-200">
-                      <AlertCircle className="h-4 w-4 text-amber-600" />
-                      <AlertDescription className="text-amber-800">
+                    <Alert variant="warning">
+                      <AlertCircle className="h-4 w-4" />
+                      <AlertDescription>
                         Não foi possível calcular automaticamente o valor para este produto e idade. Por favor, informe
                         o valor manualmente.
                       </AlertDescription>

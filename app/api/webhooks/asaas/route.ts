@@ -57,16 +57,32 @@ function deveBloquearRegressaoStatus(
 export async function POST(request: NextRequest) {
   try {
     const expectedToken = (process.env.ASAAS_WEBHOOK_TOKEN || "").trim()
-    if (expectedToken) {
-      const receivedToken =
-        request.headers.get("asaas-access-token") ||
-        request.headers.get("x-asaas-token") ||
-        request.headers.get("access_token") ||
-        request.nextUrl.searchParams.get("token") ||
-        ""
-      if (receivedToken !== expectedToken) {
-        return NextResponse.json({ error: "Token do webhook inválido" }, { status: 401 })
+    const receivedToken =
+      request.headers.get("asaas-access-token") ||
+      request.headers.get("x-asaas-token") ||
+      request.headers.get("access_token") ||
+      request.nextUrl.searchParams.get("token") ||
+      ""
+
+    if (expectedToken || receivedToken) {
+      let autorizado = !!receivedToken && receivedToken === expectedToken
+
+      if (!autorizado && receivedToken) {
+        const { data: financeiras } = await supabaseAdmin
+          .from("administradora_financeiras")
+          .select("api_token, instituicao_financeira, ativo")
+          .eq("ativo", true)
+          .not("api_token", "is", null)
+
+        const tokensAtivos = (financeiras || [])
+          .filter((f: any) => String(f?.instituicao_financeira || "").toLowerCase() === "asaas")
+          .map((f: any) => String(f?.api_token || "").trim())
+          .filter(Boolean)
+
+        autorizado = tokensAtivos.includes(receivedToken)
       }
+
+      if (!autorizado) return NextResponse.json({ error: "Token do webhook inválido" }, { status: 401 })
     }
 
     const body = await request.json().catch(() => ({}))

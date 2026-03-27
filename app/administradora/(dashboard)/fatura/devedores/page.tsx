@@ -19,9 +19,11 @@ type LinhaRelatorio = {
   valor_fatura: number
   status: string
   vencimento: string | null
+  financeira_nome?: string | null
 }
 
 type Corretor = { id: string; nome: string }
+type Financeira = { id: string; nome: string; instituicao_financeira?: string }
 
 const MESES = [
   { value: "01", label: "Janeiro" },
@@ -44,6 +46,7 @@ export default function DevedoresPage() {
   const [administradoraId, setAdministradoraId] = useState<string | null>(null)
   const [grupos, setGrupos] = useState<GrupoBeneficiarios[]>([])
   const [corretores, setCorretores] = useState<Corretor[]>([])
+  const [financeiras, setFinanceiras] = useState<Financeira[]>([])
   const [exportandoPDF, setExportandoPDF] = useState(false)
   const [exportandoExcel, setExportandoExcel] = useState(false)
 
@@ -52,6 +55,7 @@ export default function DevedoresPage() {
   const [grupoId, setGrupoId] = useState<string>("todos")
   const [corretorId, setCorretorId] = useState<string>("todos")
   const [statusFiltro, setStatusFiltro] = useState<string>("principais")
+  const [financeiraFiltro, setFinanceiraFiltro] = useState<string>("todos")
   const [nomeFiltro, setNomeFiltro] = useState<string>("")
 
   useEffect(() => {
@@ -67,18 +71,24 @@ export default function DevedoresPage() {
 
   async function carregarFiltros(admId: string) {
     try {
-      const [gruposData, corretoresRes] = await Promise.all([
+      const [gruposData, corretoresRes, financeirasRes] = await Promise.all([
         GruposBeneficiariosService.buscarTodos(admId),
         fetch(`/api/administradora/corretores?administradora_id=${encodeURIComponent(admId)}`),
+        fetch(`/api/administradora/financeiras?administradora_id=${encodeURIComponent(admId)}`),
       ])
       setGrupos(gruposData || [])
       if (corretoresRes.ok) {
         const corretoresData = await corretoresRes.json()
         setCorretores(Array.isArray(corretoresData) ? corretoresData : [])
       }
+      if (financeirasRes.ok) {
+        const financeirasData = await financeirasRes.json()
+        setFinanceiras(Array.isArray(financeirasData) ? financeirasData : [])
+      }
     } catch {
       setGrupos([])
       setCorretores([])
+      setFinanceiras([])
     }
   }
 
@@ -104,6 +114,11 @@ export default function DevedoresPage() {
       if (corretorId && corretorId !== "todos") url.searchParams.set("corretor_id", corretorId)
       const status = obterStatusParaBusca()
       if (status) url.searchParams.set("status", status)
+      if (financeiraFiltro && financeiraFiltro !== "todos") {
+        const financeiraSel = financeiras.find((f) => f.id === financeiraFiltro)
+        const termoFinanceira = String(financeiraSel?.nome || "").trim()
+        if (termoFinanceira) url.searchParams.set("financeira", termoFinanceira)
+      }
 
       const res = await fetch(url.toString(), { cache: "no-store" })
       const data = await res.json().catch(() => ({}))
@@ -136,6 +151,7 @@ export default function DevedoresPage() {
     setGrupoId("todos")
     setCorretorId("todos")
     setStatusFiltro("principais")
+    setFinanceiraFiltro("todos")
     setNomeFiltro("")
     setLinhas([])
   }
@@ -195,8 +211,8 @@ export default function DevedoresPage() {
       doc.text(`Referencia: ${mesRef}/${anoRef} | Registros: ${linhas.length}`, margin, y)
       y += 6
 
-      const headers = ["Nome", "CPF", "Telefone", "Valor", "Status"]
-      const widths = [90, 40, 45, 30, 35]
+      const headers = ["Nome", "CPF", "Telefone", "Financeira", "Valor", "Status"]
+      const widths = [80, 38, 40, 48, 28, 30]
       let x = margin
       doc.setFont(undefined, "bold")
       headers.forEach((h, i) => {
@@ -222,8 +238,10 @@ export default function DevedoresPage() {
         x += widths[1]
         doc.text(String(formatarTelefone(item.telefone)), x, y)
         x += widths[2]
-        doc.text(formatarMoeda(item.valor_fatura), x, y)
+        doc.text(doc.splitTextToSize(String(item.financeira_nome || "-"), widths[3] - 2)[0] || "-", x, y)
         x += widths[3]
+        doc.text(formatarMoeda(item.valor_fatura), x, y)
+        x += widths[4]
         doc.text(String(item.status || "-"), x, y)
         y += rowHeight
       })
@@ -251,6 +269,7 @@ export default function DevedoresPage() {
         Nome: item.cliente_nome || "-",
         CPF: formatarCpf(item.cpf),
         Telefone: formatarTelefone(item.telefone),
+        Financeira: item.financeira_nome || "-",
         Valor: item.valor_fatura,
         Status: item.status || "-",
       }))
@@ -278,7 +297,7 @@ export default function DevedoresPage() {
       </div>
 
       <div className="bg-white border-b border-gray-200 px-6 py-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-3 mb-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-7 gap-3 mb-4">
           <div>
             <label className="block text-xs text-gray-600 mb-1">Mês</label>
             <Select value={mesRef} onValueChange={setMesRef}>
@@ -350,6 +369,22 @@ export default function DevedoresPage() {
                 <SelectItem value="paga">Somente paga</SelectItem>
                 <SelectItem value="pendente">Somente pendente</SelectItem>
                 <SelectItem value="todos">Todos os status</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <label className="block text-xs text-gray-600 mb-1">Financeira</label>
+            <Select value={financeiraFiltro} onValueChange={setFinanceiraFiltro}>
+              <SelectTrigger className="h-10 w-full rounded-md border border-gray-300 bg-background px-3 py-2 text-sm">
+                <SelectValue placeholder="Todas as financeiras" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="todos">Todas as financeiras</SelectItem>
+                {financeiras.map((f) => (
+                  <SelectItem key={f.id} value={f.id}>
+                    {f.nome}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
@@ -426,6 +461,7 @@ export default function DevedoresPage() {
                   <th className="px-4 py-2 text-left text-xs font-semibold text-gray-700 border-r border-gray-300">Nome do Cliente</th>
                   <th className="px-4 py-2 text-left text-xs font-semibold text-gray-700 border-r border-gray-300">CPF</th>
                   <th className="px-4 py-2 text-left text-xs font-semibold text-gray-700 border-r border-gray-300">Telefone</th>
+                  <th className="px-4 py-2 text-left text-xs font-semibold text-gray-700 border-r border-gray-300">Financeira</th>
                   <th className="px-4 py-2 text-left text-xs font-semibold text-gray-700 border-r border-gray-300">Valor da Fatura</th>
                   <th className="px-4 py-2 text-left text-xs font-semibold text-gray-700 border-r border-gray-300">Status</th>
                 </tr>
@@ -433,13 +469,13 @@ export default function DevedoresPage() {
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={5} className="px-4 py-8 text-center text-sm text-gray-500">
+                    <td colSpan={6} className="px-4 py-8 text-center text-sm text-gray-500">
                       Carregando...
                     </td>
                   </tr>
                 ) : linhas.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="px-4 py-8 text-center text-sm text-gray-500">
+                    <td colSpan={6} className="px-4 py-8 text-center text-sm text-gray-500">
                       Nenhum resultado encontrado
                     </td>
                   </tr>
@@ -455,6 +491,7 @@ export default function DevedoresPage() {
                       <td className="px-4 py-2 text-sm text-gray-800 border-r border-gray-200">{linha.cliente_nome || "-"}</td>
                       <td className="px-4 py-2 text-sm text-gray-800 border-r border-gray-200">{formatarCpf(linha.cpf)}</td>
                       <td className="px-4 py-2 text-sm text-gray-800 border-r border-gray-200">{formatarTelefone(linha.telefone)}</td>
+                      <td className="px-4 py-2 text-sm text-gray-800 border-r border-gray-200">{linha.financeira_nome || "-"}</td>
                       <td className="px-4 py-2 text-sm font-medium text-gray-800 border-r border-gray-200">{formatarMoeda(linha.valor_fatura)}</td>
                       <td className="px-4 py-2 border-r border-gray-200">{getStatusBadge(linha.status)}</td>
                     </tr>

@@ -104,7 +104,7 @@ function obterChargeIds(baseId: string): string[] {
   return Array.from(new Set([limpo, semPrefixo, comPrefixo].filter(Boolean)))
 }
 
-async function buscarConfigAsaas(administradoraId: string): Promise<{ api_key: string; ambiente: string } | null> {
+async function buscarConfigsAsaas(administradoraId: string): Promise<Array<{ api_key: string; ambiente: string; nome?: string }>> {
   const { data: adm } = await supabase
     .from('administradoras')
     .select('tenant_id')
@@ -121,17 +121,19 @@ async function buscarConfigAsaas(administradoraId: string): Promise<{ api_key: s
       .eq('tenant_id', tenantId)
       .eq('ativo', true)
 
-    const asaasAtual = (financeiras || []).find(
+    const asaasAtivas = (financeiras || []).filter(
       (f: any) =>
         String(f?.instituicao_financeira || '').toLowerCase() === 'asaas' &&
-        !!f?.api_key
+        !!f?.api_key &&
+        (f?.status_integracao == null || String(f.status_integracao).toLowerCase() !== 'inativa')
     )
 
-    if (asaasAtual) {
-      return {
-        api_key: String((asaasAtual as any).api_key),
-        ambiente: String((asaasAtual as any).ambiente || 'producao'),
-      }
+    if (asaasAtivas.length > 0) {
+      return asaasAtivas.map((f: any) => ({
+        api_key: String(f.api_key),
+        ambiente: String(f.ambiente || 'producao'),
+        nome: String(f.nome || ''),
+      }))
     }
   }
 
@@ -145,13 +147,14 @@ async function buscarConfigAsaas(administradoraId: string): Promise<{ api_key: s
 
   const legadoRow = Array.isArray(legado) ? legado[0] : legado
   if (legadoRow?.api_key) {
-    return {
+    return [{
       api_key: String(legadoRow.api_key),
       ambiente: String(legadoRow.ambiente || 'producao'),
-    }
+      nome: 'LEGADO',
+    }]
   }
 
-  return null
+  return []
 }
 
 /**
@@ -179,18 +182,13 @@ export async function POST(request: NextRequest) {
     console.log('🔄 Iniciando sincronização de status...')
 
     // 1. Buscar configuração do Asaas (tabela atual e legado)
-    const config = await buscarConfigAsaas(administradora_id)
-    if (!config?.api_key) {
+    const configs = await buscarConfigsAsaas(administradora_id)
+    if (configs.length === 0) {
       return NextResponse.json(
         { error: 'Configuração do Asaas não encontrada ou sem API key ativa para esta administradora.' },
         { status: 404 }
       )
     }
-
-    const API_KEY = config.api_key
-    const BASE_URL = config.ambiente === 'sandbox' 
-      ? 'https://sandbox.asaas.com/api/v3'
-      : 'https://api.asaas.com/v3'
 
     // 2. Buscar faturas com asaas_charge_id
     let { data: faturas, error: faturasError } = await supabase
@@ -240,21 +238,28 @@ export async function POST(request: NextRequest) {
 
         let charge: any = null
         let ultimoStatusHttp: number | null = null
-        for (const id of idsCandidatos) {
-          const controller = new AbortController()
-          const timeout = setTimeout(() => controller.abort(), 8000)
-          const response = await fetch(`${BASE_URL}/payments/${id}`, {
-            headers: {
-              access_token: API_KEY,
-              'Content-Type': 'application/json',
-            },
-            signal: controller.signal,
-          }).finally(() => clearTimeout(timeout))
-          ultimoStatusHttp = response.status
-          if (response.ok) {
-            charge = await response.json()
-            break
+        for (const conf of configs) {
+          const baseUrl = conf.ambiente === 'sandbox'
+            ? 'https://sandbox.asaas.com/api/v3'
+            : 'https://api.asaas.com/v3'
+
+          for (const id of idsCandidatos) {
+            const controller = new AbortController()
+            const timeout = setTimeout(() => controller.abort(), 8000)
+            const response = await fetch(`${baseUrl}/payments/${id}`, {
+              headers: {
+                access_token: conf.api_key,
+                'Content-Type': 'application/json',
+              },
+              signal: controller.signal,
+            }).finally(() => clearTimeout(timeout))
+            ultimoStatusHttp = response.status
+            if (response.ok) {
+              charge = await response.json()
+              break
+            }
           }
+          if (charge) break
         }
 
         if (!charge) {
