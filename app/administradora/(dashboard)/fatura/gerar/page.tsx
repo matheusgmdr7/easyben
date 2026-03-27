@@ -77,6 +77,18 @@ function obterAnoMes(data?: string | null) {
   return base.slice(0, 7)
 }
 
+/** Máximo de boletos por chamada à API (requisições menores evitam 502/timeout do gateway). */
+const TAMANHO_CHUNK_LOTE_BOLETOS = 5
+
+function chunkArray<T>(arr: T[], size: number): T[][] {
+  if (size <= 0) return [arr]
+  const out: T[][] = []
+  for (let i = 0; i < arr.length; i += size) {
+    out.push(arr.slice(i, i + size))
+  }
+  return out
+}
+
 export default function FaturaGerarPage() {
   const router = useRouter()
   const [administradoraId, setAdministradoraId] = useState<string | null>(null)
@@ -537,6 +549,22 @@ export default function FaturaGerarPage() {
     setModalLoteOpen(true)
   }
 
+  function montarClientesPayloadLote(clientesLote: ClienteFatura[]) {
+    return clientesLote.map((c) => ({
+      cliente_administradora_id: c.cliente_administradora_id,
+      valor: c.valor_mensal ?? 0,
+      cliente_nome: c.cliente_nome,
+      cliente_email: c.cliente_email,
+      descricao: [
+        c.produto_nome && `Produto: ${c.produto_nome}`,
+        `Titular: ${c.cliente_nome || "—"}`,
+        c.dependentes_nomes?.length ? `${c.dependentes_nomes.length} dependente(s): ${c.dependentes_nomes.join(", ")}` : "",
+      ]
+        .filter(Boolean)
+        .join(". "),
+    }))
+  }
+
   async function gerarBoletosLote() {
     if (!administradoraId || selecionadosParaLote.length === 0) {
       toast.error("Selecione pelo menos um cliente")
@@ -555,9 +583,12 @@ export default function FaturaGerarPage() {
       toast.error("Taxa de administração não pode ser negativa")
       return
     }
-    try {
-      setGerandoLote(true)
-      setResultadoLote(null)
+    const lista = selecionadosParaLote
+    const chunks = chunkArray(lista, TAMANHO_CHUNK_LOTE_BOLETOS)
+
+    async function executarUmChunk(
+      clientesChunk: ClienteFatura[]
+    ): Promise<Array<{ success: boolean; cliente_administradora_id?: string; cliente_nome?: string; boleto_url?: string; error?: string; http_status?: number }>> {
       const res = await fetch("/api/administradora/fatura/gerar-boletos-lote", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -566,19 +597,7 @@ export default function FaturaGerarPage() {
           financeira_id: financeiraLote,
           vencimento: vencimentoLote.trim().slice(0, 10),
           taxa_administracao: taxaNum > 0 ? taxaNum : undefined,
-          clientes: selecionadosParaLote.map((c) => ({
-            cliente_administradora_id: c.cliente_administradora_id,
-            valor: c.valor_mensal ?? 0,
-            cliente_nome: c.cliente_nome,
-            cliente_email: c.cliente_email,
-            descricao: [
-              c.produto_nome && `Produto: ${c.produto_nome}`,
-              `Titular: ${c.cliente_nome || "—"}`,
-              c.dependentes_nomes?.length ? `${c.dependentes_nomes.length} dependente(s): ${c.dependentes_nomes.join(", ")}` : "",
-            ]
-              .filter(Boolean)
-              .join(". "),
-          })),
+          clientes: montarClientesPayloadLote(clientesChunk),
         }),
       })
       const data = await res.json().catch(() => ({}))
@@ -589,12 +608,12 @@ export default function FaturaGerarPage() {
             : ""
         if (res.status === 504) {
           throw new Error(
-            "Tempo esgotado (504): o lote demorou além do limite do servidor. Reduza a quantidade de clientes por vez ou tente novamente."
+            "Tempo esgotado (504): este sub-lote demorou além do limite. Tente novamente ou reduza o tamanho do sub-lote."
           )
         }
         if (res.status === 502 || res.status === 503) {
           throw new Error(
-            "502/503: o gateway encerrou a conexão antes do servidor responder o lote inteiro. Alguns boletos podem já ter sido gerados — confira o histórico acima. Gere novamente só para quem faltar ou reduza o tamanho do lote."
+            "502/503: o gateway encerrou a conexão neste sub-lote. Alguns boletos podem já ter sido gerados — confira o histórico. Continue gerando só para quem faltar."
           )
         }
         throw new Error(
@@ -602,16 +621,62 @@ export default function FaturaGerarPage() {
             `Falha na geração em lote (HTTP ${res.status}${res.statusText ? ` — ${res.statusText}` : ""}).`
         )
       }
-      setResultadoLote(data.results || [])
-      const resumo = data.resumo || {}
-      const nOk = resumo.sucesso ?? 0
-      const nErr = resumo.erro ?? 0
+      return (data.results || []) as Array<{
+        success: boolean
+        cliente_administradora_id?: string
+        cliente_nome?: string
+        boleto_url?: string
+        error?: string
+        http_status?: number
+      }>
+    }
+
+    let avisoParcialExibido = false
+    try {
+      setGerandoLote(true)
+      setResultadoLote(null)
+      if (chunks.length > 1) {
+        toast.info(
+          `Gerando ${lista.length} boleto(s) em ${chunks.length} etapas de até ${TAMANHO_CHUNK_LOTE_BOLETOS}.`,
+          { duration: 5000 }
+        )
+      }
+      const todosResults: Array<{
+        success: boolean
+        cliente_administradora_id?: string
+        cliente_nome?: string
+        boleto_url?: string
+        error?: string
+        http_status?: number
+      }> = []
+
+      for (let i = 0; i < chunks.length; i++) {
+        const chunk = chunks[i]
+        try {
+          const part = await executarUmChunk(chunk)
+          todosResults.push(...part)
+        } catch (chunkErr) {
+          if (todosResults.length > 0) {
+            setResultadoLote(todosResults)
+            toast.warning("Lote interrompido após uma ou mais etapas concluídas.", {
+              description: chunkErr instanceof Error ? chunkErr.message : String(chunkErr),
+              duration: 12000,
+            })
+            avisoParcialExibido = true
+          }
+          throw chunkErr
+        }
+      }
+
+      setResultadoLote(todosResults)
+      const nOk = todosResults.filter((r) => r.success).length
+      const nErr = todosResults.filter((r) => !r.success).length
       if (nErr > 0) {
         toast.warning(`${nOk} boleto(s) gerado(s); ${nErr} falha(s). Veja o detalhe por cliente abaixo.`)
       } else {
         toast.success(`${nOk} boleto(s) gerado(s).`)
       }
-      const sucessos = (data.results || []).filter((r: { success: boolean }) => r.success)
+      const sucessos = todosResults.filter((r) => r.success)
       if (sucessos.length > 0) {
         if (grupoSelecionado && administradoraId) {
           await Promise.all([
@@ -622,7 +687,9 @@ export default function FaturaGerarPage() {
       }
       setSelecionadosLote(new Set())
     } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : "Erro ao gerar boletos em lote")
+      if (!avisoParcialExibido) {
+        toast.error(e instanceof Error ? e.message : "Erro ao gerar boletos em lote")
+      }
       if (grupoSelecionado && administradoraId) {
         await Promise.all([
           carregarBoletosDoGrupo(grupoSelecionado.id, { silent: true }),
