@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase-admin"
 import { getCurrentTenantId } from "@/lib/tenant-query-helper"
+import { FinanceirasService } from "@/services/financeiras-service"
 
 type FaturaRow = {
   id: string
@@ -10,6 +11,25 @@ type FaturaRow = {
   status: string | null
   vencimento: string | null
   pagamento_data: string | null
+  boleto_url?: string | null
+  asaas_boleto_url?: string | null
+  asaas_invoice_url?: string | null
+  asaas_payment_link?: string | null
+}
+
+function linkBoletoFatura(f: FaturaRow): string | null {
+  const u =
+    f.boleto_url ||
+    f.asaas_boleto_url ||
+    f.asaas_invoice_url ||
+    f.asaas_payment_link
+  if (u == null || String(u).trim() === "") return null
+  return String(u).trim()
+}
+
+/** Mesmo padrão de `lib/gerar-boleto-administradora.ts` ao gravar a fatura. */
+function gatewayNomePorFinanceira(nomeFinanceira: string | null | undefined): string {
+  return `Asaas - ${String(nomeFinanceira || "Financeira")}`
 }
 
 type VidaMap = {
@@ -51,6 +71,7 @@ export async function GET(request: NextRequest) {
     const administradoraId = request.nextUrl.searchParams.get("administradora_id")
     const anoParam = request.nextUrl.searchParams.get("ano")
     const mesParam = request.nextUrl.searchParams.get("mes")
+    const financeiraIdParam = request.nextUrl.searchParams.get("financeira_id")?.trim() || ""
     if (!administradoraId) {
       return NextResponse.json({ error: "administradora_id é obrigatório" }, { status: 400 })
     }
@@ -75,7 +96,23 @@ export async function GET(request: NextRequest) {
     const fimPeriodoIso = `${ano}-${String(mes).padStart(2, "0")}-${String(fimPeriodo.getUTCDate()).padStart(2, "0")}`
     const periodoRef = `${ano}-${String(mes).padStart(2, "0")}`
 
-    const [{ count: vidasCount }, { count: vinculosCount }, { data: grupos }, { data: corretores }] = await Promise.all([
+    let gatewayNomeFiltro: string | null = null
+    let financeiraFiltroNome: string | null = null
+    if (financeiraIdParam) {
+      const fin = await FinanceirasService.buscarPorId(financeiraIdParam, administradoraId)
+      if (!fin) {
+        return NextResponse.json({ error: "Financeira não encontrada para esta administradora." }, { status: 404 })
+      }
+      financeiraFiltroNome = String(fin.nome || "").trim() || "Financeira"
+      gatewayNomeFiltro = gatewayNomePorFinanceira(financeiraFiltroNome)
+    }
+
+    const prevMonthNum = mes > 1 ? mes - 1 : 12
+    const prevYearNum = mes > 1 ? ano : ano - 1
+    const fimMesAnterior = new Date(Date.UTC(prevYearNum, prevMonthNum, 0, 23, 59, 59, 999))
+    const fimMesAnteriorIso = fimMesAnterior.toISOString()
+
+    const [{ count: vidasCount }, { count: vinculosCount }, { count: vidasAteMesAnterior }, { count: vinculosAteMesAnterior }, { data: grupos }, { data: corretores }] = await Promise.all([
       supabaseAdmin
         .from("vidas_importadas")
         .select("id", { count: "exact", head: true })
@@ -86,6 +123,18 @@ export async function GET(request: NextRequest) {
         .select("id", { count: "exact", head: true })
         .eq("administradora_id", administradoraId)
         .eq("tenant_id", tenantId),
+      supabaseAdmin
+        .from("vidas_importadas")
+        .select("id", { count: "exact", head: true })
+        .eq("administradora_id", administradoraId)
+        .eq("tenant_id", tenantId)
+        .lte("created_at", fimMesAnteriorIso),
+      supabaseAdmin
+        .from("clientes_grupos")
+        .select("id", { count: "exact", head: true })
+        .eq("administradora_id", administradoraId)
+        .eq("tenant_id", tenantId)
+        .lte("created_at", fimMesAnteriorIso),
       supabaseAdmin
         .from("grupos_beneficiarios")
         .select("id, nome")
@@ -102,13 +151,19 @@ export async function GET(request: NextRequest) {
     const PAGE_SIZE = 1000
     let from = 0
     while (true) {
-      const { data: chunk, error } = await supabaseAdmin
+      let qFat = supabaseAdmin
         .from("faturas")
-        .select("id, cliente_administradora_id, cliente_nome, valor, status, vencimento, pagamento_data")
+        .select(
+          "id, cliente_administradora_id, cliente_nome, valor, status, vencimento, pagamento_data, boleto_url, asaas_boleto_url, asaas_invoice_url, asaas_payment_link"
+        )
         .eq("administradora_id", administradoraId)
         .eq("tenant_id", tenantId)
         .gte("vencimento", inicioPeriodo)
         .lte("vencimento", fimPeriodoIso)
+      if (gatewayNomeFiltro) {
+        qFat = qFat.eq("gateway_nome", gatewayNomeFiltro)
+      }
+      const { data: chunk, error } = await qFat
         .order("vencimento", { ascending: false })
         .range(from, from + PAGE_SIZE - 1)
 
@@ -120,6 +175,13 @@ export async function GET(request: NextRequest) {
     }
 
     const clientesAtivos = (vidasCount || 0) > 0 ? Number(vidasCount || 0) : Number(vinculosCount || 0)
+    const clientesBaseMesAnterior =
+      (vidasCount || 0) > 0 ? Number(vidasAteMesAnterior || 0) : Number(vinculosAteMesAnterior || 0)
+    const clientesVariacaoAbs = clientesAtivos - clientesBaseMesAnterior
+    const clientesVariacaoPercent: number | null =
+      clientesBaseMesAnterior > 0
+        ? Number(((clientesVariacaoAbs / clientesBaseMesAnterior) * 100).toFixed(1))
+        : null
 
     const grupoNomeById = new Map<string, string>()
     for (const g of grupos || []) {
@@ -161,21 +223,18 @@ export async function GET(request: NextRequest) {
     }
 
     let faturasPendentes = 0
+    /** Soma de faturas não pagas no período (igual ao comportamento anterior do card). */
     let valorEmAberto = 0
     let recebidoMes = 0
-    let valorFaturasAtrasadas = 0
-    let valorAtrasado = 0
 
-    const inadimplentesMap = new Map<
-      string,
-      {
-        cliente_nome: string
-        valor: number
-        status: string
-        grupo: string
-        corretor: string
-      }
-    >()
+    const pendenciasFaturas: Array<{
+      fatura_id: string
+      cliente_nome: string
+      vencimento: string
+      status: string
+      corretora: string
+      link_boleto: string | null
+    }> = []
 
     for (const f of faturas) {
       const status = normalizarStatus(f.status)
@@ -201,42 +260,29 @@ export async function GET(request: NextRequest) {
         }
       }
 
-      if (isAtrasada) {
-        valorFaturasAtrasadas += valor
-      }
-
-      if (isAtrasada || isVencida) {
-        valorAtrasado += valor
-      }
-
-      if (status === "cancelada") {
+      if (isPendente || isAtrasada || isVencida) {
         const clienteAdmId = String(f.cliente_administradora_id || "").trim()
-        const nome = String(f.cliente_nome || "Cliente")
-        const key = clienteAdmId || nome
-
         const vidaCtx = clienteAdmId ? vidaByClienteAdmId.get(clienteAdmId) : undefined
-        const grupoNome = vidaCtx?.grupo_id ? grupoNomeById.get(vidaCtx.grupo_id) || "—" : "—"
-        const corretorNome = vidaCtx?.corretor_id ? corretorNomeById.get(vidaCtx.corretor_id) || "—" : "—"
-
-        const atual = inadimplentesMap.get(key)
-        if (!atual) {
-          inadimplentesMap.set(key, {
-            cliente_nome: nome,
-            valor,
-            status,
-            grupo: grupoNome,
-            corretor: corretorNome,
-          })
-        } else {
-          atual.valor += valor
-          atual.status = "cancelada"
-        }
+        const corretora = vidaCtx?.corretor_id ? corretorNomeById.get(vidaCtx.corretor_id) || "—" : "—"
+        pendenciasFaturas.push({
+          fatura_id: String(f.id),
+          cliente_nome: String(f.cliente_nome || "Cliente"),
+          vencimento: String(f.vencimento || "").slice(0, 10),
+          status,
+          corretora,
+          link_boleto: linkBoletoFatura(f),
+        })
       }
     }
 
-    const inadimplentes = Array.from(inadimplentesMap.values())
-      .sort((a, b) => b.valor - a.valor)
-      .slice(0, 100)
+    pendenciasFaturas.sort((a, b) => {
+      const cmp = a.vencimento.localeCompare(b.vencimento)
+      if (cmp !== 0) return cmp
+      return a.cliente_nome.localeCompare(b.cliente_nome, "pt-BR")
+    })
+
+    const totalPendenciasPeriodo = pendenciasFaturas.length
+    const pendenciasFaturasLista = pendenciasFaturas.slice(0, 100)
 
     return NextResponse.json({
       periodo: {
@@ -245,16 +291,21 @@ export async function GET(request: NextRequest) {
         inicio: inicioPeriodo,
         fim: fimPeriodoIso,
       },
+      financeira: financeiraIdParam
+        ? { id: financeiraIdParam, nome: financeiraFiltroNome, gateway_nome: gatewayNomeFiltro }
+        : null,
       cards: {
         clientes_ativos: clientesAtivos,
+        clientes_base_mes_anterior: clientesBaseMesAnterior,
+        clientes_variacao_abs: clientesVariacaoAbs,
+        clientes_variacao_percent: clientesVariacaoPercent,
+        mes_referencia_variacao: { mes: prevMonthNum, ano: prevYearNum },
         faturas_pendentes: faturasPendentes,
         valor_em_aberto: Number(valorEmAberto.toFixed(2)),
         valor_recebido_mes: Number(recebidoMes.toFixed(2)),
-        clientes_inadimplentes: inadimplentes.length,
-        faturas_atrasadas_valor: Number(valorFaturasAtrasadas.toFixed(2)),
-        valor_atrasado: Number(valorAtrasado.toFixed(2)),
       },
-      inadimplentes,
+      pendencias_faturas: pendenciasFaturasLista,
+      pendencias_total: totalPendenciasPeriodo,
     })
   } catch (e: unknown) {
     console.error("Erro dashboard administradora:", e)

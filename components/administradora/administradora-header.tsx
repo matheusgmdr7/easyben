@@ -134,14 +134,17 @@ export default function AdministradoraHeader({ sidebarCollapsed = false }: Admin
 
   return (
     <header 
-      className={`admin-header h-16 px-2 sm:px-3 md:px-4 flex items-center justify-between fixed top-0 z-20 shadow-lg transition-all duration-300 ${
+      className={`admin-header h-16 pl-14 pr-2 sm:pl-14 sm:pr-3 md:px-4 flex items-center justify-between fixed top-0 z-20 shadow-lg transition-all duration-300 ${
         sidebarCollapsed ? 'md:left-16 lg:left-20' : 'md:left-64 lg:left-72'
-      } left-0 right-0`}
+      } left-0 right-0 md:pl-4`}
       style={{ ...headerStyle, fontFamily: "'Inter', sans-serif" }}
     >
-      {/* Logo/Título */}
-      <div className="flex items-center h-full">
-        <Link href="/administradora/dashboard" className="text-sm sm:text-base md:text-lg font-semibold text-[#0F172A] block md:hidden hover:opacity-90 transition-opacity">
+      {/* Logo/Título — pl-14 no header libera o botão fixo do menu (sidebar) no mobile */}
+      <div className="flex items-center h-full min-w-0 flex-1 md:flex-none pr-2">
+        <Link
+          href="/administradora/dashboard"
+          className="text-sm sm:text-base md:text-lg font-semibold text-[#0F172A] block md:hidden hover:opacity-90 transition-opacity truncate"
+        >
           Portal da Administradora
         </Link>
         <Link
@@ -156,8 +159,8 @@ export default function AdministradoraHeader({ sidebarCollapsed = false }: Admin
         </Link>
       </div>
 
-      {/* Spacer */}
-      <div className="flex-1"></div>
+      {/* Spacer — só no desktop; no mobile o título usa flex-1 para truncar antes dos ícones */}
+      <div className="hidden md:block flex-1" aria-hidden />
 
       {/* Desktop menu */}
       <div className="hidden md:flex items-center gap-1 sm:gap-2 h-full">
@@ -191,7 +194,7 @@ export default function AdministradoraHeader({ sidebarCollapsed = false }: Admin
           </button>
 
           {showAlertas && (
-            <div className="absolute right-0 top-11 w-[360px] max-h-[420px] overflow-y-auto bg-white border border-gray-200 rounded-xl shadow-2xl z-50">
+            <div className="absolute right-0 top-11 w-[min(360px,calc(100vw-1.5rem))] max-h-[420px] overflow-y-auto bg-white border border-gray-200 rounded-xl shadow-2xl z-50">
               <div className="p-3 border-b border-gray-100 flex items-center justify-between">
                 <div>
                   <p className="text-sm font-semibold text-gray-900">Avisos do sistema</p>

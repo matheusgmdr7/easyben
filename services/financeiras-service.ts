@@ -49,12 +49,10 @@ export class FinanceirasService {
   }
 
   static async listar(administradoraId: string): Promise<AdministradoraFinanceira[]> {
-    const tenantId = await this.resolverTenantId(administradoraId)
     const { data, error } = await supabaseAdmin
       .from("administradora_financeiras")
       .select("*")
       .eq("administradora_id", administradoraId)
-      .eq("tenant_id", tenantId)
       .order("nome", { ascending: true })
 
     if (error) throw error
@@ -65,13 +63,11 @@ export class FinanceirasService {
     id: string,
     administradoraId: string
   ): Promise<AdministradoraFinanceira | null> {
-    const tenantId = await this.resolverTenantId(administradoraId)
     const { data, error } = await supabaseAdmin
       .from("administradora_financeiras")
       .select("*")
       .eq("id", id)
       .eq("administradora_id", administradoraId)
-      .eq("tenant_id", tenantId)
       .maybeSingle()
 
     if (error) throw error

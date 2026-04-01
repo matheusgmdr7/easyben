@@ -104,7 +104,17 @@ function obterChargeIds(baseId: string): string[] {
   return Array.from(new Set([limpo, semPrefixo, comPrefixo].filter(Boolean)))
 }
 
-async function buscarConfigsAsaas(administradoraId: string): Promise<Array<{ api_key: string; ambiente: string; nome?: string }>> {
+/** Mesmo texto gravado em `faturas.gateway_nome` ao gerar boleto na financeira. */
+function gatewayNomeAsaasFinanceira(nomeFinanceira: string | null | undefined): string {
+  return `Asaas - ${String(nomeFinanceira || 'Financeira')}`
+}
+
+async function buscarConfigsAsaas(
+  administradoraId: string,
+  financeiraId?: string | null
+): Promise<Array<{ api_key: string; ambiente: string; nome?: string }>> {
+  const finId = String(financeiraId || '').trim()
+
   const { data: adm } = await supabase
     .from('administradoras')
     .select('tenant_id')
@@ -112,6 +122,35 @@ async function buscarConfigsAsaas(administradoraId: string): Promise<Array<{ api
     .maybeSingle()
 
   const tenantId = adm?.tenant_id || null
+
+  // 1) Financeira explícita (ex.: select do dashboard): só administradora + id (sem depender de tenant_id na linha)
+  if (finId) {
+    const { data: uma } = await supabase
+      .from('administradora_financeiras')
+      .select('nome, api_key, ambiente, instituicao_financeira, status_integracao, ativo')
+      .eq('administradora_id', administradoraId)
+      .eq('id', finId)
+      .eq('ativo', true)
+      .maybeSingle()
+
+    if (!uma) {
+      return []
+    }
+    const okAsaas =
+      String(uma.instituicao_financeira || '').toLowerCase() === 'asaas' &&
+      !!uma.api_key &&
+      (uma.status_integracao == null || String(uma.status_integracao).toLowerCase() !== 'inativa')
+    if (!okAsaas) {
+      return []
+    }
+    return [
+      {
+        api_key: String(uma.api_key),
+        ambiente: String(uma.ambiente || 'producao'),
+        nome: String(uma.nome || ''),
+      },
+    ]
+  }
 
   if (tenantId) {
     const { data: financeiras } = await supabase
@@ -163,7 +202,12 @@ async function buscarConfigsAsaas(administradoraId: string): Promise<Array<{ api
  */
 export async function POST(request: NextRequest) {
   try {
-    const { administradora_id } = await request.json()
+    const body = await request.json()
+    const administradora_id = body?.administradora_id
+    const financeira_id =
+      body?.financeira_id != null && String(body.financeira_id).trim() !== ''
+        ? String(body.financeira_id).trim()
+        : null
 
     if (!administradora_id) {
       return NextResponse.json(
@@ -181,24 +225,45 @@ export async function POST(request: NextRequest) {
 
     console.log('🔄 Iniciando sincronização de status...')
 
-    // 1. Buscar configuração do Asaas (tabela atual e legado)
-    const configs = await buscarConfigsAsaas(administradora_id)
+    // 1. Buscar configuração do Asaas (tabela atual e legado), opcionalmente só uma financeira
+    const configs = await buscarConfigsAsaas(administradora_id, financeira_id)
     if (configs.length === 0) {
-      return NextResponse.json(
-        { error: 'Configuração do Asaas não encontrada ou sem API key ativa para esta administradora.' },
-        { status: 404 }
-      )
+      const msg = financeira_id
+        ? 'Financeira não encontrada, inativa ou sem Asaas/API key para esta administradora.'
+        : 'Configuração do Asaas não encontrada ou sem API key ativa para esta administradora.'
+      return NextResponse.json({ error: msg }, { status: 404 })
     }
 
-    // 2. Buscar faturas com asaas_charge_id
-    let { data: faturas, error: faturasError } = await supabase
+    const gatewayNomeFiltro = financeira_id ? gatewayNomeAsaasFinanceira(configs[0]?.nome) : null
+
+    // 2. Buscar faturas com asaas_charge_id (opcionalmente só da financeira escolhida, via gateway_nome)
+    let qF = supabase
       .from('faturas')
       .select('id, numero_fatura, cliente_nome, asaas_charge_id, gateway_id, status')
       .eq('administradora_id', administradora_id)
       .or('asaas_charge_id.not.is.null,gateway_id.not.is.null')
+    if (gatewayNomeFiltro) {
+      qF = qF.eq('gateway_nome', gatewayNomeFiltro)
+    }
+    let { data: faturas, error: faturasError } = await qF
+
+    // Se o filtro .eq(gateway_nome) falhar no PostgREST, tenta carregar e filtrar em memória.
+    if (faturasError && gatewayNomeFiltro) {
+      const wide = await supabase
+        .from('faturas')
+        .select('id, numero_fatura, cliente_nome, asaas_charge_id, gateway_id, status, gateway_nome')
+        .eq('administradora_id', administradora_id)
+        .or('asaas_charge_id.not.is.null,gateway_id.not.is.null')
+      if (!wide.error && Array.isArray(wide.data)) {
+        faturas = (wide.data as any[]).filter(
+          (r: any) => String(r?.gateway_nome || '') === gatewayNomeFiltro
+        )
+        faturasError = null
+      }
+    }
 
     if (faturasError) {
-      // Fallback para schemas legados com divergência de colunas.
+      // Fallback para schemas legados com divergência de colunas (sem filtro por financeira).
       const fallback = await supabase
         .from('faturas')
         .select('id, asaas_charge_id, gateway_id, status')
@@ -206,6 +271,11 @@ export async function POST(request: NextRequest) {
         .or('asaas_charge_id.not.is.null,gateway_id.not.is.null')
       faturas = fallback.data as any
       faturasError = fallback.error as any
+      if (!faturasError && gatewayNomeFiltro && Array.isArray(faturas)) {
+        resultado.erros.push(
+          'Aviso: não foi possível filtrar por financeira (coluna gateway_nome indisponível); sincronização considerou todas as faturas com cobrança.'
+        )
+      }
     }
 
     if (faturasError) {
