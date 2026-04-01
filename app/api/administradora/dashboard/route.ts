@@ -15,7 +15,12 @@ type FaturaRow = {
   asaas_boleto_url?: string | null
   asaas_invoice_url?: string | null
   asaas_payment_link?: string | null
+  gateway_nome?: string | null
 }
+
+const FATURAS_SELECT_SEM_GATEWAY =
+  "id, cliente_administradora_id, cliente_nome, valor, status, vencimento, pagamento_data, boleto_url, asaas_boleto_url, asaas_invoice_url, asaas_payment_link"
+const FATURAS_SELECT_COM_GATEWAY = `${FATURAS_SELECT_SEM_GATEWAY}, gateway_nome`
 
 function linkBoletoFatura(f: FaturaRow): string | null {
   const u =
@@ -147,31 +152,57 @@ export async function GET(request: NextRequest) {
         .eq("tenant_id", tenantId),
     ])
 
-    let faturas: FaturaRow[] = []
     const PAGE_SIZE = 1000
-    let from = 0
-    while (true) {
-      let qFat = supabaseAdmin
-        .from("faturas")
-        .select(
-          "id, cliente_administradora_id, cliente_nome, valor, status, vencimento, pagamento_data, boleto_url, asaas_boleto_url, asaas_invoice_url, asaas_payment_link"
-        )
-        .eq("administradora_id", administradoraId)
-        .eq("tenant_id", tenantId)
-        .gte("vencimento", inicioPeriodo)
-        .lte("vencimento", fimPeriodoIso)
-      if (gatewayNomeFiltro) {
-        qFat = qFat.eq("gateway_nome", gatewayNomeFiltro)
-      }
-      const { data: chunk, error } = await qFat
-        .order("vencimento", { ascending: false })
-        .range(from, from + PAGE_SIZE - 1)
 
-      if (error) throw error
-      const lista = (chunk || []) as FaturaRow[]
-      faturas = faturas.concat(lista)
-      if (lista.length < PAGE_SIZE) break
-      from += PAGE_SIZE
+    async function buscarFaturasPeriodo(
+      aplicarEqGateway: boolean,
+      colunas: typeof FATURAS_SELECT_SEM_GATEWAY | typeof FATURAS_SELECT_COM_GATEWAY
+    ): Promise<FaturaRow[]> {
+      const acumulado: FaturaRow[] = []
+      let from = 0
+      while (true) {
+        let qFat = supabaseAdmin
+          .from("faturas")
+          .select(colunas)
+          .eq("administradora_id", administradoraId)
+          .eq("tenant_id", tenantId)
+          .gte("vencimento", inicioPeriodo)
+          .lte("vencimento", fimPeriodoIso)
+        if (aplicarEqGateway && gatewayNomeFiltro) {
+          qFat = qFat.eq("gateway_nome", gatewayNomeFiltro)
+        }
+        const { data: chunk, error } = await qFat
+          .order("vencimento", { ascending: false })
+          .range(from, from + PAGE_SIZE - 1)
+
+        if (error) throw error
+        const lista = (chunk || []) as FaturaRow[]
+        acumulado.push(...lista)
+        if (lista.length < PAGE_SIZE) break
+        from += PAGE_SIZE
+      }
+      return acumulado
+    }
+
+    let faturas: FaturaRow[] = []
+    if (gatewayNomeFiltro) {
+      try {
+        faturas = await buscarFaturasPeriodo(true, FATURAS_SELECT_COM_GATEWAY)
+      } catch (eqErr) {
+        // Mesmo padrão de `sincronizar-status-asaas`: o `.eq(gateway_nome)` pode falhar no PostgREST mesmo com a coluna existente.
+        console.warn("dashboard: filtro gateway_nome via eq falhou; aplicando filtro em memória", eqErr)
+        try {
+          const todas = await buscarFaturasPeriodo(false, FATURAS_SELECT_COM_GATEWAY)
+          faturas = todas.filter((f) => String(f?.gateway_nome || "").trim() === gatewayNomeFiltro)
+        } catch (memErr) {
+          console.error("dashboard: não foi possível aplicar filtro por financeira (gateway_nome)", memErr)
+          throw new Error(
+            "Não foi possível filtrar o dashboard por financeira. Confira se a coluna gateway_nome existe em faturas e se os boletos foram gerados com o nome de gateway esperado (Asaas - Nome da financeira)."
+          )
+        }
+      }
+    } else {
+      faturas = await buscarFaturasPeriodo(false, FATURAS_SELECT_SEM_GATEWAY)
     }
 
     const clientesAtivos = (vidasCount || 0) > 0 ? Number(vidasCount || 0) : Number(vinculosCount || 0)
@@ -309,10 +340,13 @@ export async function GET(request: NextRequest) {
     })
   } catch (e: unknown) {
     console.error("Erro dashboard administradora:", e)
-    return NextResponse.json(
-      { error: e instanceof Error ? e.message : "Erro ao montar dashboard" },
-      { status: 500 }
-    )
+    const msg =
+      e instanceof Error
+        ? e.message
+        : typeof e === "object" && e !== null && "message" in e
+          ? String((e as { message?: unknown }).message)
+          : "Erro ao montar dashboard"
+    return NextResponse.json({ error: msg }, { status: 500 })
   }
 }
 
