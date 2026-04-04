@@ -224,7 +224,14 @@ export default function DevedoresPage() {
       y += 6
 
       const headers = ["Nome", "CPF", "Telefone", "Vencimento", "Valor", "Status", "Boleto"]
-      const widths = [68, 32, 34, 24, 24, 22, 52]
+      const widths = [58, 30, 32, 22, 22, 20, 82]
+      const tableW = widths.reduce((a, b) => a + b, 0)
+      const maxY = 190
+      const fontCorpo = 9
+      const fontUrl = 7
+      const lineHeightUrlMm = (fontUrl * doc.getLineHeightFactor() * 25.4) / 72
+      const rowMinMm = 6
+
       let x = margin
       doc.setFont(undefined, "bold")
       headers.forEach((h, i) => {
@@ -233,15 +240,23 @@ export default function DevedoresPage() {
       })
       y += 5
       doc.setFont(undefined, "normal")
-      const rowHeight = 6
+      doc.setFontSize(fontCorpo)
+
       linhas.forEach((item, index) => {
-        if (y > 185) {
+        const linkBoleto = String(item.boleto_url || "").trim()
+        doc.setFontSize(fontUrl)
+        const urlLines = linkBoleto ? doc.splitTextToSize(linkBoleto, widths[6] - 2) : ["-"]
+        doc.setFontSize(fontCorpo)
+        const urlBlockH = Math.max(rowMinMm, 2 + urlLines.length * lineHeightUrlMm)
+        const rowH = Math.max(rowMinMm, urlBlockH)
+
+        if (y + rowH > maxY) {
           doc.addPage("landscape", "a4")
           y = 14
         }
         if (index % 2 === 1) {
           doc.setFillColor(245, 245, 245)
-          doc.rect(margin, y - 4, widths.reduce((a, b) => a + b, 0), rowHeight, "F")
+          doc.rect(margin, y - 4, tableW, rowH, "F")
         }
         x = margin
         doc.text(doc.splitTextToSize(item.cliente_nome || "-", widths[0] - 2)[0] || "-", x, y)
@@ -256,13 +271,10 @@ export default function DevedoresPage() {
         x += widths[4]
         doc.text(String(item.status || "-"), x, y)
         x += widths[5]
-        const linkBoleto = String(item.boleto_url || "").trim()
-        doc.text(
-          linkBoleto ? doc.splitTextToSize(linkBoleto, widths[6] - 2)[0] || linkBoleto : "-",
-          x,
-          y
-        )
-        y += rowHeight
+        doc.setFontSize(fontUrl)
+        doc.text(urlLines, x, y)
+        doc.setFontSize(fontCorpo)
+        y += rowH
       })
       y += 4
       doc.setFont(undefined, "bold")
