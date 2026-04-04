@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase-admin"
 import { getCurrentTenantId } from "@/lib/tenant-query-helper"
 import { FinanceirasService } from "@/services/financeiras-service"
+import { faturaCombinaFiltroFinanceira } from "@/lib/fatura-filtro-financeira"
 
 type FaturaRow = {
   id: string
@@ -81,44 +82,6 @@ function primeiroDiaMes(ano: number, mes: number): string {
 function ultimoDiaMes(ano: number, mes: number): string {
   const data = new Date(Date.UTC(ano, mes, 0))
   return `${ano}-${String(mes).padStart(2, "0")}-${String(data.getUTCDate()).padStart(2, "0")}`
-}
-
-/** Mesmo limite do script SQL `gateway_nome VARCHAR(50)` ao gravar boleto administradora. */
-const GATEWAY_NOME_MAX_LEN = 50
-
-/** Texto como gravado em `faturas.gateway_nome` em `gerar-boleto-administradora` (truncado). */
-function gatewayAsaasComoNoBanco(nomeFinanceira: string): string {
-  return `Asaas - ${String(nomeFinanceira || "Financeira").trim()}`.slice(0, GATEWAY_NOME_MAX_LEN)
-}
-
-/**
- * Fatura combina com o filtro de financeira (nome), considerando:
- * - legado: `gateway_nome` vazio ou só "Asaas" (antes do multi-conta);
- * - atual: "Asaas - Nome" com possível truncamento em 50 caracteres;
- * - match por substring no nome completo ou no trecho após "Asaas -".
- */
-function faturaCombinaFiltroFinanceira(
-  gatewayNome: string | null | undefined,
-  nomeFinanceiraFiltro: string
-): boolean {
-  const termo = String(nomeFinanceiraFiltro || "").trim().toLowerCase()
-  if (!termo) return true
-
-  const raw = String(gatewayNome ?? "").trim()
-  const g = raw.toLowerCase()
-
-  if (!g || g === "asaas") return true
-
-  if (g.includes(termo)) return true
-
-  const esperado = gatewayAsaasComoNoBanco(termo).toLowerCase()
-  if (g === esperado) return true
-  if (g.startsWith(esperado) || esperado.startsWith(g)) return true
-
-  const semPrefixo = g.replace(/^asaas\s*-\s*/i, "").trim()
-  if (semPrefixo.includes(termo)) return true
-
-  return false
 }
 
 /** Primeiro número útil em `telefones` (JSONB) ou chaves de contato em `dados_adicionais`. */

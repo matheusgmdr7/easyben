@@ -72,6 +72,10 @@ export default function AdministradoraDashboard() {
     const res = await fetch(`/api/administradora/dashboard?${qs.toString()}`, { cache: "no-store" })
     const payload = await res.json().catch(() => ({}))
     if (!res.ok) throw new Error(payload?.error || "Erro ao buscar dashboard")
+    const alerta = payload?.alerta as { mensagem?: string } | undefined
+    if (alerta?.mensagem) {
+      toast.warning(String(alerta.mensagem))
+    }
     const c = payload?.cards || {}
     setDashboardData({
       clientes_ativos: Number(c.clientes_ativos ?? 0),

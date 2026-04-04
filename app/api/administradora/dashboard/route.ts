@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase-admin"
 import { getCurrentTenantId } from "@/lib/tenant-query-helper"
 import { FinanceirasService } from "@/services/financeiras-service"
+import { faturaCombinaFiltroFinanceira, gatewayAsaasComoNoBanco } from "@/lib/fatura-filtro-financeira"
 
 type FaturaRow = {
   id: string
@@ -102,6 +103,8 @@ export async function GET(request: NextRequest) {
     const periodoRef = `${ano}-${String(mes).padStart(2, "0")}`
 
     let gatewayNomeFiltro: string | null = null
+    /** Valor truncado como gravado em `faturas.gateway_nome` (para `.eq` no PostgREST). */
+    let gatewayNomeEqFiltro: string | null = null
     let financeiraFiltroNome: string | null = null
     if (financeiraIdParam) {
       const fin = await FinanceirasService.buscarPorId(financeiraIdParam, administradoraId)
@@ -110,6 +113,7 @@ export async function GET(request: NextRequest) {
       }
       financeiraFiltroNome = String(fin.nome || "").trim() || "Financeira"
       gatewayNomeFiltro = gatewayNomePorFinanceira(financeiraFiltroNome)
+      gatewayNomeEqFiltro = gatewayAsaasComoNoBanco(financeiraFiltroNome)
     }
 
     const prevMonthNum = mes > 1 ? mes - 1 : 12
@@ -165,11 +169,16 @@ export async function GET(request: NextRequest) {
           .from("faturas")
           .select(colunas)
           .eq("administradora_id", administradoraId)
-          .eq("tenant_id", tenantId)
           .gte("vencimento", inicioPeriodo)
           .lte("vencimento", fimPeriodoIso)
-        if (aplicarEqGateway && gatewayNomeFiltro) {
-          qFat = qFat.eq("gateway_nome", gatewayNomeFiltro)
+        const tidFat = String(tenantId || "").trim()
+        if (tidFat) {
+          qFat = qFat.or(`tenant_id.eq.${tidFat},tenant_id.is.null`)
+        } else {
+          qFat = qFat.is("tenant_id", null)
+        }
+        if (aplicarEqGateway && gatewayNomeEqFiltro) {
+          qFat = qFat.eq("gateway_nome", gatewayNomeEqFiltro)
         }
         const { data: chunk, error } = await qFat
           .order("vencimento", { ascending: false })
@@ -184,21 +193,23 @@ export async function GET(request: NextRequest) {
       return acumulado
     }
 
+    let filtroFinanceiraIndisponivel = false
     let faturas: FaturaRow[] = []
-    if (gatewayNomeFiltro) {
+    if (gatewayNomeFiltro && financeiraFiltroNome) {
       try {
         faturas = await buscarFaturasPeriodo(true, FATURAS_SELECT_COM_GATEWAY)
       } catch (eqErr) {
-        // Mesmo padrão de `sincronizar-status-asaas`: o `.eq(gateway_nome)` pode falhar no PostgREST mesmo com a coluna existente.
         console.warn("dashboard: filtro gateway_nome via eq falhou; aplicando filtro em memória", eqErr)
         try {
           const todas = await buscarFaturasPeriodo(false, FATURAS_SELECT_COM_GATEWAY)
-          faturas = todas.filter((f) => String(f?.gateway_nome || "").trim() === gatewayNomeFiltro)
+          faturas = todas.filter((f) => faturaCombinaFiltroFinanceira(f.gateway_nome, financeiraFiltroNome))
         } catch (memErr) {
-          console.error("dashboard: não foi possível aplicar filtro por financeira (gateway_nome)", memErr)
-          throw new Error(
-            "Não foi possível filtrar o dashboard por financeira. Confira se a coluna gateway_nome existe em faturas e se os boletos foram gerados com o nome de gateway esperado (Asaas - Nome da financeira)."
+          console.warn(
+            "dashboard: select com coluna gateway_nome falhou; buscando faturas sem gateway_nome (filtro por financeira desativado)",
+            memErr
           )
+          faturas = await buscarFaturasPeriodo(false, FATURAS_SELECT_SEM_GATEWAY)
+          filtroFinanceiraIndisponivel = true
         }
       }
     } else {
@@ -325,6 +336,15 @@ export async function GET(request: NextRequest) {
       financeira: financeiraIdParam
         ? { id: financeiraIdParam, nome: financeiraFiltroNome, gateway_nome: gatewayNomeFiltro }
         : null,
+      ...(filtroFinanceiraIndisponivel
+        ? {
+            alerta: {
+              tipo: "gateway_nome_indisponivel",
+              mensagem:
+                "A coluna gateway_nome não está disponível nas faturas (ou a consulta falhou). Os números deste período incluem todas as faturas, não só a financeira selecionada. Adicione/atualize a coluna gateway_nome e associe-a ao gerar boletos.",
+            },
+          }
+        : {}),
       cards: {
         clientes_ativos: clientesAtivos,
         clientes_base_mes_anterior: clientesBaseMesAnterior,
