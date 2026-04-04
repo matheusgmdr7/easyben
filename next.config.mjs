@@ -1,9 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  experimental: {
-    webpackBuildWorker: true,
-  },
+  // webpackBuildWorker (experimental) costuma quebrar build em CI (ex.: Netlify) com erros opacos do webpack.
   webpack: (config, { dev }) => {
     if (dev) {
       config.watchOptions = {
