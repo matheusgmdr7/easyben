@@ -7,7 +7,7 @@ import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { FileDown, FileSpreadsheet, Search, X } from "lucide-react"
+import { ExternalLink, FileDown, FileSpreadsheet, Search, X } from "lucide-react"
 import { formatarData, formatarMoeda } from "@/utils/formatters"
 import { cn } from "@/lib/utils"
 
@@ -19,7 +19,7 @@ type LinhaRelatorio = {
   valor_fatura: number
   status: string
   vencimento: string | null
-  financeira_nome?: string | null
+  boleto_url: string | null
 }
 
 type Corretor = { id: string; nome: string }
@@ -223,8 +223,8 @@ export default function DevedoresPage() {
       doc.text(`Referencia: ${mesRef}/${anoRef} | Registros: ${linhas.length}`, margin, y)
       y += 6
 
-      const headers = ["Nome", "CPF", "Telefone", "Financeira", "Vencimento", "Valor", "Status"]
-      const widths = [72, 34, 36, 42, 26, 26, 28]
+      const headers = ["Nome", "CPF", "Telefone", "Vencimento", "Valor", "Status", "Boleto"]
+      const widths = [68, 32, 34, 24, 24, 22, 52]
       let x = margin
       doc.setFont(undefined, "bold")
       headers.forEach((h, i) => {
@@ -250,13 +250,18 @@ export default function DevedoresPage() {
         x += widths[1]
         doc.text(String(formatarTelefone(item.telefone)), x, y)
         x += widths[2]
-        doc.text(doc.splitTextToSize(String(item.financeira_nome || "-"), widths[3] - 2)[0] || "-", x, y)
-        x += widths[3]
         doc.text(item.vencimento ? formatarData(item.vencimento) : "-", x, y)
-        x += widths[4]
+        x += widths[3]
         doc.text(formatarMoeda(item.valor_fatura), x, y)
-        x += widths[5]
+        x += widths[4]
         doc.text(String(item.status || "-"), x, y)
+        x += widths[5]
+        const linkBoleto = String(item.boleto_url || "").trim()
+        doc.text(
+          linkBoleto ? doc.splitTextToSize(linkBoleto, widths[6] - 2)[0] || linkBoleto : "-",
+          x,
+          y
+        )
         y += rowHeight
       })
       y += 4
@@ -283,10 +288,10 @@ export default function DevedoresPage() {
         Nome: item.cliente_nome || "-",
         CPF: formatarCpf(item.cpf),
         Telefone: formatarTelefone(item.telefone),
-        Financeira: item.financeira_nome || "-",
         Vencimento: item.vencimento ? formatarData(item.vencimento) : "-",
         Valor: item.valor_fatura,
         Status: item.status || "-",
+        Boleto: String(item.boleto_url || "").trim() || "-",
       }))
       const ws = XLSX.utils.json_to_sheet(rows)
       const wb = XLSX.utils.book_new()
@@ -490,10 +495,10 @@ export default function DevedoresPage() {
                   <th className="px-4 py-2 text-left text-xs font-semibold text-gray-700 border-r border-gray-300">Nome do Cliente</th>
                   <th className="px-4 py-2 text-left text-xs font-semibold text-gray-700 border-r border-gray-300">CPF</th>
                   <th className="px-4 py-2 text-left text-xs font-semibold text-gray-700 border-r border-gray-300">Telefone</th>
-                  <th className="px-4 py-2 text-left text-xs font-semibold text-gray-700 border-r border-gray-300">Financeira</th>
                   <th className="px-4 py-2 text-left text-xs font-semibold text-gray-700 border-r border-gray-300 whitespace-nowrap">Vencimento</th>
                   <th className="px-4 py-2 text-left text-xs font-semibold text-gray-700 border-r border-gray-300">Valor da Fatura</th>
                   <th className="px-4 py-2 text-left text-xs font-semibold text-gray-700 border-r border-gray-300">Status</th>
+                  <th className="px-4 py-2 text-left text-xs font-semibold text-gray-700">Boleto</th>
                 </tr>
               </thead>
               <tbody>
@@ -521,12 +526,26 @@ export default function DevedoresPage() {
                       <td className="px-4 py-2 text-sm text-gray-800 border-r border-gray-200">{linha.cliente_nome || "-"}</td>
                       <td className="px-4 py-2 text-sm text-gray-800 border-r border-gray-200">{formatarCpf(linha.cpf)}</td>
                       <td className="px-4 py-2 text-sm text-gray-800 border-r border-gray-200">{formatarTelefone(linha.telefone)}</td>
-                      <td className="px-4 py-2 text-sm text-gray-800 border-r border-gray-200">{linha.financeira_nome || "-"}</td>
                       <td className="px-4 py-2 text-sm text-gray-800 border-r border-gray-200 tabular-nums whitespace-nowrap">
                         {linha.vencimento ? formatarData(linha.vencimento) : "—"}
                       </td>
                       <td className="px-4 py-2 text-sm font-medium text-gray-800 border-r border-gray-200">{formatarMoeda(linha.valor_fatura)}</td>
                       <td className="px-4 py-2 border-r border-gray-200">{getStatusBadge(linha.status)}</td>
+                      <td className="px-4 py-2 text-sm">
+                        {linha.boleto_url ? (
+                          <a
+                            href={linha.boleto_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 hover:underline font-medium"
+                          >
+                            <ExternalLink className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                            Abrir boleto
+                          </a>
+                        ) : (
+                          <span className="text-gray-400">—</span>
+                        )}
+                      </td>
                     </tr>
                   ))
                 )}

@@ -13,12 +13,27 @@ type FaturaRow = {
   valor: number | null
   status: string | null
   vencimento: string | null
+  boleto_url?: string | null
+  asaas_boleto_url?: string | null
+  asaas_invoice_url?: string | null
+  asaas_payment_link?: string | null
   gateway_nome?: string | null
 }
 
-const FATURAS_SELECT_SEM_GATEWAY =
-  "id, cliente_administradora_id, cliente_nome, cliente_id, cliente_telefone, numero_fatura, valor, status, vencimento"
-const FATURAS_SELECT_COM_GATEWAY = `${FATURAS_SELECT_SEM_GATEWAY}, gateway_nome`
+const FATURAS_BASE_COLS =
+  "id, cliente_administradora_id, cliente_nome, cliente_id, cliente_telefone, numero_fatura, valor, status, vencimento, boleto_url, asaas_boleto_url, asaas_invoice_url, asaas_payment_link"
+const FATURAS_SELECT_SEM_GATEWAY = FATURAS_BASE_COLS
+const FATURAS_SELECT_COM_GATEWAY = `${FATURAS_BASE_COLS}, gateway_nome`
+
+function linkBoletoFatura(f: FaturaRow): string | null {
+  const u =
+    f.boleto_url ||
+    f.asaas_boleto_url ||
+    f.asaas_invoice_url ||
+    f.asaas_payment_link
+  if (u == null || String(u).trim() === "") return null
+  return String(u).trim()
+}
 
 function mensagemErro(e: unknown): string {
   if (e instanceof Error) return e.message
@@ -296,6 +311,16 @@ export async function GET(request: NextRequest) {
     }
 
     const linhas = faturasFiltradasStatus
+      .filter((f) => {
+        const clienteId = String(f.cliente_administradora_id || "").trim()
+        const vida = clienteId ? mapaVida.get(clienteId) : undefined
+        const grupoVida = vida?.grupo_id || null
+        const corretorVida = vida?.corretor_id || null
+        if (grupoId && grupoId !== "todos" && grupoVida !== grupoId) return false
+        if (corretorId && corretorId !== "todos" && corretorVida !== corretorId) return false
+        if (financeiraFiltro && !faturaCombinaFiltroFinanceira(f.gateway_nome, financeiraFiltro)) return false
+        return true
+      })
       .map((f) => {
         const clienteId = String(f.cliente_administradora_id || "").trim()
         const vida = clienteId ? mapaVida.get(clienteId) : undefined
@@ -313,18 +338,10 @@ export async function GET(request: NextRequest) {
           status: normalizarStatus(String(f.status || "")),
           vencimento: f.vencimento || null,
           numero_fatura: f.numero_fatura || null,
-          financeira_nome: f.gateway_nome || null,
+          boleto_url: linkBoletoFatura(f),
           grupo_id: grupoVida,
           corretor_id: corretorVida,
         }
-      })
-      .filter((item) => {
-        if (grupoId && grupoId !== "todos" && item.grupo_id !== grupoId) return false
-        if (corretorId && corretorId !== "todos" && item.corretor_id !== corretorId) return false
-        if (financeiraFiltro) {
-          if (!faturaCombinaFiltroFinanceira(item.financeira_nome, financeiraFiltro)) return false
-        }
-        return true
       })
 
     const total = linhas.reduce((acc, item) => acc + Number(item.valor_fatura || 0), 0)
