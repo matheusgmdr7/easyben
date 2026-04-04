@@ -23,6 +23,7 @@ export interface Fatura {
   status: "pendente" | "paga" | "atrasada" | "cancelada" | "parcialmente_paga"
   gateway_id?: string
   gateway_nome?: string
+  financeira_id?: string | null
   boleto_url?: string
   boleto_codigo_barras?: string
   boleto_linha_digitavel?: string

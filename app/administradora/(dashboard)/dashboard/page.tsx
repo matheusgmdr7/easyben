@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { getAdministradoraLogada } from "@/services/auth-administradoras-service"
 import {
   ArrowDownRight,
@@ -61,6 +61,11 @@ export default function AdministradoraDashboard() {
   const [paginaPendencias, setPaginaPendencias] = useState(1)
   const [financeiras, setFinanceiras] = useState<FinanceiraOpcao[]>([])
   const [financeiraId, setFinanceiraId] = useState("")
+  /** Período dos cards após o último carregamento com sucesso (evita usar mês/ano do select se o usuário não clicou em Aplicar). */
+  const periodoDashboardRef = useRef({
+    ano: String(agora.getFullYear()),
+    mes: String(agora.getMonth() + 1).padStart(2, "0"),
+  })
   /** API indica que não foi possível ler filtrar por gateway (falta coluna gateway_nome, etc.). */
   const [alertaFiltroGateway, setAlertaFiltroGateway] = useState(false)
 
@@ -127,7 +132,10 @@ export default function AdministradoraDashboard() {
             })).filter((f: FinanceiraOpcao) => f.id)
           )
         }
-        await carregarDashboard(administradoraLogada.id, String(agora.getFullYear()), String(agora.getMonth() + 1).padStart(2, "0"), "")
+        const a0 = String(agora.getFullYear())
+        const m0 = String(agora.getMonth() + 1).padStart(2, "0")
+        await carregarDashboard(administradoraLogada.id, a0, m0, "")
+        periodoDashboardRef.current = { ano: a0, mes: m0 }
       } catch (error) {
         console.error("Erro ao carregar dados:", error)
       } finally {
@@ -191,7 +199,8 @@ export default function AdministradoraDashboard() {
         })
       }
 
-      await carregarDashboard(administradora.id, anoRef, mesRef, financeiraId)
+      const p = periodoDashboardRef.current
+      await carregarDashboard(administradora.id, p.ano, p.mes, financeiraId)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Erro ao sincronizar status com o Asaas")
     } finally {
@@ -204,6 +213,7 @@ export default function AdministradoraDashboard() {
     try {
       setLoading(true)
       await carregarDashboard(administradora.id, anoRef, mesRef, financeiraId)
+      periodoDashboardRef.current = { ano: anoRef, mes: mesRef }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Erro ao aplicar filtro de período")
     } finally {
@@ -216,7 +226,8 @@ export default function AdministradoraDashboard() {
     if (!administradora?.id) return
     try {
       setLoading(true)
-      await carregarDashboard(administradora.id, anoRef, mesRef, novoId)
+      const p = periodoDashboardRef.current
+      await carregarDashboard(administradora.id, p.ano, p.mes, novoId)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Erro ao aplicar financeira")
     } finally {

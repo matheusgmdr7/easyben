@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { faturaPertenceAFinanceira } from '@/lib/fatura-filtro-financeira'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -102,11 +103,6 @@ function obterChargeIds(baseId: string): string[] {
   const semPrefixo = limpo.replace(/^pay_/, '')
   const comPrefixo = semPrefixo ? `pay_${semPrefixo}` : ''
   return Array.from(new Set([limpo, semPrefixo, comPrefixo].filter(Boolean)))
-}
-
-/** Mesmo texto gravado em `faturas.gateway_nome` ao gerar boleto na financeira. */
-function gatewayNomeAsaasFinanceira(nomeFinanceira: string | null | undefined): string {
-  return `Asaas - ${String(nomeFinanceira || 'Financeira')}`
 }
 
 async function buscarConfigsAsaas(
@@ -234,31 +230,56 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: msg }, { status: 404 })
     }
 
-    const gatewayNomeFiltro = financeira_id ? gatewayNomeAsaasFinanceira(configs[0]?.nome) : null
+    const nomeFinanceiraSync = String(configs[0]?.nome || 'Financeira').trim() || 'Financeira'
 
-    // 2. Buscar faturas com asaas_charge_id (opcionalmente só da financeira escolhida, via gateway_nome)
+    // 2. Buscar faturas com cobrança (com financeira_id + gateway_nome quando existirem no schema)
+    const selectComFin =
+      'id, numero_fatura, cliente_nome, asaas_charge_id, gateway_id, status, gateway_nome, financeira_id'
+    const selectSemFin = 'id, numero_fatura, cliente_nome, asaas_charge_id, gateway_id, status, gateway_nome'
+    const selectMin = 'id, numero_fatura, cliente_nome, asaas_charge_id, gateway_id, status'
+
     let qF = supabase
       .from('faturas')
-      .select('id, numero_fatura, cliente_nome, asaas_charge_id, gateway_id, status')
+      .select(selectComFin)
       .eq('administradora_id', administradora_id)
       .or('asaas_charge_id.not.is.null,gateway_id.not.is.null')
-    if (gatewayNomeFiltro) {
-      qF = qF.eq('gateway_nome', gatewayNomeFiltro)
-    }
     let { data: faturas, error: faturasError } = await qF
 
-    // Se o filtro .eq(gateway_nome) falhar no PostgREST, tenta carregar e filtrar em memória.
-    if (faturasError && gatewayNomeFiltro) {
-      const wide = await supabase
+    if (faturasError && extrairColunaInexistente(faturasError.message) === 'financeira_id') {
+      const retry = await supabase
         .from('faturas')
-        .select('id, numero_fatura, cliente_nome, asaas_charge_id, gateway_id, status, gateway_nome')
+        .select(selectSemFin)
         .eq('administradora_id', administradora_id)
         .or('asaas_charge_id.not.is.null,gateway_id.not.is.null')
-      if (!wide.error && Array.isArray(wide.data)) {
-        faturas = (wide.data as any[]).filter(
-          (r: any) => String(r?.gateway_nome || '') === gatewayNomeFiltro
+      faturas = retry.data as any
+      faturasError = retry.error as any
+    }
+
+    if (faturasError && extrairColunaInexistente(faturasError.message) === 'gateway_nome') {
+      const retry = await supabase
+        .from('faturas')
+        .select(selectMin)
+        .eq('administradora_id', administradora_id)
+        .or('asaas_charge_id.not.is.null,gateway_id.not.is.null')
+      faturas = retry.data as any
+      faturasError = retry.error as any
+    }
+
+    if (!faturasError && financeira_id && Array.isArray(faturas) && faturas.length > 0) {
+      const amostra = faturas[0] as Record<string, unknown>
+      const podeFiltrarPorFinanceira =
+        amostra && (Object.prototype.hasOwnProperty.call(amostra, 'financeira_id') ||
+          Object.prototype.hasOwnProperty.call(amostra, 'gateway_nome'))
+      if (podeFiltrarPorFinanceira) {
+        faturas = (faturas as any[]).filter((r: any) =>
+          faturaPertenceAFinanceira(r?.financeira_id, r?.gateway_nome, financeira_id, nomeFinanceiraSync, {
+            tratarGatewayVazioComoMatch: false,
+          })
         )
-        faturasError = null
+      } else {
+        resultado.erros.push(
+          'Aviso: não foi possível filtrar por financeira (colunas indisponíveis); sincronização considerou todas as faturas com cobrança.'
+        )
       }
     }
 
@@ -271,9 +292,9 @@ export async function POST(request: NextRequest) {
         .or('asaas_charge_id.not.is.null,gateway_id.not.is.null')
       faturas = fallback.data as any
       faturasError = fallback.error as any
-      if (!faturasError && gatewayNomeFiltro && Array.isArray(faturas)) {
+      if (!faturasError && financeira_id && Array.isArray(faturas)) {
         resultado.erros.push(
-          'Aviso: não foi possível filtrar por financeira (coluna gateway_nome indisponível); sincronização considerou todas as faturas com cobrança.'
+          'Aviso: não foi possível filtrar por financeira (colunas indisponíveis); sincronização considerou todas as faturas com cobrança.'
         )
       }
     }

@@ -12,9 +12,18 @@ export function gatewayAsaasComoNoBanco(nomeFinanceira: string): string {
  * - atual: "Asaas - Nome" com possível truncamento em 50 caracteres;
  * - match por substring no nome completo ou no trecho após "Asaas -".
  */
+export type FiltroFinanceiraOpcoes = {
+  /**
+   * Quando false, faturas sem `gateway_nome` (ou só "Asaas") não entram no filtro por financeira.
+   * Útil no dashboard com várias financeiras; relatórios legados mantêm o padrão true.
+   */
+  tratarGatewayVazioComoMatch?: boolean
+}
+
 export function faturaCombinaFiltroFinanceira(
   gatewayNome: string | null | undefined,
-  nomeFinanceiraFiltro: string
+  nomeFinanceiraFiltro: string,
+  opcoes?: FiltroFinanceiraOpcoes
 ): boolean {
   const termo = String(nomeFinanceiraFiltro || "").trim().toLowerCase()
   if (!termo) return true
@@ -22,7 +31,8 @@ export function faturaCombinaFiltroFinanceira(
   const raw = String(gatewayNome ?? "").trim()
   const g = raw.toLowerCase()
 
-  if (!g || g === "asaas") return true
+  const vazioConta = opcoes?.tratarGatewayVazioComoMatch !== false
+  if (!g || g === "asaas") return vazioConta
 
   if (g.includes(termo)) return true
 
@@ -34,4 +44,25 @@ export function faturaCombinaFiltroFinanceira(
   if (semPrefixo.includes(termo)) return true
 
   return false
+}
+
+/**
+ * Filtro por financeira no dashboard/relatórios: prioriza `financeira_id` na fatura;
+ * se ausente, usa o mesmo match por `gateway_nome` que `faturaCombinaFiltroFinanceira`.
+ */
+export function faturaPertenceAFinanceira(
+  financeiraIdNaFatura: string | null | undefined,
+  gatewayNome: string | null | undefined,
+  financeiraIdFiltro: string,
+  nomeFinanceiraFiltro: string,
+  opcoes?: FiltroFinanceiraOpcoes
+): boolean {
+  const idFiltro = String(financeiraIdFiltro || "").trim()
+  const idFat = String(financeiraIdNaFatura || "").trim()
+  if (!idFiltro) {
+    return faturaCombinaFiltroFinanceira(gatewayNome, nomeFinanceiraFiltro, opcoes)
+  }
+  if (idFat && idFat === idFiltro) return true
+  if (idFat && idFat !== idFiltro) return false
+  return faturaCombinaFiltroFinanceira(gatewayNome, nomeFinanceiraFiltro, opcoes)
 }

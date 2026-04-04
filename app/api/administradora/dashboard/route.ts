@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase-admin"
 import { getCurrentTenantId } from "@/lib/tenant-query-helper"
 import { FinanceirasService } from "@/services/financeiras-service"
-import { faturaCombinaFiltroFinanceira, gatewayAsaasComoNoBanco } from "@/lib/fatura-filtro-financeira"
+import { faturaPertenceAFinanceira, gatewayAsaasComoNoBanco } from "@/lib/fatura-filtro-financeira"
 
 type FaturaRow = {
   id: string
@@ -17,11 +17,13 @@ type FaturaRow = {
   asaas_invoice_url?: string | null
   asaas_payment_link?: string | null
   gateway_nome?: string | null
+  financeira_id?: string | null
 }
 
 const FATURAS_SELECT_SEM_GATEWAY =
   "id, cliente_administradora_id, cliente_nome, valor, status, vencimento, pagamento_data, boleto_url, asaas_boleto_url, asaas_invoice_url, asaas_payment_link"
 const FATURAS_SELECT_COM_GATEWAY = `${FATURAS_SELECT_SEM_GATEWAY}, gateway_nome`
+const FATURAS_SELECT_COM_GATEWAY_FIN = `${FATURAS_SELECT_COM_GATEWAY}, financeira_id`
 
 function linkBoletoFatura(f: FaturaRow): string | null {
   const u =
@@ -158,10 +160,7 @@ export async function GET(request: NextRequest) {
 
     const PAGE_SIZE = 1000
 
-    async function buscarFaturasPeriodo(
-      aplicarEqGateway: boolean,
-      colunas: typeof FATURAS_SELECT_SEM_GATEWAY | typeof FATURAS_SELECT_COM_GATEWAY
-    ): Promise<FaturaRow[]> {
+    async function buscarFaturasPaginado(colunas: string, aplicarExtra?: (q: any) => any): Promise<FaturaRow[]> {
       const acumulado: FaturaRow[] = []
       let from = 0
       while (true) {
@@ -177,9 +176,7 @@ export async function GET(request: NextRequest) {
         } else {
           qFat = qFat.is("tenant_id", null)
         }
-        if (aplicarEqGateway && gatewayNomeEqFiltro) {
-          qFat = qFat.eq("gateway_nome", gatewayNomeEqFiltro)
-        }
+        if (aplicarExtra) qFat = aplicarExtra(qFat)
         const { data: chunk, error } = await qFat
           .order("vencimento", { ascending: false })
           .range(from, from + PAGE_SIZE - 1)
@@ -193,27 +190,78 @@ export async function GET(request: NextRequest) {
       return acumulado
     }
 
+    async function buscarPorFinanceiraComposta(): Promise<FaturaRow[]> {
+      const porId = await buscarFaturasPaginado(FATURAS_SELECT_COM_GATEWAY_FIN, (q) =>
+        q.eq("financeira_id", financeiraIdParam)
+      )
+      const porGw = await buscarFaturasPaginado(FATURAS_SELECT_COM_GATEWAY_FIN, (q) =>
+        q.is("financeira_id", null).eq("gateway_nome", gatewayNomeEqFiltro!)
+      )
+      const map = new Map<string, FaturaRow>()
+      for (const f of porId) map.set(f.id, f)
+      for (const f of porGw) map.set(f.id, f)
+      return Array.from(map.values())
+    }
+
     let filtroFinanceiraIndisponivel = false
     let faturas: FaturaRow[] = []
-    if (gatewayNomeFiltro && financeiraFiltroNome) {
+
+    async function filtrarFaturasPorFinanceiraEmMemoria(todas: FaturaRow[]): Promise<FaturaRow[]> {
+      const fins = await FinanceirasService.listar(administradoraId)
+      const unicaFinanceiraAtiva = fins.filter((x) => x.ativo).length === 1
+      return todas.filter((f) =>
+        faturaPertenceAFinanceira(
+          f.financeira_id,
+          f.gateway_nome,
+          financeiraIdParam,
+          financeiraFiltroNome!,
+          { tratarGatewayVazioComoMatch: unicaFinanceiraAtiva }
+        )
+      )
+    }
+
+    if (gatewayNomeFiltro && financeiraFiltroNome && financeiraIdParam) {
       try {
-        faturas = await buscarFaturasPeriodo(true, FATURAS_SELECT_COM_GATEWAY)
-      } catch (eqErr) {
-        console.warn("dashboard: filtro gateway_nome via eq falhou; aplicando filtro em memória", eqErr)
+        faturas = await buscarPorFinanceiraComposta()
+        if (faturas.length === 0) {
+          let todas: FaturaRow[] = []
+          try {
+            todas = await buscarFaturasPaginado(FATURAS_SELECT_COM_GATEWAY_FIN)
+          } catch {
+            todas = await buscarFaturasPaginado(FATURAS_SELECT_COM_GATEWAY)
+          }
+          faturas = await filtrarFaturasPorFinanceiraEmMemoria(todas)
+        }
+      } catch (compostoErr) {
+        console.warn(
+          "dashboard: filtro financeira_id composto falhou; tentando só gateway_nome.eq",
+          compostoErr
+        )
         try {
-          const todas = await buscarFaturasPeriodo(false, FATURAS_SELECT_COM_GATEWAY)
-          faturas = todas.filter((f) => faturaCombinaFiltroFinanceira(f.gateway_nome, financeiraFiltroNome))
-        } catch (memErr) {
-          console.warn(
-            "dashboard: select com coluna gateway_nome falhou; buscando faturas sem gateway_nome (filtro por financeira desativado)",
-            memErr
+          faturas = await buscarFaturasPaginado(FATURAS_SELECT_COM_GATEWAY, (q) =>
+            q.eq("gateway_nome", gatewayNomeEqFiltro!)
           )
-          faturas = await buscarFaturasPeriodo(false, FATURAS_SELECT_SEM_GATEWAY)
-          filtroFinanceiraIndisponivel = true
+          if (faturas.length === 0) {
+            const todas = await buscarFaturasPaginado(FATURAS_SELECT_COM_GATEWAY)
+            faturas = await filtrarFaturasPorFinanceiraEmMemoria(todas)
+          }
+        } catch (eqErr) {
+          console.warn("dashboard: filtro gateway_nome via eq falhou; aplicando filtro em memória", eqErr)
+          try {
+            const todas = await buscarFaturasPaginado(FATURAS_SELECT_COM_GATEWAY)
+            faturas = await filtrarFaturasPorFinanceiraEmMemoria(todas)
+          } catch (memErr) {
+            console.warn(
+              "dashboard: select com coluna gateway_nome falhou; buscando faturas sem gateway_nome (filtro por financeira desativado)",
+              memErr
+            )
+            faturas = await buscarFaturasPaginado(FATURAS_SELECT_SEM_GATEWAY)
+            filtroFinanceiraIndisponivel = true
+          }
         }
       }
     } else {
-      faturas = await buscarFaturasPeriodo(false, FATURAS_SELECT_SEM_GATEWAY)
+      faturas = await buscarFaturasPaginado(FATURAS_SELECT_SEM_GATEWAY)
     }
 
     const clientesAtivos = (vidasCount || 0) > 0 ? Number(vidasCount || 0) : Number(vinculosCount || 0)

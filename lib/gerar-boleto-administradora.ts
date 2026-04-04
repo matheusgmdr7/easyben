@@ -6,7 +6,43 @@ import { FinanceirasService } from "@/services/financeiras-service"
 import AsaasServiceInstance from "@/services/asaas-service"
 import type { AsaasCustomer, AsaasCharge } from "@/services/asaas-service"
 import { FaturasService } from "@/services/faturas-service"
-import { GATEWAY_NOME_MAX_LEN } from "@/lib/fatura-filtro-financeira"
+import { gatewayAsaasComoNoBanco } from "@/lib/fatura-filtro-financeira"
+
+function extrairColunaInexistenteFaturas(mensagem: string | undefined): string | null {
+  const txt = String(mensagem || "")
+  const m = txt.match(/column\s+"?([a-zA-Z0-9_]+)"?\s+of relation/i)
+  if (m?.[1]) return m[1]
+  const m2 = txt.match(/Could not find the ['"]([a-zA-Z0-9_]+)['"] column/i)
+  return m2?.[1] || null
+}
+
+/**
+ * Atualiza `faturas` removendo do payload colunas que ainda não existem no banco (migrations pendentes).
+ * Não interrompe a geração do boleto no Asaas: a cobrança já foi criada.
+ */
+async function atualizarFaturaComFallbackColunas(
+  faturaId: string,
+  payload: Record<string, unknown>,
+  log: (msg: string, data?: unknown) => void,
+  contexto: string
+): Promise<boolean> {
+  let p = { ...payload }
+  for (let i = 0; i < 14; i++) {
+    const { error } = await supabaseAdmin.from("faturas").update(p).eq("id", faturaId)
+    if (!error) return true
+    const col = extrairColunaInexistenteFaturas(error.message)
+    if (col && Object.prototype.hasOwnProperty.call(p, col)) {
+      log(`AVISO: coluna faturas.${col} ausente; regravando sem ela (${contexto})`, {
+        message: error.message,
+      })
+      delete p[col]
+      continue
+    }
+    log(`AVISO: não foi possível atualizar fatura (${contexto})`, { code: error.code, message: error.message })
+    return false
+  }
+  return false
+}
 
 /**
  * Geração de boleto (Asaas + fatura). Usada pela rota POST e por gerar-boletos-lote sem chamadas HTTP internas (evita 504).
@@ -415,7 +451,8 @@ export async function gerarBoletoAdministradora(body: Record<string, unknown>): 
         .eq("tenant_id", tenantId)
     }
 
-    // Descrição: produto, titular, dependentes e taxa de administração
+    // Texto enviado ao Asaas na cobrança (aparece na fatura/boleto do gateway): apenas dados comerciais.
+    // financeira_id, gateway_nome e rótulos "Asaas - …" ficam só na tabela `faturas` (metadados internos).
     let descricaoBoleto = descricao?.trim()
     if (!descricaoBoleto) {
       const partes: string[] = []
@@ -432,6 +469,7 @@ export async function gerarBoletoAdministradora(body: Record<string, unknown>): 
       value: valorTotalBoleto,
       dueDate: vencimentoIso,
       description: descricaoBoleto,
+      /** Referência interna (ex.: cliente); não envia nome da financeira nem gateway_nome. */
       externalReference: idParaFatura,
     }
     log("Criando cobrança no Asaas (createCharge)", { customer: customerId, value: valorTotalBoleto, dueDate: charge.dueDate })
@@ -463,42 +501,25 @@ export async function gerarBoletoAdministradora(body: Record<string, unknown>): 
     const urlInvoice = (chargeResponse.invoiceUrl && String(chargeResponse.invoiceUrl).trim()) || (chargeIdSlug ? baseUrlInvoice + chargeIdSlug : "") || urlBoleto;
     const urlPayment = (chargeResponse.paymentLink && String(chargeResponse.paymentLink).trim()) || urlInvoice || urlBoleto;
 
-    const gatewayNomeGravacao = `Asaas - ${String(financeira.nome || "Financeira")}`.slice(0, GATEWAY_NOME_MAX_LEN)
+    const gatewayNomeGravacao = gatewayAsaasComoNoBanco(String(financeira.nome || "Financeira"))
     const updatePayload: Record<string, unknown> = {
+      financeira_id: String(financeira_id),
       gateway_id: chargeResponse.id,
       gateway_nome: gatewayNomeGravacao,
       asaas_charge_id: chargeResponse.id,
       numero_fatura: chargeResponse.invoiceNumber || fatura.numero_fatura,
-    };
-    if (chargeResp.identificationField != null) updatePayload.boleto_linha_digitavel = String(chargeResp.identificationField);
+    }
+    if (chargeResp.identificationField != null) updatePayload.boleto_linha_digitavel = String(chargeResp.identificationField)
     if (chargeResp.nossoNumero != null) {
-      updatePayload.boleto_codigo_barras = String(chargeResp.nossoNumero);
-      updatePayload.boleto_codigo = String(chargeResp.nossoNumero);
+      updatePayload.boleto_codigo_barras = String(chargeResp.nossoNumero)
+      updatePayload.boleto_codigo = String(chargeResp.nossoNumero)
     }
+    if (urlBoleto) updatePayload.asaas_boleto_url = urlBoleto
+    if (urlInvoice) updatePayload.asaas_invoice_url = urlInvoice
+    if (urlPayment) updatePayload.asaas_payment_link = urlPayment
+    if (urlBoleto) updatePayload.boleto_url = urlBoleto
 
-    const { error: updateError1 } = await supabaseAdmin
-      .from("faturas")
-      .update(updatePayload)
-      .eq("id", fatura.id);
-
-    if (updateError1) {
-      log("AVISO: não foi possível atualizar fatura (gateway_id, numero_fatura)", { code: updateError1.code, message: updateError1.message });
-    }
-
-    if (urlBoleto || urlInvoice || urlPayment) {
-      const urlPayload: Record<string, string> = {};
-      if (urlBoleto) urlPayload.asaas_boleto_url = urlBoleto;
-      if (urlInvoice) urlPayload.asaas_invoice_url = urlInvoice;
-      if (urlPayment) urlPayload.asaas_payment_link = urlPayment;
-      if (urlBoleto) urlPayload.boleto_url = urlBoleto;
-      const { error: updateError2 } = await supabaseAdmin
-        .from("faturas")
-        .update(urlPayload)
-        .eq("id", fatura.id);
-      if (updateError2) {
-        log("AVISO: não foi possível salvar URLs do boleto. Execute no Supabase: scripts/adicionar-colunas-boleto-faturas.sql", { code: updateError2.code, message: updateError2.message });
-      }
-    }
+    await atualizarFaturaComFallbackColunas(fatura.id, updatePayload, log, "pós-boleto")
 
     return NextResponse.json({
       success: true,

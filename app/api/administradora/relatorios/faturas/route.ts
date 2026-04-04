@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase-admin"
 import { getCurrentTenantId } from "@/lib/tenant-query-helper"
 import { FinanceirasService } from "@/services/financeiras-service"
-import { faturaCombinaFiltroFinanceira } from "@/lib/fatura-filtro-financeira"
+import { faturaCombinaFiltroFinanceira, faturaPertenceAFinanceira } from "@/lib/fatura-filtro-financeira"
 
 type FaturaRow = {
   id: string
@@ -19,12 +19,14 @@ type FaturaRow = {
   asaas_invoice_url?: string | null
   asaas_payment_link?: string | null
   gateway_nome?: string | null
+  financeira_id?: string | null
 }
 
 const FATURAS_BASE_COLS =
   "id, cliente_administradora_id, cliente_nome, cliente_id, cliente_telefone, numero_fatura, valor, status, vencimento, boleto_url, asaas_boleto_url, asaas_invoice_url, asaas_payment_link"
 const FATURAS_SELECT_SEM_GATEWAY = FATURAS_BASE_COLS
 const FATURAS_SELECT_COM_GATEWAY = `${FATURAS_BASE_COLS}, gateway_nome`
+const FATURAS_SELECT_COM_GATEWAY_FIN = `${FATURAS_SELECT_COM_GATEWAY}, financeira_id`
 
 function linkBoletoFatura(f: FaturaRow): string | null {
   const u =
@@ -145,6 +147,8 @@ export async function GET(request: NextRequest) {
     const tenantId = administradora?.tenant_id || tenantAtual
 
     let financeiraFiltro = ""
+    /** Nome da financeira quando o filtro vem por `financeira_id` (match por id + legado por gateway). */
+    let nomeFinanceiraPorId = ""
     if (financeiraIdParam) {
       const fin = await FinanceirasService.buscarPorId(financeiraIdParam, administradoraId)
       if (!fin) {
@@ -153,7 +157,8 @@ export async function GET(request: NextRequest) {
           { status: 404 }
         )
       }
-      financeiraFiltro = String(fin.nome).trim().toLowerCase()
+      nomeFinanceiraPorId = String(fin.nome).trim() || "Financeira"
+      financeiraFiltro = nomeFinanceiraPorId.toLowerCase()
     } else {
       financeiraFiltro = String(request.nextUrl.searchParams.get("financeira") || "").trim().toLowerCase()
     }
@@ -187,20 +192,26 @@ export async function GET(request: NextRequest) {
     }
 
     let faturasRaw: FaturaRow[] | null = null
-    const r1 = await montarQueryFaturas(FATURAS_SELECT_COM_GATEWAY)
-    if (!r1.error) {
-      faturasRaw = r1.data as FaturaRow[] | null
+    const r0 = await montarQueryFaturas(FATURAS_SELECT_COM_GATEWAY_FIN)
+    if (!r0.error) {
+      faturasRaw = r0.data as FaturaRow[] | null
     } else {
-      console.warn("Relatório faturas: select com gateway_nome falhou, tentando sem coluna:", r1.error)
-      const r2 = await montarQueryFaturas(FATURAS_SELECT_SEM_GATEWAY)
-      if (r2.error) {
-        console.error("Erro ao buscar faturas do relatório:", r2.error)
-        return NextResponse.json(
-          { error: `Erro ao buscar faturas: ${mensagemErro(r2.error)}` },
-          { status: 500 }
-        )
+      console.warn("Relatório faturas: select com financeira_id falhou, tentando só gateway_nome:", r0.error)
+      const r1 = await montarQueryFaturas(FATURAS_SELECT_COM_GATEWAY)
+      if (!r1.error) {
+        faturasRaw = r1.data as FaturaRow[] | null
+      } else {
+        console.warn("Relatório faturas: select com gateway_nome falhou, tentando sem coluna:", r1.error)
+        const r2 = await montarQueryFaturas(FATURAS_SELECT_SEM_GATEWAY)
+        if (r2.error) {
+          console.error("Erro ao buscar faturas do relatório:", r2.error)
+          return NextResponse.json(
+            { error: `Erro ao buscar faturas: ${mensagemErro(r2.error)}` },
+            { status: 500 }
+          )
+        }
+        faturasRaw = r2.data as FaturaRow[] | null
       }
-      faturasRaw = r2.data as FaturaRow[] | null
     }
 
     const faturas = (faturasRaw || []) as FaturaRow[]
@@ -281,7 +292,19 @@ export async function GET(request: NextRequest) {
         const corretorVida = vida?.corretor_id || null
         if (grupoId && grupoId !== "todos" && grupoVida !== grupoId) return false
         if (corretorId && corretorId !== "todos" && corretorVida !== corretorId) return false
-        if (financeiraFiltro && !faturaCombinaFiltroFinanceira(f.gateway_nome, financeiraFiltro)) return false
+        if (financeiraIdParam) {
+          if (
+            !faturaPertenceAFinanceira(
+              f.financeira_id,
+              f.gateway_nome,
+              financeiraIdParam,
+              nomeFinanceiraPorId
+            )
+          )
+            return false
+        } else if (financeiraFiltro && !faturaCombinaFiltroFinanceira(f.gateway_nome, financeiraFiltro)) {
+          return false
+        }
         return true
       })
       .map((f) => {
