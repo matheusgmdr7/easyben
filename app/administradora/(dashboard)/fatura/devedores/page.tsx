@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { getAdministradoraLogada } from "@/services/auth-administradoras-service"
 import { GruposBeneficiariosService, type GrupoBeneficiarios } from "@/services/grupos-beneficiarios-service"
 import { toast } from "sonner"
@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { FileDown, FileSpreadsheet, Search, X } from "lucide-react"
-import { formatarMoeda } from "@/utils/formatters"
+import { formatarData, formatarMoeda } from "@/utils/formatters"
 import { cn } from "@/lib/utils"
 
 type LinhaRelatorio = {
@@ -40,8 +40,11 @@ const MESES = [
   { value: "12", label: "Dezembro" },
 ]
 
+const ITENS_POR_PAGINA = 15
+
 export default function DevedoresPage() {
   const [linhas, setLinhas] = useState<LinhaRelatorio[]>([])
+  const [paginaAtual, setPaginaAtual] = useState(1)
   const [loading, setLoading] = useState(false)
   const [administradoraId, setAdministradoraId] = useState<string | null>(null)
   const [grupos, setGrupos] = useState<GrupoBeneficiarios[]>([])
@@ -68,6 +71,11 @@ export default function DevedoresPage() {
     setMesRef(String(agora.getMonth() + 1).padStart(2, "0"))
     setAnoRef(String(agora.getFullYear()))
   }, [])
+
+  useEffect(() => {
+    const tp = Math.max(1, Math.ceil(linhas.length / ITENS_POR_PAGINA))
+    setPaginaAtual((p) => Math.min(Math.max(1, p), tp))
+  }, [linhas])
 
   async function carregarFiltros(admId: string) {
     try {
@@ -133,12 +141,14 @@ export default function DevedoresPage() {
       }
 
       setLinhas(lista)
+      setPaginaAtual(1)
       if (lista.length === 0) {
         toast.info("Nenhum resultado encontrado com os filtros selecionados.")
       }
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Erro ao buscar relatório")
       setLinhas([])
+      setPaginaAtual(1)
     } finally {
       setLoading(false)
     }
@@ -154,6 +164,7 @@ export default function DevedoresPage() {
     setFinanceiraFiltro("todos")
     setNomeFiltro("")
     setLinhas([])
+    setPaginaAtual(1)
   }
 
   function getStatusBadge(status: string) {
@@ -163,6 +174,7 @@ export default function DevedoresPage() {
       pendente: { label: "Pendente", className: "bg-amber-50 text-amber-800 border-amber-200" },
       paga: { label: "Paga", className: "bg-green-50 text-green-700 border-green-200" },
       cancelada: { label: "Cancelada", className: "bg-gray-100 text-gray-600 border-gray-300" },
+      vencida: { label: "Vencida", className: "bg-red-50 text-red-800 border-red-200" },
     }
     const statusInfo = statusMap[(status || "").toLowerCase()] || { label: status, className: "bg-gray-100 text-gray-600 border-gray-300" }
     return <span className={cn(baseClass, statusInfo.className)}>{statusInfo.label}</span>
@@ -211,8 +223,8 @@ export default function DevedoresPage() {
       doc.text(`Referencia: ${mesRef}/${anoRef} | Registros: ${linhas.length}`, margin, y)
       y += 6
 
-      const headers = ["Nome", "CPF", "Telefone", "Financeira", "Valor", "Status"]
-      const widths = [80, 38, 40, 48, 28, 30]
+      const headers = ["Nome", "CPF", "Telefone", "Financeira", "Vencimento", "Valor", "Status"]
+      const widths = [72, 34, 36, 42, 26, 26, 28]
       let x = margin
       doc.setFont(undefined, "bold")
       headers.forEach((h, i) => {
@@ -240,8 +252,10 @@ export default function DevedoresPage() {
         x += widths[2]
         doc.text(doc.splitTextToSize(String(item.financeira_nome || "-"), widths[3] - 2)[0] || "-", x, y)
         x += widths[3]
-        doc.text(formatarMoeda(item.valor_fatura), x, y)
+        doc.text(item.vencimento ? formatarData(item.vencimento) : "-", x, y)
         x += widths[4]
+        doc.text(formatarMoeda(item.valor_fatura), x, y)
+        x += widths[5]
         doc.text(String(item.status || "-"), x, y)
         y += rowHeight
       })
@@ -270,6 +284,7 @@ export default function DevedoresPage() {
         CPF: formatarCpf(item.cpf),
         Telefone: formatarTelefone(item.telefone),
         Financeira: item.financeira_nome || "-",
+        Vencimento: item.vencimento ? formatarData(item.vencimento) : "-",
         Valor: item.valor_fatura,
         Status: item.status || "-",
       }))
@@ -286,6 +301,14 @@ export default function DevedoresPage() {
   }
 
   const totalValor = linhas.reduce((sum, item) => sum + Number(item.valor_fatura || 0), 0)
+
+  const totalPaginas = Math.max(1, Math.ceil(linhas.length / ITENS_POR_PAGINA))
+  const paginaSegura = Math.min(paginaAtual, totalPaginas)
+
+  const linhasPaginadas = useMemo(() => {
+    const inicio = (paginaSegura - 1) * ITENS_POR_PAGINA
+    return linhas.slice(inicio, inicio + ITENS_POR_PAGINA)
+  }, [linhas, paginaSegura])
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -441,7 +464,7 @@ export default function DevedoresPage() {
       </div>
 
       <div className="bg-white border-b border-gray-200 px-6 py-3">
-        <div className="flex items-center gap-6 text-sm">
+        <div className="flex flex-wrap items-center gap-6 text-sm">
           <div>
             <span className="text-gray-600">Total de Registros: </span>
             <span className="font-semibold text-gray-800">{linhas.length}</span>
@@ -450,6 +473,11 @@ export default function DevedoresPage() {
             <span className="text-gray-600">Valor Total: </span>
             <span className="font-semibold text-gray-800">{formatarMoeda(totalValor)}</span>
           </div>
+          {linhas.length > ITENS_POR_PAGINA ? (
+            <div className="text-gray-500 text-xs">
+              Exibindo {linhasPaginadas.length} na página {paginaSegura} de {totalPaginas}
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -463,6 +491,7 @@ export default function DevedoresPage() {
                   <th className="px-4 py-2 text-left text-xs font-semibold text-gray-700 border-r border-gray-300">CPF</th>
                   <th className="px-4 py-2 text-left text-xs font-semibold text-gray-700 border-r border-gray-300">Telefone</th>
                   <th className="px-4 py-2 text-left text-xs font-semibold text-gray-700 border-r border-gray-300">Financeira</th>
+                  <th className="px-4 py-2 text-left text-xs font-semibold text-gray-700 border-r border-gray-300 whitespace-nowrap">Vencimento</th>
                   <th className="px-4 py-2 text-left text-xs font-semibold text-gray-700 border-r border-gray-300">Valor da Fatura</th>
                   <th className="px-4 py-2 text-left text-xs font-semibold text-gray-700 border-r border-gray-300">Status</th>
                 </tr>
@@ -470,18 +499,18 @@ export default function DevedoresPage() {
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={6} className="px-4 py-8 text-center text-sm text-gray-500">
+                    <td colSpan={7} className="px-4 py-8 text-center text-sm text-gray-500">
                       Carregando...
                     </td>
                   </tr>
                 ) : linhas.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-4 py-8 text-center text-sm text-gray-500">
+                    <td colSpan={7} className="px-4 py-8 text-center text-sm text-gray-500">
                       Nenhum resultado encontrado
                     </td>
                   </tr>
                 ) : (
-                  linhas.map((linha, index) => (
+                  linhasPaginadas.map((linha, index) => (
                     <tr
                       key={linha.id}
                       className={cn(
@@ -493,6 +522,9 @@ export default function DevedoresPage() {
                       <td className="px-4 py-2 text-sm text-gray-800 border-r border-gray-200">{formatarCpf(linha.cpf)}</td>
                       <td className="px-4 py-2 text-sm text-gray-800 border-r border-gray-200">{formatarTelefone(linha.telefone)}</td>
                       <td className="px-4 py-2 text-sm text-gray-800 border-r border-gray-200">{linha.financeira_nome || "-"}</td>
+                      <td className="px-4 py-2 text-sm text-gray-800 border-r border-gray-200 tabular-nums whitespace-nowrap">
+                        {linha.vencimento ? formatarData(linha.vencimento) : "—"}
+                      </td>
                       <td className="px-4 py-2 text-sm font-medium text-gray-800 border-r border-gray-200">{formatarMoeda(linha.valor_fatura)}</td>
                       <td className="px-4 py-2 border-r border-gray-200">{getStatusBadge(linha.status)}</td>
                     </tr>
@@ -501,6 +533,36 @@ export default function DevedoresPage() {
               </tbody>
             </table>
           </div>
+          {!loading && linhas.length > ITENS_POR_PAGINA ? (
+            <div className="flex flex-col gap-2 border-t border-gray-200 bg-gray-50/80 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-xs text-gray-600">
+                Página <span className="font-medium text-gray-800">{paginaSegura}</span> de{" "}
+                <span className="font-medium text-gray-800">{totalPaginas}</span> · {ITENS_POR_PAGINA} por página
+              </p>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 border-gray-300 text-xs"
+                  disabled={paginaSegura <= 1}
+                  onClick={() => setPaginaAtual(paginaSegura - 1)}
+                >
+                  Anterior
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 border-gray-300 text-xs"
+                  disabled={paginaSegura >= totalPaginas}
+                  onClick={() => setPaginaAtual(paginaSegura + 1)}
+                >
+                  Próxima
+                </Button>
+              </div>
+            </div>
+          ) : null}
         </div>
       </div>
     </div>
