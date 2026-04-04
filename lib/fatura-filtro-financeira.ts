@@ -57,8 +57,8 @@ export function faturaPertenceAFinanceira(
   nomeFinanceiraFiltro: string,
   opcoes?: FiltroFinanceiraOpcoes
 ): boolean {
-  const idFiltro = String(financeiraIdFiltro || "").trim()
-  const idFat = String(financeiraIdNaFatura || "").trim()
+  const idFiltro = String(financeiraIdFiltro || "").trim().toLowerCase()
+  const idFat = String(financeiraIdNaFatura || "").trim().toLowerCase()
   if (!idFiltro) {
     return faturaCombinaFiltroFinanceira(gatewayNome, nomeFinanceiraFiltro, opcoes)
   }

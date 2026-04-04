@@ -190,19 +190,6 @@ export async function GET(request: NextRequest) {
       return acumulado
     }
 
-    async function buscarPorFinanceiraComposta(): Promise<FaturaRow[]> {
-      const porId = await buscarFaturasPaginado(FATURAS_SELECT_COM_GATEWAY_FIN, (q) =>
-        q.eq("financeira_id", financeiraIdParam)
-      )
-      const porGw = await buscarFaturasPaginado(FATURAS_SELECT_COM_GATEWAY_FIN, (q) =>
-        q.is("financeira_id", null).eq("gateway_nome", gatewayNomeEqFiltro!)
-      )
-      const map = new Map<string, FaturaRow>()
-      for (const f of porId) map.set(f.id, f)
-      for (const f of porGw) map.set(f.id, f)
-      return Array.from(map.values())
-    }
-
     let filtroFinanceiraIndisponivel = false
     let faturas: FaturaRow[] = []
 
@@ -220,45 +207,27 @@ export async function GET(request: NextRequest) {
       )
     }
 
+    /**
+     * Sempre carrega todas as faturas do período e filtra em memória com `faturaPertenceAFinanceira`.
+     * A busca composta por SQL (eq financeira_id + eq gateway) omitia legado com gateway truncado diferente
+     * ou só fuzzy-match; quando vinha algum resultado, o fallback em memória nem rodava e os cards ficavam errados.
+     */
     if (gatewayNomeFiltro && financeiraFiltroNome && financeiraIdParam) {
       try {
-        faturas = await buscarPorFinanceiraComposta()
-        if (faturas.length === 0) {
-          let todas: FaturaRow[] = []
-          try {
-            todas = await buscarFaturasPaginado(FATURAS_SELECT_COM_GATEWAY_FIN)
-          } catch {
-            todas = await buscarFaturasPaginado(FATURAS_SELECT_COM_GATEWAY)
-          }
-          faturas = await filtrarFaturasPorFinanceiraEmMemoria(todas)
-        }
-      } catch (compostoErr) {
-        console.warn(
-          "dashboard: filtro financeira_id composto falhou; tentando só gateway_nome.eq",
-          compostoErr
-        )
+        let todas: FaturaRow[] = []
         try {
-          faturas = await buscarFaturasPaginado(FATURAS_SELECT_COM_GATEWAY, (q) =>
-            q.eq("gateway_nome", gatewayNomeEqFiltro!)
-          )
-          if (faturas.length === 0) {
-            const todas = await buscarFaturasPaginado(FATURAS_SELECT_COM_GATEWAY)
-            faturas = await filtrarFaturasPorFinanceiraEmMemoria(todas)
-          }
-        } catch (eqErr) {
-          console.warn("dashboard: filtro gateway_nome via eq falhou; aplicando filtro em memória", eqErr)
-          try {
-            const todas = await buscarFaturasPaginado(FATURAS_SELECT_COM_GATEWAY)
-            faturas = await filtrarFaturasPorFinanceiraEmMemoria(todas)
-          } catch (memErr) {
-            console.warn(
-              "dashboard: select com coluna gateway_nome falhou; buscando faturas sem gateway_nome (filtro por financeira desativado)",
-              memErr
-            )
-            faturas = await buscarFaturasPaginado(FATURAS_SELECT_SEM_GATEWAY)
-            filtroFinanceiraIndisponivel = true
-          }
+          todas = await buscarFaturasPaginado(FATURAS_SELECT_COM_GATEWAY_FIN)
+        } catch {
+          todas = await buscarFaturasPaginado(FATURAS_SELECT_COM_GATEWAY)
         }
+        faturas = await filtrarFaturasPorFinanceiraEmMemoria(todas)
+      } catch (e) {
+        console.warn(
+          "dashboard: não foi possível listar faturas com gateway_nome/financeira_id; filtro por financeira desativado",
+          e
+        )
+        faturas = await buscarFaturasPaginado(FATURAS_SELECT_SEM_GATEWAY)
+        filtroFinanceiraIndisponivel = true
       }
     } else {
       faturas = await buscarFaturasPaginado(FATURAS_SELECT_SEM_GATEWAY)
