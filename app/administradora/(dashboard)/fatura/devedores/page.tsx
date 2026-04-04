@@ -117,9 +117,7 @@ export default function DevedoresPage() {
       const status = obterStatusParaBusca()
       if (status) url.searchParams.set("status", status)
       if (financeiraFiltro && financeiraFiltro !== "todos") {
-        const financeiraSel = financeiras.find((f) => f.id === financeiraFiltro)
-        const termoFinanceira = String(financeiraSel?.nome || "").trim()
-        if (termoFinanceira) url.searchParams.set("financeira", termoFinanceira)
+        url.searchParams.set("financeira_id", financeiraFiltro)
       }
 
       const res = await fetch(url.toString(), { cache: "no-store" })

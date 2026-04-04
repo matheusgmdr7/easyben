@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase-admin"
 import { getCurrentTenantId } from "@/lib/tenant-query-helper"
+import { FinanceirasService } from "@/services/financeiras-service"
 
 type FaturaRow = {
   id: string
@@ -67,6 +68,44 @@ function ultimoDiaMes(ano: number, mes: number): string {
   return `${ano}-${String(mes).padStart(2, "0")}-${String(data.getUTCDate()).padStart(2, "0")}`
 }
 
+/** Mesmo limite do script SQL `gateway_nome VARCHAR(50)` ao gravar boleto administradora. */
+const GATEWAY_NOME_MAX_LEN = 50
+
+/** Texto como gravado em `faturas.gateway_nome` em `gerar-boleto-administradora` (truncado). */
+function gatewayAsaasComoNoBanco(nomeFinanceira: string): string {
+  return `Asaas - ${String(nomeFinanceira || "Financeira").trim()}`.slice(0, GATEWAY_NOME_MAX_LEN)
+}
+
+/**
+ * Fatura combina com o filtro de financeira (nome), considerando:
+ * - legado: `gateway_nome` vazio ou só "Asaas" (antes do multi-conta);
+ * - atual: "Asaas - Nome" com possível truncamento em 50 caracteres;
+ * - match por substring no nome completo ou no trecho após "Asaas -".
+ */
+function faturaCombinaFiltroFinanceira(
+  gatewayNome: string | null | undefined,
+  nomeFinanceiraFiltro: string
+): boolean {
+  const termo = String(nomeFinanceiraFiltro || "").trim().toLowerCase()
+  if (!termo) return true
+
+  const raw = String(gatewayNome ?? "").trim()
+  const g = raw.toLowerCase()
+
+  if (!g || g === "asaas") return true
+
+  if (g.includes(termo)) return true
+
+  const esperado = gatewayAsaasComoNoBanco(termo).toLowerCase()
+  if (g === esperado) return true
+  if (g.startsWith(esperado) || esperado.startsWith(g)) return true
+
+  const semPrefixo = g.replace(/^asaas\s*-\s*/i, "").trim()
+  if (semPrefixo.includes(termo)) return true
+
+  return false
+}
+
 export async function GET(request: NextRequest) {
   try {
     const administradoraId = request.nextUrl.searchParams.get("administradora_id")
@@ -75,7 +114,7 @@ export async function GET(request: NextRequest) {
     const grupoId = request.nextUrl.searchParams.get("grupo_id")
     const corretorId = request.nextUrl.searchParams.get("corretor_id")
     const statusParam = request.nextUrl.searchParams.get("status")
-    const financeiraFiltro = String(request.nextUrl.searchParams.get("financeira") || "").trim().toLowerCase()
+    const financeiraIdParam = request.nextUrl.searchParams.get("financeira_id")?.trim() || ""
 
     if (!administradoraId) {
       return NextResponse.json({ error: "administradora_id é obrigatório" }, { status: 400 })
@@ -89,6 +128,20 @@ export async function GET(request: NextRequest) {
 
     const tenantAtual = await getCurrentTenantId()
     const tenantId = administradora?.tenant_id || tenantAtual
+
+    let financeiraFiltro = ""
+    if (financeiraIdParam) {
+      const fin = await FinanceirasService.buscarPorId(financeiraIdParam, administradoraId)
+      if (!fin) {
+        return NextResponse.json(
+          { error: "Financeira não encontrada para esta administradora." },
+          { status: 404 }
+        )
+      }
+      financeiraFiltro = String(fin.nome).trim().toLowerCase()
+    } else {
+      financeiraFiltro = String(request.nextUrl.searchParams.get("financeira") || "").trim().toLowerCase()
+    }
 
     if (ano && mes) {
       const anoNum = Number(ano)
@@ -106,7 +159,7 @@ export async function GET(request: NextRequest) {
         .order("vencimento", { ascending: false })
         .limit(5000)
       if (tenantId) {
-        q = q.eq("tenant_id", tenantId)
+        q = q.or(`tenant_id.eq.${tenantId},tenant_id.is.null`)
       }
       if (ano && mes) {
         const anoNum = Number(ano)
@@ -170,7 +223,7 @@ export async function GET(request: NextRequest) {
         .in("cliente_administradora_id", clienteIds)
 
       if (tenantId) {
-        queryVidas = queryVidas.eq("tenant_id", tenantId)
+        queryVidas = queryVidas.or(`tenant_id.eq.${tenantId},tenant_id.is.null`)
       }
 
       const { data: vidas, error: vidasError } = await queryVidas
@@ -212,8 +265,7 @@ export async function GET(request: NextRequest) {
         if (grupoId && grupoId !== "todos" && item.grupo_id !== grupoId) return false
         if (corretorId && corretorId !== "todos" && item.corretor_id !== corretorId) return false
         if (financeiraFiltro) {
-          const nome = String(item.financeira_nome || "").toLowerCase()
-          if (!nome.includes(financeiraFiltro)) return false
+          if (!faturaCombinaFiltroFinanceira(item.financeira_nome, financeiraFiltro)) return false
         }
         return true
       })
