@@ -48,14 +48,27 @@ export class FinanceirasService {
     return getCurrentTenantId()
   }
 
+  /** Alinhado a faturas/vidas legadas: inclui linhas com `tenant_id` null. */
+  private static aplicarFiltroTenantId<
+    T extends { or: (f: string) => T; is: (col: string, val: null) => T },
+  >(query: T, tenantId: string): T {
+    const t = String(tenantId || "").trim()
+    if (!t) {
+      return query.is("tenant_id", null)
+    }
+    return query.or(`tenant_id.eq.${t},tenant_id.is.null`)
+  }
+
   static async listar(administradoraId: string): Promise<AdministradoraFinanceira[]> {
     const tenantId = await this.resolverTenantId(administradoraId)
-    const { data, error } = await supabaseAdmin
-      .from("administradora_financeiras")
-      .select("*")
-      .eq("administradora_id", administradoraId)
-      .eq("tenant_id", tenantId)
-      .order("nome", { ascending: true })
+    const q = this.aplicarFiltroTenantId(
+      supabaseAdmin
+        .from("administradora_financeiras")
+        .select("*")
+        .eq("administradora_id", administradoraId),
+      tenantId
+    )
+    const { data, error } = await q.order("nome", { ascending: true })
 
     if (error) throw error
     return (data || []) as AdministradoraFinanceira[]
@@ -66,13 +79,15 @@ export class FinanceirasService {
     administradoraId: string
   ): Promise<AdministradoraFinanceira | null> {
     const tenantId = await this.resolverTenantId(administradoraId)
-    const { data, error } = await supabaseAdmin
-      .from("administradora_financeiras")
-      .select("*")
-      .eq("id", id)
-      .eq("administradora_id", administradoraId)
-      .eq("tenant_id", tenantId)
-      .maybeSingle()
+    const q = this.aplicarFiltroTenantId(
+      supabaseAdmin
+        .from("administradora_financeiras")
+        .select("*")
+        .eq("id", id)
+        .eq("administradora_id", administradoraId),
+      tenantId
+    )
+    const { data, error } = await q.maybeSingle()
 
     if (error) throw error
     return data as AdministradoraFinanceira | null
