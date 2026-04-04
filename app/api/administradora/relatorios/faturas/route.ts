@@ -12,7 +12,19 @@ type FaturaRow = {
   valor: number | null
   status: string | null
   vencimento: string | null
-  gateway_nome: string | null
+  gateway_nome?: string | null
+}
+
+const FATURAS_SELECT_SEM_GATEWAY =
+  "id, cliente_administradora_id, cliente_nome, cliente_id, cliente_telefone, numero_fatura, valor, status, vencimento"
+const FATURAS_SELECT_COM_GATEWAY = `${FATURAS_SELECT_SEM_GATEWAY}, gateway_nome`
+
+function mensagemErro(e: unknown): string {
+  if (e instanceof Error) return e.message
+  if (typeof e === "object" && e !== null && "message" in e) {
+    return String((e as { message?: unknown }).message)
+  }
+  return String(e)
 }
 
 const ASAAS_TO_INTERNO: Record<string, string> = {
@@ -78,32 +90,49 @@ export async function GET(request: NextRequest) {
     const tenantAtual = await getCurrentTenantId()
     const tenantId = administradora?.tenant_id || tenantAtual
 
-    let query = supabaseAdmin
-      .from("faturas")
-      .select("id, cliente_administradora_id, cliente_nome, cliente_id, cliente_telefone, numero_fatura, valor, status, vencimento, gateway_nome")
-      .eq("administradora_id", administradoraId)
-      .order("vencimento", { ascending: false })
-      .limit(5000)
-
-    if (tenantId) {
-      query = query.eq("tenant_id", tenantId)
-    }
-
     if (ano && mes) {
       const anoNum = Number(ano)
       const mesNum = Number(mes)
       if (!Number.isFinite(anoNum) || !Number.isFinite(mesNum) || mesNum < 1 || mesNum > 12) {
         return NextResponse.json({ error: "Período inválido. Informe ano e mes válidos." }, { status: 400 })
       }
-      query = query
-        .gte("vencimento", primeiroDiaMes(anoNum, mesNum))
-        .lte("vencimento", ultimoDiaMes(anoNum, mesNum))
     }
 
-    const { data: faturasRaw, error: faturasError } = await query
-    if (faturasError) {
-      console.error("Erro ao buscar faturas do relatório:", faturasError)
-      return NextResponse.json({ error: "Erro ao buscar faturas" }, { status: 500 })
+    const montarQueryFaturas = (selectCols: string) => {
+      let q = supabaseAdmin
+        .from("faturas")
+        .select(selectCols)
+        .eq("administradora_id", administradoraId)
+        .order("vencimento", { ascending: false })
+        .limit(5000)
+      if (tenantId) {
+        q = q.eq("tenant_id", tenantId)
+      }
+      if (ano && mes) {
+        const anoNum = Number(ano)
+        const mesNum = Number(mes)
+        q = q
+          .gte("vencimento", primeiroDiaMes(anoNum, mesNum))
+          .lte("vencimento", ultimoDiaMes(anoNum, mesNum))
+      }
+      return q
+    }
+
+    let faturasRaw: FaturaRow[] | null = null
+    const r1 = await montarQueryFaturas(FATURAS_SELECT_COM_GATEWAY)
+    if (!r1.error) {
+      faturasRaw = r1.data as FaturaRow[] | null
+    } else {
+      console.warn("Relatório faturas: select com gateway_nome falhou, tentando sem coluna:", r1.error)
+      const r2 = await montarQueryFaturas(FATURAS_SELECT_SEM_GATEWAY)
+      if (r2.error) {
+        console.error("Erro ao buscar faturas do relatório:", r2.error)
+        return NextResponse.json(
+          { error: `Erro ao buscar faturas: ${mensagemErro(r2.error)}` },
+          { status: 500 }
+        )
+      }
+      faturasRaw = r2.data as FaturaRow[] | null
     }
 
     const faturas = (faturasRaw || []) as FaturaRow[]
@@ -198,7 +227,7 @@ export async function GET(request: NextRequest) {
   } catch (e: unknown) {
     console.error("Erro relatório de faturas:", e)
     return NextResponse.json(
-      { error: e instanceof Error ? e.message : "Erro ao montar relatório de faturas" },
+      { error: mensagemErro(e) || "Erro ao montar relatório de faturas" },
       { status: 500 }
     )
   }

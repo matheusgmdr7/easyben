@@ -113,18 +113,6 @@ export async function GET(request: NextRequest) {
     }
 
     const usarTabelaProdutoSelecionado = Boolean(produtoIdFiltro)
-    const produtoIdsParaPreco = usarTabelaProdutoSelecionado
-      ? [produtoIdFiltro!]
-      : [...new Set(vidasAtivas.map((v) => v.produto_id).filter(Boolean))] as string[]
-
-    const { data: produtos } = await supabaseAdmin
-      .from("produtos_contrato_administradora")
-      .select("id, acomodacao")
-      .in("id", produtoIdsParaPreco)
-      .eq("tenant_id", tenantId)
-
-    const mapaProduto = new Map((produtos || []).map((p) => [p.id, (p.acomodacao === "Apartamento" ? "Apartamento" : "Enfermaria") as "Enfermaria" | "Apartamento" ]))
-    void mapaProduto
 
     const linhasComVinculo: Array<LinhaFaturamento & { cpf_norm: string; cpf_titular_norm: string }> = []
     for (const v of vidasAtivas) {
@@ -240,9 +228,12 @@ export async function GET(request: NextRequest) {
     })
   } catch (e: unknown) {
     console.error("Erro faturamento grupo:", e)
-    return NextResponse.json(
-      { error: e instanceof Error ? e.message : "Erro ao gerar faturamento" },
-      { status: 500 }
-    )
+    const msg =
+      e instanceof Error
+        ? e.message
+        : typeof e === "object" && e !== null && "message" in e
+          ? String((e as { message?: unknown }).message)
+          : "Erro ao gerar faturamento"
+    return NextResponse.json({ error: msg }, { status: 500 })
   }
 }
