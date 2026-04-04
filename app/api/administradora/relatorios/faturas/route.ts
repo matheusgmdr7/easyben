@@ -106,6 +106,43 @@ function faturaCombinaFiltroFinanceira(
   return false
 }
 
+/** Primeiro número útil em `telefones` (JSONB) ou chaves de contato em `dados_adicionais`. */
+function primeiroTelefoneDeVida(row: Record<string, unknown>): string | null {
+  let arr: unknown = row.telefones
+  if (typeof arr === "string" && arr.trim()) {
+    try {
+      arr = JSON.parse(arr) as unknown
+    } catch {
+      return arr.trim()
+    }
+  }
+  if (Array.isArray(arr)) {
+    for (const item of arr) {
+      if (typeof item === "string") {
+        const s = item.trim()
+        if (s) return s
+      }
+      if (item && typeof item === "object") {
+        const o = item as Record<string, unknown>
+        const ddd = String(o.ddd || o.codigo_area || "").replace(/\D/g, "")
+        const raw = o.numero ?? o.telefone ?? o.phone ?? o.celular ?? o.whatsapp
+        const num = raw != null ? String(raw).trim() : ""
+        if (num) return ddd && !num.startsWith(ddd) ? `${ddd}${num}` : num
+      }
+    }
+  }
+
+  const dados = row.dados_adicionais
+  if (dados && typeof dados === "object" && !Array.isArray(dados)) {
+    for (const [key, val] of Object.entries(dados as Record<string, unknown>)) {
+      if (!/telefone|celular|whatsapp|fone/i.test(key)) continue
+      const s = val != null ? String(val).trim() : ""
+      if (s) return s
+    }
+  }
+  return null
+}
+
 export async function GET(request: NextRequest) {
   try {
     const administradoraId = request.nextUrl.searchParams.get("administradora_id")
@@ -212,13 +249,18 @@ export async function GET(request: NextRequest) {
 
     let mapaVida = new Map<
       string,
-      { cpf: string | null; grupo_id: string | null; corretor_id: string | null }
+      {
+        cpf: string | null
+        grupo_id: string | null
+        corretor_id: string | null
+        telefone: string | null
+      }
     >()
 
     if (clienteIds.length > 0) {
       let queryVidas = supabaseAdmin
         .from("vidas_importadas")
-        .select("cliente_administradora_id, cpf, grupo_id, corretor_id")
+        .select("cliente_administradora_id, cpf, grupo_id, corretor_id, telefones, dados_adicionais")
         .eq("administradora_id", administradoraId)
         .in("cliente_administradora_id", clienteIds)
 
@@ -230,12 +272,25 @@ export async function GET(request: NextRequest) {
       if (!vidasError) {
         for (const vida of vidas || []) {
           const key = String((vida as any).cliente_administradora_id || "").trim()
-          if (!key || mapaVida.has(key)) continue
-          mapaVida.set(key, {
+          if (!key) continue
+          const tel = primeiroTelefoneDeVida(vida as Record<string, unknown>)
+          const row = {
             cpf: (vida as any).cpf || null,
             grupo_id: (vida as any).grupo_id || null,
             corretor_id: (vida as any).corretor_id || null,
-          })
+            telefone: tel,
+          }
+          const prev = mapaVida.get(key)
+          if (!prev) {
+            mapaVida.set(key, row)
+          } else {
+            mapaVida.set(key, {
+              cpf: prev.cpf || row.cpf,
+              grupo_id: prev.grupo_id || row.grupo_id,
+              corretor_id: prev.corretor_id || row.corretor_id,
+              telefone: prev.telefone || row.telefone,
+            })
+          }
         }
       }
     }
@@ -247,11 +302,13 @@ export async function GET(request: NextRequest) {
         const grupoVida = vida?.grupo_id || null
         const corretorVida = vida?.corretor_id || null
 
+        const telFatura = String(f.cliente_telefone || "").trim()
+        const telVida = String(vida?.telefone || "").trim()
         return {
           id: f.id,
           cliente_nome: f.cliente_nome || "Cliente",
           cpf: vida?.cpf || f.cliente_id || null,
-          telefone: f.cliente_telefone || null,
+          telefone: telFatura || telVida || null,
           valor_fatura: Number(f.valor || 0),
           status: normalizarStatus(String(f.status || "")),
           vencimento: f.vencimento || null,
