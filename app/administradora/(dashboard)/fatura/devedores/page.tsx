@@ -203,6 +203,19 @@ export default function DevedoresPage() {
     return bruto
   }
 
+  /** Mesmos rótulos da coluna Status na tela (PDF). */
+  function rotuloStatusPdf(status: string) {
+    const m: Record<string, string> = {
+      atrasada: "Atrasada",
+      pendente: "Pendente",
+      paga: "Paga",
+      cancelada: "Cancelada",
+      vencida: "Vencida",
+    }
+    const k = (status || "").toLowerCase()
+    return m[k] || status || "—"
+  }
+
   async function exportarPDF() {
     if (linhas.length === 0) {
       toast.error("Não há dados para exportar")
@@ -212,73 +225,110 @@ export default function DevedoresPage() {
       setExportandoPDF(true)
       const jsPDF = (await import("jspdf")).default
       const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" })
-      const margin = 10
-      let y = 14
-      doc.setFontSize(13)
-      doc.setFont(undefined, "bold")
-      doc.text("RELATORIO DE FATURAS", margin, y)
-      y += 6
-      doc.setFontSize(9)
-      doc.setFont(undefined, "normal")
-      doc.text(`Referencia: ${mesRef}/${anoRef} | Registros: ${linhas.length}`, margin, y)
-      y += 6
-
-      const headers = ["Nome", "CPF", "Telefone", "Vencimento", "Valor", "Status", "Boleto"]
-      const widths = [58, 30, 32, 22, 22, 20, 82]
-      const tableW = widths.reduce((a, b) => a + b, 0)
-      const maxY = 190
-      const fontCorpo = 9
-      const fontUrl = 7
-      const lineHeightUrlMm = (fontUrl * doc.getLineHeightFactor() * 25.4) / 72
+      const margem = 8
+      const larguraUtil = doc.internal.pageSize.getWidth() - margem * 2
+      const headers = ["Nome", "CPF", "Telefone", "Vencimento", "Valor", "Status", "Link do boleto"]
+      const colWidths = [52, 28, 30, 22, 22, 20, 107]
+      const headerRowH = 6
+      const maxY = 196
+      const fontCorpo = 7
+      const fontUrl = 6.5
       const rowMinMm = 6
+      const baselinePad = 4.1
 
-      let x = margin
+      let y = 12
+      doc.setFontSize(12)
+      doc.setTextColor(15, 23, 42)
       doc.setFont(undefined, "bold")
-      headers.forEach((h, i) => {
-        doc.text(h, x, y)
-        x += widths[i]
-      })
+      doc.text("Relatório de faturas", margem, y)
       y += 5
       doc.setFont(undefined, "normal")
-      doc.setFontSize(fontCorpo)
+      doc.setFontSize(8)
+      doc.setTextColor(100, 116, 139)
+      doc.text(`Emitido em: ${new Date().toLocaleString("pt-BR")}`, margem, y)
+      doc.text(`Referência: ${mesRef}/${anoRef}`, margem + 78, y)
+      doc.text(`Registros: ${linhas.length}`, margem + 128, y)
+      doc.text(`Total: ${formatarMoeda(totalValor)}`, margem + 178, y)
+      y += 6
+
+      const drawTableHeader = () => {
+        let x = margem
+        doc.setFillColor(30, 41, 59)
+        doc.rect(margem, y, larguraUtil, headerRowH, "F")
+        doc.setTextColor(255, 255, 255)
+        doc.setFont(undefined, "bold")
+        doc.setFontSize(7)
+        headers.forEach((h, i) => {
+          doc.text(h, x + 1.5, y + baselinePad)
+          x += colWidths[i]
+        })
+        doc.setFont(undefined, "normal")
+        y += headerRowH
+      }
+
+      drawTableHeader()
 
       linhas.forEach((item, index) => {
         const linkBoleto = String(item.boleto_url || "").trim()
         doc.setFontSize(fontUrl)
-        const urlLines = linkBoleto ? doc.splitTextToSize(linkBoleto, widths[6] - 2) : ["-"]
+        const urlLines = linkBoleto ? doc.splitTextToSize(linkBoleto, colWidths[6] - 3) : ["—"]
         doc.setFontSize(fontCorpo)
-        const urlBlockH = Math.max(rowMinMm, 2 + urlLines.length * lineHeightUrlMm)
-        const rowH = Math.max(rowMinMm, urlBlockH)
+        const lineHeightUrlMm = (fontUrl * doc.getLineHeightFactor() * 25.4) / 72
+        const rowH = Math.max(rowMinMm, 3 + urlLines.length * lineHeightUrlMm)
 
         if (y + rowH > maxY) {
           doc.addPage("landscape", "a4")
-          y = 14
+          y = 10
+          drawTableHeader()
         }
-        if (index % 2 === 1) {
-          doc.setFillColor(245, 245, 245)
-          doc.rect(margin, y - 4, tableW, rowH, "F")
+
+        if (index % 2 === 0) {
+          doc.setFillColor(248, 250, 252)
+          doc.rect(margem, y, larguraUtil, rowH, "F")
         }
-        x = margin
-        doc.text(doc.splitTextToSize(item.cliente_nome || "-", widths[0] - 2)[0] || "-", x, y)
-        x += widths[0]
-        doc.text(String(formatarCpf(item.cpf)), x, y)
-        x += widths[1]
-        doc.text(String(formatarTelefone(item.telefone)), x, y)
-        x += widths[2]
-        doc.text(item.vencimento ? formatarData(item.vencimento) : "-", x, y)
-        x += widths[3]
-        doc.text(formatarMoeda(item.valor_fatura), x, y)
-        x += widths[4]
-        doc.text(String(item.status || "-"), x, y)
-        x += widths[5]
-        doc.setFontSize(fontUrl)
-        doc.text(urlLines, x, y)
+
+        doc.setTextColor(30, 41, 59)
         doc.setFontSize(fontCorpo)
+        let x = margem
+        const nomeCurto = doc.splitTextToSize(item.cliente_nome || "—", colWidths[0] - 3)[0] || "—"
+        const celulas = [
+          nomeCurto,
+          formatarCpf(item.cpf),
+          formatarTelefone(item.telefone),
+          item.vencimento ? formatarData(item.vencimento) : "—",
+          formatarMoeda(item.valor_fatura),
+          rotuloStatusPdf(item.status),
+        ]
+        celulas.forEach((texto, i) => {
+          doc.text(String(texto), x + 1.5, y + baselinePad)
+          x += colWidths[i]
+        })
+        doc.setFontSize(fontUrl)
+        doc.setTextColor(51, 65, 85)
+        doc.text(urlLines, x + 1.5, y + baselinePad)
+        doc.setFontSize(fontCorpo)
+        doc.setTextColor(30, 41, 59)
         y += rowH
       })
-      y += 4
+
+      if (y > 188) {
+        doc.addPage("landscape", "a4")
+        y = 12
+      } else {
+        y += 3
+      }
+      doc.setDrawColor(203, 213, 225)
+      doc.line(margem, y, margem + larguraUtil, y)
+      y += 5
+      doc.setTextColor(30, 41, 59)
+      doc.setFontSize(9)
       doc.setFont(undefined, "bold")
-      doc.text(`TOTAL: ${formatarMoeda(totalValor)}`, margin, y)
+      doc.text(`Total geral: ${formatarMoeda(totalValor)}`, margem, y)
+      doc.setFont(undefined, "normal")
+      doc.setFontSize(8)
+      doc.setTextColor(100, 116, 139)
+      doc.text(`${linhas.length} fatura(s) na exportação`, margem + 72, y)
+
       doc.save(`relatorio-faturas-${anoRef}-${mesRef}.pdf`)
       toast.success("PDF exportado com sucesso")
     } catch (e: unknown) {
