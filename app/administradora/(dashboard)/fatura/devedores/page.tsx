@@ -93,7 +93,9 @@ export default function DevedoresPage() {
   }
 
   function obterStatusParaBusca() {
-    if (statusFiltro === "principais") return "atrasada,cancelada,paga"
+    // Em aberto / atraso: a maioria das faturas “a receber” vem como pendente ou vencida; só atrasada+cancelada+paga excluía tudo.
+    if (statusFiltro === "principais") return "pendente,vencida,atrasada"
+    if (statusFiltro === "historico") return "atrasada,cancelada,paga"
     if (statusFiltro === "asaas") return "PENDING,RECEIVED,CONFIRMED,OVERDUE,REFUNDED,CANCELED"
     if (statusFiltro === "todos") return ""
     return statusFiltro
@@ -362,7 +364,8 @@ export default function DevedoresPage() {
                 <SelectValue placeholder="Selecione" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="principais">Atrasada, Cancelada e Paga</SelectItem>
+                <SelectItem value="principais">Pendente, vencida e atrasada (em aberto)</SelectItem>
+                <SelectItem value="historico">Atrasada, cancelada e paga</SelectItem>
                 <SelectItem value="asaas">Padrão Asaas</SelectItem>
                 <SelectItem value="atrasada">Somente atrasada</SelectItem>
                 <SelectItem value="cancelada">Somente cancelada</SelectItem>

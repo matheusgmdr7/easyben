@@ -137,7 +137,8 @@ export async function GET(request: NextRequest) {
 
     const faturas = (faturasRaw || []) as FaturaRow[]
 
-    const statusSolicitados = (statusParam || "atrasada,cancelada,paga")
+    // Padrão alinhado ao relatório de devedores: faturas em aberto (pendente/vencida/atrasada).
+    const statusSolicitados = (statusParam || "pendente,vencida,atrasada")
       .split(",")
       .map((s) => normalizarStatus(s))
       .filter(Boolean)
