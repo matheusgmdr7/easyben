@@ -178,8 +178,8 @@ export default function FaturamentoPage() {
           l.mudanca_faixa &&
           l.mudanca_faixa_idade_anterior != null &&
           l.mudanca_faixa_idade_nova != null
-            ? `${l.mudanca_faixa_idade_anterior} → ${l.mudanca_faixa_idade_nova} anos${
-                l.mudanca_faixa_aniversario ? ` · ${formatarData(l.mudanca_faixa_aniversario)}` : ""
+            ? `de ${l.mudanca_faixa_idade_anterior} para ${l.mudanca_faixa_idade_nova} anos${
+                l.mudanca_faixa_aniversario ? `, aniv. ${formatarData(l.mudanca_faixa_aniversario)}` : ""
               }`
             : l.mudanca_faixa
               ? "Mudou"
@@ -337,14 +337,16 @@ export default function FaturamentoPage() {
       {linhas.length > 0 && (
         <>
           {temMudancaFaixa && (
-            <Alert variant="warning" className="mx-6 mt-4">
-              <AlertTriangle className="h-5 w-5" />
-              <AlertDescription className="text-sm [&_strong]:font-semibold">
-                <strong>Mudança de faixa etária:</strong> Alguns beneficiários completaram idade que mudou a faixa de
-                preço. Na coluna &quot;Faixa&quot; aparecem a transição de idade (mês anterior → referência) e a data do
-                aniversário no ano da referência.
-              </AlertDescription>
-            </Alert>
+            <div className="mt-4 w-full min-w-0 max-w-full box-border px-6">
+              <Alert variant="warning" className="w-full min-w-0 max-w-full">
+                <AlertTriangle className="h-5 w-5 shrink-0" />
+                <AlertDescription className="text-sm break-words [&_strong]:font-semibold sm:pr-2">
+                  <strong>Mudança de faixa etária:</strong> Alguns beneficiários completaram idade que mudou a faixa de
+                  preço. Na coluna &quot;Faixa etária&quot; aparecem a idade no mês anterior e na referência (ex.: de 32
+                  para 33 anos) e a data do aniversário no ano da referência.
+                </AlertDescription>
+              </Alert>
+            </div>
           )}
 
           <div className="px-6 py-4 flex flex-wrap items-center gap-3">
@@ -416,7 +418,7 @@ export default function FaturamentoPage() {
                               <Badge className="bg-amber-100 text-amber-800 border-amber-300">Mudou</Badge>
                               {l.mudanca_faixa_idade_anterior != null && l.mudanca_faixa_idade_nova != null ? (
                                 <p className="text-xs text-amber-950 font-medium tabular-nums">
-                                  {l.mudanca_faixa_idade_anterior} → {l.mudanca_faixa_idade_nova} anos
+                                  de {l.mudanca_faixa_idade_anterior} para {l.mudanca_faixa_idade_nova} anos
                                 </p>
                               ) : null}
                               {l.mudanca_faixa_aniversario ? (
