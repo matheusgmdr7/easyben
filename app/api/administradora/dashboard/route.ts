@@ -340,8 +340,6 @@ export async function GET(request: NextRequest) {
         ? {
             alerta: {
               tipo: "gateway_nome_indisponivel",
-              mensagem:
-                "A coluna gateway_nome não está disponível nas faturas (ou a consulta falhou). Os números deste período incluem todas as faturas, não só a financeira selecionada. Adicione/atualize a coluna gateway_nome e associe-a ao gerar boletos.",
             },
           }
         : {}),

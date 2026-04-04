@@ -6,6 +6,7 @@ import { FinanceirasService } from "@/services/financeiras-service"
 import AsaasServiceInstance from "@/services/asaas-service"
 import type { AsaasCustomer, AsaasCharge } from "@/services/asaas-service"
 import { FaturasService } from "@/services/faturas-service"
+import { GATEWAY_NOME_MAX_LEN } from "@/lib/fatura-filtro-financeira"
 
 /**
  * Geração de boleto (Asaas + fatura). Usada pela rota POST e por gerar-boletos-lote sem chamadas HTTP internas (evita 504).
@@ -462,9 +463,10 @@ export async function gerarBoletoAdministradora(body: Record<string, unknown>): 
     const urlInvoice = (chargeResponse.invoiceUrl && String(chargeResponse.invoiceUrl).trim()) || (chargeIdSlug ? baseUrlInvoice + chargeIdSlug : "") || urlBoleto;
     const urlPayment = (chargeResponse.paymentLink && String(chargeResponse.paymentLink).trim()) || urlInvoice || urlBoleto;
 
+    const gatewayNomeGravacao = `Asaas - ${String(financeira.nome || "Financeira")}`.slice(0, GATEWAY_NOME_MAX_LEN)
     const updatePayload: Record<string, unknown> = {
       gateway_id: chargeResponse.id,
-      gateway_nome: `Asaas - ${String(financeira.nome || "Financeira")}`,
+      gateway_nome: gatewayNomeGravacao,
       asaas_charge_id: chargeResponse.id,
       numero_fatura: chargeResponse.invoiceNumber || fatura.numero_fatura,
     };

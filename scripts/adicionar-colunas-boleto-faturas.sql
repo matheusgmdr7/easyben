@@ -9,6 +9,11 @@ BEGIN
     ALTER TABLE faturas ADD COLUMN gateway_id VARCHAR(100);
     RAISE NOTICE 'Coluna faturas.gateway_id criada';
   END IF;
+  -- gateway_nome (ex.: "Asaas - Nome da financeira", até 50 chars — filtro do dashboard / relatórios)
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'faturas' AND column_name = 'gateway_nome') THEN
+    ALTER TABLE faturas ADD COLUMN gateway_nome VARCHAR(50);
+    RAISE NOTICE 'Coluna faturas.gateway_nome criada';
+  END IF;
   -- asaas_charge_id (mesmo valor que gateway_id quando o gateway é Asaas)
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'faturas' AND column_name = 'asaas_charge_id') THEN
     ALTER TABLE faturas ADD COLUMN asaas_charge_id VARCHAR(100);
@@ -53,6 +58,7 @@ BEGIN
 END $$;
 
 COMMENT ON COLUMN faturas.gateway_id IS 'ID da cobrança no gateway (ex: Asaas pay_xxx)';
+COMMENT ON COLUMN faturas.gateway_nome IS 'Identificação da conta gateway na fatura (ex: Asaas - Nome financeira), para filtro multi-financeira';
 COMMENT ON COLUMN faturas.asaas_charge_id IS 'ID da cobrança no Asaas';
 COMMENT ON COLUMN faturas.boleto_url IS 'URL do PDF do boleto';
 COMMENT ON COLUMN faturas.asaas_boleto_url IS 'URL do boleto no Asaas';

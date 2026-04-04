@@ -15,6 +15,7 @@ import {
 } from "lucide-react"
 import { formatarData, formatarMoeda } from "@/utils/formatters"
 import { Button } from "@/components/ui/button"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
 import { adicionarAlertaSistema } from "@/services/administradora-alertas-service"
@@ -60,6 +61,8 @@ export default function AdministradoraDashboard() {
   const [paginaPendencias, setPaginaPendencias] = useState(1)
   const [financeiras, setFinanceiras] = useState<FinanceiraOpcao[]>([])
   const [financeiraId, setFinanceiraId] = useState("")
+  /** API indica que não foi possível ler filtrar por gateway (falta coluna gateway_nome, etc.). */
+  const [alertaFiltroGateway, setAlertaFiltroGateway] = useState(false)
 
   async function carregarDashboard(administradoraId: string, ano: string, mes: string, financeiraIdParam?: string) {
     const fin = financeiraIdParam !== undefined ? financeiraIdParam : financeiraId
@@ -72,10 +75,8 @@ export default function AdministradoraDashboard() {
     const res = await fetch(`/api/administradora/dashboard?${qs.toString()}`, { cache: "no-store" })
     const payload = await res.json().catch(() => ({}))
     if (!res.ok) throw new Error(payload?.error || "Erro ao buscar dashboard")
-    const alerta = payload?.alerta as { mensagem?: string } | undefined
-    if (alerta?.mensagem) {
-      toast.warning(String(alerta.mensagem))
-    }
+    const alerta = payload?.alerta as { tipo?: string } | undefined
+    setAlertaFiltroGateway(alerta?.tipo === "gateway_nome_indisponivel")
     const c = payload?.cards || {}
     setDashboardData({
       clientes_ativos: Number(c.clientes_ativos ?? 0),
@@ -379,6 +380,23 @@ export default function AdministradoraDashboard() {
                     {sincronizando ? "Sincronizando..." : "Sincronizar com gateway"}
                   </Button>
                 </div>
+                {alertaFiltroGateway && financeiraId.trim() ? (
+                  <div className="w-full min-w-0 max-w-full px-0 pt-1">
+                    <Alert
+                      variant="warning"
+                      className="w-full min-w-0 max-w-full border-amber-200 bg-amber-50/95 text-amber-950"
+                    >
+                      <AlertDescription className="text-xs leading-relaxed break-words sm:text-[13px] [&_code]:rounded [&_code]:bg-white/70 [&_code]:px-1 [&_code]:text-[11px]">
+                        <strong className="font-semibold">Filtro por financeira não aplicado.</strong> A tabela{" "}
+                        <code>faturas</code> precisa da coluna <code>gateway_nome</code> (preenchida ao gerar boletos).
+                        No Supabase, execute o script{" "}
+                        <code>scripts/adicionar-coluna-gateway-nome-faturas.sql</code> ou rode o{" "}
+                        <code>scripts/adicionar-colunas-boleto-faturas.sql</code> atualizado. Até lá, os totais deste
+                        mês incluem <strong>todas</strong> as faturas, não só a financeira escolhida.
+                      </AlertDescription>
+                    </Alert>
+                  </div>
+                ) : null}
               </div>
             </div>
           </div>
