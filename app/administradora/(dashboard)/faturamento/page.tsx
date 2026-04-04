@@ -12,7 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge"
 import { FileDown, FileSpreadsheet, Search, AlertTriangle } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { formatarMoeda } from "@/utils/formatters"
+import { formatarData, formatarMoeda } from "@/utils/formatters"
 import { cn } from "@/lib/utils"
 import * as XLSX from "xlsx"
 
@@ -25,6 +25,9 @@ interface LinhaFaturamento {
   valor: number
   acomodacao: string
   mudanca_faixa: boolean
+  mudanca_faixa_idade_anterior?: number | null
+  mudanca_faixa_idade_nova?: number | null
+  mudanca_faixa_aniversario?: string | null
 }
 
 const MESES = [
@@ -135,8 +138,8 @@ export default function FaturamentoPage() {
       y += 6
       doc.text(`Total de beneficiários: ${linhas.length}`, margin, y)
       y += 8
-      const headers = ["Nº", "CPF", "Tipo", "Nome", "Idade", "Valor", "Acomodação", "Faixa"]
-      const colWidths = [12, 35, 25, 60, 18, 28, 35, 22]
+      const headers = ["Nº", "CPF", "Tipo", "Nome", "Idade", "Valor", "Acomodação", "Faixa etária"]
+      const colWidths = [11, 32, 22, 48, 14, 24, 28, 62]
       doc.setFont(undefined, "bold")
       let x = margin
       headers.forEach((h, i) => {
@@ -171,7 +174,17 @@ export default function FaturamentoPage() {
         x += colWidths[5]
         doc.text(l.acomodacao, x, y)
         x += colWidths[6]
-        doc.text(l.mudanca_faixa ? "Mudou" : "-", x, y)
+        const faixaPdf =
+          l.mudanca_faixa &&
+          l.mudanca_faixa_idade_anterior != null &&
+          l.mudanca_faixa_idade_nova != null
+            ? `${l.mudanca_faixa_idade_anterior} → ${l.mudanca_faixa_idade_nova} anos${
+                l.mudanca_faixa_aniversario ? ` · ${formatarData(l.mudanca_faixa_aniversario)}` : ""
+              }`
+            : l.mudanca_faixa
+              ? "Mudou"
+              : "-"
+        doc.text(doc.splitTextToSize(String(faixaPdf), colWidths[7] - 2)[0] || String(faixaPdf), x, y)
         y += rowHeight
       })
       y += 4
@@ -196,7 +209,19 @@ export default function FaturamentoPage() {
     try {
       setExportandoExcel(true)
       const wsData = [
-        ["Nº", "CPF", "Tipo", "Nome", "Idade", "Valor", "Acomodação", "Mudança Faixa Etária"],
+        [
+          "Nº",
+          "CPF",
+          "Tipo",
+          "Nome",
+          "Idade",
+          "Valor",
+          "Acomodação",
+          "Mudança faixa",
+          "Idade anterior",
+          "Idade referência",
+          "Data aniversário",
+        ],
         ...linhas.map((l, i) => [
           i + 1,
           l.cpf,
@@ -206,10 +231,13 @@ export default function FaturamentoPage() {
           l.valor,
           l.acomodacao,
           l.mudanca_faixa ? "Sim" : "Não",
+          l.mudanca_faixa_idade_anterior ?? "",
+          l.mudanca_faixa_idade_nova ?? "",
+          l.mudanca_faixa_aniversario ? formatarData(l.mudanca_faixa_aniversario) : "",
         ]),
         [],
-        ["Total de beneficiários", linhas.length, "", "", "", "", ""],
-        ["TOTAL (R$)", "", "", "", total, "", ""],
+        ["Total de beneficiários", linhas.length, "", "", "", "", "", "", "", "", ""],
+        ["TOTAL (R$)", "", "", "", "", total, "", "", "", "", ""],
       ]
       const ws = XLSX.utils.aoa_to_sheet(wsData)
       const wb = XLSX.utils.book_new()
@@ -312,8 +340,9 @@ export default function FaturamentoPage() {
             <Alert variant="warning" className="mx-6 mt-4">
               <AlertTriangle className="h-5 w-5" />
               <AlertDescription className="text-sm [&_strong]:font-semibold">
-                <strong>Mudança de faixa etária:</strong> Alguns beneficiários tiveram aniversário e alteraram de faixa.
-                As linhas destacadas indicam mudança no valor.
+                <strong>Mudança de faixa etária:</strong> Alguns beneficiários completaram idade que mudou a faixa de
+                preço. Na coluna &quot;Faixa&quot; aparecem a transição de idade (mês anterior → referência) e a data do
+                aniversário no ano da referência.
               </AlertDescription>
             </Alert>
           )}
@@ -357,7 +386,7 @@ export default function FaturamentoPage() {
                       <TableHead className="font-semibold">Idade</TableHead>
                       <TableHead className="font-semibold">Valor</TableHead>
                       <TableHead className="font-semibold">Acomodação</TableHead>
-                      <TableHead className="font-semibold">Faixa</TableHead>
+                      <TableHead className="font-semibold min-w-[9rem]">Faixa etária</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -383,7 +412,19 @@ export default function FaturamentoPage() {
                         <TableCell>{l.acomodacao}</TableCell>
                         <TableCell>
                           {l.mudanca_faixa ? (
-                            <Badge className="bg-amber-100 text-amber-800 border-amber-300">Mudou</Badge>
+                            <div className="space-y-1">
+                              <Badge className="bg-amber-100 text-amber-800 border-amber-300">Mudou</Badge>
+                              {l.mudanca_faixa_idade_anterior != null && l.mudanca_faixa_idade_nova != null ? (
+                                <p className="text-xs text-amber-950 font-medium tabular-nums">
+                                  {l.mudanca_faixa_idade_anterior} → {l.mudanca_faixa_idade_nova} anos
+                                </p>
+                              ) : null}
+                              {l.mudanca_faixa_aniversario ? (
+                                <p className="text-xs text-gray-600">
+                                  Aniversário: {formatarData(l.mudanca_faixa_aniversario)}
+                                </p>
+                              ) : null}
+                            </div>
                           ) : (
                             "-"
                           )}

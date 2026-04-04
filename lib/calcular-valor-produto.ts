@@ -118,6 +118,27 @@ export function calcularIdadeAteData(
 }
 
 /**
+ * Data do aniversário no ano civil informado (mesmo mês/dia do nascimento; dia limitado ao último do mês).
+ * Retorna `yyyy-MM-dd` para exibição ou comparação.
+ */
+export function dataAniversarioNoAno(
+  dataNascimento: string | Date | null | undefined,
+  ano: number
+): string | null {
+  if (!dataNascimento || !ano) return null
+  const str =
+    typeof dataNascimento === "string" ? dataNascimento.slice(0, 10) : dataNascimento.toISOString().slice(0, 10)
+  const partes = str.split("-")
+  if (partes.length !== 3) return null
+  const mes = parseInt(partes[1], 10)
+  const dia = parseInt(partes[2], 10)
+  if (isNaN(mes) || isNaN(dia) || mes < 1 || mes > 12) return null
+  const ultimoDia = new Date(ano, mes, 0).getDate()
+  const d = Math.min(dia, ultimoDia)
+  return `${ano}-${String(mes).padStart(2, "0")}-${String(d).padStart(2, "0")}`
+}
+
+/**
  * Calcula idade a partir de data de nascimento (yyyy-MM-dd ou Date) - usa data atual.
  */
 export function calcularIdade(dataNascimento: string | Date | null | undefined): number | null {

@@ -4,6 +4,7 @@ import { getCurrentTenantId } from "@/lib/tenant-query-helper"
 import {
   calcularIdadeAteData,
   carregarFaixasProdutosContratoPorIds,
+  dataAniversarioNoAno,
   valorProdutoComCacheFaixas,
 } from "@/lib/calcular-valor-produto"
 
@@ -149,6 +150,9 @@ export async function GET(request: NextRequest) {
 
       let valor = 0
       let mudanca_faixa = false
+      let mudanca_faixa_idade_anterior: number | null = null
+      let mudanca_faixa_idade_nova: number | null = null
+      let mudanca_faixa_aniversario: string | null = null
 
       const acomodacaoVida = (v as { acomodacao?: string }).acomodacao === "Apartamento" ? "Apartamento" : "Enfermaria"
       const produtoParaPreco = usarTabelaProdutoSelecionado ? produtoIdFiltro! : (v.produto_id ? String(v.produto_id) : null)
@@ -166,6 +170,9 @@ export async function GET(request: NextRequest) {
           const valorAnt = obterValorComFallback(produtoParaPreco, idadeAnt)
           if (valorAnt != null && Math.abs(valorAnt - valor) > 0.001) {
             mudanca_faixa = true
+            mudanca_faixa_idade_anterior = idadeAnt
+            mudanca_faixa_idade_nova = idadeRef
+            mudanca_faixa_aniversario = dataAniversarioNoAno(v.data_nascimento, refAno)
           }
         }
       } else {
@@ -185,6 +192,9 @@ export async function GET(request: NextRequest) {
         valor,
         acomodacao,
         mudanca_faixa,
+        mudanca_faixa_idade_anterior,
+        mudanca_faixa_idade_nova,
+        mudanca_faixa_aniversario,
         cpf_norm: cpfStr,
         cpf_titular_norm: normalizarCpf((v as { cpf_titular?: string | null }).cpf_titular || ""),
       })
