@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase-admin"
 import { getCurrentTenantId } from "@/lib/tenant-query-helper"
-import { obterValorProdutoPorIdade, calcularIdadeAteData } from "@/lib/calcular-valor-produto"
+import {
+  calcularIdadeAteData,
+  carregarFaixasProdutosContratoPorIds,
+  valorProdutoComCacheFaixas,
+} from "@/lib/calcular-valor-produto"
 
 export interface LinhaFaturamento {
   id: string
@@ -114,6 +118,22 @@ export async function GET(request: NextRequest) {
 
     const usarTabelaProdutoSelecionado = Boolean(produtoIdFiltro)
 
+    const idsProdutosParaPreco = usarTabelaProdutoSelecionado
+      ? [produtoIdFiltro!]
+      : [
+          ...new Set(
+            vidasAtivas
+              .map((v) => (v as { produto_id?: string | null }).produto_id)
+              .filter(Boolean)
+              .map((id) => String(id))
+          ),
+        ]
+
+    const cacheFaixasProduto =
+      idsProdutosParaPreco.length > 0
+        ? await carregarFaixasProdutosContratoPorIds(idsProdutosParaPreco, tenantId)
+        : new Map()
+
     const linhasComVinculo: Array<LinhaFaturamento & { cpf_norm: string; cpf_titular_norm: string }> = []
     for (const v of vidasAtivas) {
       const idadeBase =
@@ -133,35 +153,18 @@ export async function GET(request: NextRequest) {
       const acomodacaoVida = (v as { acomodacao?: string }).acomodacao === "Apartamento" ? "Apartamento" : "Enfermaria"
       const produtoParaPreco = usarTabelaProdutoSelecionado ? produtoIdFiltro! : (v.produto_id ? String(v.produto_id) : null)
 
-      const obterValorComFallback = async (produtoId: string, idade: number): Promise<number | null> => {
-        const acomodacaoAlternativa = acomodacaoVida === "Apartamento" ? "Enfermaria" : "Apartamento"
-
-        const tentativas: Array<{ tenant: string | null | undefined; acomodacao: "Enfermaria" | "Apartamento" }> = [
-          { tenant: tenantId, acomodacao: acomodacaoVida },
-          { tenant: tenantId, acomodacao: acomodacaoAlternativa },
-          { tenant: null, acomodacao: acomodacaoVida },
-          { tenant: null, acomodacao: acomodacaoAlternativa },
-        ]
-
-        for (const tentativa of tentativas) {
-          const valorTentativa = await obterValorProdutoPorIdade(
-            produtoId,
-            idade,
-            tentativa.tenant,
-            tentativa.acomodacao
-          )
-          if (valorTentativa != null && valorTentativa > 0) return valorTentativa
-        }
-        return null
+      const obterValorComFallback = (produtoId: string, idade: number): number | null => {
+        const entry = cacheFaixasProduto.get(produtoId)
+        return valorProdutoComCacheFaixas(entry, idade, acomodacaoVida)
       }
 
       if (produtoParaPreco && idadeRef != null) {
-        const valorRef = await obterValorComFallback(produtoParaPreco, idadeRef)
+        const valorRef = obterValorComFallback(produtoParaPreco, idadeRef)
         valor = valorRef ?? (v.valor_mensal ? Number(v.valor_mensal) : 0)
 
         if (idadeAnt != null && idadeAnt !== idadeRef) {
-          const valorAnt = await obterValorComFallback(produtoParaPreco, idadeAnt)
-          if (valorAnt != null && Math.abs((valorAnt ?? 0) - valor) > 0.001) {
+          const valorAnt = obterValorComFallback(produtoParaPreco, idadeAnt)
+          if (valorAnt != null && Math.abs(valorAnt - valor) > 0.001) {
             mudanca_faixa = true
           }
         }

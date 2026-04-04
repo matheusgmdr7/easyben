@@ -137,6 +137,103 @@ export function calcularIdade(dataNascimento: string | Date | null | undefined):
 
 type AcomodacaoFaixas = "Enfermaria" | "Apartamento"
 
+function extrairFaixasArrayDoJson(raw: unknown, acomodacao: AcomodacaoFaixas): unknown[] {
+  if (raw == null) return []
+  if (Array.isArray(raw)) return raw
+  let faixas: unknown[] = []
+  if (raw && typeof raw === "object" && "Enfermaria" in raw && "Apartamento" in raw) {
+    const obj = raw as Record<string, unknown[]>
+    faixas = Array.isArray(obj[acomodacao]) ? obj[acomodacao] : []
+  } else if (raw && typeof raw === "object") {
+    const obj = raw as Record<string, unknown>
+    const chaves = Object.keys(obj)
+    const chaveAcomodacao = chaves.find((k) => k.toLowerCase() === acomodacao.toLowerCase())
+    const chaveFallback =
+      chaves.find((k) => k.toLowerCase().includes("enferm")) || chaves.find((k) => k.toLowerCase().includes("apart"))
+    const arrAcomodacao = chaveAcomodacao ? obj[chaveAcomodacao] : chaveFallback ? obj[chaveFallback] : null
+    if (Array.isArray(arrAcomodacao)) faixas = arrAcomodacao
+  }
+  if (faixas.length === 0 && raw && typeof raw === "object" && !Array.isArray(raw)) {
+    const obj = raw as Record<string, unknown>
+    const todosArrays = Object.values(obj).filter((v) => Array.isArray(v)) as unknown[][]
+    faixas = todosArrays.flat()
+  }
+  return faixas
+}
+
+/**
+ * Calcula valor mensal a partir do JSON `faixas` já carregado (sem consulta ao banco).
+ * Mesma regra de `obterValorProdutoPorIdade`.
+ */
+export function calcularValorComFaixasJson(
+  raw: unknown,
+  idade: number,
+  acomodacao: AcomodacaoFaixas = "Enfermaria"
+): number | null {
+  if (isNaN(idade) || idade < 0 || idade > 120) return null
+  const faixas = extrairFaixasArrayDoJson(raw, acomodacao)
+  const valor = calcularValorPorFaixas(faixas, idade)
+  return valor > 0 ? valor : null
+}
+
+export type FaixasProdutoTenantEntry = { tenant: unknown | null; global: unknown | null }
+
+/**
+ * Carrega `faixas` de vários produtos em poucas requisições (evita N queries por beneficiário no faturamento).
+ */
+export async function carregarFaixasProdutosContratoPorIds(
+  produtoIds: string[],
+  tenantId: string
+): Promise<Map<string, FaixasProdutoTenantEntry>> {
+  const unique = [...new Set(produtoIds.map((id) => String(id).trim()).filter(Boolean))]
+  const map = new Map<string, FaixasProdutoTenantEntry>()
+  const CHUNK = 100
+  for (let i = 0; i < unique.length; i += CHUNK) {
+    const slice = unique.slice(i, i + CHUNK)
+    const { data, error } = await supabaseAdmin
+      .from("produtos_contrato_administradora")
+      .select("id, faixas, tenant_id")
+      .in("id", slice)
+      .or(`tenant_id.eq.${tenantId},tenant_id.is.null`)
+    if (error) {
+      console.warn("carregarFaixasProdutosContratoPorIds:", error)
+      continue
+    }
+    for (const row of data || []) {
+      const id = String((row as { id: string }).id)
+      const cur: FaixasProdutoTenantEntry = map.get(id) ?? { tenant: null, global: null }
+      const tid = (row as { tenant_id?: string | null }).tenant_id
+      const faixas = (row as { faixas?: unknown }).faixas
+      if (tid === tenantId) cur.tenant = faixas ?? null
+      else if (tid == null) cur.global = faixas ?? null
+      map.set(id, cur)
+    }
+  }
+  return map
+}
+
+/** Ordem igual à antiga `obterValorComFallback` do faturamento por grupo. */
+export function valorProdutoComCacheFaixas(
+  entry: FaixasProdutoTenantEntry | undefined,
+  idade: number,
+  acomodacaoVida: AcomodacaoFaixas
+): number | null {
+  if (!entry || isNaN(idade) || idade < 0 || idade > 120) return null
+  const acomodacaoAlternativa: AcomodacaoFaixas = acomodacaoVida === "Apartamento" ? "Enfermaria" : "Apartamento"
+  const tentativas: Array<{ raw: unknown | null; ac: AcomodacaoFaixas }> = [
+    { raw: entry.tenant, ac: acomodacaoVida },
+    { raw: entry.tenant, ac: acomodacaoAlternativa },
+    { raw: entry.global, ac: acomodacaoVida },
+    { raw: entry.global, ac: acomodacaoAlternativa },
+  ]
+  for (const { raw, ac } of tentativas) {
+    if (raw == null) continue
+    const v = calcularValorComFaixasJson(raw, idade, ac)
+    if (v != null && v > 0) return v
+  }
+  return null
+}
+
 /**
  * Obtém o valor do produto por idade.
  * APENAS produtos_contrato_administradora (faixas JSONB no próprio produto).
@@ -160,28 +257,7 @@ export async function obterValorProdutoPorIdade(
     const { data: pca } = await q.maybeSingle()
 
     if (pca) {
-      const raw = (pca.faixas as unknown) ?? []
-      let faixas: unknown[] = []
-      if (Array.isArray(raw)) {
-        faixas = raw
-      } else if (raw && typeof raw === "object" && "Enfermaria" in raw && "Apartamento" in raw) {
-        const obj = raw as Record<string, unknown[]>
-        faixas = Array.isArray(obj[acomodacao]) ? obj[acomodacao] : []
-      } else if (raw && typeof raw === "object") {
-        const obj = raw as Record<string, unknown>
-        const chaves = Object.keys(obj)
-        const chaveAcomodacao = chaves.find((k) => k.toLowerCase() === acomodacao.toLowerCase())
-        const chaveFallback = chaves.find((k) => k.toLowerCase().includes("enferm")) || chaves.find((k) => k.toLowerCase().includes("apart"))
-        const arrAcomodacao = chaveAcomodacao ? obj[chaveAcomodacao] : chaveFallback ? obj[chaveFallback] : null
-        if (Array.isArray(arrAcomodacao)) faixas = arrAcomodacao
-      }
-      if (faixas.length === 0 && raw && typeof raw === "object" && !Array.isArray(raw)) {
-        const obj = raw as Record<string, unknown>
-        const todosArrays = Object.values(obj).filter((v) => Array.isArray(v)) as unknown[][]
-        faixas = todosArrays.flat()
-      }
-      const valor = calcularValorPorFaixas(faixas, idade)
-      return valor > 0 ? valor : null
+      return calcularValorComFaixasJson((pca as { faixas?: unknown }).faixas, idade, acomodacao)
     }
 
     return null
