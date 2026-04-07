@@ -6,7 +6,6 @@ import { useTenantRecurso } from '@/hooks/use-tenant-recurso'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { AlertCircle, Lock } from 'lucide-react'
-import { Spinner } from '@/components/ui/spinner'
 
 interface RecursoGuardProps {
   codigoRecurso: string
@@ -64,10 +63,20 @@ export function RecursoGuard({
 
   if (isLoading) {
     return (
-      <div className="flex h-screen w-full items-center justify-center bg-gray-50">
-        <div className="text-center">
-          <Spinner className="h-8 w-8 mx-auto mb-4" />
-          <p className="text-gray-600">Verificando acesso ao recurso...</p>
+      <div className="flex h-screen w-full items-center justify-center bg-gradient-to-b from-slate-50 to-slate-100/80">
+        <div className="flex flex-col items-center gap-6 px-4" role="status" aria-live="polite">
+          <div className="relative h-14 w-14" aria-hidden>
+            <div className="absolute inset-0 rounded-full border-[3px] border-slate-200/90" />
+            <div
+              className="absolute inset-0 rounded-full border-[3px] border-transparent border-t-slate-900 border-r-slate-900/40 animate-spin"
+              style={{ animationDuration: '0.85s' }}
+            />
+            <div
+              className="absolute inset-2 rounded-full border-2 border-transparent border-b-slate-400/60 animate-spin"
+              style={{ animationDuration: '1.25s', animationDirection: 'reverse' }}
+            />
+          </div>
+          <p className="text-sm font-medium tracking-wide text-slate-600">Carregando</p>
         </div>
       </div>
     )
