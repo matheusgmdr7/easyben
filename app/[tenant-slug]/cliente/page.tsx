@@ -9,7 +9,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Download, ExternalLink, Loader2, LogOut, UserRound } from "lucide-react"
+import { Download, ExternalLink, Loader2, LogOut, Receipt, UserRound, Wallet } from "lucide-react"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import { formatarCPF, formatarData, formatarMoeda } from "@/utils/formatters"
@@ -60,6 +60,75 @@ function formatarCpfParcial(valor: string): string {
   if (d.length <= 6) return `${d.slice(0, 3)}.${d.slice(3)}`
   if (d.length <= 9) return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6)}`
   return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}`
+}
+
+/** Início do dia no fuso local (evita drift UTC em comparação com vencimento YYYY-MM-DD). */
+function inicioDiaLocal(d: Date): number {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
+}
+
+function parseDataVencimentoISO(valor: string | null | undefined): Date | null {
+  const s = String(valor || "").trim().slice(0, 10)
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s)
+  if (!m) return null
+  const y = Number(m[1])
+  const mo = Number(m[2]) - 1
+  const day = Number(m[3])
+  const dt = new Date(y, mo, day)
+  return Number.isNaN(dt.getTime()) ? null : dt
+}
+
+function statusFaturaQuitada(status: string | null | undefined): boolean {
+  const s = String(status || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+  return /(pago|recebid|liquid|quitad)/.test(s)
+}
+
+/**
+ * Dias em atraso para fatura ainda não quitada e com vencimento anterior a hoje (fuso local).
+ * Usa número vindo da API quando existir (`dias_em_atraso`, `dias_atraso`, `days_overdue`, `dias_em_aberto`).
+ */
+function diasEmAtrasoFatura(f: Record<string, unknown>): number | null {
+  const status = f.status
+  if (statusFaturaQuitada(status as string)) return null
+
+  const apiRaw =
+    f.dias_em_atraso ?? f.dias_atraso ?? f.days_overdue ?? f.dias_em_aberto ?? f.atraso_dias
+  if (apiRaw != null && apiRaw !== "") {
+    const n = Number(apiRaw)
+    if (Number.isFinite(n) && n > 0) return Math.floor(n)
+  }
+
+  const v = f.data_vencimento ?? f.vencimento
+  const due = parseDataVencimentoISO(v != null ? String(v) : "")
+  if (!due) return null
+
+  const diff = inicioDiaLocal(new Date()) - inicioDiaLocal(due)
+  const dias = Math.floor(diff / 86_400_000)
+  if (dias <= 0) return null
+  return dias
+}
+
+function badgeClassesFaturaStatus(status: string | null | undefined): string {
+  const s = String(status || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+  if (/(pago|recebid|liquid|quitad)/.test(s)) {
+    return "border-emerald-200/90 bg-emerald-50 text-emerald-900"
+  }
+  if (/(pendente|aberto|aguard|process)/.test(s)) {
+    return "border-amber-200/90 bg-amber-50 text-amber-950"
+  }
+  if (/(vencid|atrasad|overdue|inadimpl|atraso)/.test(s)) {
+    return "border-red-200/90 bg-red-50 text-red-900"
+  }
+  if (/(cancel|estorn|invalid)/.test(s)) {
+    return "border-slate-200 bg-slate-100 text-slate-700"
+  }
+  return "border-slate-200/80 bg-white text-slate-700"
 }
 
 export default function ClienteDashboardPage({ params }: ClienteDashboardPageProps) {
@@ -380,55 +449,146 @@ export default function ClienteDashboardPage({ params }: ClienteDashboardPagePro
                         </div>
                       </TabsContent>
 
-                      <TabsContent value="financeiro">
+                      <TabsContent value="financeiro" className="mt-0 space-y-5 outline-none">
+                        <div className="relative overflow-hidden rounded-2xl border border-slate-200/85 bg-gradient-to-br from-slate-50 via-white to-sky-50/35 px-4 py-4 sm:px-5 sm:py-5">
+                          <div
+                            className="pointer-events-none absolute -right-6 -top-10 h-28 w-28 rounded-full bg-sky-400/15 blur-2xl"
+                            aria-hidden
+                          />
+                          <div className="relative flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                            <div className="flex items-start gap-3">
+                              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#0F172A] text-white shadow-md shadow-slate-900/15">
+                                <Wallet className="h-5 w-5" aria-hidden />
+                              </div>
+                              <div>
+                                <h3 className="text-sm font-semibold text-slate-900 sm:text-base">Faturas e boletos</h3>
+                                <p className="mt-0.5 text-xs leading-relaxed text-slate-600 sm:text-sm">
+                                  Consulte valores, vencimentos e acesse o boleto quando disponível.
+                                </p>
+                              </div>
+                            </div>
+                            {faturas.length > 0 ? (
+                              <p className="text-xs font-medium tabular-nums text-slate-500 sm:text-right">
+                                {faturas.length} {faturas.length === 1 ? "fatura" : "faturas"}
+                              </p>
+                            ) : null}
+                          </div>
+                        </div>
+
                         {faturas.length > 0 ? (
                           <>
                             <div className="space-y-3 md:hidden">
                               {faturas.map((f: any, i: number) => {
                                 const valorF = Number(f.valor_total ?? f.valor ?? 0)
                                 const vencF = f.data_vencimento ?? f.vencimento
-                                const boletoUrl = f.boleto_link ?? f.asaas_boleto_url ?? f.boleto_url ?? f.asaas_invoice_url ?? f.invoice_url
+                                const boletoUrl =
+                                  f.boleto_link ??
+                                  f.asaas_boleto_url ??
+                                  f.boleto_url ??
+                                  f.asaas_invoice_url ??
+                                  f.invoice_url
+                                const diasAtraso = diasEmAtrasoFatura(f)
                                 return (
-                                  <div key={f.id || `${i}`} className="rounded-md border border-gray-200 bg-white p-3">
-                                    <div className="flex items-start justify-between gap-2">
-                                      <p className="text-sm font-semibold text-gray-900">{f.numero_fatura || "Fatura"}</p>
-                                      <Badge variant="outline" className="capitalize text-xs">
-                                        {f.status || "-"}
+                                  <div
+                                    key={f.id || `${i}`}
+                                    className="group relative overflow-hidden rounded-2xl border border-slate-200/90 bg-white p-4 shadow-[0_2px_16px_rgba(15,23,42,0.04)] transition-[box-shadow,transform] duration-200 hover:shadow-[0_8px_28px_rgba(15,23,42,0.08)] active:scale-[0.99]"
+                                  >
+                                    <div
+                                      className="pointer-events-none absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-transparent via-sky-400/50 to-transparent opacity-0 transition-opacity duration-200 group-hover:opacity-100"
+                                      aria-hidden
+                                    />
+                                    <div className="flex items-start justify-between gap-3">
+                                      <div className="flex min-w-0 flex-1 items-start gap-3">
+                                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-600">
+                                          <Receipt className="h-5 w-5" aria-hidden />
+                                        </div>
+                                        <div className="min-w-0">
+                                          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                                            Fatura
+                                          </p>
+                                          <p className="truncate text-sm font-bold tracking-tight text-slate-900">
+                                            {f.numero_fatura || "—"}
+                                          </p>
+                                        </div>
+                                      </div>
+                                      <Badge
+                                        variant="outline"
+                                        className={cn(
+                                          "shrink-0 rounded-full border px-2.5 py-0.5 text-[10px] font-semibold capitalize",
+                                          badgeClassesFaturaStatus(f.status)
+                                        )}
+                                      >
+                                        {f.status || "—"}
                                       </Badge>
                                     </div>
-                                    <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
-                                      <div>
-                                        <p className="text-gray-500">Valor</p>
-                                        <p className="text-gray-900 font-medium">{formatarMoeda(valorF)}</p>
+                                    <div className="mt-4 grid grid-cols-3 gap-2 rounded-xl bg-slate-50/90 px-2.5 py-3 ring-1 ring-slate-100/80 sm:gap-3 sm:px-3">
+                                      <div className="min-w-0">
+                                        <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                                          Valor
+                                        </p>
+                                        <p className="mt-0.5 text-xs font-bold tabular-nums text-slate-900 sm:text-sm">
+                                          {formatarMoeda(valorF)}
+                                        </p>
                                       </div>
-                                      <div>
-                                        <p className="text-gray-500">Vencimento</p>
-                                        <p className="text-gray-900 font-medium">{vencF ? formatarData(String(vencF).slice(0, 10)) : "-"}</p>
+                                      <div className="min-w-0">
+                                        <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                                          Venc.
+                                        </p>
+                                        <p className="mt-0.5 text-xs font-semibold tabular-nums text-slate-900 sm:text-sm">
+                                          {vencF ? formatarData(String(vencF).slice(0, 10)) : "—"}
+                                        </p>
+                                      </div>
+                                      <div className="min-w-0 text-right sm:text-left">
+                                        <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                                          Atraso
+                                        </p>
+                                        <p
+                                          className={cn(
+                                            "mt-0.5 text-xs font-bold tabular-nums sm:text-sm",
+                                            diasAtraso != null ? "text-red-700" : "font-semibold text-slate-500"
+                                          )}
+                                        >
+                                          {diasAtraso != null
+                                            ? `${diasAtraso} ${diasAtraso === 1 ? "dia" : "dias"}`
+                                            : "—"}
+                                        </p>
                                       </div>
                                     </div>
-                                    <div className="mt-3 flex gap-2">
+                                    <div className="mt-4 flex gap-2">
                                       {boletoUrl ? (
                                         <>
-                                          <Button variant="outline" size="sm" className="h-8 flex-1" asChild>
+                                          <Button
+                                            variant="outline"
+                                            size="sm"
+                                            className="h-10 min-h-10 flex-1 touch-manipulation rounded-xl border-slate-200 font-semibold hover:bg-slate-50 sm:h-9 sm:min-h-0"
+                                            asChild
+                                          >
                                             <a href={boletoUrl} target="_blank" rel="noopener noreferrer">
-                                              <ExternalLink className="h-3.5 w-3.5 mr-1" />
+                                              <ExternalLink className="h-3.5 w-3.5 mr-1.5" />
                                               Visualizar
                                             </a>
                                           </Button>
-                                          <Button variant="outline" size="sm" className="h-8 flex-1" asChild>
+                                          <Button
+                                            variant="outline"
+                                            size="sm"
+                                            className="h-10 min-h-10 flex-1 touch-manipulation rounded-xl border-slate-200 font-semibold hover:bg-slate-50 sm:h-9 sm:min-h-0"
+                                            asChild
+                                          >
                                             <a
                                               href={boletoUrl}
                                               target="_blank"
                                               rel="noopener noreferrer"
                                               download={`boleto-${f.numero_fatura || f.id || i}.pdf`}
                                             >
-                                              <Download className="h-3.5 w-3.5 mr-1" />
+                                              <Download className="h-3.5 w-3.5 mr-1.5" />
                                               Baixar
                                             </a>
                                           </Button>
                                         </>
                                       ) : (
-                                        <span className="text-xs text-gray-500">Indisponível</span>
+                                        <span className="flex w-full items-center justify-center rounded-xl bg-slate-50 py-2.5 text-xs font-medium text-slate-500 ring-1 ring-slate-100">
+                                          Boleto indisponível
+                                        </span>
                                       )}
                                     </div>
                                   </div>
@@ -436,66 +596,131 @@ export default function ClienteDashboardPage({ params }: ClienteDashboardPagePro
                               })}
                             </div>
 
-                            <div className="hidden min-w-0 overflow-x-auto md:block">
-                              <Table className="min-w-[36rem]">
-                                <TableHeader>
-                                  <TableRow>
-                                    <TableHead>Nº Fatura</TableHead>
-                                    <TableHead>Valor</TableHead>
-                                    <TableHead>Vencimento</TableHead>
-                                    <TableHead>Status</TableHead>
-                                    <TableHead className="text-right">Boleto</TableHead>
-                                  </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                  {faturas.map((f: any, i: number) => {
-                                    const valorF = Number(f.valor_total ?? f.valor ?? 0)
-                                    const vencF = f.data_vencimento ?? f.vencimento
-                                    const boletoUrl = f.boleto_link ?? f.asaas_boleto_url ?? f.boleto_url ?? f.asaas_invoice_url ?? f.invoice_url
-                                    return (
-                                      <TableRow key={f.id || `${i}`} className={i % 2 === 0 ? "bg-gray-50" : "bg-white"}>
-                                        <TableCell>{f.numero_fatura || "-"}</TableCell>
-                                        <TableCell>{formatarMoeda(valorF)}</TableCell>
-                                        <TableCell>{vencF ? formatarData(String(vencF).slice(0, 10)) : "-"}</TableCell>
-                                        <TableCell>
-                                          <Badge variant="outline" className="capitalize">
-                                            {f.status || "-"}
-                                          </Badge>
-                                        </TableCell>
-                                        <TableCell className="text-right">
-                                          {boletoUrl ? (
-                                            <div className="flex items-center justify-end gap-1">
-                                              <Button variant="outline" size="sm" className="h-8" asChild>
-                                                <a href={boletoUrl} target="_blank" rel="noopener noreferrer">
-                                                  <ExternalLink className="h-3.5 w-3.5 mr-1" />
-                                                  Visualizar
-                                                </a>
-                                              </Button>
-                                              <Button variant="outline" size="sm" className="h-8" asChild>
-                                                <a
-                                                  href={boletoUrl}
-                                                  target="_blank"
-                                                  rel="noopener noreferrer"
-                                                  download={`boleto-${f.numero_fatura || f.id || i}.pdf`}
-                                                >
-                                                  <Download className="h-3.5 w-3.5 mr-1" />
-                                                  Baixar
-                                                </a>
-                                              </Button>
-                                            </div>
-                                          ) : (
-                                            <span className="text-xs text-gray-500">Indisponível</span>
-                                          )}
-                                        </TableCell>
+                            <div className="hidden min-w-0 md:block">
+                              <div className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-[0_2px_20px_rgba(15,23,42,0.04)]">
+                                <div className="overflow-x-auto">
+                                  <Table className="min-w-[42rem]">
+                                    <TableHeader>
+                                      <TableRow className="border-b border-slate-200/90 hover:bg-transparent">
+                                        <TableHead className="h-11 bg-slate-50/95 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                                          Nº fatura
+                                        </TableHead>
+                                        <TableHead className="h-11 bg-slate-50/95 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                                          Valor
+                                        </TableHead>
+                                        <TableHead className="h-11 bg-slate-50/95 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                                          Vencimento
+                                        </TableHead>
+                                        <TableHead className="h-11 bg-slate-50/95 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                                          Status
+                                        </TableHead>
+                                        <TableHead className="h-11 bg-slate-50/95 text-center text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                                          Dias em atraso
+                                        </TableHead>
+                                        <TableHead className="h-11 bg-slate-50/95 text-right text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                                          Boleto
+                                        </TableHead>
                                       </TableRow>
-                                    )
-                                  })}
-                                </TableBody>
-                              </Table>
+                                    </TableHeader>
+                                    <TableBody>
+                                      {faturas.map((f: any, i: number) => {
+                                        const valorF = Number(f.valor_total ?? f.valor ?? 0)
+                                        const vencF = f.data_vencimento ?? f.vencimento
+                                        const boletoUrl =
+                                          f.boleto_link ??
+                                          f.asaas_boleto_url ??
+                                          f.boleto_url ??
+                                          f.asaas_invoice_url ??
+                                          f.invoice_url
+                                        const diasAtraso = diasEmAtrasoFatura(f)
+                                        return (
+                                          <TableRow
+                                            key={f.id || `${i}`}
+                                            className="border-b border-slate-100/90 transition-colors hover:bg-sky-50/40"
+                                          >
+                                            <TableCell className="py-3.5 font-semibold text-slate-900">
+                                              {f.numero_fatura || "—"}
+                                            </TableCell>
+                                            <TableCell className="py-3.5 font-semibold tabular-nums text-slate-900">
+                                              {formatarMoeda(valorF)}
+                                            </TableCell>
+                                            <TableCell className="py-3.5 tabular-nums text-slate-700">
+                                              {vencF ? formatarData(String(vencF).slice(0, 10)) : "—"}
+                                            </TableCell>
+                                            <TableCell className="py-3.5">
+                                              <Badge
+                                                variant="outline"
+                                                className={cn(
+                                                  "rounded-full border px-2.5 py-0.5 text-xs font-semibold capitalize",
+                                                  badgeClassesFaturaStatus(f.status)
+                                                )}
+                                              >
+                                                {f.status || "—"}
+                                              </Badge>
+                                            </TableCell>
+                                            <TableCell className="py-3.5 text-center tabular-nums">
+                                              {diasAtraso != null ? (
+                                                <span className="font-semibold text-red-700">
+                                                  {diasAtraso} {diasAtraso === 1 ? "dia" : "dias"}
+                                                </span>
+                                              ) : (
+                                                <span className="text-slate-400">—</span>
+                                              )}
+                                            </TableCell>
+                                            <TableCell className="py-3.5 text-right">
+                                              {boletoUrl ? (
+                                                <div className="flex flex-wrap items-center justify-end gap-1.5">
+                                                  <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    className="h-8 rounded-lg border-slate-200 font-semibold"
+                                                    asChild
+                                                  >
+                                                    <a href={boletoUrl} target="_blank" rel="noopener noreferrer">
+                                                      <ExternalLink className="h-3.5 w-3.5 mr-1" />
+                                                      Ver
+                                                    </a>
+                                                  </Button>
+                                                  <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    className="h-8 rounded-lg border-slate-200 font-semibold"
+                                                    asChild
+                                                  >
+                                                    <a
+                                                      href={boletoUrl}
+                                                      target="_blank"
+                                                      rel="noopener noreferrer"
+                                                      download={`boleto-${f.numero_fatura || f.id || i}.pdf`}
+                                                    >
+                                                      <Download className="h-3.5 w-3.5 mr-1" />
+                                                      Baixar
+                                                    </a>
+                                                  </Button>
+                                                </div>
+                                              ) : (
+                                                <span className="text-xs font-medium text-slate-400">Indisponível</span>
+                                              )}
+                                            </TableCell>
+                                          </TableRow>
+                                        )
+                                      })}
+                                    </TableBody>
+                                  </Table>
+                                </div>
+                              </div>
                             </div>
                           </>
                         ) : (
-                          <div className="text-sm text-gray-500 py-4">Nenhum boleto/fatura encontrado para este cliente.</div>
+                          <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200/90 bg-slate-50/50 px-6 py-12 text-center">
+                            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white shadow-sm ring-1 ring-slate-200/80">
+                              <Wallet className="h-6 w-6 text-slate-400" aria-hidden />
+                            </div>
+                            <p className="mt-4 text-sm font-semibold text-slate-800">Nenhuma fatura no momento</p>
+                            <p className="mt-1 max-w-sm text-xs leading-relaxed text-slate-500">
+                              Quando houver boletos ou faturas vinculados ao seu CPF, eles aparecerão aqui.
+                            </p>
+                          </div>
                         )}
                       </TabsContent>
 
