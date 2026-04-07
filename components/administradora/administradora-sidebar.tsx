@@ -643,6 +643,21 @@ export default function AdministradoraSidebar() {
                         <span>Importação de vidas</span>
                       </Link>
                     </li>
+                    <li>
+                      <Link
+                        href="/administradora/beneficiarios/importacao-matriculas"
+                        className={cn(
+                          "flex items-center gap-2 px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm rounded-md transition-all duration-300",
+                          isActive("/administradora/beneficiarios/importacao-matriculas")
+                            ? "bg-[#1E293B]/80 text-white"
+                            : "text-gray-300 hover:bg-[#1E293B]/50 hover:text-white"
+                        )}
+                        onClick={closeSidebar}
+                      >
+                        <ArrowUpTrayIcon className="h-4 w-4" />
+                        <span>Importação de matrículas</span>
+                      </Link>
+                    </li>
                   </ul>
                 )}
               </li>

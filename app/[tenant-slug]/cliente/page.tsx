@@ -86,13 +86,22 @@ function statusFaturaQuitada(status: string | null | undefined): boolean {
   return /(pago|recebid|liquid|quitad)/.test(s)
 }
 
+function statusFaturaContabilizaAtraso(status: string | null | undefined): boolean {
+  const s = String(status || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+  return /(pendente|atrasad)/.test(s)
+}
+
 /**
- * Dias em atraso para fatura ainda não quitada e com vencimento anterior a hoje (fuso local).
+ * Dias em atraso apenas para status pendente/atrasado e vencimento anterior a hoje (fuso local).
  * Usa número vindo da API quando existir (`dias_em_atraso`, `dias_atraso`, `days_overdue`, `dias_em_aberto`).
  */
 function diasEmAtrasoFatura(f: Record<string, unknown>): number | null {
   const status = f.status
   if (statusFaturaQuitada(status as string)) return null
+  if (!statusFaturaContabilizaAtraso(status as string)) return null
 
   const apiRaw =
     f.dias_em_atraso ?? f.dias_atraso ?? f.days_overdue ?? f.dias_em_aberto ?? f.atraso_dias
