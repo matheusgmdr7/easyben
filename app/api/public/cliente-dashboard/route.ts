@@ -36,6 +36,34 @@ async function buscarProdutoNome(produtoId: string | null | undefined, tenantId:
   return data?.nome || null
 }
 
+function numeroCarteirinhaDeVida(v: Record<string, unknown> | null | undefined): string | null {
+  if (!v) return null
+  const direct = String(v.numero_carteirinha || "").trim()
+  if (direct) return direct
+  const adic = v.dados_adicionais
+  if (adic && typeof adic === "object") {
+    const rec = adic as Record<string, unknown>
+    const n = String(
+      rec["numero_carteirinha"] ?? rec["Número da carteirinha"] ?? rec["carteirinha"] ?? ""
+    ).trim()
+    if (n) return n
+  }
+  return null
+}
+
+function planoDeVida(v: Record<string, unknown> | null | undefined, fallback: string | null): string | null {
+  if (!v) return fallback
+  const fromPlano = String(v.plano || "").trim()
+  if (fromPlano) return fromPlano
+  const adic = v.dados_adicionais
+  if (adic && typeof adic === "object") {
+    const rec = adic as Record<string, unknown>
+    const p = String(rec["Plano"] ?? rec["plano"] ?? "").trim()
+    if (p) return p
+  }
+  return fallback
+}
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
@@ -199,6 +227,62 @@ export async function GET(request: NextRequest) {
       normalizarEscalaValorMonetario(clienteAdm?.valor_mensal ?? null) ??
       normalizarEscalaValorMonetario(vida?.valor_mensal ?? null)
 
+    const administradoraIdOperadora =
+      (clienteAdm?.administradora_id as string | undefined) ||
+      ((vida as { administradora_id?: string } | null)?.administradora_id ?? null)
+
+    /** Nome exibido como operadora: prioriza o contrato vinculado ao produto (contratos_administradora / operadoras). */
+    let operadoraNome: string | null = null
+
+    if (produtoId) {
+      const { data: prodContrato } = await supabaseAdmin
+        .from("produtos_contrato_administradora")
+        .select("contrato_id")
+        .eq("id", produtoId)
+        .maybeSingle()
+
+      if (prodContrato?.contrato_id) {
+        const { data: contratoRow } = await supabaseAdmin
+          .from("contratos_administradora")
+          .select("nome_fantasia, razao_social, operadora_id")
+          .eq("id", prodContrato.contrato_id)
+          .maybeSingle()
+
+        operadoraNome =
+          String(contratoRow?.nome_fantasia || "").trim() ||
+          String(contratoRow?.razao_social || "").trim() ||
+          null
+
+        if (!operadoraNome && contratoRow?.operadora_id) {
+          const { data: opRow } = await supabaseAdmin
+            .from("operadoras")
+            .select("fantasia, nome")
+            .eq("id", contratoRow.operadora_id)
+            .maybeSingle()
+          operadoraNome =
+            String(opRow?.fantasia || "").trim() ||
+            String(opRow?.nome || "").trim() ||
+            null
+        }
+      }
+    }
+
+    if (!operadoraNome && administradoraIdOperadora) {
+      const { data: admRow } = await supabaseAdmin
+        .from("administradoras")
+        .select("nome_fantasia, nome, razao_social")
+        .eq("id", administradoraIdOperadora)
+        .maybeSingle()
+      operadoraNome =
+        String(admRow?.nome_fantasia || "").trim() ||
+        String(admRow?.nome || "").trim() ||
+        String(admRow?.razao_social || "").trim() ||
+        null
+    }
+    if (!operadoraNome) {
+      operadoraNome = String(tenant.nome_marca || tenant.nome || "").trim() || null
+    }
+
     // Busca de faturas alinhada ao fluxo administrativo:
     // - usa cliente_administradora_id válido (UUID)
     // - considera múltiplos vínculos possíveis do mesmo CPF no tenant
@@ -271,6 +355,90 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    type BenefCart = {
+      cpf: string
+      nome: string | null
+      tipo: string
+      numero_carteirinha: string | null
+      plano: string | null
+      operadora: string | null
+      valor_mensal: number | null
+      /** CPF deste cartão é o mesmo usado no login. */
+      cpf_login: boolean
+    }
+
+    const beneficiariosCarteirinha: BenefCart[] = []
+
+    if (vida?.grupo_id) {
+      const { data: todasVidasGrupo } = await supabaseAdmin
+        .from("vidas_importadas")
+        .select("*")
+        .eq("tenant_id", tenantId)
+        .eq("grupo_id", vida.grupo_id)
+
+      const tipoV = String(vida.tipo || "").toLowerCase()
+      const titularCpf =
+        tipoV === "dependente"
+          ? normalizarCpf(String(vida.cpf_titular || ""))
+          : normalizarCpf(String(vida.cpf || cpf))
+
+      let familia: Record<string, unknown>[] = []
+      if (titularCpf.length !== 11) {
+        familia = (todasVidasGrupo || []).filter(
+          (row: Record<string, unknown>) => normalizarCpf(String(row.cpf || "")) === cpf
+        )
+      } else {
+        familia = (todasVidasGrupo || []).filter((row: Record<string, unknown>) => {
+          const t = String(row.tipo || "").toLowerCase()
+          const rowCpf = normalizarCpf(String(row.cpf || ""))
+          if (t === "titular") return rowCpf === titularCpf
+          if (t === "dependente")
+            return normalizarCpf(String(row.cpf_titular || "")) === titularCpf
+          return false
+        })
+      }
+
+      familia.sort((a, b) => {
+        const at = String(a.tipo || "").toLowerCase() === "titular" ? 0 : 1
+        const bt = String(b.tipo || "").toLowerCase() === "titular" ? 0 : 1
+        if (at !== bt) return at - bt
+        return String(a.nome || "").localeCompare(String(b.nome || ""), "pt-BR")
+      })
+
+      for (const row of familia) {
+        const isTitular = String(row.tipo || "").toLowerCase() === "titular"
+        const rowCpf = normalizarCpf(String(row.cpf || ""))
+        const valorNaVida = normalizarEscalaValorMonetario(row.valor_mensal)
+        /** Titular: prioriza valor do contrato (cliente_adm); dependente: valor da própria vida, senão o do titular/contrato. */
+        const valorMensalCard = isTitular
+          ? valorMensal ?? valorNaVida
+          : valorNaVida ?? valorMensal
+        beneficiariosCarteirinha.push({
+          cpf: rowCpf,
+          nome: (row.nome as string) || null,
+          tipo: String(row.tipo || "titular"),
+          numero_carteirinha: numeroCarteirinhaDeVida(row),
+          plano: planoDeVida(row, planoNome),
+          operadora: operadoraNome,
+          valor_mensal: valorMensalCard,
+          cpf_login: rowCpf === cpf,
+        })
+      }
+    }
+
+    if (beneficiariosCarteirinha.length === 0) {
+      beneficiariosCarteirinha.push({
+        cpf,
+        nome: vida?.nome || proposta?.nome || null,
+        tipo: String(vida?.tipo || "titular"),
+        numero_carteirinha: numeroCarteirinha || null,
+        plano: planoNome,
+        operadora: operadoraNome,
+        valor_mensal: valorMensal,
+        cpf_login: true,
+      })
+    }
+
     return NextResponse.json({
       tenant: {
         id: tenant.id,
@@ -278,6 +446,7 @@ export async function GET(request: NextRequest) {
         nome_marca: tenant.nome_marca,
         slug: tenant.slug,
       },
+      beneficiarios_carteirinha: beneficiariosCarteirinha,
       cliente: {
         cpf,
         nome: vida?.nome || proposta?.nome || null,
@@ -286,6 +455,7 @@ export async function GET(request: NextRequest) {
         plano: planoNome,
         numero_carteirinha: numeroCarteirinha || null,
         grupo_nome: grupoNome,
+        operadora: operadoraNome,
         numero_contrato: clienteAdm?.numero_contrato || null,
         data_vigencia: dataVigencia || null,
         valor_mensal: valorMensal,
