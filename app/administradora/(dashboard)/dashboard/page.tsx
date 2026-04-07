@@ -8,6 +8,7 @@ import {
   Clock,
   DollarSign,
   ExternalLink,
+  LayoutList,
   Minus,
   RefreshCw,
   TrendingUp,
@@ -609,10 +610,41 @@ export default function AdministradoraDashboard() {
               </span>
             ) : null}
           </p>
-          {pendenciasTotalPeriodo > pendenciasFiltradas.length && (
-            <p className="text-[11px] text-amber-800 mt-2 rounded-sm bg-amber-50 border border-amber-100 px-2 py-1.5 inline-block">
-              Total no período: {pendenciasTotalPeriodo} fatura(s). Abaixo, até {pendenciasFiltradas.length} na listagem.
-            </p>
+          {pendenciasTotalPeriodo > 0 && (
+            <div className="mt-4 flex flex-wrap items-stretch gap-2">
+              <div
+                className={cn(
+                  "inline-flex min-w-0 max-w-full items-center gap-3 rounded-xl border border-slate-200/90",
+                  "bg-gradient-to-br from-slate-50 via-white to-slate-50/80 px-3.5 py-2.5",
+                  "shadow-[0_1px_2px_rgba(15,23,42,0.04)]"
+                )}
+              >
+                <span
+                  className={cn(
+                    "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg",
+                    "bg-[#0F172A]/[0.06] text-[#0F172A]"
+                  )}
+                  aria-hidden
+                >
+                  <LayoutList className="h-4 w-4" strokeWidth={2} />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
+                    Listagem do período
+                  </p>
+                  <p className="mt-0.5 text-sm text-slate-800">
+                    <span className="font-semibold tabular-nums">{pendenciasTotalPeriodo}</span>
+                    <span className="text-slate-600">
+                      {" "}
+                      fatura{pendenciasTotalPeriodo !== 1 ? "s" : ""} pendente
+                      {pendenciasTotalPeriodo !== 1 ? "s" : ""}, atrasada
+                      {pendenciasTotalPeriodo !== 1 ? "s" : ""} ou vencida
+                      {pendenciasTotalPeriodo !== 1 ? "s" : ""}
+                    </span>
+                  </p>
+                </div>
+              </div>
+            </div>
           )}
         </div>
         <div className="overflow-x-auto">
@@ -674,13 +706,12 @@ export default function AdministradoraDashboard() {
         </div>
         <div className="flex flex-col gap-3 border-t border-slate-200 bg-slate-50/50 px-5 py-3 md:flex-row md:items-center md:justify-between">
           <p className="text-xs text-slate-500">
-            Mostrando {pendenciasPaginadas.length} de {pendenciasFiltradas.length} na página
-            {pendenciasTotalPeriodo > 0 ? (
-              <>
-                {" "}
-                · Total no período: <span className="font-medium text-slate-700">{pendenciasTotalPeriodo}</span>
-              </>
-            ) : null}
+            Página <span className="font-medium text-slate-700">{paginaAtualPendencias}</span> de{" "}
+            <span className="font-medium text-slate-700">{totalPaginasPendencias}</span>
+            {" — "}
+            <span className="tabular-nums">{pendenciasPaginadas.length}</span> de{" "}
+            <span className="tabular-nums">{pendenciasFiltradas.length}</span> fatura
+            {pendenciasFiltradas.length !== 1 ? "s" : ""} nesta tabela
           </p>
           <div className="flex items-center gap-2">
             <Button

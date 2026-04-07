@@ -341,7 +341,6 @@ export async function GET(request: NextRequest) {
     })
 
     const totalPendenciasPeriodo = pendenciasFaturas.length
-    const pendenciasFaturasLista = pendenciasFaturas.slice(0, 100)
 
     return NextResponse.json({
       periodo: {
@@ -370,7 +369,7 @@ export async function GET(request: NextRequest) {
         valor_em_aberto: Number(valorEmAberto.toFixed(2)),
         valor_recebido_mes: Number(recebidoMes.toFixed(2)),
       },
-      pendencias_faturas: pendenciasFaturasLista,
+      pendencias_faturas: pendenciasFaturas,
       pendencias_total: totalPendenciasPeriodo,
     })
   } catch (e: unknown) {

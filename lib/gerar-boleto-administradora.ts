@@ -25,13 +25,15 @@ async function atualizarFaturaComFallbackColunas(
   payload: Record<string, unknown>,
   log: (msg: string, data?: unknown) => void,
   contexto: string
-): Promise<boolean> {
+): Promise<{ ok: boolean; colunasOmitidas: string[] }> {
+  const colunasOmitidas: string[] = []
   let p = { ...payload }
   for (let i = 0; i < 14; i++) {
     const { error } = await supabaseAdmin.from("faturas").update(p).eq("id", faturaId)
-    if (!error) return true
+    if (!error) return { ok: true, colunasOmitidas }
     const col = extrairColunaInexistenteFaturas(error.message)
     if (col && Object.prototype.hasOwnProperty.call(p, col)) {
+      colunasOmitidas.push(col)
       log(`AVISO: coluna faturas.${col} ausente; regravando sem ela (${contexto})`, {
         message: error.message,
       })
@@ -39,9 +41,9 @@ async function atualizarFaturaComFallbackColunas(
       continue
     }
     log(`AVISO: não foi possível atualizar fatura (${contexto})`, { code: error.code, message: error.message })
-    return false
+    return { ok: false, colunasOmitidas }
   }
-  return false
+  return { ok: false, colunasOmitidas }
 }
 
 /**
@@ -519,7 +521,11 @@ export async function gerarBoletoAdministradora(body: Record<string, unknown>): 
     if (urlPayment) updatePayload.asaas_payment_link = urlPayment
     if (urlBoleto) updatePayload.boleto_url = urlBoleto
 
-    await atualizarFaturaComFallbackColunas(fatura.id, updatePayload, log, "pós-boleto")
+    const upd = await atualizarFaturaComFallbackColunas(fatura.id, updatePayload, log, "pós-boleto")
+    const avisoSchema =
+      upd.colunasOmitidas.includes("gateway_nome") || upd.colunasOmitidas.includes("financeira_id")
+        ? "Execute no Supabase scripts/adicionar-colunas-boleto-faturas.sql e scripts/adicionar-coluna-financeira-id-faturas.sql; sem essas colunas o filtro por financeira no dashboard não enxerga a fatura."
+        : undefined
 
     return NextResponse.json({
       success: true,
@@ -531,6 +537,7 @@ export async function gerarBoletoAdministradora(body: Record<string, unknown>): 
       boleto_url: urlBoleto || undefined,
       invoice_url: urlInvoice || undefined,
       payment_link: urlPayment || undefined,
+      ...(avisoSchema ? { aviso_schema: avisoSchema, colunas_nao_gravadas: upd.colunasOmitidas } : {}),
     });
   } catch (e: unknown) {
     console.error("[gerar-boleto] Erro ao gerar boleto:", e)

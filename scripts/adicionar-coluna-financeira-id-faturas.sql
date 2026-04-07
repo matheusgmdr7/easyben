@@ -46,8 +46,15 @@ WHERE f.financeira_id IS NULL
   AND left(btrim(f.gateway_nome), 50) = left(concat('Asaas - ', btrim(coalesce(af.nome, ''))), 50);
 
 -- =============================================================================
--- 3) Backfill B — cobrança Asaas antiga sem gateway_nome (só uma financeira Asaas ativa na adm.)
+-- 3) Backfill B — legado Asaas sem conta específica (só uma financeira Asaas ativa na adm.)
 -- =============================================================================
+-- Inclui:
+--   - gateway_nome vazio/NULL (cobrança existe);
+--   - gateway_nome = 'Asaas' só — fluxo antigo em services/faturamento-service.ts
+--     (não grava "Asaas - Nome da financeira" nem financeira_id).
+-- Com duas ou mais financeiras Asaas ativas na mesma administradora, este UPDATE
+-- não altera essas linhas: use scripts/diagnosticar-faturas-financeira.sql e corrija
+-- manualmente (UPDATE por administradora_id + financeira_id desejado).
 WITH financeira_unica_asaas AS (
   SELECT
     administradora_id,
@@ -66,7 +73,11 @@ SET
 FROM financeira_unica_asaas u
 WHERE f.administradora_id = u.administradora_id
   AND f.financeira_id IS NULL
-  AND (f.gateway_nome IS NULL OR btrim(f.gateway_nome) = '')
+  AND (
+    f.gateway_nome IS NULL
+    OR btrim(f.gateway_nome) = ''
+    OR lower(btrim(f.gateway_nome)) = 'asaas'
+  )
   AND (
     (f.asaas_charge_id IS NOT NULL AND btrim(f.asaas_charge_id::text) <> '')
     OR (f.gateway_id IS NOT NULL AND btrim(f.gateway_id::text) <> '')

@@ -48,7 +48,8 @@ export function faturaCombinaFiltroFinanceira(
 
 /**
  * Filtro por financeira no dashboard/relatórios: prioriza `financeira_id` na fatura;
- * se ausente, usa o mesmo match por `gateway_nome` que `faturaCombinaFiltroFinanceira`.
+ * se ausente ou divergente do filtro, ainda avalia `gateway_nome` (legado / correção manual
+ * só em gateway, ou linhas inconsistentes), para sync e dashboards não ignorarem a conta certa.
  */
 export function faturaPertenceAFinanceira(
   financeiraIdNaFatura: string | null | undefined,
@@ -63,6 +64,8 @@ export function faturaPertenceAFinanceira(
     return faturaCombinaFiltroFinanceira(gatewayNome, nomeFinanceiraFiltro, opcoes)
   }
   if (idFat && idFat === idFiltro) return true
-  if (idFat && idFat !== idFiltro) return false
+  if (idFat && idFat !== idFiltro) {
+    return faturaCombinaFiltroFinanceira(gatewayNome, nomeFinanceiraFiltro, opcoes)
+  }
   return faturaCombinaFiltroFinanceira(gatewayNome, nomeFinanceiraFiltro, opcoes)
 }
