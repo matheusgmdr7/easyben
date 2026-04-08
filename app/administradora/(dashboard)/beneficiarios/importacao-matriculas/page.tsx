@@ -9,11 +9,13 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
+import { Progress } from "@/components/ui/progress"
 import { Download, FileSpreadsheet, Loader2, Upload } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { formatarCPF } from "@/utils/formatters"
 
 type LinhaArquivo = Record<string, unknown>
+const TAMANHO_CHUNK_IMPORTACAO = 250
 
 function normalizarHeader(s: string): string {
   return String(s || "")
@@ -41,7 +43,8 @@ function parseArquivo(file: File): Promise<{ headers: string[]; rows: LinhaArqui
         const sh = wb.SheetNames[0]
         if (!sh) return reject(new Error("Nenhuma planilha encontrada"))
         const ws = wb.Sheets[sh]
-        const arr: unknown[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" })
+        // raw:false preserva o valor formatado exibido na planilha (inclui zeros à esquerda quando formatados).
+        const arr: unknown[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "", raw: false })
         if (!arr.length) return resolve({ headers: [], rows: [] })
         const headers = (arr[0] as unknown[]).map((h) => String(h ?? "").trim()).filter((h) => h !== "")
         const rows = arr.slice(1).map((row) => {
@@ -113,6 +116,14 @@ export default function ImportacaoMatriculasPage() {
   const [drag, setDrag] = useState(false)
   const [loadingArquivo, setLoadingArquivo] = useState(false)
   const [enviando, setEnviando] = useState(false)
+  const [progressoImportacao, setProgressoImportacao] = useState<{
+    total: number
+    processados: number
+    atualizados: number
+    erros: number
+    etapa: number
+    totalEtapas: number
+  } | null>(null)
   const [resultados, setResultados] = useState<ResultadoApi[] | null>(null)
   const [resumo, setResumo] = useState<{ total: number; atualizados: number; erros: number } | null>(null)
 
@@ -246,25 +257,82 @@ export default function ImportacaoMatriculasPage() {
     }
     try {
       setEnviando(true)
-      const res = await fetch("/api/administradora/importacao-matriculas", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          administradora_id: administradoraId,
-          linhas: linhasParaEnvio,
-        }),
+      const chunks: Array<{ nome: string; cpf: string; matricula: string }[]> = []
+      for (let i = 0; i < linhasParaEnvio.length; i += TAMANHO_CHUNK_IMPORTACAO) {
+        chunks.push(linhasParaEnvio.slice(i, i + TAMANHO_CHUNK_IMPORTACAO))
+      }
+
+      setProgressoImportacao({
+        total: linhasParaEnvio.length,
+        processados: 0,
+        atualizados: 0,
+        erros: 0,
+        etapa: 1,
+        totalEtapas: chunks.length,
       })
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(data?.error || "Falha na importação")
-      setResultados(data.resultados || [])
-      setResumo(data.resumo || null)
-      const ok = data.resumo?.atualizados ?? 0
-      const err = data.resumo?.erros ?? 0
+
+      const resultadosTotais: ResultadoApi[] = []
+      let atualizadosTotais = 0
+      let errosTotais = 0
+      let processados = 0
+
+      for (let i = 0; i < chunks.length; i++) {
+        const chunk = chunks[i]
+        setProgressoImportacao((prev) =>
+          prev
+            ? { ...prev, etapa: i + 1 }
+            : null
+        )
+        const res = await fetch("/api/administradora/importacao-matriculas", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            administradora_id: administradoraId,
+            linhas: chunk,
+          }),
+        })
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok) throw new Error(data?.error || "Falha na importação")
+
+        const resultadosChunk = Array.isArray(data.resultados) ? (data.resultados as ResultadoApi[]) : []
+        const baseLinha = i * TAMANHO_CHUNK_IMPORTACAO
+        resultadosTotais.push(
+          ...resultadosChunk.map((r) => ({
+            ...r,
+            linha: Number(r.linha || 0) + baseLinha,
+          }))
+        )
+        const okChunk = Number(data?.resumo?.atualizados || 0)
+        const errChunk = Number(data?.resumo?.erros || 0)
+        atualizadosTotais += okChunk
+        errosTotais += errChunk
+        processados += chunk.length
+        setProgressoImportacao((prev) =>
+          prev
+            ? {
+                ...prev,
+                processados,
+                atualizados: atualizadosTotais,
+                erros: errosTotais,
+              }
+            : null
+        )
+      }
+
+      setResultados(resultadosTotais)
+      setResumo({
+        total: linhasParaEnvio.length,
+        atualizados: atualizadosTotais,
+        erros: errosTotais,
+      })
+      const ok = atualizadosTotais
+      const err = errosTotais
       toast.success(`Importação concluída: ${ok} atualizado(s), ${err} erro(s).`)
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Erro ao importar")
     } finally {
       setEnviando(false)
+      setProgressoImportacao(null)
     }
   }
 
@@ -433,6 +501,30 @@ export default function ImportacaoMatriculasPage() {
               </>
             )}
           </Button>
+          {enviando && progressoImportacao && (
+            <div className="w-full max-w-xl rounded-xl border border-slate-200 bg-slate-50/70 p-3 space-y-2">
+              <div className="flex items-center justify-between gap-2 text-xs text-slate-600">
+                <span>Etapa {progressoImportacao.etapa} de {progressoImportacao.totalEtapas}</span>
+                <span className="tabular-nums">
+                  {progressoImportacao.processados}/{progressoImportacao.total}
+                </span>
+              </div>
+              <Progress
+                value={
+                  progressoImportacao.total > 0
+                    ? Math.round((progressoImportacao.processados / progressoImportacao.total) * 100)
+                    : 0
+                }
+                className={`h-2.5 bg-slate-200 [&>div]:bg-slate-800 ${progressoImportacao.processados === 0 ? "animate-pulse" : ""}`}
+              />
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-emerald-700">Atualizados: {progressoImportacao.atualizados}</span>
+                <span className={cn(progressoImportacao.erros > 0 ? "text-red-700" : "text-slate-600")}>
+                  Erros: {progressoImportacao.erros}
+                </span>
+              </div>
+            </div>
+          )}
 
           {resumo && (
             <div className="rounded-lg bg-slate-50 border border-slate-200 px-4 py-3 text-sm">

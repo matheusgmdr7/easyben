@@ -24,14 +24,29 @@ type VidaRow = {
   cliente_administradora_id: string | null
 }
 
-async function carregarVidasPorAdministradora(
+function chunkArray<T>(arr: T[], size: number): T[][] {
+  if (size <= 0) return [arr]
+  const out: T[][] = []
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size))
+  return out
+}
+
+async function carregarVidasPorCpfs(
   administradoraId: string,
-  tenantId: string
+  tenantId: string,
+  cpfsNorm: string[]
 ): Promise<Map<string, VidaRow[]>> {
   const map = new Map<string, VidaRow[]>()
-  const PAGE = 1000
-  let from = 0
-  for (;;) {
+  if (cpfsNorm.length === 0) return map
+
+  // Aceita CPF salvo com ou sem máscara no banco.
+  const termosBusca = Array.from(
+    new Set(
+      cpfsNorm.flatMap((c) => [c, cpfFormatadoBr(c)]).filter((c) => c.length > 0)
+    )
+  )
+
+  for (const termos of chunkArray(termosBusca, 300)) {
     const { data, error } = await supabaseAdmin
       .from("vidas_importadas")
       .select(
@@ -39,8 +54,8 @@ async function carregarVidasPorAdministradora(
       )
       .eq("tenant_id", tenantId)
       .eq("administradora_id", administradoraId)
+      .in("cpf", termos)
       .order("created_at", { ascending: false })
-      .range(from, from + PAGE - 1)
 
     if (error) {
       throw new Error(error.message || "Erro ao listar vidas importadas")
@@ -53,8 +68,6 @@ async function carregarVidasPorAdministradora(
       arr.push(row)
       map.set(k, arr)
     }
-    if (chunk.length < PAGE) break
-    from += PAGE
   }
   return map
 }
@@ -94,7 +107,76 @@ export async function POST(request: NextRequest) {
     }
     const tenantId = String(adm.tenant_id)
 
-    const vidasPorCpf = await carregarVidasPorAdministradora(administradoraId, tenantId)
+    const cpfsEntrada = Array.from(
+      new Set(
+        linhas
+          .map((l) => normalizarCpf(l?.cpf))
+          .filter((c) => c.length === 11)
+      )
+    )
+
+    const vidasPorCpf = await carregarVidasPorCpfs(administradoraId, tenantId, cpfsEntrada)
+
+    // Pré-carrega propostas por CPF (com/sem máscara) para evitar consultas por linha.
+    const propostasPorCpf = new Map<string, Set<string>>()
+    if (cpfsEntrada.length > 0) {
+      const termosProposta = Array.from(
+        new Set(cpfsEntrada.flatMap((c) => [c, cpfFormatadoBr(c)]))
+      )
+      type PropostaRow = { id: string; cpf: string | null }
+      const propostasRows: PropostaRow[] = []
+      for (const termos of chunkArray(termosProposta, 300)) {
+        const { data: propData, error: propErr } = await supabaseAdmin
+          .from("propostas")
+          .select("id, cpf")
+          .eq("tenant_id", tenantId)
+          .in("cpf", termos)
+        if (propErr) {
+          return NextResponse.json(
+            { error: propErr.message || "Erro ao buscar propostas para importação" },
+            { status: 500 }
+          )
+        }
+        propostasRows.push(...((propData || []) as PropostaRow[]))
+      }
+
+      for (const p of propostasRows) {
+        const k = normalizarCpf(p.cpf)
+        if (!k || !p.id) continue
+        const set = propostasPorCpf.get(k) || new Set<string>()
+        set.add(p.id)
+        propostasPorCpf.set(k, set)
+      }
+    }
+
+    // Pré-carrega contratos por proposta para evitar consultas por linha.
+    const clientesPorProposta = new Map<string, string[]>()
+    const propostaIdsTodos = Array.from(
+      new Set(Array.from(propostasPorCpf.values()).flatMap((s) => Array.from(s)))
+    )
+    if (propostaIdsTodos.length > 0) {
+      type ClientePropostaRow = { id: string; proposta_id: string | null }
+      for (const ids of chunkArray(propostaIdsTodos, 300)) {
+        const { data: clientesRows, error: caErr } = await supabaseAdmin
+          .from("clientes_administradoras")
+          .select("id, proposta_id")
+          .eq("tenant_id", tenantId)
+          .eq("administradora_id", administradoraId)
+          .in("proposta_id", ids)
+        if (caErr) {
+          return NextResponse.json(
+            { error: caErr.message || "Erro ao buscar contratos para importação" },
+            { status: 500 }
+          )
+        }
+        for (const c of (clientesRows || []) as ClientePropostaRow[]) {
+          if (!c.proposta_id || !c.id) continue
+          const arr = clientesPorProposta.get(c.proposta_id) || []
+          arr.push(c.id)
+          clientesPorProposta.set(c.proposta_id, arr)
+        }
+      }
+    }
 
     type ItemResultado = {
       linha: number
@@ -221,43 +303,8 @@ export async function POST(request: NextRequest) {
         continue
       }
 
-      // Sem vida: tentar cliente_administradoras + proposta (mesmo CPF)
-      let propostas: { id: string }[] | null = null
-      let propErr: { message: string } | null = null
-      const r1 = await supabaseAdmin
-        .from("propostas")
-        .select("id")
-        .eq("tenant_id", tenantId)
-        .eq("cpf", cpf)
-        .order("created_at", { ascending: false })
-        .limit(5)
-      propostas = r1.data
-      propErr = r1.error
-      if ((!propostas || propostas.length === 0) && !propErr) {
-        const cpfFmt = cpfFormatadoBr(cpf)
-        const r2 = await supabaseAdmin
-          .from("propostas")
-          .select("id")
-          .eq("tenant_id", tenantId)
-          .eq("cpf", cpfFmt)
-          .order("created_at", { ascending: false })
-          .limit(5)
-        propostas = r2.data
-        propErr = r2.error
-      }
-
-      if (propErr) {
-        resultados.push({
-          linha: linhaNum,
-          cpf,
-          nome_planilha: nomePlan || undefined,
-          status: "erro",
-          mensagem: propErr.message || "Erro ao buscar proposta",
-        })
-        continue
-      }
-
-      const propIds = (propostas || []).map((p) => p.id).filter(Boolean)
+      // Sem vida: tentar cliente_administradoras + proposta (mesmo CPF), usando mapas pré-carregados.
+      const propIds = Array.from(propostasPorCpf.get(cpf) || [])
       if (propIds.length === 0) {
         resultados.push({
           linha: linhaNum,
@@ -269,25 +316,11 @@ export async function POST(request: NextRequest) {
         continue
       }
 
-      const { data: clientes, error: caErr } = await supabaseAdmin
-        .from("clientes_administradoras")
-        .select("id")
-        .eq("tenant_id", tenantId)
-        .eq("administradora_id", administradoraId)
-        .in("proposta_id", propIds)
-
-      if (caErr) {
-        resultados.push({
-          linha: linhaNum,
-          cpf,
-          nome_planilha: nomePlan || undefined,
-          status: "erro",
-          mensagem: caErr.message || "Erro ao buscar cliente",
-        })
-        continue
-      }
-
-      const listaCa = clientes || []
+      const listaCa = Array.from(
+        new Set(
+          propIds.flatMap((id) => clientesPorProposta.get(id) || [])
+        )
+      ).map((id) => ({ id }))
       if (listaCa.length === 0) {
         resultados.push({
           linha: linhaNum,
