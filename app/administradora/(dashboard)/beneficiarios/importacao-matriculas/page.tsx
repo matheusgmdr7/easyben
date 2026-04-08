@@ -15,7 +15,8 @@ import { cn } from "@/lib/utils"
 import { formatarCPF } from "@/utils/formatters"
 
 type LinhaArquivo = Record<string, unknown>
-const TAMANHO_CHUNK_IMPORTACAO = 250
+/** Chunks menores evitam timeout da função serverless (muitas atualizações por requisição). */
+const TAMANHO_CHUNK_IMPORTACAO = 80
 
 function normalizarHeader(s: string): string {
   return String(s || "")

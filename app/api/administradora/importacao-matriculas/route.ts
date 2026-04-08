@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase-admin"
 
+/** Evita timeout em importações grandes (Netlify/Vercel). Ajuste no painel se necessário. */
+export const maxDuration = 300
+
 function normalizarCpf(valor: string | number | null | undefined): string {
   const dig = String(valor ?? "").replace(/\D/g, "")
   if (!dig) return ""
@@ -189,6 +192,11 @@ export async function POST(request: NextRequest) {
     }
 
     const resultados: ItemResultado[] = []
+    const historicoLote: {
+      vida_id: string
+      tenant_id: string
+      alteracoes: Record<string, unknown>
+    }[] = []
 
     for (let i = 0; i < linhas.length; i++) {
       const linhaNum = i + 1
@@ -267,21 +275,17 @@ export async function POST(request: NextRequest) {
           continue
         }
 
-        try {
-          await supabaseAdmin.from("vidas_importadas_historico").insert({
-            vida_id: vida.id,
-            tenant_id: tenantId,
-            alteracoes: {
-              importacao_matriculas: {
-                antes: antes || null,
-                depois: matricula,
-                origem: "importacao-matriculas",
-              },
+        historicoLote.push({
+          vida_id: vida.id,
+          tenant_id: tenantId,
+          alteracoes: {
+            importacao_matriculas: {
+              antes: antes || null,
+              depois: matricula,
+              origem: "importacao-matriculas",
             },
-          })
-        } catch {
-          // histórico opcional
-        }
+          },
+        })
 
         if (vida.cliente_administradora_id) {
           await supabaseAdmin
@@ -370,6 +374,15 @@ export async function POST(request: NextRequest) {
         destino: "cliente_administradora",
         beneficiario_nome: nomePlan || undefined,
       })
+    }
+
+    if (historicoLote.length > 0) {
+      for (const lote of chunkArray(historicoLote, 80)) {
+        const { error: histErr } = await supabaseAdmin.from("vidas_importadas_historico").insert(lote)
+        if (histErr) {
+          console.warn("importacao-matriculas historico em lote:", histErr.message)
+        }
+      }
     }
 
     const ok = resultados.filter((r) => r.status === "ok").length

@@ -51,6 +51,29 @@ function numeroCarteirinhaDeVida(v: Record<string, unknown> | null | undefined):
   return null
 }
 
+function valorMensalDeVida(v: Record<string, unknown> | null | undefined): number | null {
+  if (!v) return null
+  const direto = normalizarEscalaValorMonetario(v.valor_mensal)
+  if (direto != null) return direto
+  const adic = v.dados_adicionais
+  if (adic && typeof adic === "object") {
+    const rec = adic as Record<string, unknown>
+    const candidatos = [
+      rec["valor_mensal"],
+      rec["valor mensal"],
+      rec["mensalidade"],
+      rec["valor"],
+      rec["Valor mensal"],
+      rec["Valor"],
+    ]
+    for (const c of candidatos) {
+      const n = normalizarEscalaValorMonetario(c)
+      if (n != null) return n
+    }
+  }
+  return null
+}
+
 function planoDeVida(v: Record<string, unknown> | null | undefined, fallback: string | null): string | null {
   if (!v) return fallback
   const fromPlano = String(v.plano || "").trim()
@@ -225,7 +248,7 @@ export async function GET(request: NextRequest) {
 
     const valorMensal =
       normalizarEscalaValorMonetario(clienteAdm?.valor_mensal ?? null) ??
-      normalizarEscalaValorMonetario(vida?.valor_mensal ?? null)
+      valorMensalDeVida((vida as Record<string, unknown> | null | undefined) ?? null)
 
     const administradoraIdOperadora =
       (clienteAdm?.administradora_id as string | undefined) ||
@@ -408,7 +431,7 @@ export async function GET(request: NextRequest) {
       for (const row of familia) {
         const isTitular = String(row.tipo || "").toLowerCase() === "titular"
         const rowCpf = normalizarCpf(String(row.cpf || ""))
-        const valorNaVida = normalizarEscalaValorMonetario(row.valor_mensal)
+        const valorNaVida = valorMensalDeVida(row)
         /** Titular: prioriza valor do contrato (cliente_adm); dependente: valor da própria vida, senão o do titular/contrato. */
         const valorMensalCard = isTitular
           ? valorMensal ?? valorNaVida
