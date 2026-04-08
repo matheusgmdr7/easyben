@@ -52,6 +52,7 @@ export default function BeneficiarioDetalhesPage() {
     dia_vencimento: "",
     acomodacao: "",
     numero_carteirinha: "",
+    numero_carteirinha_odonto: "",
   })
   const [contratosVinculo, setContratosVinculo] = useState<Array<{ id: string; numero?: string; operadora_nome?: string }>>([])
   const [produtosVinculo, setProdutosVinculo] = useState<Array<{ id: string; nome: string; contrato_id: string }>>([])
@@ -209,6 +210,16 @@ export default function BeneficiarioDetalhesPage() {
         adic["carteirinha"] ??
         ""
     ).trim()
+    return cart || "-"
+  }
+
+  function obterNumeroCarteirinhaOdontoBeneficiario(dados: any): string {
+    const direto = String(dados?.numero_carteirinha_odonto || "").trim()
+    if (direto) return direto
+    const adic = dados?.dados_adicionais && typeof dados?.dados_adicionais === "object"
+      ? (dados.dados_adicionais as Record<string, unknown>)
+      : {}
+    const cart = String(adic["numero_carteirinha_odonto"] ?? adic["carteirinha_odonto"] ?? "").trim()
     return cart || "-"
   }
 
@@ -756,6 +767,10 @@ export default function BeneficiarioDetalhesPage() {
         const cart = obterNumeroCarteirinhaBeneficiario(dados)
         return cart === "-" ? "" : cart
       })(),
+      numero_carteirinha_odonto: (() => {
+        const cart = obterNumeroCarteirinhaOdontoBeneficiario(dados)
+        return cart === "-" ? "" : cart
+      })(),
     })
     setEditandoContrato(false)
   }, [clienteSelecionado, contrato, valorProdutoCliente, diaVencimentoVinculado])
@@ -1200,6 +1215,7 @@ export default function BeneficiarioDetalhesPage() {
         ? formContrato.acomodacao
         : null
     const numeroCarteirinha = String(formContrato.numero_carteirinha || "").trim()
+    const numeroOdonto = String(formContrato.numero_carteirinha_odonto || "").trim()
     const vidaAtual = clienteSelecionado.cliente_tipo === "vida_importada" ? (clienteSelecionado._vida || clienteSelecionado.cliente || {}) : {}
     const produtoAtualId = String((vidaAtual as any)?.produto_id || "").trim()
     const produtoSelecionadoFinal = String(produtoVinculoId || produtoAtualId || "").trim()
@@ -1209,8 +1225,8 @@ export default function BeneficiarioDetalhesPage() {
       return
     }
 
-    if (numeroCarteirinha && !vig) {
-      toast.error("Para informar número da carteirinha, preencha também a data de vigência.")
+    if ((numeroCarteirinha || numeroOdonto) && !vig) {
+      toast.error("Para informar número de carteirinha (saúde e/ou odonto), preencha também a data de vigência.")
       return
     }
     if (vig && !/^\d{4}-\d{2}-\d{2}$/.test(vig)) {
@@ -1231,6 +1247,7 @@ export default function BeneficiarioDetalhesPage() {
           ...(dia ? { dia_vencimento: dia } : {}),
           ...(vig ? { data_vigencia: vig } : {}),
           ...(numeroCarteirinha ? { numero_carteirinha: numeroCarteirinha } : {}),
+          ...(numeroOdonto ? { numero_carteirinha_odonto: numeroOdonto } : {}),
         }
 
         const resVida = await fetch(`/api/administradora/vidas-importadas/${encodeURIComponent(clienteSelecionado.id)}`, {
@@ -1257,6 +1274,12 @@ export default function BeneficiarioDetalhesPage() {
             ...(valor != null ? { valor_mensal: valor } : {}),
             ...(dia ? { dia_vencimento: dia } : {}),
             ...(vig ? { data_vigencia: vig } : {}),
+            ...(numeroCarteirinha || numeroOdonto
+              ? {
+                  ...(numeroCarteirinha ? { numero_carteirinha: numeroCarteirinha } : {}),
+                  ...(numeroOdonto ? { numero_carteirinha_odonto: numeroOdonto } : {}),
+                }
+              : {}),
           }),
         })
         const jsonCliente = await resCliente.json().catch(() => ({}))
@@ -1284,6 +1307,7 @@ export default function BeneficiarioDetalhesPage() {
           ...(vig ? { data_vigencia: vig } : {}),
           ...(dia ? { dia_vencimento: dia } : {}),
           ...(numeroCarteirinha ? { numero_carteirinha: numeroCarteirinha } : {}),
+          ...(numeroOdonto ? { numero_carteirinha_odonto: numeroOdonto } : {}),
         }
         const vidaNova = {
           ...vida,
@@ -1307,8 +1331,11 @@ export default function BeneficiarioDetalhesPage() {
       const valorMsg = valor != null ? formatarMoeda(valor) : "—"
       const diaMsg = dia || "—"
       const acomMsg = acomodacaoContrato || "—"
-      const cartMsg = numeroCarteirinha || "—"
-      toast.success(`Contrato atualizado. Valor: ${valorMsg} | Vigência: ${vigMsg} | Vencimento: ${diaMsg} | Acomodação: ${acomMsg} | Carteirinha: ${cartMsg}`)
+      const cartMsg =
+        [numeroCarteirinha && `saúde ${numeroCarteirinha}`, numeroOdonto && `odonto ${numeroOdonto}`]
+          .filter(Boolean)
+          .join(" · ") || "—"
+      toast.success(`Contrato atualizado. Valor: ${valorMsg} | Vigência: ${vigMsg} | Vencimento: ${diaMsg} | Acomodação: ${acomMsg} | Carteirinhas: ${cartMsg}`)
       setEditandoContrato(false)
     } catch (e: any) {
       toast.error(e?.message || "Erro ao salvar contrato")
@@ -1977,7 +2004,7 @@ export default function BeneficiarioDetalhesPage() {
                       )}
                     </div>
                     <div className="p-3 bg-gray-50">
-                      <span className="text-gray-500 block text-xs font-medium">Número da carteirinha</span>
+                      <span className="text-gray-500 block text-xs font-medium">Carteirinha saúde</span>
                       {editandoContrato ? (
                         <Input
                           value={formContrato.numero_carteirinha}
@@ -1987,6 +2014,21 @@ export default function BeneficiarioDetalhesPage() {
                         />
                       ) : (
                         <span className="text-gray-900">{obterNumeroCarteirinhaBeneficiario(d)}</span>
+                      )}
+                    </div>
+                    <div className="p-3 bg-gray-50">
+                      <span className="text-gray-500 block text-xs font-medium">Carteirinha odonto</span>
+                      {editandoContrato ? (
+                        <Input
+                          value={formContrato.numero_carteirinha_odonto}
+                          onChange={(e) =>
+                            setFormContrato((p) => ({ ...p, numero_carteirinha_odonto: e.target.value }))
+                          }
+                          placeholder="Ex: OD-123456"
+                          className="h-9 mt-1"
+                        />
+                      ) : (
+                        <span className="text-gray-900">{obterNumeroCarteirinhaOdontoBeneficiario(d)}</span>
                       )}
                     </div>
                     <div className="p-3 bg-gray-50">
@@ -2080,6 +2122,10 @@ export default function BeneficiarioDetalhesPage() {
                               acomodacao: obterAcomodacaoBeneficiario(d, produtoCliente?.nome) === "-" ? "" : obterAcomodacaoBeneficiario(d, produtoCliente?.nome),
                               numero_carteirinha: (() => {
                                 const cart = obterNumeroCarteirinhaBeneficiario(d)
+                                return cart === "-" ? "" : cart
+                              })(),
+                              numero_carteirinha_odonto: (() => {
+                                const cart = obterNumeroCarteirinhaOdontoBeneficiario(d)
                                 return cart === "-" ? "" : cart
                               })(),
                             })

@@ -28,6 +28,7 @@ type CarteirinhaBeneficiario = {
   nome: string | null
   tipo: string
   numero_carteirinha: string | null
+  numero_carteirinha_odonto: string | null
   plano: string | null
   operadora: string | null
   valor_mensal: number | null
@@ -44,6 +45,7 @@ type ResultadoCliente = {
     produto?: string | null
     plano?: string | null
     numero_carteirinha?: string | null
+    numero_carteirinha_odonto?: string | null
     grupo_nome?: string | null
     operadora?: string | null
     numero_contrato?: string | null
@@ -218,6 +220,7 @@ export default function ClienteDashboardPage({ params }: ClienteDashboardPagePro
         nome: cliente.nome ?? null,
         tipo: String(cliente.tipo || "titular"),
         numero_carteirinha: cliente.numero_carteirinha ?? null,
+        numero_carteirinha_odonto: cliente.numero_carteirinha_odonto ?? null,
         plano: cliente.plano ?? cliente.produto ?? null,
         operadora: cliente.operadora ?? null,
         valor_mensal: cliente.valor_mensal ?? null,
@@ -429,31 +432,43 @@ export default function ClienteDashboardPage({ params }: ClienteDashboardPagePro
                                     </span>
                                   </p>
 
-                                  <div className="mt-4 space-y-4 border-t border-white/10 pt-4 sm:mt-5 sm:pt-5">
+                                  <div className="mt-4 space-y-3 border-t border-white/10 pt-4 sm:mt-5 sm:space-y-4 sm:pt-5">
                                     <div className="relative w-full min-w-0 overflow-hidden rounded-2xl border border-slate-200/90 bg-gradient-to-b from-white to-slate-50/95 p-3 shadow-[0_2px_12px_rgba(15,23,42,0.06)] sm:p-5">
                                       <div
                                         className="pointer-events-none absolute -right-8 top-0 h-20 w-20 rounded-full bg-sky-400/10 blur-2xl"
                                         aria-hidden
                                       />
                                       <p className="relative text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                                        Nº da carteirinha
+                                        Nº da carteirinha (saúde)
                                       </p>
                                       <p className="relative mt-2 break-words text-lg font-bold leading-tight text-slate-900 [overflow-wrap:anywhere] sm:mt-3 sm:text-xl md:text-2xl">
                                         {ben.numero_carteirinha?.trim() ? ben.numero_carteirinha.trim() : "—"}
                                       </p>
-                                      <div className="relative mt-3 flex min-w-0 gap-2.5 rounded-lg border border-slate-200/60 bg-slate-100/50 px-2.5 py-2 sm:mt-4 sm:gap-3 sm:px-3 sm:py-2.5">
-                                        <div
-                                          className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-slate-200/60 text-slate-500"
-                                          aria-hidden
-                                        >
-                                          <Info className="h-3.5 w-3.5" strokeWidth={1.75} />
-                                        </div>
-                                        <p className="min-w-0 flex-1 hyphens-auto text-[10px] leading-snug text-slate-500 [overflow-wrap:anywhere] sm:text-[11px]">
-                                          Uso apenas para consulta: trata-se de uma carteirinha provisória neste portal. O documento
-                                          oficial é emitido pela operadora. Para solicitar a carteirinha permanente, acesse o site ou o
-                                          aplicativo da sua operadora de saúde.
-                                        </p>
+                                    </div>
+                                    <div className="relative w-full min-w-0 overflow-hidden rounded-2xl border border-slate-200/90 bg-gradient-to-b from-white to-slate-50/95 p-3 shadow-[0_2px_12px_rgba(15,23,42,0.06)] sm:p-5">
+                                      <div
+                                        className="pointer-events-none absolute -right-8 top-0 h-20 w-20 rounded-full bg-emerald-400/10 blur-2xl"
+                                        aria-hidden
+                                      />
+                                      <p className="relative text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                                        Nº da carteirinha (odonto)
+                                      </p>
+                                      <p className="relative mt-2 break-words text-lg font-bold leading-tight text-slate-900 [overflow-wrap:anywhere] sm:mt-3 sm:text-xl md:text-2xl">
+                                        {ben.numero_carteirinha_odonto?.trim() ? ben.numero_carteirinha_odonto.trim() : "—"}
+                                      </p>
+                                    </div>
+                                    <div className="flex min-w-0 gap-2.5 rounded-lg border border-white/15 bg-white/[0.07] px-2.5 py-2.5 sm:gap-3 sm:px-3 sm:py-3">
+                                      <div
+                                        className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-white/10 text-white/55"
+                                        aria-hidden
+                                      >
+                                        <Info className="h-3.5 w-3.5" strokeWidth={1.6} />
                                       </div>
+                                      <p className="min-w-0 flex-1 hyphens-auto text-[10px] leading-snug text-white/80 [overflow-wrap:anywhere] sm:text-[11px]">
+                                        Uso apenas para consulta: trata-se de uma carteirinha provisória neste portal. O documento
+                                        oficial é emitido pela operadora. Para solicitar a carteirinha permanente, acesse o site ou o
+                                        aplicativo da sua operadora de saúde.
+                                      </p>
                                     </div>
                                   </div>
 

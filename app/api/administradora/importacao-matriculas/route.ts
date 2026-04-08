@@ -15,7 +15,15 @@ function cpfFormatadoBr(cpf11: string): string {
   return `${cpf11.slice(0, 3)}.${cpf11.slice(3, 6)}.${cpf11.slice(6, 9)}-${cpf11.slice(9)}`
 }
 
-type LinhaEntrada = { cpf?: string; matricula?: string; nome?: string }
+/** matricula / matricula_saude = carteirinha saúde; matricula_odonto = odonto (importação seletiva). */
+type LinhaEntrada = {
+  cpf?: string
+  nome?: string
+  /** Legado: mesmo que matricula_saude */
+  matricula?: string
+  matricula_saude?: string
+  matricula_odonto?: string
+}
 
 type VidaRow = {
   id: string
@@ -77,8 +85,8 @@ async function carregarVidasPorCpfs(
 
 /**
  * POST /api/administradora/importacao-matriculas
- * Body: { administradora_id, linhas: [{ cpf, matricula, nome? }] }
- * Atualiza número da carteirinha (matrícula) por CPF: prioriza vidas_importadas; se não houver vida, tenta clientes_administradoras via proposta.
+ * Body: { administradora_id, linhas: [{ cpf, matricula?, matricula_saude?, matricula_odonto?, nome? }] }
+ * Atualiza carteirinha saúde e/ou odonto por CPF: prioriza vidas_importadas; se não houver vida, tenta clientes_administradoras via proposta.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -119,6 +127,44 @@ export async function POST(request: NextRequest) {
     )
 
     const vidasPorCpf = await carregarVidasPorCpfs(administradoraId, tenantId, cpfsEntrada)
+
+    /** Carteirinhas já salvas no contrato (colunas), para cruzar com JSON da vida ao detectar "já cadastrado". */
+    const carteirinhasContratoPorClienteId = new Map<string, { saude: string; odonto: string }>()
+    {
+      const idsCa = new Set<string>()
+      for (const arr of vidasPorCpf.values()) {
+        for (const v of arr) {
+          const id = v.cliente_administradora_id
+          if (id) idsCa.add(id)
+        }
+      }
+      const idList = Array.from(idsCa)
+      for (const ids of chunkArray(idList, 300)) {
+        if (ids.length === 0) continue
+        const { data: rowsCa, error: errCa } = await supabaseAdmin
+          .from("clientes_administradoras")
+          .select("id, numero_carteirinha, numero_carteirinha_odonto")
+          .eq("tenant_id", tenantId)
+          .eq("administradora_id", administradoraId)
+          .in("id", ids)
+        if (errCa) {
+          return NextResponse.json(
+            { error: errCa.message || "Erro ao carregar carteirinhas dos contratos" },
+            { status: 500 }
+          )
+        }
+        for (const row of (rowsCa || []) as {
+          id: string
+          numero_carteirinha?: string | null
+          numero_carteirinha_odonto?: string | null
+        }[]) {
+          carteirinhasContratoPorClienteId.set(row.id, {
+            saude: String(row.numero_carteirinha || "").trim(),
+            odonto: String(row.numero_carteirinha_odonto || "").trim(),
+          })
+        }
+      }
+    }
 
     // Pré-carrega propostas por CPF (com/sem máscara) para evitar consultas por linha.
     const propostasPorCpf = new Map<string, Set<string>>()
@@ -189,6 +235,9 @@ export async function POST(request: NextRequest) {
       mensagem?: string
       destino?: "vida_importada" | "cliente_administradora"
       beneficiario_nome?: string
+      /** Indica se já existia valor antes desta linha (para saúde / odonto). */
+      ja_tinha_saude?: boolean
+      ja_tinha_odonto?: boolean
     }
 
     const resultados: ItemResultado[] = []
@@ -202,7 +251,8 @@ export async function POST(request: NextRequest) {
       const linhaNum = i + 1
       const raw = linhas[i] || {}
       const cpf = normalizarCpf(raw.cpf)
-      const matricula = String(raw.matricula ?? "").trim()
+      const matSaude = String(raw.matricula_saude ?? raw.matricula ?? "").trim()
+      const matOdonto = String(raw.matricula_odonto ?? "").trim()
       const nomePlan = String(raw.nome ?? "").trim()
 
       if (!cpf || cpf.length !== 11) {
@@ -216,13 +266,13 @@ export async function POST(request: NextRequest) {
         continue
       }
 
-      if (!matricula) {
+      if (!matSaude && !matOdonto) {
         resultados.push({
           linha: linhaNum,
           cpf,
           nome_planilha: nomePlan || undefined,
           status: "erro",
-          mensagem: "Matrícula vazia",
+          mensagem: "Informe matrícula saúde e/ou matrícula odonto",
         })
         continue
       }
@@ -248,14 +298,22 @@ export async function POST(request: NextRequest) {
           vida.dados_adicionais && typeof vida.dados_adicionais === "object" && !Array.isArray(vida.dados_adicionais)
             ? { ...vida.dados_adicionais }
             : {}
-        const antes = String(
+        const antesSaude = String(
           (da["numero_carteirinha"] as string) ||
             (da["Número da carteirinha"] as string) ||
             (da["carteirinha"] as string) ||
             ""
         ).trim()
+        const antesOdonto = String((da["numero_carteirinha_odonto"] as string) || (da["carteirinha_odonto"] as string) || "").trim()
+        const caCart =
+          vida.cliente_administradora_id != null
+            ? carteirinhasContratoPorClienteId.get(vida.cliente_administradora_id)
+            : undefined
+        const ja_tinha_saude = Boolean(antesSaude) || Boolean(caCart?.saude)
+        const ja_tinha_odonto = Boolean(antesOdonto) || Boolean(caCart?.odonto)
 
-        da["numero_carteirinha"] = matricula
+        if (matSaude) da["numero_carteirinha"] = matSaude
+        if (matOdonto) da["numero_carteirinha_odonto"] = matOdonto
 
         const { error: upErr } = await supabaseAdmin
           .from("vidas_importadas")
@@ -275,25 +333,45 @@ export async function POST(request: NextRequest) {
           continue
         }
 
+        const histPayload: Record<string, unknown> = { origem: "importacao-matriculas" }
+        if (matSaude) {
+          histPayload.saude = { antes: antesSaude || null, depois: matSaude }
+        }
+        if (matOdonto) {
+          histPayload.odonto = { antes: antesOdonto || null, depois: matOdonto }
+        }
+        if (matSaude && !matOdonto) {
+          histPayload.antes = antesSaude || null
+          histPayload.depois = matSaude
+        }
+
         historicoLote.push({
           vida_id: vida.id,
           tenant_id: tenantId,
           alteracoes: {
-            importacao_matriculas: {
-              antes: antes || null,
-              depois: matricula,
-              origem: "importacao-matriculas",
-            },
+            importacao_matriculas: histPayload,
           },
         })
 
         if (vida.cliente_administradora_id) {
-          await supabaseAdmin
-            .from("clientes_administradoras")
-            .update({ numero_carteirinha: matricula })
-            .eq("id", vida.cliente_administradora_id)
-            .eq("administradora_id", administradoraId)
-            .eq("tenant_id", tenantId)
+          const updCa: Record<string, string> = {}
+          if (matSaude) updCa.numero_carteirinha = matSaude
+          if (matOdonto) updCa.numero_carteirinha_odonto = matOdonto
+          if (Object.keys(updCa).length > 0) {
+            await supabaseAdmin
+              .from("clientes_administradoras")
+              .update(updCa)
+              .eq("id", vida.cliente_administradora_id)
+              .eq("administradora_id", administradoraId)
+              .eq("tenant_id", tenantId)
+          }
+        }
+
+        const notas: string[] = []
+        if (ja_tinha_saude || ja_tinha_odonto) {
+          notas.push(
+            `Já cadastrado: ${[ja_tinha_saude ? "saúde" : "", ja_tinha_odonto ? "odonto" : ""].filter(Boolean).join(" e ")}`
+          )
         }
 
         resultados.push({
@@ -303,6 +381,9 @@ export async function POST(request: NextRequest) {
           status: "ok",
           destino: "vida_importada",
           beneficiario_nome: vida.nome || undefined,
+          ja_tinha_saude,
+          ja_tinha_odonto,
+          mensagem: notas[0],
         })
         continue
       }
@@ -348,9 +429,23 @@ export async function POST(request: NextRequest) {
       }
 
       const ca = listaCa[0] as { id: string }
+      const { data: rowCa } = await supabaseAdmin
+        .from("clientes_administradoras")
+        .select("numero_carteirinha, numero_carteirinha_odonto")
+        .eq("id", ca.id)
+        .eq("administradora_id", administradoraId)
+        .eq("tenant_id", tenantId)
+        .maybeSingle()
+      const jaS = Boolean(String((rowCa as { numero_carteirinha?: string } | null)?.numero_carteirinha || "").trim())
+      const jaO = Boolean(String((rowCa as { numero_carteirinha_odonto?: string } | null)?.numero_carteirinha_odonto || "").trim())
+
+      const updCa: Record<string, string> = {}
+      if (matSaude) updCa.numero_carteirinha = matSaude
+      if (matOdonto) updCa.numero_carteirinha_odonto = matOdonto
+
       const { error: upCa } = await supabaseAdmin
         .from("clientes_administradoras")
-        .update({ numero_carteirinha: matricula })
+        .update(updCa)
         .eq("id", ca.id)
         .eq("administradora_id", administradoraId)
         .eq("tenant_id", tenantId)
@@ -366,6 +461,13 @@ export async function POST(request: NextRequest) {
         continue
       }
 
+      const notasCa: string[] = []
+      if (jaS || jaO) {
+        notasCa.push(
+          `Já cadastrado: ${[jaS ? "saúde" : "", jaO ? "odonto" : ""].filter(Boolean).join(" e ")}`
+        )
+      }
+
       resultados.push({
         linha: linhaNum,
         cpf,
@@ -373,6 +475,9 @@ export async function POST(request: NextRequest) {
         status: "ok",
         destino: "cliente_administradora",
         beneficiario_nome: nomePlan || undefined,
+        ja_tinha_saude: jaS,
+        ja_tinha_odonto: jaO,
+        mensagem: notasCa[0],
       })
     }
 

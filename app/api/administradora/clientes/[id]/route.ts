@@ -10,6 +10,8 @@ import { supabaseAdmin } from "@/lib/supabase-admin"
  *   valor_mensal?: number | string | null,
  *   data_vigencia?: string | null,
  *   dia_vencimento?: string | number | null,
+ *   numero_carteirinha?: string | null,
+ *   numero_carteirinha_odonto?: string | null,
  * }
  */
 export async function PATCH(
@@ -19,7 +21,15 @@ export async function PATCH(
   try {
     const { id } = await params
     const body = await request.json()
-    const { administradora_id, corretor_id, valor_mensal, data_vigencia, dia_vencimento } = body
+    const {
+      administradora_id,
+      corretor_id,
+      valor_mensal,
+      data_vigencia,
+      dia_vencimento,
+      numero_carteirinha,
+      numero_carteirinha_odonto,
+    } = body
 
     if (!administradora_id) {
       return NextResponse.json(
@@ -61,6 +71,14 @@ export async function PATCH(
         return NextResponse.json({ error: "dia_vencimento deve ser 01 ou 10" }, { status: 400 })
       }
       atualizacoes.dia_vencimento = dia ? Number(dia) : null
+    }
+    if ("numero_carteirinha" in body) {
+      const s = String(numero_carteirinha ?? "").trim()
+      atualizacoes.numero_carteirinha = s ? s.slice(0, 50) : null
+    }
+    if ("numero_carteirinha_odonto" in body) {
+      const s = String(numero_carteirinha_odonto ?? "").trim()
+      atualizacoes.numero_carteirinha_odonto = s ? s.slice(0, 50) : null
     }
     if (Object.keys(atualizacoes).length === 0) {
       return NextResponse.json({ error: "Nenhum campo para atualizar" }, { status: 400 })

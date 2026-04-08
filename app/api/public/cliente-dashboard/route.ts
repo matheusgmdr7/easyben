@@ -36,7 +36,8 @@ async function buscarProdutoNome(produtoId: string | null | undefined, tenantId:
   return data?.nome || null
 }
 
-function numeroCarteirinhaDeVida(v: Record<string, unknown> | null | undefined): string | null {
+/** Carteirinha do plano de saúde (campo principal). */
+function numeroCarteirinhaSaudeDeVida(v: Record<string, unknown> | null | undefined): string | null {
   if (!v) return null
   const direct = String(v.numero_carteirinha || "").trim()
   if (direct) return direct
@@ -46,6 +47,19 @@ function numeroCarteirinhaDeVida(v: Record<string, unknown> | null | undefined):
     const n = String(
       rec["numero_carteirinha"] ?? rec["Número da carteirinha"] ?? rec["carteirinha"] ?? ""
     ).trim()
+    if (n) return n
+  }
+  return null
+}
+
+function numeroCarteirinhaOdontoDeVida(v: Record<string, unknown> | null | undefined): string | null {
+  if (!v) return null
+  const direct = String((v as { numero_carteirinha_odonto?: unknown }).numero_carteirinha_odonto || "").trim()
+  if (direct) return direct
+  const adic = v.dados_adicionais
+  if (adic && typeof adic === "object") {
+    const rec = adic as Record<string, unknown>
+    const n = String(rec["numero_carteirinha_odonto"] ?? rec["carteirinha_odonto"] ?? "").trim()
     if (n) return n
   }
   return null
@@ -170,7 +184,7 @@ export async function GET(request: NextRequest) {
     if (!clienteAdmId && proposta?.id) {
       const { data: clienteAdmPorProposta } = await supabaseAdmin
         .from("clientes_administradoras")
-        .select("id, administradora_id, proposta_id, status, valor_mensal, numero_contrato, data_vigencia")
+        .select("id, administradora_id, proposta_id, status, valor_mensal, numero_contrato, data_vigencia, numero_carteirinha, numero_carteirinha_odonto")
         .eq("tenant_id", tenantId)
         .eq("proposta_id", proposta.id)
         .order("created_at", { ascending: false })
@@ -185,7 +199,7 @@ export async function GET(request: NextRequest) {
     if (clienteAdmId && !clienteAdm) {
       const { data: clienteAdmDireto } = await supabaseAdmin
         .from("clientes_administradoras")
-        .select("id, administradora_id, proposta_id, status, valor_mensal, numero_contrato, data_vigencia")
+        .select("id, administradora_id, proposta_id, status, valor_mensal, numero_contrato, data_vigencia, numero_carteirinha, numero_carteirinha_odonto")
         .eq("tenant_id", tenantId)
         .eq("id", clienteAdmId)
         .maybeSingle()
@@ -224,16 +238,15 @@ export async function GET(request: NextRequest) {
       produtoNome ||
       null
 
+    const vidaRec = (vida as Record<string, unknown> | null | undefined) ?? null
     const numeroCarteirinha =
-      String((vida as any)?.numero_carteirinha || "").trim() ||
-      (vida?.dados_adicionais && typeof vida.dados_adicionais === "object"
-        ? String(
-            (vida.dados_adicionais as Record<string, unknown>)["numero_carteirinha"] ??
-              (vida.dados_adicionais as Record<string, unknown>)["Número da carteirinha"] ??
-              (vida.dados_adicionais as Record<string, unknown>)["carteirinha"] ??
-              ""
-          ).trim() || null
-        : null)
+      numeroCarteirinhaSaudeDeVida(vidaRec) ||
+      String((clienteAdm as { numero_carteirinha?: string } | null)?.numero_carteirinha || "").trim() ||
+      null
+    const numeroCarteirinhaOdonto =
+      numeroCarteirinhaOdontoDeVida(vidaRec) ||
+      String((clienteAdm as { numero_carteirinha_odonto?: string } | null)?.numero_carteirinha_odonto || "").trim() ||
+      null
 
     const dataVigencia =
       clienteAdm?.data_vigencia ||
@@ -382,7 +395,9 @@ export async function GET(request: NextRequest) {
       cpf: string
       nome: string | null
       tipo: string
+      /** Carteirinha do plano de saúde. */
       numero_carteirinha: string | null
+      numero_carteirinha_odonto: string | null
       plano: string | null
       operadora: string | null
       valor_mensal: number | null
@@ -440,7 +455,8 @@ export async function GET(request: NextRequest) {
           cpf: rowCpf,
           nome: (row.nome as string) || null,
           tipo: String(row.tipo || "titular"),
-          numero_carteirinha: numeroCarteirinhaDeVida(row),
+          numero_carteirinha: numeroCarteirinhaSaudeDeVida(row),
+          numero_carteirinha_odonto: numeroCarteirinhaOdontoDeVida(row),
           plano: planoDeVida(row, planoNome),
           operadora: operadoraNome,
           valor_mensal: valorMensalCard,
@@ -455,6 +471,7 @@ export async function GET(request: NextRequest) {
         nome: vida?.nome || proposta?.nome || null,
         tipo: String(vida?.tipo || "titular"),
         numero_carteirinha: numeroCarteirinha || null,
+        numero_carteirinha_odonto: numeroCarteirinhaOdonto || null,
         plano: planoNome,
         operadora: operadoraNome,
         valor_mensal: valorMensal,
@@ -477,6 +494,7 @@ export async function GET(request: NextRequest) {
         produto: produtoNome,
         plano: planoNome,
         numero_carteirinha: numeroCarteirinha || null,
+        numero_carteirinha_odonto: numeroCarteirinhaOdonto || null,
         grupo_nome: grupoNome,
         operadora: operadoraNome,
         numero_contrato: clienteAdm?.numero_contrato || null,

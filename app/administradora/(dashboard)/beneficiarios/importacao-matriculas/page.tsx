@@ -94,7 +94,9 @@ function normalizarCpfVal(v: unknown): string {
   return dig.slice(-11).padStart(11, "0")
 }
 
-type LinhaPreview = { nome: string; cpf: string; matricula: string }
+type LinhaPreview = { nome: string; cpf: string; matricula_saude: string; matricula_odonto: string }
+
+type LinhaEnvio = { nome: string; cpf: string; matricula_saude: string; matricula_odonto: string }
 
 type ResultadoApi = {
   linha: number
@@ -104,6 +106,8 @@ type ResultadoApi = {
   mensagem?: string
   destino?: string
   beneficiario_nome?: string
+  ja_tinha_saude?: boolean
+  ja_tinha_odonto?: boolean
 }
 
 export default function ImportacaoMatriculasPage() {
@@ -113,7 +117,10 @@ export default function ImportacaoMatriculasPage() {
   const [rows, setRows] = useState<LinhaArquivo[]>([])
   const [colNome, setColNome] = useState<string | null>(null)
   const [colCpf, setColCpf] = useState<string | null>(null)
+  /** Carteirinha saúde (plano médico). */
   const [colMatricula, setColMatricula] = useState<string | null>(null)
+  /** Carteirinha odonto — opcional; importação seletiva. */
+  const [colMatriculaOdonto, setColMatriculaOdonto] = useState<string | null>(null)
   const [drag, setDrag] = useState(false)
   const [loadingArquivo, setLoadingArquivo] = useState(false)
   const [enviando, setEnviando] = useState(false)
@@ -138,30 +145,32 @@ export default function ImportacaoMatriculasPage() {
   }, [])
 
   const previewLinhas = useMemo((): LinhaPreview[] => {
-    if (!colCpf || !colMatricula) return []
+    if (!colCpf || (!colMatricula && !colMatriculaOdonto)) return []
     const out: LinhaPreview[] = []
     for (const row of rows) {
       const cpf = normalizarCpfVal(valorCelula(row, colCpf))
-      const matricula = valorCelula(row, colMatricula)
+      const matricula_saude = colMatricula ? valorCelula(row, colMatricula) : ""
+      const matricula_odonto = colMatriculaOdonto ? valorCelula(row, colMatriculaOdonto) : ""
       const nome = colNome ? valorCelula(row, colNome) : ""
-      if (!cpf && !matricula && !nome) continue
-      out.push({ nome, cpf, matricula })
+      if (!cpf && !matricula_saude && !matricula_odonto && !nome) continue
+      out.push({ nome, cpf, matricula_saude, matricula_odonto })
     }
     return out.slice(0, 500)
-  }, [rows, colNome, colCpf, colMatricula])
+  }, [rows, colNome, colCpf, colMatricula, colMatriculaOdonto])
 
-  const linhasParaEnvio = useMemo(() => {
-    if (!colCpf || !colMatricula) return []
-    const out: { nome: string; cpf: string; matricula: string }[] = []
+  const linhasParaEnvio = useMemo((): LinhaEnvio[] => {
+    if (!colCpf || (!colMatricula && !colMatriculaOdonto)) return []
+    const out: LinhaEnvio[] = []
     for (const row of rows) {
       const cpf = normalizarCpfVal(valorCelula(row, colCpf))
-      const matricula = valorCelula(row, colMatricula)
+      const matricula_saude = colMatricula ? valorCelula(row, colMatricula) : ""
+      const matricula_odonto = colMatriculaOdonto ? valorCelula(row, colMatriculaOdonto) : ""
       const nome = colNome ? valorCelula(row, colNome) : ""
-      if (!cpf && !matricula && !nome) continue
-      out.push({ nome, cpf, matricula })
+      if (!cpf && !matricula_saude && !matricula_odonto && !nome) continue
+      out.push({ nome, cpf, matricula_saude, matricula_odonto })
     }
     return out
-  }, [rows, colNome, colCpf, colMatricula])
+  }, [rows, colNome, colCpf, colMatricula, colMatriculaOdonto])
 
   async function onFileSelected(f: File | null) {
     if (!f) {
@@ -171,6 +180,7 @@ export default function ImportacaoMatriculasPage() {
       setColNome(null)
       setColCpf(null)
       setColMatricula(null)
+      setColMatriculaOdonto(null)
       setResultados(null)
       setResumo(null)
       return
@@ -195,6 +205,9 @@ export default function ImportacaoMatriculasPage() {
       const cCpf = resolverColuna(h, ["cpf", "documento", "cpf beneficiario", "cpf do beneficiario"])
       const cNome = resolverColuna(h, ["nome", "nome completo", "beneficiario", "beneficiário"])
       const cMat = resolverColuna(h, [
+        "matricula saude",
+        "matrícula saúde",
+        "carteirinha saude",
         "matricula",
         "matrícula",
         "carteirinha",
@@ -205,18 +218,26 @@ export default function ImportacaoMatriculasPage() {
         "codigo",
         "código",
       ])
+      const cMatOd = resolverColuna(h, [
+        "matricula odonto",
+        "matrícula odonto",
+        "carteirinha odonto",
+        "odonto",
+        "matricula odontologica",
+      ])
 
       setColCpf(cCpf)
       setColNome(cNome)
       setColMatricula(cMat)
+      setColMatriculaOdonto(cMatOd)
 
-      if (!cCpf || !cMat) {
+      if (!cCpf || (!cMat && !cMatOd)) {
         toast.warning(
-          !cCpf && !cMat
-            ? "Não detectamos colunas de CPF e matrícula. Selecione manualmente abaixo."
+          !cCpf && !cMat && !cMatOd
+            ? "Não detectamos colunas de CPF nem de matrícula (saúde/odonto). Selecione manualmente abaixo."
             : !cCpf
               ? "Não detectamos a coluna de CPF. Ajuste o mapeamento abaixo."
-              : "Não detectamos a coluna de matrícula. Ajuste o mapeamento abaixo."
+              : "Não detectamos coluna de matrícula saúde nem odonto. Mapeie ao menos uma."
         )
       } else {
         toast.success(`Arquivo carregado: ${r.length} linha(s). Confira o mapeamento e a prévia.`)
@@ -231,8 +252,8 @@ export default function ImportacaoMatriculasPage() {
   function baixarTemplate() {
     try {
       const linhas = [
-        { Nome: "Maria Silva", CPF: "00000000000", Matricula: "123456" },
-        { Nome: "João Souza", CPF: "11111111111", Matricula: "789012" },
+        { Nome: "Maria Silva", CPF: "00000000000", Matricula_saude: "123456", Matricula_odonto: "OD-001" },
+        { Nome: "João Souza", CPF: "11111111111", Matricula_saude: "789012", Matricula_odonto: "" },
       ]
       const ws = XLSX.utils.json_to_sheet(linhas)
       const wb = XLSX.utils.book_new()
@@ -248,8 +269,8 @@ export default function ImportacaoMatriculasPage() {
       toast.error("Administradora não identificada.")
       return
     }
-    if (!colCpf || !colMatricula) {
-      toast.error("Defina as colunas de CPF e matrícula.")
+    if (!colCpf || (!colMatricula && !colMatriculaOdonto)) {
+      toast.error("Defina a coluna de CPF e ao menos uma coluna de matrícula (saúde e/ou odonto).")
       return
     }
     if (linhasParaEnvio.length === 0) {
@@ -258,7 +279,7 @@ export default function ImportacaoMatriculasPage() {
     }
     try {
       setEnviando(true)
-      const chunks: Array<{ nome: string; cpf: string; matricula: string }[]> = []
+      const chunks: LinhaEnvio[][] = []
       for (let i = 0; i < linhasParaEnvio.length; i += TAMANHO_CHUNK_IMPORTACAO) {
         chunks.push(linhasParaEnvio.slice(i, i + TAMANHO_CHUNK_IMPORTACAO))
       }
@@ -289,7 +310,13 @@ export default function ImportacaoMatriculasPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             administradora_id: administradoraId,
-            linhas: chunk,
+            linhas: chunk.map((l) => ({
+              nome: l.nome,
+              cpf: l.cpf,
+              matricula_saude: l.matricula_saude || undefined,
+              matricula_odonto: l.matricula_odonto || undefined,
+              ...(l.matricula_saude ? { matricula: l.matricula_saude } : {}),
+            })),
           }),
         })
         const data = await res.json().catch(() => ({}))
@@ -342,9 +369,9 @@ export default function ImportacaoMatriculasPage() {
       <div>
         <h1 className="text-2xl font-bold tracking-tight text-slate-900">Importação de matrículas</h1>
         <p className="mt-1 text-sm text-slate-600">
-          Envie uma planilha com <strong>nome</strong>, <strong>CPF</strong> e <strong>matrícula</strong> (número da
-          carteirinha). O sistema localiza titular ou dependente pelo CPF na sua administradora e atualiza o contrato,
-          como na aba Contrato do beneficiário.
+          Envie uma planilha com <strong>CPF</strong> e, conforme necessário, colunas de <strong>carteirinha saúde</strong>{" "}
+          e/ou <strong>carteirinha odonto</strong> (importação seletiva). O sistema localiza o beneficiário pelo CPF e
+          atualiza os números na vida/contrato, como na aba Contrato.
         </p>
       </div>
 
@@ -352,8 +379,7 @@ export default function ImportacaoMatriculasPage() {
         <CardHeader>
           <CardTitle className="text-lg">Arquivo Excel ou CSV</CardTitle>
           <CardDescription>
-            Primeira linha = cabeçalhos. Colunas aceitas: Nome, CPF, Matricula / Matrícula / Carteirinha (detecção
-            automática).
+            Primeira linha = cabeçalhos. Detecção automática para CPF, matrícula saúde e matrícula odonto (opcional).
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -404,7 +430,7 @@ export default function ImportacaoMatriculasPage() {
           </div>
 
           {headers.length > 0 && (
-            <div className="grid gap-4 sm:grid-cols-3">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <div>
                 <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Coluna CPF *</label>
                 <select
@@ -421,13 +447,15 @@ export default function ImportacaoMatriculasPage() {
                 </select>
               </div>
               <div>
-                <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Coluna matrícula *</label>
+                <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Matrícula saúde *
+                </label>
                 <select
                   className="mt-1 flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm"
                   value={colMatricula || ""}
                   onChange={(e) => setColMatricula(e.target.value || null)}
                 >
-                  <option value="">Selecione…</option>
+                  <option value="">Nenhuma</option>
                   {headers.map((h) => (
                     <option key={h} value={h}>
                       {h}
@@ -436,6 +464,23 @@ export default function ImportacaoMatriculasPage() {
                 </select>
               </div>
               <div>
+                <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Matrícula odonto (opcional)
+                </label>
+                <select
+                  className="mt-1 flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm"
+                  value={colMatriculaOdonto || ""}
+                  onChange={(e) => setColMatriculaOdonto(e.target.value || null)}
+                >
+                  <option value="">Nenhuma</option>
+                  {headers.map((h) => (
+                    <option key={h} value={h}>
+                      {h}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="sm:col-span-2 lg:col-span-1">
                 <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Coluna nome (opcional)</label>
                 <select
                   className="mt-1 flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm"
@@ -468,7 +513,8 @@ export default function ImportacaoMatriculasPage() {
                     <TableRow className="bg-slate-50">
                       <TableHead>Nome</TableHead>
                       <TableHead>CPF</TableHead>
-                      <TableHead>Matrícula</TableHead>
+                      <TableHead>Saúde</TableHead>
+                      <TableHead>Odonto</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -476,7 +522,8 @@ export default function ImportacaoMatriculasPage() {
                       <TableRow key={i}>
                         <TableCell className="max-w-[200px] truncate">{l.nome || "—"}</TableCell>
                         <TableCell className="tabular-nums">{l.cpf ? formatarCPF(l.cpf) : "—"}</TableCell>
-                        <TableCell className="font-medium">{l.matricula || "—"}</TableCell>
+                        <TableCell className="font-medium">{l.matricula_saude || "—"}</TableCell>
+                        <TableCell className="font-medium">{l.matricula_odonto || "—"}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -487,7 +534,13 @@ export default function ImportacaoMatriculasPage() {
 
           <Button
             className="w-full sm:w-auto"
-            disabled={enviando || !administradoraId || !colCpf || !colMatricula || linhasParaEnvio.length === 0}
+            disabled={
+              enviando ||
+              !administradoraId ||
+              !colCpf ||
+              (!colMatricula && !colMatriculaOdonto) ||
+              linhasParaEnvio.length === 0
+            }
             onClick={() => void executarImportacao()}
           >
             {enviando ? (
@@ -567,8 +620,9 @@ export default function ImportacaoMatriculasPage() {
                         ) : null}
                       </TableCell>
                       <TableCell className="text-sm text-slate-600">
-                        {r.mensagem ||
-                          (r.beneficiario_nome ? `Atualizado: ${r.beneficiario_nome}` : "Atualizado")}
+                        {[r.mensagem, r.beneficiario_nome ? `Beneficiário: ${r.beneficiario_nome}` : ""]
+                          .filter(Boolean)
+                          .join(" · ") || (r.status === "ok" ? "Atualizado" : "")}
                       </TableCell>
                     </TableRow>
                   ))}

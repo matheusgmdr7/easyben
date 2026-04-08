@@ -17,6 +17,7 @@ export interface ClienteAdministradora {
   dia_vencimento: number
   observacoes?: string
   numero_carteirinha?: string
+  numero_carteirinha_odonto?: string
   implantado?: boolean
   created_at?: string
   updated_at?: string
