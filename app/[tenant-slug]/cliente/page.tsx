@@ -445,18 +445,20 @@ export default function ClienteDashboardPage({ params }: ClienteDashboardPagePro
                                         {ben.numero_carteirinha?.trim() ? ben.numero_carteirinha.trim() : "—"}
                                       </p>
                                     </div>
-                                    <div className="relative w-full min-w-0 overflow-hidden rounded-2xl border border-slate-200/90 bg-gradient-to-b from-white to-slate-50/95 p-3 shadow-[0_2px_12px_rgba(15,23,42,0.06)] sm:p-5">
-                                      <div
-                                        className="pointer-events-none absolute -right-8 top-0 h-20 w-20 rounded-full bg-emerald-400/10 blur-2xl"
-                                        aria-hidden
-                                      />
-                                      <p className="relative text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                                        Nº da carteirinha (odonto)
-                                      </p>
-                                      <p className="relative mt-2 break-words text-lg font-bold leading-tight text-slate-900 [overflow-wrap:anywhere] sm:mt-3 sm:text-xl md:text-2xl">
-                                        {ben.numero_carteirinha_odonto?.trim() ? ben.numero_carteirinha_odonto.trim() : "—"}
-                                      </p>
-                                    </div>
+                                    {ben.numero_carteirinha_odonto?.trim() ? (
+                                      <div className="relative w-full min-w-0 overflow-hidden rounded-2xl border border-slate-200/90 bg-gradient-to-b from-white to-slate-50/95 p-3 shadow-[0_2px_12px_rgba(15,23,42,0.06)] sm:p-5">
+                                        <div
+                                          className="pointer-events-none absolute -right-8 top-0 h-20 w-20 rounded-full bg-emerald-400/10 blur-2xl"
+                                          aria-hidden
+                                        />
+                                        <p className="relative text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                                          Nº da carteirinha (odonto)
+                                        </p>
+                                        <p className="relative mt-2 break-words text-lg font-bold leading-tight text-slate-900 [overflow-wrap:anywhere] sm:mt-3 sm:text-xl md:text-2xl">
+                                          {ben.numero_carteirinha_odonto.trim()}
+                                        </p>
+                                      </div>
+                                    ) : null}
                                     <div className="flex min-w-0 gap-2.5 rounded-lg border border-white/15 bg-white/[0.07] px-2.5 py-2.5 sm:gap-3 sm:px-3 sm:py-3">
                                       <div
                                         className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-white/10 text-white/55"
