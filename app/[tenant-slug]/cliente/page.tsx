@@ -9,7 +9,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Download, ExternalLink, Loader2, LogOut, Receipt, UserRound, Wallet } from "lucide-react"
+import { Download, ExternalLink, Info, Loader2, LogOut, Receipt, UserRound, Wallet } from "lucide-react"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import { formatarCPF, formatarData, formatarMoeda } from "@/utils/formatters"
@@ -330,31 +330,31 @@ export default function ClienteDashboardPage({ params }: ClienteDashboardPagePro
                 </Card>
 
                 <Card className="rounded-2xl border border-slate-200/90 bg-white shadow-[0_4px_24px_rgba(15,23,42,0.05)]">
-                  <CardContent className="p-4 sm:p-6">
+                  <CardContent className="min-w-0 p-3 sm:p-6">
                     <Tabs defaultValue="plano" className="w-full min-w-0">
-                      <TabsList className="mb-6 grid h-auto w-full min-w-0 grid-cols-1 gap-1.5 rounded-xl bg-slate-100/90 p-1.5 sm:grid-cols-3">
+                      <TabsList className="mb-4 grid h-auto w-full min-w-0 grid-cols-3 gap-1 rounded-xl bg-slate-100/90 p-1 sm:mb-6 sm:gap-1.5 sm:p-1.5">
                         <TabsTrigger
                           value="plano"
-                          className="min-h-11 touch-manipulation rounded-lg px-2 py-2.5 text-xs font-semibold data-[state=active]:bg-white data-[state=active]:text-[#0F172A] data-[state=active]:shadow-sm sm:min-h-0 sm:px-3 sm:text-sm"
+                          className="min-h-12 touch-manipulation rounded-lg px-1.5 py-2 text-center text-[10px] font-semibold leading-tight data-[state=active]:bg-white data-[state=active]:text-[#0F172A] data-[state=active]:shadow-sm sm:min-h-11 sm:px-3 sm:text-sm"
                         >
                           <span className="sm:hidden">Plano</span>
                           <span className="hidden sm:inline">Informações do plano</span>
                         </TabsTrigger>
                         <TabsTrigger
                           value="financeiro"
-                          className="min-h-11 touch-manipulation rounded-lg px-2 py-2.5 text-xs font-semibold data-[state=active]:bg-white data-[state=active]:text-[#0F172A] data-[state=active]:shadow-sm sm:min-h-0 sm:px-3 sm:text-sm"
+                          className="min-h-12 touch-manipulation rounded-lg px-1.5 py-2 text-center text-[10px] font-semibold leading-tight data-[state=active]:bg-white data-[state=active]:text-[#0F172A] data-[state=active]:shadow-sm sm:min-h-11 sm:px-3 sm:text-sm"
                         >
                           Financeiro
                         </TabsTrigger>
                         <TabsTrigger
                           value="suporte"
-                          className="min-h-11 touch-manipulation rounded-lg px-2 py-2.5 text-xs font-semibold data-[state=active]:bg-white data-[state=active]:text-[#0F172A] data-[state=active]:shadow-sm sm:min-h-0 sm:px-3 sm:text-sm"
+                          className="min-h-12 touch-manipulation rounded-lg px-1.5 py-2 text-center text-[10px] font-semibold leading-tight data-[state=active]:bg-white data-[state=active]:text-[#0F172A] data-[state=active]:shadow-sm sm:min-h-11 sm:px-3 sm:text-sm"
                         >
                           Suporte
                         </TabsTrigger>
                       </TabsList>
 
-                      <TabsContent value="plano" className="mt-0 space-y-5 outline-none">
+                      <TabsContent value="plano" className="mt-0 min-w-0 space-y-5 outline-none">
                         <div className="space-y-4">
                           {cartoesBeneficiarios.map((ben, idx) => {
                             const tipoLower = String(ben.tipo || "").toLowerCase()
@@ -368,7 +368,7 @@ export default function ClienteDashboardPage({ params }: ClienteDashboardPagePro
                               <div
                                 key={`${ben.cpf}-${idx}`}
                                 className={cn(
-                                  "relative overflow-hidden rounded-2xl shadow-lg ring-1 ring-white/10",
+                                  "relative w-full max-w-full min-w-0 overflow-hidden rounded-2xl shadow-lg ring-1 ring-white/10",
                                   ben.cpf_login && "ring-2 ring-sky-400/40"
                                 )}
                               >
@@ -380,24 +380,31 @@ export default function ClienteDashboardPage({ params }: ClienteDashboardPagePro
                                   className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/20 to-transparent"
                                   aria-hidden
                                 />
-                                <div className="relative px-5 pb-6 pt-5 text-white sm:px-8 sm:pb-8 sm:pt-7">
-                                  <div className="flex flex-wrap items-start justify-between gap-3">
-                                    <div className="min-w-0 flex-1">
+                                <div className="relative w-full min-w-0 px-3 pb-5 pt-4 text-white sm:px-8 sm:pb-8 sm:pt-7">
+                                  {/* Mobile: coluna com operadora em destaque; Desktop (sm+): linha como antes */}
+                                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+                                    <div className="min-w-0 shrink-0">
                                       <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/55">
                                         {rotuloTipo}
                                       </p>
                                     </div>
-                                    <div className="flex flex-wrap items-center justify-end gap-2">
+                                    <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-end sm:gap-2">
                                       {ben.cpf_login ? (
-                                        <span className="rounded-full bg-white/15 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
+                                        <span className="w-fit rounded-full bg-white/15 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
                                           Seu acesso
                                         </span>
                                       ) : null}
-                                      <div className="text-right">
+                                      <div
+                                        className={cn(
+                                          "min-w-0 max-w-full text-left",
+                                          "rounded-xl border border-white/15 bg-white/[0.06] px-3 py-2.5",
+                                          "sm:rounded-none sm:border-0 sm:bg-transparent sm:p-0 sm:text-right sm:max-w-[min(100%,18rem)]"
+                                        )}
+                                      >
                                         <p className="text-[10px] font-medium uppercase tracking-wide text-white/45">
                                           Operadora
                                         </p>
-                                        <p className="max-w-[10rem] truncate text-xs font-semibold text-white sm:max-w-xs">
+                                        <p className="mt-0.5 break-words text-sm font-semibold leading-snug text-white sm:text-xs">
                                           {ben.operadora ||
                                             resultado?.tenant?.nome_marca ||
                                             resultado?.tenant?.nome ||
@@ -407,7 +414,7 @@ export default function ClienteDashboardPage({ params }: ClienteDashboardPagePro
                                     </div>
                                   </div>
 
-                                  <h3 className="mt-5 text-xl font-bold leading-snug tracking-tight sm:text-2xl">
+                                  <h3 className="mt-4 break-words text-lg font-bold leading-snug tracking-tight sm:mt-5 sm:text-xl md:text-2xl">
                                     {ben.nome || "Beneficiário"}
                                   </h3>
                                   <p className="mt-1 font-mono text-sm text-white/85 tabular-nums">
@@ -422,29 +429,44 @@ export default function ClienteDashboardPage({ params }: ClienteDashboardPagePro
                                     </span>
                                   </p>
 
-                                  <div className="mt-5 grid gap-4 border-t border-white/10 pt-5 sm:grid-cols-2">
-                                    <div>
-                                      <p className="text-[10px] font-semibold uppercase tracking-wide text-white/45">
-                                        Matrícula
+                                  <div className="mt-4 space-y-4 border-t border-white/10 pt-4 sm:mt-5 sm:pt-5">
+                                    <div className="relative w-full min-w-0 overflow-hidden rounded-2xl border border-slate-200/90 bg-gradient-to-b from-white to-slate-50/95 p-3 shadow-[0_2px_12px_rgba(15,23,42,0.06)] sm:p-5">
+                                      <div
+                                        className="pointer-events-none absolute -right-8 top-0 h-20 w-20 rounded-full bg-sky-400/10 blur-2xl"
+                                        aria-hidden
+                                      />
+                                      <p className="relative text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                                        Nº da carteirinha
                                       </p>
-                                      <p className="mt-1 text-sm font-semibold tabular-nums text-white">
+                                      <p className="relative mt-2 break-words text-lg font-bold leading-tight text-slate-900 [overflow-wrap:anywhere] sm:mt-3 sm:text-xl md:text-2xl">
                                         {ben.numero_carteirinha?.trim() ? ben.numero_carteirinha.trim() : "—"}
                                       </p>
-                                    </div>
-                                    <div>
-                                      <p className="text-[10px] font-semibold uppercase tracking-wide text-white/45">
-                                        Plano
-                                      </p>
-                                      <p className="mt-1 text-sm font-semibold leading-snug text-white">
-                                        {ben.plano || "—"}
-                                      </p>
+                                      <div className="relative mt-3 flex min-w-0 gap-2.5 rounded-lg border border-slate-200/60 bg-slate-100/50 px-2.5 py-2 sm:mt-4 sm:gap-3 sm:px-3 sm:py-2.5">
+                                        <div
+                                          className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-slate-200/60 text-slate-500"
+                                          aria-hidden
+                                        >
+                                          <Info className="h-3.5 w-3.5" strokeWidth={1.75} />
+                                        </div>
+                                        <p className="min-w-0 flex-1 hyphens-auto text-[10px] leading-snug text-slate-500 [overflow-wrap:anywhere] sm:text-[11px]">
+                                          Uso apenas para consulta: trata-se de uma carteirinha provisória neste portal. O documento
+                                          oficial é emitido pela operadora. Para solicitar a carteirinha permanente, acesse o site ou o
+                                          aplicativo da sua operadora de saúde.
+                                        </p>
+                                      </div>
                                     </div>
                                   </div>
 
-                                  <div className="mt-5 flex items-center justify-end rounded-xl bg-black/20 px-4 py-3 ring-1 ring-white/10">
-                                    <div className="text-right">
+                                  <div className="mt-4 flex min-w-0 flex-col gap-0 rounded-xl bg-black/20 px-3 py-3 ring-1 ring-white/10 sm:mt-5 sm:flex-row sm:items-end sm:justify-between sm:gap-4 sm:px-4">
+                                    <div className="min-w-0 flex-1 pb-3 sm:pb-0">
+                                      <p className="text-[10px] uppercase tracking-wide text-white/45">Plano</p>
+                                      <p className="mt-0.5 break-words text-sm font-semibold leading-snug text-white">
+                                        {ben.plano || "—"}
+                                      </p>
+                                    </div>
+                                    <div className="min-w-0 border-t border-white/10 pt-3 text-left sm:border-0 sm:pt-0 sm:text-right">
                                       <p className="text-[10px] uppercase tracking-wide text-white/45">Mensalidade</p>
-                                      <p className="text-sm font-bold tabular-nums text-white">
+                                      <p className="mt-0.5 text-base font-bold tabular-nums text-white sm:text-sm">
                                         {ben.valor_mensal != null
                                           ? formatarMoeda(Number(ben.valor_mensal))
                                           : "—"}
@@ -458,7 +480,7 @@ export default function ClienteDashboardPage({ params }: ClienteDashboardPagePro
                         </div>
                       </TabsContent>
 
-                      <TabsContent value="financeiro" className="mt-0 space-y-5 outline-none">
+                      <TabsContent value="financeiro" className="mt-0 min-w-0 space-y-5 outline-none">
                         <div className="relative overflow-hidden rounded-2xl border border-slate-200/85 bg-gradient-to-br from-slate-50 via-white to-sky-50/35 px-4 py-4 sm:px-5 sm:py-5">
                           <div
                             className="pointer-events-none absolute -right-6 -top-10 h-28 w-28 rounded-full bg-sky-400/15 blur-2xl"
@@ -733,7 +755,7 @@ export default function ClienteDashboardPage({ params }: ClienteDashboardPagePro
                         )}
                       </TabsContent>
 
-                      <TabsContent value="suporte" className="mt-0 outline-none">
+                      <TabsContent value="suporte" className="mt-0 min-w-0 outline-none">
                         <div className="rounded-2xl border border-slate-200/90 border-l-4 border-l-[#25D366] bg-gradient-to-br from-slate-50/95 via-white to-emerald-50/30 p-4 sm:p-6">
                           <h3 className="text-sm font-semibold text-slate-900 sm:text-base">Fale com o suporte</h3>
                           <p className="mt-2 text-sm leading-relaxed text-slate-600">
