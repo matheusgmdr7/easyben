@@ -8,6 +8,56 @@ import type { AsaasCustomer, AsaasCharge } from "@/services/asaas-service"
 import { FaturasService } from "@/services/faturas-service"
 import { gatewayAsaasComoNoBanco } from "@/lib/fatura-filtro-financeira"
 
+/** Telefone em `telefones` (JSONB) ou chaves comuns em `dados_adicionais`. */
+function extrairTelefoneBeneficiario(telefones: unknown, dadosAdicionais: unknown): string {
+  if (Array.isArray(telefones)) {
+    for (const item of telefones) {
+      if (item == null) continue
+      if (typeof item === "string") {
+        const s = item.trim()
+        if (s) return s
+      }
+      if (typeof item === "object") {
+        const o = item as Record<string, unknown>
+        const n = o.numero ?? o.telefone ?? o.phone ?? o.celular
+        if (n != null && String(n).trim()) return String(n).trim()
+      }
+    }
+  }
+  if (dadosAdicionais && typeof dadosAdicionais === "object") {
+    const rec = dadosAdicionais as Record<string, unknown>
+    for (const c of [
+      rec["Telefone"],
+      rec["telefone"],
+      rec["Celular"],
+      rec["celular"],
+      rec["WhatsApp"],
+      rec["whatsapp"],
+      rec["Fone"],
+      rec["fone"],
+    ]) {
+      if (c != null && String(c).trim()) return String(c).trim()
+    }
+  }
+  return ""
+}
+
+/** Dígitos BR: remove 55 inicial se houver. */
+function normalizarDigitosTelefoneBr(raw: string): string {
+  let d = String(raw || "").replace(/\D/g, "")
+  if (d.length >= 12 && d.startsWith("55")) d = d.slice(2)
+  return d
+}
+
+/** Campos aceitos pelo Asaas em clientes (mobilePhone = celular 11 dígitos; phone = fixo 10). */
+function patchTelefoneAsaas(telefoneRaw: string): Partial<AsaasCustomer> | null {
+  const d = normalizarDigitosTelefoneBr(telefoneRaw)
+  if (d.length === 11) return { mobilePhone: d }
+  if (d.length === 10) return { phone: d }
+  if (d.length >= 8 && d.length <= 9) return { phone: d }
+  return null
+}
+
 function extrairColunaInexistenteFaturas(mensagem: string | undefined): string | null {
   const txt = String(mensagem || "")
   const m = txt.match(/column\s+"?([a-zA-Z0-9_]+)"?\s+of relation/i)
@@ -165,7 +215,9 @@ export async function gerarBoletoAdministradora(body: Record<string, unknown>): 
       const vidaId = String(cliente_administradora_id).replace(/^vida:/, "")
       const { data: vida, error: errVida } = await supabaseAdmin
         .from("vidas_importadas")
-        .select("id, nome, cpf, valor_mensal, emails, dados_adicionais, cliente_administradora_id, grupo_id, produto_id")
+        .select(
+          "id, nome, cpf, valor_mensal, emails, telefones, dados_adicionais, cliente_administradora_id, grupo_id, produto_id"
+        )
         .eq("id", vidaId)
         .eq("administradora_id", administradora_id)
         .eq("tenant_id", tenantId)
@@ -240,6 +292,7 @@ export async function gerarBoletoAdministradora(body: Record<string, unknown>): 
           if (e != null) email = String(e)
         }
       }
+      telefone = extrairTelefoneBeneficiario(vidaAny.telefones, vidaAny.dados_adicionais)
 
       const caIdExistente = vidaAny.cliente_administradora_id
       if (caIdExistente) {
@@ -302,7 +355,7 @@ export async function gerarBoletoAdministradora(body: Record<string, unknown>): 
     } else {
       const { data: ca, error: errCliente } = await supabaseAdmin
         .from("clientes_administradoras")
-        .select("id, administradora_id, proposta_id")
+        .select("id, administradora_id, proposta_id, telefones")
         .eq("id", cliente_administradora_id)
         .eq("administradora_id", administradora_id)
         .eq("tenant_id", tenantId)
@@ -336,11 +389,11 @@ export async function gerarBoletoAdministradora(body: Record<string, unknown>): 
           .single()
         nome = (caNum as any)?.numero_contrato ? `Cliente ${(caNum as any).numero_contrato}` : "Cliente"
       }
-      // Cliente pode ser de vida importada (sem proposta_id): buscar CPF/nome/email na vida
-      if (!cpf || cpf.length !== 11) {
+      // Cliente pode ser de vida importada (sem proposta_id): buscar CPF/nome/email/telefone na vida
+      if (!cpf || cpf.length !== 11 || !telefone) {
         const { data: vidaVinculada } = await supabaseAdmin
           .from("vidas_importadas")
-          .select("id, nome, cpf, emails, dados_adicionais")
+          .select("id, nome, cpf, emails, telefones, dados_adicionais")
           .eq("cliente_administradora_id", cliente_administradora_id)
           .eq("administradora_id", administradora_id)
           .eq("tenant_id", tenantId)
@@ -364,7 +417,15 @@ export async function gerarBoletoAdministradora(body: Record<string, unknown>): 
             const e = rec["E-mail"] ?? rec.E_mail ?? rec.Email ?? rec.email
             if (e != null) email = String(e)
           }
+          if (!telefone) {
+            const t = extrairTelefoneBeneficiario(v.telefones, v.dados_adicionais)
+            if (t) telefone = t
+          }
         }
+      }
+      if (!telefone && ca) {
+        const t = extrairTelefoneBeneficiario((ca as Record<string, unknown>).telefones, null)
+        if (t) telefone = t
       }
     }
 
@@ -414,7 +475,14 @@ export async function gerarBoletoAdministradora(body: Record<string, unknown>): 
       .single()
 
     let customerId = (caCompleto as any)?.asaas_customer_id
-    log("Cliente para fatura", { idParaFatura, nome, tem_cpf: !!cpf, tem_email: !!email, asaas_customer_id_existente: customerId ?? null })
+    log("Cliente para fatura", {
+      idParaFatura,
+      nome,
+      tem_cpf: !!cpf,
+      tem_email: !!email,
+      tem_telefone: !!String(telefone || "").trim(),
+      asaas_customer_id_existente: customerId ?? null,
+    })
     if (!customerId) {
       const cpfApenasDigitos = (cpf || "").replace(/\D/g, "")
       if (cpfApenasDigitos.length !== 11) {
@@ -443,14 +511,27 @@ export async function gerarBoletoAdministradora(body: Record<string, unknown>): 
         email: email || undefined,
         externalReference: idParaFatura,
       }
+      const telPatch = patchTelefoneAsaas(String(telefone || ""))
+      if (telPatch) Object.assign(asaasCustomer, telPatch)
+
       const customer = await AsaasServiceInstance.createCustomer(asaasCustomer)
       customerId = customer.id
-      log("Cliente Asaas criado", { customerId })
+      log("Cliente Asaas criado", { customerId, telefone_enviado_gateway: !!telPatch })
       await supabaseAdmin
         .from("clientes_administradoras")
         .update({ asaas_customer_id: customerId })
         .eq("id", idParaFatura)
         .eq("tenant_id", tenantId)
+    } else {
+      const telPatch = patchTelefoneAsaas(String(telefone || ""))
+      if (telPatch) {
+        try {
+          await AsaasServiceInstance.updateCustomer(String(customerId), telPatch)
+          log("Cliente Asaas: telefone sincronizado no gateway", { customerId })
+        } catch (syncErr) {
+          log("AVISO: não foi possível atualizar telefone do cliente no Asaas (cobrança segue normalmente)", syncErr)
+        }
+      }
     }
 
     // Texto enviado ao Asaas na cobrança (aparece na fatura/boleto do gateway): apenas dados comerciais.
