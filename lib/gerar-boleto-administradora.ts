@@ -355,13 +355,29 @@ export async function gerarBoletoAdministradora(body: Record<string, unknown>): 
     } else {
       const { data: ca, error: errCliente } = await supabaseAdmin
         .from("clientes_administradoras")
-        .select("id, administradora_id, proposta_id, telefones")
+        .select("id, administradora_id, proposta_id")
         .eq("id", cliente_administradora_id)
         .eq("administradora_id", administradora_id)
         .eq("tenant_id", tenantId)
         .single()
 
-      if (errCliente || !ca) {
+      if (errCliente) {
+        const msg = String(errCliente.message || "")
+        const naoEncontrado =
+          errCliente.code === "PGRST116" || /no rows|0 rows/i.test(msg)
+        if (naoEncontrado) {
+          return NextResponse.json({ error: "Cliente não encontrado" }, { status: 404 })
+        }
+        log("Erro ao buscar clientes_administradoras (não é 'não encontrado')", {
+          code: errCliente.code,
+          message: errCliente.message,
+        })
+        return NextResponse.json(
+          { error: msg || "Erro ao buscar cliente para fatura" },
+          { status: 500 }
+        )
+      }
+      if (!ca) {
         return NextResponse.json({ error: "Cliente não encontrado" }, { status: 404 })
       }
       clienteAdm = ca as { id: string; administradora_id: string; proposta_id: string | null }
@@ -422,10 +438,6 @@ export async function gerarBoletoAdministradora(body: Record<string, unknown>): 
             if (t) telefone = t
           }
         }
-      }
-      if (!telefone && ca) {
-        const t = extrairTelefoneBeneficiario((ca as Record<string, unknown>).telefones, null)
-        if (t) telefone = t
       }
     }
 
