@@ -478,7 +478,7 @@ export default function AdministradoraSidebar() {
                         href="/administradora/relatorios"
                         className={cn(
                           "flex items-center gap-2 px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm rounded-md transition-all duration-300",
-                          isActive("/administradora/relatorios")
+                          pathname === "/administradora/relatorios"
                             ? "bg-[#1E293B]/80 text-white"
                             : "text-gray-300 hover:bg-[#1E293B]/50 hover:text-white"
                         )}
@@ -486,6 +486,21 @@ export default function AdministradoraSidebar() {
                       >
                         <ChartBarSquareIcon className="h-4 w-4" />
                         <span>Relatório Layout</span>
+                      </Link>
+                    </li>
+                    <li>
+                      <Link
+                        href="/administradora/relatorios/comissao"
+                        className={cn(
+                          "flex items-center gap-2 px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm rounded-md transition-all duration-300",
+                          isActive("/administradora/relatorios/comissao")
+                            ? "bg-[#1E293B]/80 text-white"
+                            : "text-gray-300 hover:bg-[#1E293B]/50 hover:text-white"
+                        )}
+                        onClick={closeSidebar}
+                      >
+                        <BanknotesIcon className="h-4 w-4" />
+                        <span>Relatório de comissão</span>
                       </Link>
                     </li>
                     <li>
