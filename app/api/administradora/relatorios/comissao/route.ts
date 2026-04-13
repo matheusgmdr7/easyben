@@ -59,24 +59,26 @@ function mensagemErro(e: unknown): string {
   return String(e)
 }
 
+const TODAS_CORRETORAS = "todas"
+
 /**
  * GET /api/administradora/relatorios/comissao
  * Faturas pagas no período (vencimento no mês/ano), clientes vinculados ao corretor informado.
- * Query: administradora_id, ano, mes, corretor_id, percentual (0–100, default 10)
+ * Query: administradora_id, ano, mes, corretor_id (uuid ou "todas"), percentual (0–100, default 10)
  */
 export async function GET(request: NextRequest) {
   try {
     const administradoraId = request.nextUrl.searchParams.get("administradora_id")?.trim() || ""
     const anoStr = request.nextUrl.searchParams.get("ano")?.trim() || ""
     const mesStr = request.nextUrl.searchParams.get("mes")?.trim() || ""
-    const corretorId = request.nextUrl.searchParams.get("corretor_id")?.trim() || ""
+    const corretorIdParam = request.nextUrl.searchParams.get("corretor_id")?.trim() || ""
     const pctRaw = request.nextUrl.searchParams.get("percentual")
 
     if (!administradoraId) {
       return NextResponse.json({ error: "administradora_id é obrigatório" }, { status: 400 })
     }
-    if (!corretorId) {
-      return NextResponse.json({ error: "corretor_id é obrigatório" }, { status: 400 })
+    if (!corretorIdParam) {
+      return NextResponse.json({ error: "corretor_id é obrigatório (ou use \"todas\")." }, { status: 400 })
     }
 
     const ano = Number(anoStr)
@@ -90,6 +92,9 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "percentual deve ser um número entre 0 e 100." }, { status: 400 })
     }
 
+    const todasCorretoras =
+      corretorIdParam.toLowerCase() === TODAS_CORRETORAS || corretorIdParam === "__todas__"
+
     const { data: administradora } = await supabaseAdmin
       .from("administradoras")
       .select("tenant_id")
@@ -99,9 +104,19 @@ export async function GET(request: NextRequest) {
     const tenantAtual = await getCurrentTenantId()
     const tenantId = administradora?.tenant_id || tenantAtual
 
-    const corretor = await CorretoresAdministradoraService.buscarPorId(corretorId, administradoraId)
-    if (!corretor) {
-      return NextResponse.json({ error: "Corretor não encontrado para esta administradora." }, { status: 404 })
+    const corretoresLista = await CorretoresAdministradoraService.listar(administradoraId)
+    const nomePorCorretorId = new Map<string, string>()
+    for (const c of corretoresLista) {
+      nomePorCorretorId.set(c.id, c.nome)
+    }
+
+    let corretorFiltro: { id: string; nome: string } | null = null
+    if (!todasCorretoras) {
+      const corretor = await CorretoresAdministradoraService.buscarPorId(corretorIdParam, administradoraId)
+      if (!corretor) {
+        return NextResponse.json({ error: "Corretor não encontrado para esta administradora." }, { status: 404 })
+      }
+      corretorFiltro = { id: corretor.id, nome: corretor.nome }
     }
 
     const inicio = primeiroDiaMes(ano, mes)
@@ -185,6 +200,8 @@ export async function GET(request: NextRequest) {
       fatura_id: string
       cliente_administradora_id: string
       cliente_nome: string
+      corretor_id: string | null
+      corretor_nome: string
       numero_fatura: string | null
       valor_fatura: number
       vencimento: string | null
@@ -195,8 +212,13 @@ export async function GET(request: NextRequest) {
     for (const f of faturasPagas) {
       const cid = String(f.cliente_administradora_id || "").trim()
       if (!cid) continue
-      const corretorCliente = mapaCorretorCliente.get(cid) ?? null
-      if (String(corretorCliente || "") !== corretorId) continue
+      const corretorClienteId = mapaCorretorCliente.get(cid) ?? null
+      if (!corretorClienteId) continue
+      if (!todasCorretoras && String(corretorClienteId) !== corretorFiltro?.id) continue
+
+      const nomeCor =
+        nomePorCorretorId.get(corretorClienteId) ||
+        `Corretor ${String(corretorClienteId).slice(0, 8)}…`
 
       const valor = Number(f.valor ?? 0)
       const valorComissao = Number(((valor * percentual) / 100).toFixed(2))
@@ -204,6 +226,8 @@ export async function GET(request: NextRequest) {
         fatura_id: f.id,
         cliente_administradora_id: cid,
         cliente_nome: String(f.cliente_nome || "Cliente"),
+        corretor_id: corretorClienteId,
+        corretor_nome: nomeCor,
         numero_fatura: f.numero_fatura ?? null,
         valor_fatura: valor,
         vencimento: f.vencimento ?? null,
@@ -212,18 +236,24 @@ export async function GET(request: NextRequest) {
       })
     }
 
+    const idsClientesDistintos = new Set(linhas.map((l) => l.cliente_administradora_id))
+    const totalClientesDistintos = idsClientesDistintos.size
+
     const totalFaturas = linhas.reduce((s, l) => s + l.valor_fatura, 0)
     const totalComissao = Number(
       linhas.reduce((s, l) => s + l.valor_comissao, 0).toFixed(2)
     )
 
     return NextResponse.json({
-      corretor: { id: corretor.id, nome: corretor.nome },
+      corretor: todasCorretoras
+        ? { id: TODAS_CORRETORAS, nome: "Todas as corretoras" }
+        : corretorFiltro!,
       periodo: { ano, mes, inicio, fim },
       percentual,
       criterio:
-        "Faturas com status paga, vencimento no mês/ano indicado e cliente vinculado ao corretor (contrato ou vida importada).",
+        "Faturas com status paga, vencimento no mês/ano indicado e cliente com corretor vinculado (contrato ou vida importada). Com \"todas\", inclui todos os corretores.",
       total_registros: linhas.length,
+      total_clientes_distintos: totalClientesDistintos,
       total_valor_faturas: Number(totalFaturas.toFixed(2)),
       total_comissao: totalComissao,
       linhas,

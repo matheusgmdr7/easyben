@@ -14,6 +14,8 @@ type LinhaComissao = {
   fatura_id: string
   cliente_administradora_id: string
   cliente_nome: string
+  corretor_id: string | null
+  corretor_nome: string
   numero_fatura: string | null
   valor_fatura: number
   vencimento: string | null
@@ -39,11 +41,13 @@ const MESES = [
 ]
 
 const ITENS_POR_PAGINA = 15
+const CORRETOR_TODAS = "todas"
 
 export default function RelatorioComissaoPage() {
   const [linhas, setLinhas] = useState<LinhaComissao[]>([])
   const [totalFaturas, setTotalFaturas] = useState(0)
   const [totalComissao, setTotalComissao] = useState(0)
+  const [totalClientesDistintos, setTotalClientesDistintos] = useState(0)
   const [corretorNome, setCorretorNome] = useState("")
   const [paginaAtual, setPaginaAtual] = useState(1)
   const [loading, setLoading] = useState(false)
@@ -54,7 +58,7 @@ export default function RelatorioComissaoPage() {
 
   const [mesRef, setMesRef] = useState("")
   const [anoRef, setAnoRef] = useState("")
-  const [corretorId, setCorretorId] = useState<string>("")
+  const [corretorId, setCorretorId] = useState<string>(CORRETOR_TODAS)
   const [percentualStr, setPercentualStr] = useState("10")
 
   useEffect(() => {
@@ -90,7 +94,7 @@ export default function RelatorioComissaoPage() {
   async function carregarRelatorio() {
     if (!administradoraId) return
     if (!corretorId) {
-      toast.error("Selecione um corretor.")
+      toast.error("Selecione um corretor ou \"Todas as corretoras\".")
       return
     }
     const pct = Number(String(percentualStr).replace(",", "."))
@@ -117,16 +121,18 @@ export default function RelatorioComissaoPage() {
       setLinhas(Array.isArray(data?.linhas) ? data.linhas : [])
       setTotalFaturas(Number(data?.total_valor_faturas ?? 0))
       setTotalComissao(Number(data?.total_comissao ?? 0))
+      setTotalClientesDistintos(Number(data?.total_clientes_distintos ?? 0))
       setCorretorNome(String(data?.corretor?.nome || ""))
       setPaginaAtual(1)
       if (!data?.linhas?.length) {
-        toast.info("Nenhuma fatura paga encontrada para este corretor e período.")
+        toast.info("Nenhuma fatura paga encontrada para os filtros selecionados.")
       }
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Erro ao buscar relatório")
       setLinhas([])
       setTotalFaturas(0)
       setTotalComissao(0)
+      setTotalClientesDistintos(0)
       setCorretorNome("")
     } finally {
       setLoading(false)
@@ -144,8 +150,8 @@ export default function RelatorioComissaoPage() {
       const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" })
       const margem = 8
       const larguraUtil = doc.internal.pageSize.getWidth() - margem * 2
-      const headers = ["Cliente", "Nº fatura", "Vencimento", "Valor fatura", "% comissão", "Comissão"]
-      const colWidths = [58, 36, 24, 28, 22, 28]
+      const headers = ["#", "Corretora", "Cliente", "Nº fatura", "Vencimento", "Valor", "%", "Comissão"]
+      const colWidths = [9, 36, 54, 32, 22, 26, 14, 30]
       const headerRowH = 6
       const maxY = 196
       const pct = Number(String(percentualStr).replace(",", ".")) || 0
@@ -159,9 +165,10 @@ export default function RelatorioComissaoPage() {
       doc.setFont(undefined, "normal")
       doc.setFontSize(8)
       doc.setTextColor(100, 116, 139)
-      doc.text(`Corretor: ${corretorNome || "—"}`, margem, y)
-      doc.text(`Referência: ${mesRef}/${anoRef}`, margem + 78, y)
-      doc.text(`Percentual: ${pct}%`, margem + 128, y)
+      doc.text(`Corretor(es): ${corretorNome || "—"}`, margem, y)
+      doc.text(`Referência: ${mesRef}/${anoRef}`, margem + 88, y)
+      doc.text(`Percentual: ${pct}%`, margem + 148, y)
+      doc.text(`${linhas.length} fatura(s) · ${totalClientesDistintos} cliente(s)`, margem + 198, y)
       y += 6
 
       const drawTableHeader = () => {
@@ -170,9 +177,9 @@ export default function RelatorioComissaoPage() {
         doc.rect(margem, y, larguraUtil, headerRowH, "F")
         doc.setTextColor(255, 255, 255)
         doc.setFont(undefined, "bold")
-        doc.setFontSize(7)
+        doc.setFontSize(6.5)
         headers.forEach((h, i) => {
-          doc.text(h, x + 1.5, y + 4.1)
+          doc.text(h, x + 1.2, y + 4.1)
           x += colWidths[i]
         })
         doc.setFont(undefined, "normal")
@@ -195,11 +202,16 @@ export default function RelatorioComissaoPage() {
           doc.rect(margem, y, larguraUtil, rowH, "F")
         }
         doc.setTextColor(30, 41, 59)
-        doc.setFontSize(7)
+        doc.setFontSize(6.5)
         let x = margem
-        const nomeCurto = doc.splitTextToSize(item.cliente_nome || "—", colWidths[0] - 3)[0] || "—"
+        const nomeCorCurto =
+          doc.splitTextToSize(item.corretor_nome || "—", colWidths[1] - 2)[0] || "—"
+        const nomeClienteCurto =
+          doc.splitTextToSize(item.cliente_nome || "—", colWidths[2] - 2)[0] || "—"
         const celulas = [
-          nomeCurto,
+          String(index + 1),
+          nomeCorCurto,
+          nomeClienteCurto,
           item.numero_fatura || "—",
           item.vencimento ? formatarData(item.vencimento) : "—",
           formatarMoeda(item.valor_fatura),
@@ -207,7 +219,7 @@ export default function RelatorioComissaoPage() {
           formatarMoeda(item.valor_comissao),
         ]
         celulas.forEach((texto, i) => {
-          doc.text(String(texto), x + 1.5, y + baselinePad)
+          doc.text(String(texto), x + 1.2, y + baselinePad)
           x += colWidths[i]
         })
         y += rowH
@@ -229,7 +241,7 @@ export default function RelatorioComissaoPage() {
       doc.setFont(undefined, "normal")
       doc.setFontSize(8)
       doc.setTextColor(100, 116, 139)
-      doc.text(`${linhas.length} linha(s)`, margem + 178, y)
+      doc.text(`${linhas.length} linha(s) · ${totalClientesDistintos} cliente(s)`, margem + 188, y)
 
       doc.save(`relatorio-comissao-${anoRef}-${mesRef}.pdf`)
       toast.success("PDF exportado com sucesso")
@@ -249,8 +261,9 @@ export default function RelatorioComissaoPage() {
       setExportandoExcel(true)
       const XLSX = await import("xlsx")
       const pct = Number(String(percentualStr).replace(",", ".")) || 0
-      const rows = linhas.map((item) => ({
-        Corretor: corretorNome,
+      const rows = linhas.map((item, idx) => ({
+        "#": idx + 1,
+        Corretora: item.corretor_nome || "-",
         Cliente: item.cliente_nome || "-",
         NumeroFatura: item.numero_fatura || "-",
         Vencimento: item.vencimento ? formatarData(item.vencimento) : "-",
@@ -262,9 +275,12 @@ export default function RelatorioComissaoPage() {
       const wb = XLSX.utils.book_new()
       XLSX.utils.book_append_sheet(wb, ws, "Comissao")
       const meta = XLSX.utils.json_to_sheet([
+        { Campo: "Corretor (filtro)", Valor: corretorNome || "—" },
         { Campo: "Período (vencimento)", Valor: `${mesRef}/${anoRef}` },
         { Campo: "Percentual", Valor: `${pct}%` },
-        { Campo: "Total faturas", Valor: totalFaturas },
+        { Campo: "Total faturas (linhas)", Valor: linhas.length },
+        { Campo: "Total clientes distintos", Valor: totalClientesDistintos },
+        { Campo: "Soma valores faturas", Valor: totalFaturas },
         { Campo: "Total comissão", Valor: totalComissao },
       ])
       XLSX.utils.book_append_sheet(wb, meta, "Resumo")
@@ -289,9 +305,9 @@ export default function RelatorioComissaoPage() {
       <div className="bg-white border-b border-gray-200 px-6 py-4">
         <h1 className="text-xl font-semibold text-gray-800">Relatório de comissão</h1>
         <p className="text-sm text-gray-500 mt-0.5 max-w-3xl">
-          Faturas <strong>pagas</strong> com <strong>vencimento</strong> no mês de referência, para clientes vinculados ao
-          corretor (contrato ou beneficiário). A comissão de cada linha é o percentual informado aplicado ao valor da
-          fatura; os totais somam todas as linhas.
+          Faturas <strong>pagas</strong> com <strong>vencimento</strong> no mês de referência, para clientes com corretor
+          vinculado (contrato ou beneficiário). Use <strong>Todas as corretoras</strong> para consolidar. A comissão de
+          cada linha é o percentual sobre o valor da fatura.
         </p>
       </div>
 
@@ -324,11 +340,12 @@ export default function RelatorioComissaoPage() {
           </div>
           <div>
             <label className="block text-xs text-gray-600 mb-1">Corretor</label>
-            <Select value={corretorId || undefined} onValueChange={setCorretorId}>
+            <Select value={corretorId} onValueChange={setCorretorId}>
               <SelectTrigger className="h-10 w-full rounded-md border border-gray-300 bg-background px-3 py-2 text-sm">
-                <SelectValue placeholder="Selecione o corretor" />
+                <SelectValue placeholder="Selecione" />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value={CORRETOR_TODAS}>Todas as corretoras</SelectItem>
                 {corretores.map((c) => (
                   <SelectItem key={c.id} value={c.id}>
                     {c.nome}
@@ -357,16 +374,24 @@ export default function RelatorioComissaoPage() {
         </div>
 
         {linhas.length > 0 && (
-          <div className="flex flex-wrap items-center gap-2 mb-4">
-            <Button variant="outline" size="sm" onClick={() => void exportarPDF()} disabled={exportandoPDF}>
-              <FileDown className="h-4 w-4 mr-2" />
-              {exportandoPDF ? "PDF…" : "Exportar PDF"}
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => void exportarExcel()} disabled={exportandoExcel}>
-              <FileSpreadsheet className="h-4 w-4 mr-2" />
-              {exportandoExcel ? "Excel…" : "Exportar Excel"}
-            </Button>
-          </div>
+          <>
+            <p className="text-sm text-slate-600 mb-3">
+              <span className="font-semibold text-slate-800">{linhas.length}</span> fatura
+              {linhas.length !== 1 ? "s" : ""} ·{" "}
+              <span className="font-semibold text-slate-800">{totalClientesDistintos}</span> cliente
+              {totalClientesDistintos !== 1 ? "s" : ""} distinto{totalClientesDistintos !== 1 ? "s" : ""}
+            </p>
+            <div className="flex flex-wrap items-center gap-2 mb-4">
+              <Button variant="outline" size="sm" onClick={() => void exportarPDF()} disabled={exportandoPDF}>
+                <FileDown className="h-4 w-4 mr-2" />
+                {exportandoPDF ? "PDF…" : "Exportar PDF"}
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => void exportarExcel()} disabled={exportandoExcel}>
+                <FileSpreadsheet className="h-4 w-4 mr-2" />
+                {exportandoExcel ? "Excel…" : "Exportar Excel"}
+              </Button>
+            </div>
+          </>
         )}
 
         <div className="rounded-lg border border-gray-200 overflow-hidden">
@@ -374,6 +399,8 @@ export default function RelatorioComissaoPage() {
             <table className="min-w-full text-sm">
               <thead className="bg-slate-800 text-white">
                 <tr>
+                  <th className="text-center px-2 py-2 font-semibold w-10">#</th>
+                  <th className="text-left px-3 py-2 font-semibold">Corretora</th>
                   <th className="text-left px-3 py-2 font-semibold">Cliente</th>
                   <th className="text-left px-3 py-2 font-semibold">Nº fatura</th>
                   <th className="text-left px-3 py-2 font-semibold">Vencimento</th>
@@ -385,30 +412,41 @@ export default function RelatorioComissaoPage() {
               <tbody>
                 {linhasPaginadas.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-3 py-8 text-center text-gray-500">
+                    <td colSpan={8} className="px-3 py-8 text-center text-gray-500">
                       {loading ? "Carregando…" : "Nenhum dado. Ajuste os filtros e clique em Gerar relatório."}
                     </td>
                   </tr>
                 ) : (
-                  linhasPaginadas.map((row, i) => (
-                    <tr key={row.fatura_id} className={cn(i % 2 === 0 ? "bg-white" : "bg-slate-50/80", "border-t border-gray-100")}>
-                      <td className="px-3 py-2 text-gray-900">{row.cliente_nome}</td>
-                      <td className="px-3 py-2 text-gray-700 tabular-nums">{row.numero_fatura || "—"}</td>
-                      <td className="px-3 py-2 text-gray-700">
-                        {row.vencimento ? formatarData(row.vencimento) : "—"}
-                      </td>
-                      <td className="px-3 py-2 text-right tabular-nums">{formatarMoeda(row.valor_fatura)}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{row.percentual_comissao}%</td>
-                      <td className="px-3 py-2 text-right font-medium tabular-nums">{formatarMoeda(row.valor_comissao)}</td>
-                    </tr>
-                  ))
+                  linhasPaginadas.map((row, i) => {
+                    const numGlobal = (paginaSegura - 1) * ITENS_POR_PAGINA + i + 1
+                    return (
+                      <tr
+                        key={row.fatura_id}
+                        className={cn(i % 2 === 0 ? "bg-white" : "bg-slate-50/80", "border-t border-gray-100")}
+                      >
+                        <td className="px-2 py-2 text-center tabular-nums text-gray-600">{numGlobal}</td>
+                        <td className="px-3 py-2 text-gray-800">{row.corretor_nome}</td>
+                        <td className="px-3 py-2 text-gray-900">{row.cliente_nome}</td>
+                        <td className="px-3 py-2 text-gray-700 tabular-nums">{row.numero_fatura || "—"}</td>
+                        <td className="px-3 py-2 text-gray-700">
+                          {row.vencimento ? formatarData(row.vencimento) : "—"}
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums">{formatarMoeda(row.valor_fatura)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{row.percentual_comissao}%</td>
+                        <td className="px-3 py-2 text-right font-medium tabular-nums">
+                          {formatarMoeda(row.valor_comissao)}
+                        </td>
+                      </tr>
+                    )
+                  })
                 )}
               </tbody>
               {linhas.length > 0 && (
                 <tfoot className="bg-slate-100 border-t-2 border-slate-200">
                   <tr>
-                    <td colSpan={3} className="px-3 py-2 text-right font-semibold text-gray-800">
-                      Totais ({linhas.length} fatura{linhas.length !== 1 ? "s" : ""})
+                    <td colSpan={5} className="px-3 py-2 text-right font-semibold text-gray-800">
+                      Totais ({linhas.length} fatura{linhas.length !== 1 ? "s" : ""} · {totalClientesDistintos} cliente
+                      {totalClientesDistintos !== 1 ? "s" : ""})
                     </td>
                     <td className="px-3 py-2 text-right font-bold tabular-nums">{formatarMoeda(totalFaturas)}</td>
                     <td className="px-3 py-2" />
