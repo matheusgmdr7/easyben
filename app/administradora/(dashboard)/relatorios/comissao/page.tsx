@@ -150,7 +150,7 @@ export default function RelatorioComissaoPage() {
       const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" })
       const margem = 8
       const larguraUtil = doc.internal.pageSize.getWidth() - margem * 2
-      const headers = ["#", "Corretora", "Cliente", "Nº fatura", "Vencimento", "Valor", "%", "Comissão"]
+      const headers = ["Qtd", "Corretora", "Cliente", "Nº fatura", "Vencimento", "Valor", "%", "Comissão"]
       const colWidths = [9, 36, 54, 32, 22, 26, 14, 30]
       const headerRowH = 6
       const maxY = 196
@@ -262,7 +262,7 @@ export default function RelatorioComissaoPage() {
       const XLSX = await import("xlsx")
       const pct = Number(String(percentualStr).replace(",", ".")) || 0
       const rows = linhas.map((item, idx) => ({
-        "#": idx + 1,
+        Qtd: idx + 1,
         Corretora: item.corretor_nome || "-",
         Cliente: item.cliente_nome || "-",
         NumeroFatura: item.numero_fatura || "-",
@@ -399,7 +399,7 @@ export default function RelatorioComissaoPage() {
             <table className="min-w-full text-sm">
               <thead className="bg-slate-800 text-white">
                 <tr>
-                  <th className="text-center px-2 py-2 font-semibold w-10">#</th>
+                  <th className="text-center px-2 py-2 font-semibold w-10">Qtd</th>
                   <th className="text-left px-3 py-2 font-semibold">Corretora</th>
                   <th className="text-left px-3 py-2 font-semibold">Cliente</th>
                   <th className="text-left px-3 py-2 font-semibold">Nº fatura</th>
