@@ -322,8 +322,19 @@ export default function BeneficiariosCanceladosPage() {
       const margem = 8
       const larguraPagina = 297
       const larguraUtil = larguraPagina - margem * 2
-      const colWidths = [54, 19, 20, 22, 30, 22, 40, 40, 28]
-      const headers = ["Beneficiário", "Valor mensal", "Tipo", "Status", "Solicitação", "Operadora", "Grupo origem", "Grupo destino", "Corretor"]
+      const colWidths = [42, 16, 16, 20, 24, 38, 16, 30, 30, 25]
+      const headers = [
+        "Beneficiário",
+        "Valor mensal",
+        "Tipo",
+        "Status",
+        "Solicitação",
+        "Motivo",
+        "Operadora",
+        "Grupo origem",
+        "Grupo destino",
+        "Corretor",
+      ]
       const rowH = 6
       const totalBeneficiarios = registros.length
       const totalValorMensal = registros.reduce(
@@ -374,15 +385,16 @@ export default function BeneficiariosCanceladosPage() {
         doc.setTextColor(30, 41, 59)
         doc.setFontSize(7)
         const valores = [
-          String(r.vida?.nome || "-").slice(0, 36),
+          String(r.vida?.nome || "-").slice(0, 32),
           formatarMoeda(r.vida?.valor_mensal ?? 0),
           r.tipo_registro === "titular" ? "Titular" : "Dependente",
           textoStatus(r.status_fluxo),
           formatarDataHora(r.data_solicitacao).slice(0, 16),
+          String(r.motivo_solicitacao || "—").replace(/\s+/g, " ").slice(0, 48),
           formatarData(r.data_cancelamento_operadora),
-          String(r.grupo_origem?.nome || "-").slice(0, 24),
-          String(r.grupo_destino?.nome || "-").slice(0, 24),
-          nomeCorretorPorId(r.vida?.corretor_id).slice(0, 18),
+          String(r.grupo_origem?.nome || "-").slice(0, 22),
+          String(r.grupo_destino?.nome || "-").slice(0, 22),
+          nomeCorretorPorId(r.vida?.corretor_id).slice(0, 16),
         ]
 
         let x = margem
@@ -723,6 +735,7 @@ export default function BeneficiariosCanceladosPage() {
                     <TableHead>Tipo</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Solicitado</TableHead>
+                    <TableHead className="min-w-[140px] max-w-[280px]">Motivo solicitação</TableHead>
                     <TableHead>Cancelado na operadora</TableHead>
                     <TableHead>Grupo origem</TableHead>
                     <TableHead>Corretor</TableHead>
@@ -747,6 +760,9 @@ export default function BeneficiariosCanceladosPage() {
                       <TableCell>{r.tipo_registro === "titular" ? "Titular" : "Dependente"}</TableCell>
                       <TableCell>{renderStatusBadge(r.status_fluxo)}</TableCell>
                       <TableCell>{formatarDataHora(r.data_solicitacao)}</TableCell>
+                      <TableCell className="text-sm text-gray-700 align-top max-w-[280px] whitespace-normal break-words">
+                        {r.motivo_solicitacao?.trim() ? r.motivo_solicitacao : "—"}
+                      </TableCell>
                       <TableCell>{formatarData(r.data_cancelamento_operadora)}</TableCell>
                       <TableCell>{r.grupo_origem?.nome || "—"}</TableCell>
                       <TableCell>{nomeCorretorPorId(r.vida?.corretor_id)}</TableCell>

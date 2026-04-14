@@ -227,8 +227,8 @@ export default function DevedoresPage() {
       const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" })
       const margem = 8
       const larguraUtil = doc.internal.pageSize.getWidth() - margem * 2
-      const headers = ["Nome", "CPF", "Telefone", "Vencimento", "Valor", "Status", "Link do boleto"]
-      const colWidths = [52, 28, 30, 22, 22, 20, 107]
+      const headers = ["Qtd", "Nome", "CPF", "Telefone", "Vencimento", "Valor", "Status", "Link do boleto"]
+      const colWidths = [9, 45, 28, 30, 22, 22, 20, 105]
       const headerRowH = 6
       const maxY = 196
       const fontCorpo = 7
@@ -271,7 +271,7 @@ export default function DevedoresPage() {
       linhas.forEach((item, index) => {
         const linkBoleto = String(item.boleto_url || "").trim()
         doc.setFontSize(fontUrl)
-        const urlLines = linkBoleto ? doc.splitTextToSize(linkBoleto, colWidths[6] - 3) : ["—"]
+        const urlLines = linkBoleto ? doc.splitTextToSize(linkBoleto, colWidths[7] - 3) : ["—"]
         doc.setFontSize(fontCorpo)
         const lineHeightUrlMm = (fontUrl * doc.getLineHeightFactor() * 25.4) / 72
         const rowH = Math.max(rowMinMm, 3 + urlLines.length * lineHeightUrlMm)
@@ -290,8 +290,9 @@ export default function DevedoresPage() {
         doc.setTextColor(30, 41, 59)
         doc.setFontSize(fontCorpo)
         let x = margem
-        const nomeCurto = doc.splitTextToSize(item.cliente_nome || "—", colWidths[0] - 3)[0] || "—"
+        const nomeCurto = doc.splitTextToSize(item.cliente_nome || "—", colWidths[1] - 3)[0] || "—"
         const celulas = [
+          String(index + 1),
           nomeCurto,
           formatarCpf(item.cpf),
           formatarTelefone(item.telefone),
@@ -346,7 +347,8 @@ export default function DevedoresPage() {
     try {
       setExportandoExcel(true)
       const XLSX = await import("xlsx")
-      const rows = linhas.map((item) => ({
+      const rows = linhas.map((item, idx) => ({
+        Qtd: idx + 1,
         Nome: item.cliente_nome || "-",
         CPF: formatarCpf(item.cpf),
         Telefone: formatarTelefone(item.telefone),
@@ -368,6 +370,16 @@ export default function DevedoresPage() {
   }
 
   const totalValor = linhas.reduce((sum, item) => sum + Number(item.valor_fatura || 0), 0)
+
+  const totalBeneficiariosDistintos = useMemo(() => {
+    const chaves = new Set<string>()
+    for (const l of linhas) {
+      const cpf = String(l.cpf || "").replace(/\D/g, "")
+      if (cpf.length === 11) chaves.add(`cpf:${cpf}`)
+      else chaves.add(`nome:${String(l.cliente_nome || "").trim().toLowerCase()}`)
+    }
+    return chaves.size
+  }, [linhas])
 
   const totalPaginas = Math.max(1, Math.ceil(linhas.length / ITENS_POR_PAGINA))
   const paginaSegura = Math.min(paginaAtual, totalPaginas)
@@ -554,6 +566,9 @@ export default function DevedoresPage() {
             <table className="w-full border-collapse">
               <thead>
                 <tr className="bg-gray-100 border-b border-gray-300">
+                  <th className="px-2 py-2 text-center text-xs font-semibold text-gray-700 border-r border-gray-300 w-12">
+                    Qtd
+                  </th>
                   <th className="px-4 py-2 text-left text-xs font-semibold text-gray-700 border-r border-gray-300">Nome do Cliente</th>
                   <th className="px-4 py-2 text-left text-xs font-semibold text-gray-700 border-r border-gray-300">CPF</th>
                   <th className="px-4 py-2 text-left text-xs font-semibold text-gray-700 border-r border-gray-300">Telefone</th>
@@ -564,20 +579,22 @@ export default function DevedoresPage() {
                 </tr>
               </thead>
               <tbody>
-                {loading ? (
+                               {loading ? (
                   <tr>
-                    <td colSpan={7} className="px-4 py-8 text-center text-sm text-gray-500">
+                    <td colSpan={8} className="px-4 py-8 text-center text-sm text-gray-500">
                       Carregando...
                     </td>
                   </tr>
                 ) : linhas.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-4 py-8 text-center text-sm text-gray-500">
+                    <td colSpan={8} className="px-4 py-8 text-center text-sm text-gray-500">
                       Nenhum resultado encontrado
                     </td>
                   </tr>
                 ) : (
-                  linhasPaginadas.map((linha, index) => (
+                  linhasPaginadas.map((linha, index) => {
+                    const qtdGlobal = (paginaSegura - 1) * ITENS_POR_PAGINA + index + 1
+                    return (
                     <tr
                       key={linha.id}
                       className={cn(
@@ -585,6 +602,9 @@ export default function DevedoresPage() {
                         index % 2 === 0 ? "bg-white" : "bg-gray-50"
                       )}
                     >
+                      <td className="px-2 py-2 text-sm text-center tabular-nums text-gray-600 border-r border-gray-200">
+                        {qtdGlobal}
+                      </td>
                       <td className="px-4 py-2 text-sm text-gray-800 border-r border-gray-200">{linha.cliente_nome || "-"}</td>
                       <td className="px-4 py-2 text-sm text-gray-800 border-r border-gray-200">{formatarCpf(linha.cpf)}</td>
                       <td className="px-4 py-2 text-sm text-gray-800 border-r border-gray-200">{formatarTelefone(linha.telefone)}</td>
@@ -609,7 +629,7 @@ export default function DevedoresPage() {
                         )}
                       </td>
                     </tr>
-                  ))
+                  )})
                 )}
               </tbody>
             </table>
