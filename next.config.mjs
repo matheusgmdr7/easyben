@@ -1,6 +1,10 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // Evita WasmHash / "Cannot read properties of undefined (reading 'length')" no webpack em CI (Netlify).
+  experimental: {
+    webpackBuildWorker: false,
+  },
   // webpackBuildWorker (experimental) costuma quebrar build em CI (ex.: Netlify) com erros opacos do webpack.
   webpack: (config, { dev }) => {
     if (dev) {
