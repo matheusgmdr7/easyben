@@ -156,11 +156,17 @@ export async function PUT(
         const pid = merge.produto_id
         const dataNasc = merge.data_nascimento
         const idadeInput = merge.idade
-        const idade = typeof idadeInput === "number" && !isNaN(idadeInput)
-          ? idadeInput
-          : idadeInput != null && String(idadeInput).trim() !== ""
-            ? parseInt(String(idadeInput), 10)
-            : calcularIdade(dataNasc)
+        /** Mesma regra da tela de beneficiário: prioriza nascimento; campo idade pode estar desatualizado. */
+        const idadePorNascimento = calcularIdade(dataNasc as string | Date | null | undefined)
+        let idade: number | null = idadePorNascimento
+        if (idade == null) {
+          if (typeof idadeInput === "number" && !isNaN(idadeInput)) {
+            idade = idadeInput
+          } else if (idadeInput != null && String(idadeInput).trim() !== "") {
+            const parsed = parseInt(String(idadeInput), 10)
+            idade = !isNaN(parsed) ? parsed : null
+          }
+        }
         const acomodacao = (merge.acomodacao === "Apartamento" ? "Apartamento" : "Enfermaria") as "Enfermaria" | "Apartamento"
         if (pid && idade != null && !isNaN(idade)) {
           const tenantParaCalculo = (atual as any)?.tenant_id || tenantId || undefined

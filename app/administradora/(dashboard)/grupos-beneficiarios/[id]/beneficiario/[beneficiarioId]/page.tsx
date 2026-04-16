@@ -1096,16 +1096,6 @@ export default function BeneficiarioDetalhesPage() {
       toast.error("Recálculo por faixa etária com dependentes está disponível para beneficiários importados (vida).")
       return
     }
-    const produtoId = String(produtoVinculoId || vida?.produto_id || "").trim()
-    if (!produtoId) {
-      toast.error("Beneficiário sem produto vinculado para cálculo por faixa etária.")
-      return
-    }
-    const idadeTitular = resolverIdadeParaFaixa(vida)
-    if (idadeTitular == null || !Number.isFinite(idadeTitular)) {
-      toast.error("Não foi possível identificar a idade do titular.")
-      return
-    }
     const adm = getAdministradoraLogada()
     if (!adm?.id) {
       toast.error("Administradora não identificada.")
@@ -1113,10 +1103,69 @@ export default function BeneficiarioDetalhesPage() {
     }
     try {
       setRecalculandoValorContrato(true)
+      const { supabase } = await import("@/lib/supabase")
+
+      let vidaTitular: Record<string, unknown> = vida as Record<string, unknown>
+      let titularRowId = String(clienteSelecionado.id)
+      let listaDependentes = dependentes
+
+      if (getTipoItem(clienteSelecionado) === "dependente") {
+        const cpfTit = String((vida as { cpf_titular?: string })?.cpf_titular || "").replace(/\D/g, "")
+        if (cpfTit.length < 11) {
+          toast.error("Dependente sem CPF do titular. Corrija o vínculo para recalcular titular e dependentes.")
+          return
+        }
+        const { data: candidatosTit, error: errTit } = await supabase
+          .from("vidas_importadas")
+          .select("*")
+          .eq("grupo_id", grupoId)
+          .neq("tipo", "dependente")
+        if (errTit) throw new Error(errTit.message || "Erro ao localizar titular")
+        const tit = (candidatosTit || []).find((t: { cpf?: string }) => String(t?.cpf || "").replace(/\D/g, "") === cpfTit)
+        if (!tit?.id) {
+          toast.error("Titular não encontrado neste grupo. Abra a ficha do titular e use o recálculo por lá.")
+          return
+        }
+        vidaTitular = tit as Record<string, unknown>
+        titularRowId = String(tit.id)
+        const { data: depsDb, error: errDeps } = await supabase
+          .from("vidas_importadas")
+          .select(
+            "id, nome, cpf, tipo, data_nascimento, parentesco, valor_mensal, acomodacao, produto_id, idade, dados_adicionais"
+          )
+          .eq("grupo_id", grupoId)
+          .eq("cpf_titular", cpfTit)
+          .eq("tipo", "dependente")
+        if (errDeps) throw new Error(errDeps.message || "Erro ao listar dependentes")
+        listaDependentes = depsDb || []
+      }
+
+      const editandoTitular = editandoContrato && getTipoItem(clienteSelecionado) === "titular"
+      const produtoId = String(
+        (editandoTitular && produtoVinculoId ? produtoVinculoId : null) || (vidaTitular?.produto_id as string) || ""
+      ).trim()
+      if (!produtoId) {
+        toast.error("Titular sem produto vinculado para cálculo por faixa etária.")
+        return
+      }
+
+      const idadeTitular = resolverIdadeParaFaixa(vidaTitular as { data_nascimento?: string | null; idade?: unknown })
+      if (idadeTitular == null || !Number.isFinite(idadeTitular)) {
+        toast.error("Não foi possível identificar a idade do titular.")
+        return
+      }
+
       const acomodacaoForm = formContrato.acomodacao === "Apartamento" || formContrato.acomodacao === "Enfermaria"
         ? formContrato.acomodacao
         : null
-      const acomodacaoDetectada = obterAcomodacaoBeneficiario(vida, produtoCliente?.nome)
+      const mesmoContextoProduto =
+        editandoTitular &&
+        String((clienteSelecionado._vida || clienteSelecionado.cliente)?.produto_id || "") ===
+          String(vidaTitular?.produto_id || "")
+      const acomodacaoDetectada = obterAcomodacaoBeneficiario(
+        vidaTitular,
+        mesmoContextoProduto ? produtoCliente?.nome : null
+      )
       const acomodacaoBase = (acomodacaoForm || (acomodacaoDetectada === "Apartamento" ? "Apartamento" : "Enfermaria")) as "Apartamento" | "Enfermaria"
       const qAdmin = `&administradora_id=${encodeURIComponent(adm.id)}`
 
@@ -1161,10 +1210,10 @@ export default function BeneficiarioDetalhesPage() {
       }
       const acomodacao = titularFaixa.acomodacaoAplicada
 
-      const atualizacoes: Array<{ id: string; valor: number }> = [{ id: String(clienteSelecionado.id), valor: valorTitular }]
+      const atualizacoes: Array<{ id: string; valor: number }> = [{ id: titularRowId, valor: valorTitular }]
       const avisosDeps: string[] = []
 
-      for (const dep of dependentes) {
+      for (const dep of listaDependentes) {
         const idadeDep = resolverIdadeParaFaixa(dep)
         if (idadeDep == null || !Number.isFinite(idadeDep)) {
           avisosDeps.push(String(dep?.nome || "Dependente sem idade"))
@@ -1199,7 +1248,7 @@ export default function BeneficiarioDetalhesPage() {
         if (!resPut.ok) throw new Error(jsonPut?.error || `Erro ao atualizar registro ${id}`)
       }
 
-      const clienteAdmId = await resolverClienteAdministradoraIdVida(vida, adm.id)
+      const clienteAdmId = await resolverClienteAdministradoraIdVida(vidaTitular, adm.id)
       if (clienteAdmId) {
         const resCliente = await fetch(`/api/administradora/clientes/${encodeURIComponent(clienteAdmId)}`, {
           method: "PATCH",
@@ -1215,30 +1264,10 @@ export default function BeneficiarioDetalhesPage() {
         }
       }
 
-      const mapValor = new Map(atualizacoes.map((x) => [x.id, x.valor]))
-
-      setFormContrato((p) => ({ ...p, valor_mensal: valorTitular.toFixed(2), acomodacao }))
-      setContrato((prev: any) => ({ ...(prev || {}), valor_mensal: valorTitular }))
-
-      setClienteSelecionado((prev: any) => {
-        if (!prev || prev.cliente_tipo !== "vida_importada") return prev
-        const vAtual = prev._vida || prev.cliente || {}
-        const vidaNova = { ...vAtual, valor_mensal: valorTitular, acomodacao }
-        return { ...prev, _vida: vidaNova, cliente: { ...(prev.cliente || {}), ...vidaNova } }
-      })
-
-      setDependentes((deps) =>
-        deps.map((row: { id?: string; valor_mensal?: number; acomodacao?: string; nome?: string }) => {
-          const nv = mapValor.get(String(row.id))
-          if (nv == null) return row
-          return { ...row, valor_mensal: nv, acomodacao }
-        })
-      )
-
-      await carregarValorBaseComoNaGeracaoFatura(clienteSelecionado, adm.id)
+      await carregarContexto()
 
       const msgBase =
-        dependentes.length > 0
+        listaDependentes.length > 0
           ? `Titular e dependentes recalculados com acomodação ${acomodacao} (mesma do titular).`
           : `Valor do titular recalculado (${acomodacao}).`
       if (avisosDeps.length > 0) {
