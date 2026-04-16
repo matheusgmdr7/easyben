@@ -1096,24 +1096,30 @@ export default function BeneficiarioDetalhesPage() {
         ? formContrato.acomodacao
         : null
       const acomodacaoDetectada = obterAcomodacaoBeneficiario(vida, produtoCliente?.nome)
-      const acomodacao = (acomodacaoForm || (acomodacaoDetectada === "Apartamento" ? "Apartamento" : "Enfermaria")) as "Apartamento" | "Enfermaria"
+      const acomodacaoBase = (acomodacaoForm || (acomodacaoDetectada === "Apartamento" ? "Apartamento" : "Enfermaria")) as "Apartamento" | "Enfermaria"
       const qAdmin = `&administradora_id=${encodeURIComponent(adm.id)}`
 
-      async function buscarValorFaixa(idade: number): Promise<number | null> {
+      async function buscarValorFaixa(idade: number, acomodacaoDesejada: "Apartamento" | "Enfermaria"): Promise<{ valor: number | null; acomodacaoAplicada: "Apartamento" | "Enfermaria" }> {
         const res = await fetch(
-          `/api/administradora/produto/${encodeURIComponent(produtoId)}/valor?idade=${encodeURIComponent(String(idade))}&acomodacao=${encodeURIComponent(acomodacao)}${qAdmin}`
+          `/api/administradora/produto/${encodeURIComponent(produtoId)}/valor?idade=${encodeURIComponent(String(idade))}&acomodacao=${encodeURIComponent(acomodacaoDesejada)}${qAdmin}`
         )
         const data = await res.json().catch(() => ({}))
         if (!res.ok) throw new Error(data?.error || "Erro ao calcular valor por faixa")
         const valor = data?.valor != null ? Number(data.valor) : NaN
-        return normalizarEscalaValorMonetario(valor)
+        const acomodacaoAplicada = data?.acomodacao_aplicada === "Apartamento" ? "Apartamento" : "Enfermaria"
+        return {
+          valor: normalizarEscalaValorMonetario(valor),
+          acomodacaoAplicada,
+        }
       }
 
-      const valorTitular = await buscarValorFaixa(idadeTitular)
+      const titularFaixa = await buscarValorFaixa(idadeTitular, acomodacaoBase)
+      const valorTitular = titularFaixa.valor
       if (valorTitular == null || valorTitular <= 0) {
         toast.error("Nenhuma faixa de valor encontrada para a idade do titular.")
         return
       }
+      const acomodacao = titularFaixa.acomodacaoAplicada
 
       const atualizacoes: Array<{ id: string; valor: number }> = [{ id: String(clienteSelecionado.id), valor: valorTitular }]
       const avisosDeps: string[] = []
@@ -1124,7 +1130,12 @@ export default function BeneficiarioDetalhesPage() {
           avisosDeps.push(String(dep?.nome || "Dependente sem idade"))
           continue
         }
-        const vd = await buscarValorFaixa(idadeDep)
+        const depFaixa = await buscarValorFaixa(idadeDep, acomodacao)
+        if (depFaixa.acomodacaoAplicada !== acomodacao) {
+          avisosDeps.push(`${String(dep?.nome || "Dependente")}: faixa só encontrada em outra acomodação`)
+          continue
+        }
+        const vd = depFaixa.valor
         if (vd == null || vd <= 0) {
           avisosDeps.push(`${String(dep?.nome || "Dependente")}: sem faixa para a idade`)
           continue
