@@ -135,34 +135,52 @@ export async function GET(
 
     if (pca) {
       const raw = (pca.faixas as unknown) ?? []
-      let faixas: unknown[] = []
-      if (Array.isArray(raw)) {
-        faixas = raw
-      } else if (raw && typeof raw === "object" && "Enfermaria" in raw && "Apartamento" in raw) {
-        const obj = raw as Record<string, unknown[]>
-        faixas = Array.isArray(obj[acomodacao]) ? obj[acomodacao] : []
-      } else if (raw && typeof raw === "object") {
-        const obj = raw as Record<string, unknown>
-        const chaves = Object.keys(obj)
-        const chaveAcomodacao = chaves.find((k) => k.toLowerCase() === acomodacao.toLowerCase())
-        const chaveFallback = chaves.find((k) => k.toLowerCase().includes("enferm")) || chaves.find((k) => k.toLowerCase().includes("apart"))
-        const arrAcomodacao = chaveAcomodacao ? obj[chaveAcomodacao] : chaveFallback ? obj[chaveFallback] : null
-        if (Array.isArray(arrAcomodacao)) faixas = arrAcomodacao
+      const acomodacaoAlternativa = acomodacao === "Apartamento" ? "Enfermaria" : "Apartamento"
+
+      function extrairFaixasDoRaw(acomodacaoDesejada: "Enfermaria" | "Apartamento"): unknown[] {
+        if (Array.isArray(raw)) return raw
+        let faixas: unknown[] = []
+        if (raw && typeof raw === "object" && "Enfermaria" in raw && "Apartamento" in raw) {
+          const obj = raw as Record<string, unknown[]>
+          faixas = Array.isArray(obj[acomodacaoDesejada]) ? obj[acomodacaoDesejada] : []
+        } else if (raw && typeof raw === "object") {
+          const obj = raw as Record<string, unknown>
+          const chaves = Object.keys(obj)
+          const chaveAcomodacao = chaves.find((k) => k.toLowerCase() === acomodacaoDesejada.toLowerCase())
+          const chaveFallback = chaves.find((k) => k.toLowerCase().includes("enferm")) || chaves.find((k) => k.toLowerCase().includes("apart"))
+          const arrAcomodacao = chaveAcomodacao ? obj[chaveAcomodacao] : chaveFallback ? obj[chaveFallback] : null
+          if (Array.isArray(arrAcomodacao)) faixas = arrAcomodacao
+        }
+        if (faixas.length === 0 && raw && typeof raw === "object" && !Array.isArray(raw)) {
+          const obj = raw as Record<string, unknown>
+          const todosArrays = Object.values(obj).filter((v) => Array.isArray(v)) as unknown[][]
+          faixas = todosArrays.flat()
+        }
+        return faixas
       }
-      if (faixas.length === 0 && raw && typeof raw === "object" && !Array.isArray(raw)) {
-        const obj = raw as Record<string, unknown>
-        const todosArrays = Object.values(obj).filter((v) => Array.isArray(v)) as unknown[][]
-        faixas = todosArrays.flat()
+
+      const faixasPrimarias = extrairFaixasDoRaw(acomodacao)
+      const valorPrimario = calcularValorPorFaixas(faixasPrimarias, idade)
+      if (valorPrimario > 0) return NextResponse.json({ valor: valorPrimario, acomodacao_aplicada: acomodacao })
+
+      const faixasAlternativas = extrairFaixasDoRaw(acomodacaoAlternativa)
+      const valorAlternativo = calcularValorPorFaixas(faixasAlternativas, idade)
+      if (valorAlternativo > 0) {
+        return NextResponse.json({
+          valor: valorAlternativo,
+          acomodacao_aplicada: acomodacaoAlternativa,
+          acomodacao_solicitada: acomodacao,
+        })
       }
-      const valor = calcularValorPorFaixas(faixas, idade)
-      if (valor > 0) return NextResponse.json({ valor })
+
       return NextResponse.json({
         valor: null,
         error: "Nenhuma faixa compatível para a idade informada",
         diagnostico: {
           idade,
-          acomodacao,
-          total_faixas_lidas: Array.isArray(faixas) ? faixas.length : 0,
+          acomodacao_solicitada: acomodacao,
+          total_faixas_primarias: Array.isArray(faixasPrimarias) ? faixasPrimarias.length : 0,
+          total_faixas_alternativas: Array.isArray(faixasAlternativas) ? faixasAlternativas.length : 0,
         },
       })
     }
