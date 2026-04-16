@@ -170,6 +170,9 @@ export async function GET(
       dia_vencimento?: string
     }> = []
 
+    /** Evita duplicar o mesmo titular: a linha via `vidas_importadas` já soma dependentes; a via vínculo CA só traz valor do cadastro/view. */
+    const clienteAdmIdsJaListadosPorVida = new Set<string>()
+
     const vidas = (await carregarVidasGrupo(grupoId, administradoraId, tenantId)).filter((v) => v?.ativo !== false)
     const tipo = (v: RegistroGenerico) => String((v.tipo ?? "titular") ?? "").toLowerCase()
     const cpfNorm = (v: RegistroGenerico) => (v.cpf ? String(v.cpf).replace(/\D/g, "") : "")
@@ -245,6 +248,9 @@ export async function GET(
       }
       const caId = vidaAny.cliente_administradora_id
       const clienteAdministradoraId = caId != null && caId !== "" ? String(caId) : `vida:${vida.id}`
+      if (!String(clienteAdministradoraId).startsWith("vida:")) {
+        clienteAdmIdsJaListadosPorVida.add(String(clienteAdministradoraId))
+      }
 
       // Plano: usar coluna nativa "plano" (cadastrado na importação) ou Dados adicionais > Plano; fallback para nome do produto do contrato
       let planoOuProdutoNome: string | undefined
@@ -357,6 +363,17 @@ export async function GET(
       if (propostaId && !clientesAdmPorPropostaMap.has(propostaId)) clientesAdmPorPropostaMap.set(propostaId, item)
     }
 
+    for (const row of resultado) {
+      if (row.dia_vencimento) continue
+      const key = String(row.cliente_administradora_id || "")
+      if (!key || key.startsWith("vida:")) continue
+      const ca = clientesAdmMap.get(key)
+      const diaRaw = ca?.dia_vencimento
+      if (diaRaw == null || String(diaRaw).trim() === "") continue
+      const diaNorm = String(diaRaw).replace(/\D/g, "").padStart(2, "0").slice(-2)
+      if (diaNorm === "01" || diaNorm === "10") row.dia_vencimento = diaNorm
+    }
+
     const idsParaView = Array.from(clientesAdmMap.keys())
     const viewMap = new Map<string, RegistroGenerico>()
     if (idsParaView.length > 0) {
@@ -397,6 +414,8 @@ export async function GET(
       if (v.cliente_tipo === "cliente_administradora") {
         const ca = clientesAdmMap.get(String(v.cliente_id || ""))
         if (!ca) continue
+        const caIdStr = String(ca.id || "")
+        if (caIdStr && clienteAdmIdsJaListadosPorVida.has(caIdStr)) continue
         const vw = viewMap.get(String(ca.id || ""))
         const r = resolveClienteNomeECampos(ca, vw, propostaById, nomePorVidaClienteAdmId)
         resultado.push({
@@ -413,6 +432,8 @@ export async function GET(
       if (v.cliente_tipo === "proposta") {
         const ca = clientesAdmPorPropostaMap.get(String(v.cliente_id || ""))
         if (!ca) continue
+        const caIdStr = String(ca.id || "")
+        if (caIdStr && clienteAdmIdsJaListadosPorVida.has(caIdStr)) continue
         const vw = viewMap.get(String(ca.id || ""))
         const r = resolveClienteNomeECampos(ca, vw, propostaById, nomePorVidaClienteAdmId)
         resultado.push({
