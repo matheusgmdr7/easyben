@@ -56,6 +56,13 @@ function parseFaixaEtaria(
     if (!isNaN(min) && !isNaN(max)) return { tipo: "range", min, max }
   }
 
+  const rangeComBarra = normalizada.match(/(\d+)\s*\/\s*(\d+)/)
+  if (rangeComBarra) {
+    const min = parseInt(rangeComBarra[1], 10)
+    const max = parseInt(rangeComBarra[2], 10)
+    if (!isNaN(min) && !isNaN(max)) return { tipo: "range", min, max }
+  }
+
   if ((normalizada.includes(" a ") || normalizada.includes(" ate ") || normalizada.includes("até ")) && nums.length >= 2) {
     return { tipo: "range", min: nums[0], max: nums[1] }
   }
@@ -63,6 +70,8 @@ function parseFaixaEtaria(
   if (
     normalizada.includes("+") ||
     normalizada.includes("ou mais") ||
+    normalizada.includes("e mais") ||
+    normalizada.includes("em diante") ||
     normalizada.includes("acima de") ||
     normalizada.includes("maior que") ||
     normalizada.includes(">=")

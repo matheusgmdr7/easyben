@@ -286,8 +286,16 @@ export default function BeneficiarioDetalhesPage() {
   }
 
   function calcularIdadeLocal(dataNascimento?: string | null): number | null {
-    const iso = String(dataNascimento || "").slice(0, 10)
-    if (!iso) return null
+    const bruto = String(dataNascimento || "").trim()
+    if (!bruto) return null
+    let iso = bruto.slice(0, 10)
+    const mBr = bruto.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/)
+    if (mBr) {
+      const d = mBr[1].padStart(2, "0")
+      const mo = mBr[2].padStart(2, "0")
+      const y = mBr[3]
+      iso = `${y}-${mo}-${d}`
+    }
     const [ano, mes, dia] = iso.split("-").map((v) => Number(v))
     if (!ano || !mes || !dia) return null
     const hoje = new Date()
@@ -295,6 +303,19 @@ export default function BeneficiarioDetalhesPage() {
     const m = hoje.getMonth() + 1
     if (m < mes || (m === mes && hoje.getDate() < dia)) idade--
     return idade >= 0 && idade <= 120 ? idade : null
+  }
+
+  /** Idade usada nas faixas: prioriza nascimento (mais confiável que o campo idade, que pode estar desatualizado). */
+  function resolverIdadeParaFaixa(vida: { data_nascimento?: string | null; idade?: unknown } | null | undefined): number | null {
+    if (!vida) return null
+    const porNascimento = calcularIdadeLocal(vida.data_nascimento)
+    if (porNascimento != null) return porNascimento
+    const raw = vida.idade
+    if (raw != null && String(raw).trim() !== "") {
+      const n = parseInt(String(raw), 10)
+      if (!Number.isNaN(n) && n >= 0 && n <= 120) return n
+    }
+    return null
   }
 
   function getFormFromDados(dados: any) {
@@ -1080,7 +1101,7 @@ export default function BeneficiarioDetalhesPage() {
       toast.error("Beneficiário sem produto vinculado para cálculo por faixa etária.")
       return
     }
-    const idadeTitular = Number(vida?.idade) || calcularIdadeLocal(vida?.data_nascimento)
+    const idadeTitular = resolverIdadeParaFaixa(vida)
     if (idadeTitular == null || !Number.isFinite(idadeTitular)) {
       toast.error("Não foi possível identificar a idade do titular.")
       return
@@ -1099,24 +1120,43 @@ export default function BeneficiarioDetalhesPage() {
       const acomodacaoBase = (acomodacaoForm || (acomodacaoDetectada === "Apartamento" ? "Apartamento" : "Enfermaria")) as "Apartamento" | "Enfermaria"
       const qAdmin = `&administradora_id=${encodeURIComponent(adm.id)}`
 
-      async function buscarValorFaixa(idade: number, acomodacaoDesejada: "Apartamento" | "Enfermaria"): Promise<{ valor: number | null; acomodacaoAplicada: "Apartamento" | "Enfermaria" }> {
+      async function buscarValorFaixa(
+        idade: number,
+        acomodacaoDesejada: "Apartamento" | "Enfermaria"
+      ): Promise<{ valor: number | null; acomodacaoAplicada: "Apartamento" | "Enfermaria"; erroApi?: string }> {
         const res = await fetch(
           `/api/administradora/produto/${encodeURIComponent(produtoId)}/valor?idade=${encodeURIComponent(String(idade))}&acomodacao=${encodeURIComponent(acomodacaoDesejada)}${qAdmin}`
         )
         const data = await res.json().catch(() => ({}))
-        if (!res.ok) throw new Error(data?.error || "Erro ao calcular valor por faixa")
+        if (!res.ok) {
+          return {
+            valor: null,
+            acomodacaoAplicada: acomodacaoDesejada,
+            erroApi: String(data?.error || `Erro HTTP ${res.status}`),
+          }
+        }
         const valor = data?.valor != null ? Number(data.valor) : NaN
         const acomodacaoAplicada = data?.acomodacao_aplicada === "Apartamento" ? "Apartamento" : "Enfermaria"
-        return {
-          valor: normalizarEscalaValorMonetario(valor),
-          acomodacaoAplicada,
+        const valorNorm = normalizarEscalaValorMonetario(valor)
+        if (valorNorm == null || valorNorm <= 0) {
+          const partes = [data?.error, data?.diagnostico ? JSON.stringify(data.diagnostico) : null].filter(Boolean)
+          return {
+            valor: null,
+            acomodacaoAplicada,
+            erroApi: partes.length ? partes.join(" · ") : "Nenhuma faixa compatível para esta idade e acomodação.",
+          }
         }
+        return { valor: valorNorm, acomodacaoAplicada }
       }
 
       const titularFaixa = await buscarValorFaixa(idadeTitular, acomodacaoBase)
       const valorTitular = titularFaixa.valor
       if (valorTitular == null || valorTitular <= 0) {
-        toast.error("Nenhuma faixa de valor encontrada para a idade do titular.")
+        toast.error(
+          titularFaixa.erroApi
+            ? `Não foi possível obter valor por faixa para o titular (${idadeTitular} anos). ${titularFaixa.erroApi}`
+            : "Nenhuma faixa de valor encontrada para a idade do titular."
+        )
         return
       }
       const acomodacao = titularFaixa.acomodacaoAplicada
@@ -1125,7 +1165,7 @@ export default function BeneficiarioDetalhesPage() {
       const avisosDeps: string[] = []
 
       for (const dep of dependentes) {
-        const idadeDep = Number(dep?.idade) || calcularIdadeLocal(dep?.data_nascimento)
+        const idadeDep = resolverIdadeParaFaixa(dep)
         if (idadeDep == null || !Number.isFinite(idadeDep)) {
           avisosDeps.push(String(dep?.nome || "Dependente sem idade"))
           continue
@@ -1137,7 +1177,9 @@ export default function BeneficiarioDetalhesPage() {
         }
         const vd = depFaixa.valor
         if (vd == null || vd <= 0) {
-          avisosDeps.push(`${String(dep?.nome || "Dependente")}: sem faixa para a idade`)
+          avisosDeps.push(
+            `${String(dep?.nome || "Dependente")}: sem faixa para a idade${depFaixa.erroApi ? ` (${depFaixa.erroApi})` : ""}`
+          )
           continue
         }
         atualizacoes.push({ id: String(dep.id), valor: vd })
