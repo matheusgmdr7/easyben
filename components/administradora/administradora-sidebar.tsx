@@ -23,6 +23,7 @@ import {
   BanknotesIcon,
   BriefcaseIcon,
   ChartBarSquareIcon,
+  TableCellsIcon,
 } from "@heroicons/react/24/outline"
 import { supabase } from "@/lib/supabase-auth"
 
@@ -671,6 +672,21 @@ export default function AdministradoraSidebar() {
                       >
                         <ArrowUpTrayIcon className="h-4 w-4" />
                         <span>Importação de matrículas</span>
+                      </Link>
+                    </li>
+                    <li>
+                      <Link
+                        href="/administradora/beneficiarios/comparacao-planilhas"
+                        className={cn(
+                          "flex items-center gap-2 px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm rounded-md transition-all duration-300",
+                          isActive("/administradora/beneficiarios/comparacao-planilhas")
+                            ? "bg-[#1E293B]/80 text-white"
+                            : "text-gray-300 hover:bg-[#1E293B]/50 hover:text-white"
+                        )}
+                        onClick={closeSidebar}
+                      >
+                        <TableCellsIcon className="h-4 w-4" />
+                        <span>Comparação de planilhas</span>
                       </Link>
                     </li>
                   </ul>
