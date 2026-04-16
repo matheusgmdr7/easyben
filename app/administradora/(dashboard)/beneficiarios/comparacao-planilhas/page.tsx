@@ -22,13 +22,20 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
-import { FileSpreadsheet, GitCompare, Loader2, Plus, Trash2, Download } from "lucide-react"
+import { FileSpreadsheet, GitCompare, Loader2, Plus, Trash2, Download, FileText, Info } from "lucide-react"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 
 type LinhaPlanilha = Record<string, unknown>
 
 type ParChave = { colBase: string; colConsulta: string }
+
+/** Duplicata: mesma chave em mais de uma linha da planilha. */
+type DetalheDuplicata = {
+  chaveLegivel: string
+  ocorrencias: number
+  linhasPlanilha: number[]
+}
 
 type LinhaResultado = {
   linhaConsulta: number
@@ -81,6 +88,46 @@ function montarChave(
   return colunas.map((c) => normalizarCelula(row[c], opts)).join(DELIM)
 }
 
+function chaveLegivelBase(row: LinhaPlanilha, pares: ParChave[]): string {
+  return pares.map((p) => `${p.colBase}=${String(row[p.colBase] ?? "").trim()}`).join(" | ")
+}
+
+function chaveLegivelConsulta(row: LinhaPlanilha, pares: ParChave[]): string {
+  return pares.map((p) => `${p.colConsulta}=${String(row[p.colConsulta] ?? "").trim()}`).join(" | ")
+}
+
+function montarDetalhesDuplicata(
+  rows: LinhaPlanilha[],
+  colunas: string[],
+  pares: ParChave[],
+  opts: { minusculas: boolean; somenteDigitosCpf: boolean },
+  plano: "base" | "consulta"
+): DetalheDuplicata[] {
+  const linhasPorChave = new Map<string, number[]>()
+  rows.forEach((row, idx) => {
+    const k = montarChave(row, colunas, opts)
+    const linhaPlan = idx + 2
+    const arr = linhasPorChave.get(k) ?? []
+    arr.push(linhaPlan)
+    linhasPorChave.set(k, arr)
+  })
+  const out: DetalheDuplicata[] = []
+  for (const [k, linhas] of linhasPorChave) {
+    if (linhas.length <= 1) continue
+    const firstIdx = rows.findIndex((row) => montarChave(row, colunas, opts) === k)
+    const row = firstIdx >= 0 ? rows[firstIdx] : {}
+    const chaveLegivel =
+      plano === "base" ? chaveLegivelBase(row, pares) : chaveLegivelConsulta(row, pares)
+    out.push({
+      chaveLegivel,
+      ocorrencias: linhas.length,
+      linhasPlanilha: [...linhas].sort((a, b) => a - b),
+    })
+  }
+  out.sort((a, b) => a.chaveLegivel.localeCompare(b.chaveLegivel, "pt-BR", { sensitivity: "base" }))
+  return out
+}
+
 function executarComparacao(
   rowsBase: LinhaPlanilha[],
   rowsConsulta: LinhaPlanilha[],
@@ -90,6 +137,8 @@ function executarComparacao(
   resultados: LinhaResultado[]
   chavesDuplicadasNaBase: number
   chavesDuplicadasNaConsulta: number
+  detalheDupBase: DetalheDuplicata[]
+  detalheDupConsulta: DetalheDuplicata[]
 } {
   const colsB = pares.map((p) => p.colBase)
   const colsC = pares.map((p) => p.colConsulta)
@@ -115,6 +164,9 @@ function executarComparacao(
     if (n > 1) chavesDupConsulta++
   }
 
+  const detalheDupBase = montarDetalhesDuplicata(rowsBase, colsB, pares, opts, "base")
+  const detalheDupConsulta = montarDetalhesDuplicata(rowsConsulta, colsC, pares, opts, "consulta")
+
   const resultados: LinhaResultado[] = []
   rowsConsulta.forEach((row, idx) => {
     const k = montarChave(row, colsC, opts)
@@ -139,6 +191,8 @@ function executarComparacao(
     resultados,
     chavesDuplicadasNaBase: chavesDupBase,
     chavesDuplicadasNaConsulta: chavesDupConsulta,
+    detalheDupBase,
+    detalheDupConsulta,
   }
 }
 
@@ -164,6 +218,8 @@ export default function ComparacaoPlanilhasPage() {
   const [normalizarCpf, setNormalizarCpf] = useState(true)
 
   const [resultados, setResultados] = useState<LinhaResultado[] | null>(null)
+  const [detalheDupBase, setDetalheDupBase] = useState<DetalheDuplicata[]>([])
+  const [detalheDupConsulta, setDetalheDupConsulta] = useState<DetalheDuplicata[]>([])
   const [stats, setStats] = useState<{
     dupBase: number
     dupConsulta: number
@@ -224,6 +280,8 @@ export default function ComparacaoPlanilhasPage() {
       }
       setResultados(null)
       setStats(null)
+      setDetalheDupBase([])
+      setDetalheDupConsulta([])
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Erro ao ler planilha base")
       baseWbRef.current = null
@@ -268,6 +326,8 @@ export default function ComparacaoPlanilhasPage() {
       }
       setResultados(null)
       setStats(null)
+      setDetalheDupBase([])
+      setDetalheDupConsulta([])
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Erro ao ler planilha de consulta")
       consultaWbRef.current = null
@@ -302,13 +362,16 @@ export default function ComparacaoPlanilhasPage() {
       return
     }
     const opts = { minusculas: ignorarMaiusculas, somenteDigitosCpf: normalizarCpf }
-    const { resultados: res, chavesDuplicadasNaBase, chavesDuplicadasNaConsulta } = executarComparacao(
-      rowsBase,
-      rowsConsulta,
-      pares,
-      opts
-    )
+    const {
+      resultados: res,
+      chavesDuplicadasNaBase,
+      chavesDuplicadasNaConsulta,
+      detalheDupBase: dBase,
+      detalheDupConsulta: dCons,
+    } = executarComparacao(rowsBase, rowsConsulta, pares, opts)
     setResultados(res)
+    setDetalheDupBase(dBase)
+    setDetalheDupConsulta(dCons)
     const encontrados = res.filter((r) => r.situacao === "encontrado").length
     const naoEncontrados = res.filter((r) => r.situacao === "nao_encontrado").length
     const multiplosBase = res.filter((r) => r.situacao === "multiplo_na_base").length
@@ -342,90 +405,274 @@ export default function ComparacaoPlanilhasPage() {
   const paginaAjustada = Math.min(pagina, totalPaginas)
   const slice = resultadosFiltrados.slice((paginaAjustada - 1) * ITENS_PAGINA, paginaAjustada * ITENS_PAGINA)
 
-  function exportarResultado() {
+  function textoSituacaoRelatorio(s: LinhaResultado["situacao"]): string {
+    if (s === "encontrado") return "Encontrado na base"
+    if (s === "nao_encontrado") return "Não encontrado na base"
+    return "Múltiplo na base"
+  }
+
+  function exportarRelatorioExcel() {
     if (!resultados || !stats) {
       toast.info("Execute uma comparação antes de exportar.")
       return
     }
+    const pares = paresChave.filter((p) => p.colBase && p.colConsulta)
     const rows = resultados.map((r) => ({
       linha_planilha_consulta: r.linhaConsulta,
       chave: r.chaveExibicao,
       ocorrencias_na_base: r.ocorrenciasNaBase,
-      situacao:
-        r.situacao === "encontrado"
-          ? "Encontrado na base"
-          : r.situacao === "nao_encontrado"
-            ? "Não encontrado na base"
-            : "Múltiplas ocorrências na base",
+      situacao: textoSituacaoRelatorio(r.situacao),
       ocorrencias_na_consulta: r.ocorrenciasNaConsulta,
       duplicata_na_consulta: r.ocorrenciasNaConsulta > 1 ? "Sim" : "Não",
     }))
-    const ws = XLSX.utils.json_to_sheet(rows)
     const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, "Resultado")
-    const meta = XLSX.utils.json_to_sheet([
-      { campo: "Arquivo base", valor: baseNomeArquivo },
-      { campo: "Aba base", valor: abaBase },
-      { campo: "Arquivo consulta", valor: consultaNomeArquivo },
-      { campo: "Aba consulta", valor: abaConsulta },
-      { campo: "Linhas base", valor: rowsBase.length },
-      { campo: "Linhas consulta", valor: rowsConsulta.length },
-      { campo: "Chaves com duplicata na base", valor: stats.dupBase },
-      { campo: "Chaves com duplicata na consulta", valor: stats.dupConsulta },
-      { campo: "Encontrados (linhas consulta)", valor: stats.encontrados },
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), "Resultado_linha_a_linha")
+
+    const metaRows: { campo: string; valor: string | number }[] = [
+      { campo: "Emitido em", valor: new Date().toLocaleString("pt-BR") },
+      { campo: "Arquivo base", valor: baseNomeArquivo || "—" },
+      { campo: "Aba base", valor: abaBase || "—" },
+      { campo: "Linhas de dados (base)", valor: rowsBase.length },
+      { campo: "Arquivo consulta", valor: consultaNomeArquivo || "—" },
+      { campo: "Aba consulta", valor: abaConsulta || "—" },
+      { campo: "Linhas de dados (consulta)", valor: rowsConsulta.length },
+      { campo: "Ignorar maiúsculas/minúsculas", valor: ignorarMaiusculas ? "Sim" : "Não" },
+      { campo: "Normalizar como CPF", valor: normalizarCpf ? "Sim" : "Não" },
+      { campo: "---", valor: "---" },
+      { campo: "Pares de colunas (base → consulta)", valor: pares.map((p) => `${p.colBase} → ${p.colConsulta}`).join(" | ") },
+      { campo: "---", valor: "---" },
+      { campo: "Encontrados (linhas da consulta)", valor: stats.encontrados },
       { campo: "Não encontrados", valor: stats.naoEncontrados },
-      { campo: "Múltiplo na base", valor: stats.multiplosBase },
-    ])
-    XLSX.utils.book_append_sheet(wb, meta, "Resumo")
+      { campo: "Linhas com múltiplo na base", valor: stats.multiplosBase },
+      { campo: "Chaves distintas duplicadas na base", valor: stats.dupBase },
+      { campo: "Chaves distintas duplicadas na consulta", valor: stats.dupConsulta },
+    ]
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(metaRows), "Resumo_e_fontes")
+
+    const dupB = detalheDupBase.map((d) => ({
+      chave: d.chaveLegivel,
+      quantidade_de_linhas: d.ocorrencias,
+      linhas_no_arquivo: d.linhasPlanilha.join(", "),
+    }))
+    XLSX.utils.book_append_sheet(
+      wb,
+      dupB.length ? XLSX.utils.json_to_sheet(dupB) : XLSX.utils.json_to_sheet([{ mensagem: "Nenhuma chave duplicada na base" }]),
+      "Duplicatas_na_base"
+    )
+
+    const dupC = detalheDupConsulta.map((d) => ({
+      chave: d.chaveLegivel,
+      quantidade_de_linhas: d.ocorrencias,
+      linhas_no_arquivo: d.linhasPlanilha.join(", "),
+    }))
+    XLSX.utils.book_append_sheet(
+      wb,
+      dupC.length ? XLSX.utils.json_to_sheet(dupC) : XLSX.utils.json_to_sheet([{ mensagem: "Nenhuma chave duplicada na consulta" }]),
+      "Duplicatas_na_consulta"
+    )
+
     XLSX.writeFile(wb, `comparacao-planilhas-${new Date().toISOString().slice(0, 10)}.xlsx`)
-    toast.success("Arquivo exportado.")
+    toast.success("Relatório Excel exportado.")
+  }
+
+  async function exportarRelatorioPdf() {
+    if (!resultados || !stats) {
+      toast.info("Execute uma comparação antes de exportar.")
+      return
+    }
+    try {
+      const jsPDF = (await import("jspdf")).default
+      const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" })
+      const margem = 8
+      const W = 297 - margem * 2
+      let y = 12
+      const rowH = 5.5
+      const pares = paresChave.filter((p) => p.colBase && p.colConsulta)
+
+      doc.setFontSize(14)
+      doc.setTextColor(15, 23, 42)
+      doc.text("Relatório — Comparação de planilhas", margem, y)
+      y += 7
+      doc.setFontSize(8)
+      doc.setTextColor(100, 116, 139)
+      doc.text(`Emitido em: ${new Date().toLocaleString("pt-BR")}`, margem, y)
+      y += 5
+
+      doc.setTextColor(30, 41, 59)
+      doc.setFontSize(9)
+      doc.text("Fontes utilizadas", margem, y)
+      y += 4
+      doc.setFontSize(8)
+      const fontes = [
+        `Base: ${baseNomeArquivo || "—"} | Aba: ${abaBase || "—"} | Linhas: ${rowsBase.length}`,
+        `Consulta: ${consultaNomeArquivo || "—"} | Aba: ${abaConsulta || "—"} | Linhas: ${rowsConsulta.length}`,
+        `Chave: ${pares.map((p) => `${p.colBase}→${p.colConsulta}`).join(" · ")}`,
+        `Opções: ${ignorarMaiusculas ? "ignorar maiúsculas" : "diferenciar maiúsculas"}; ${normalizarCpf ? "CPF normalizado" : "sem normalização de CPF"}`,
+      ]
+      fontes.forEach((ln) => {
+        doc.text(ln.replace(/\s+/g, " ").slice(0, 120), margem, y)
+        y += 3.5
+      })
+      y += 2
+
+      doc.setFontSize(9)
+      doc.text("Resumo", margem, y)
+      y += 4
+      doc.setFontSize(8)
+      ;[
+        `Encontrados: ${stats.encontrados} | Não encontrados: ${stats.naoEncontrados} | Múltiplo na base (linhas): ${stats.multiplosBase}`,
+        `Chaves duplicadas na base: ${stats.dupBase} | Chaves duplicadas na consulta: ${stats.dupConsulta}`,
+      ].forEach((ln) => {
+        doc.text(ln, margem, y)
+        y += 3.5
+      })
+      y += 4
+
+      function drawTableHeader(cols: string[], colW: number[]) {
+        doc.setFillColor(30, 41, 59)
+        doc.rect(margem, y, W, rowH, "F")
+        doc.setTextColor(255, 255, 255)
+        doc.setFontSize(7)
+        let x = margem
+        cols.forEach((h, i) => {
+          doc.text(h, x + 1.2, y + 3.8)
+          x += colW[i]
+        })
+        y += rowH
+        doc.setTextColor(30, 41, 59)
+      }
+
+      function tabelaDuplicatas(titulo: string, itens: DetalheDuplicata[]) {
+        if (y > 175) {
+          doc.addPage()
+          y = 10
+        }
+        doc.setFontSize(10)
+        doc.setTextColor(15, 23, 42)
+        doc.text(titulo, margem, y)
+        y += 5
+        if (itens.length === 0) {
+          doc.setFontSize(8)
+          doc.setTextColor(100, 116, 139)
+          doc.text("Nenhuma duplicata nesta planilha.", margem, y)
+          y += 8
+          return
+        }
+        const colW = [115, 22, W - 115 - 22]
+        drawTableHeader(["Chave", "Qtd linhas", "Nº linhas no arquivo"], colW)
+        itens.forEach((d, idx) => {
+          if (y > 188) {
+            doc.addPage()
+            y = 10
+            drawTableHeader(["Chave", "Qtd linhas", "Nº linhas no arquivo"], colW)
+          }
+          if (idx % 2 === 0) {
+            doc.setFillColor(248, 250, 252)
+            doc.rect(margem, y, W, rowH, "F")
+          }
+          doc.setFontSize(7)
+          let x = margem
+          const linhasTxt = d.linhasPlanilha.join(", ")
+          doc.text(String(d.chaveLegivel).slice(0, 78), x + 1.2, y + 3.8)
+          x += colW[0]
+          doc.text(String(d.ocorrencias), x + 1.2, y + 3.8)
+          x += colW[1]
+          doc.text(linhasTxt.slice(0, 55) + (linhasTxt.length > 55 ? "…" : ""), x + 1.2, y + 3.8)
+          y += rowH
+        })
+        y += 4
+      }
+
+      tabelaDuplicatas("Detalhamento — chaves duplicadas na BASE", detalheDupBase)
+      tabelaDuplicatas("Detalhamento — chaves duplicadas na CONSULTA", detalheDupConsulta)
+
+      if (y > 150) {
+        doc.addPage()
+        y = 10
+      }
+      doc.setFontSize(10)
+      doc.text("Resultado linha a linha (planilha de consulta)", margem, y)
+      y += 5
+      const colW2 = [18, 135, 26, 50, 52]
+      drawTableHeader(["Linha", "Chave", "Na base", "Situação", "Dup cons."], colW2)
+      resultados.forEach((r, idx) => {
+        if (y > 188) {
+          doc.addPage()
+          y = 10
+          drawTableHeader(["Linha", "Chave", "Na base", "Situação", "Dup cons."], colW2)
+        }
+        if (idx % 2 === 0) {
+          doc.setFillColor(248, 250, 252)
+          doc.rect(margem, y, W, rowH, "F")
+        }
+        doc.setFontSize(6.5)
+        let x = margem
+        doc.text(String(r.linhaConsulta), x + 1.2, y + 3.8)
+        x += colW2[0]
+        doc.text(String(r.chaveExibicao).replace(/\s+/g, " ").slice(0, 62), x + 1.2, y + 3.8)
+        x += colW2[1]
+        doc.text(String(r.ocorrenciasNaBase), x + 1.2, y + 3.8)
+        x += colW2[2]
+        doc.text(textoSituacaoRelatorio(r.situacao).slice(0, 22), x + 1.2, y + 3.8)
+        x += colW2[3]
+        doc.text(r.ocorrenciasNaConsulta > 1 ? `${r.ocorrenciasNaConsulta}×` : "—", x + 1.2, y + 3.8)
+        y += rowH
+      })
+
+      doc.save(`comparacao-planilhas-${new Date().toISOString().slice(0, 10)}.pdf`)
+      toast.success("Relatório PDF exportado.")
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erro ao gerar PDF")
+    }
   }
 
   function badgeSituacao(s: LinhaResultado["situacao"]) {
     if (s === "encontrado")
       return (
-        <Badge className="bg-emerald-100 text-emerald-900 border-emerald-200 hover:bg-emerald-100">
+        <span className="inline-flex items-center px-2 py-0.5 text-xs font-semibold rounded-sm border bg-emerald-100 text-emerald-900 border-emerald-200">
           Encontrado
-        </Badge>
+        </span>
       )
     if (s === "nao_encontrado")
       return (
-        <Badge className="bg-amber-100 text-amber-900 border-amber-200 hover:bg-amber-100">
+        <span className="inline-flex items-center px-2 py-0.5 text-xs font-semibold rounded-sm border bg-amber-100 text-amber-900 border-amber-200">
           Não encontrado
-        </Badge>
+        </span>
       )
     return (
-      <Badge className="bg-violet-100 text-violet-900 border-violet-200 hover:bg-violet-100">
+      <span className="inline-flex items-center px-2 py-0.5 text-xs font-semibold rounded-sm border bg-violet-100 text-violet-900 border-violet-200">
         Múltiplo na base
-      </Badge>
+      </span>
     )
   }
 
   return (
     <div className="space-y-6 p-4 md:p-6 max-w-[1400px] mx-auto">
-      <div className="rounded-lg border border-slate-200 bg-gradient-to-r from-slate-50 to-white p-4 md:p-6 shadow-sm">
+      <div className="bg-gradient-to-r from-gray-50 to-white rounded-lg border border-gray-200 shadow-sm p-4 md:p-6">
         <div className="flex items-start gap-3">
-          <GitCompare className="h-8 w-8 text-slate-700 shrink-0 mt-0.5" />
+          <GitCompare className="h-8 w-8 text-gray-800 shrink-0 mt-0.5" />
           <div>
-            <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Comparação de planilhas</h1>
-            <p className="text-slate-600 mt-1 text-sm md:text-base max-w-3xl">
-              Use uma planilha como <strong>base</strong> e outra como <strong>consulta</strong>. Escolha uma ou mais
-              colunas para formar a chave (como um PROCV composto). O sistema indica o que existe na base, o que não
-              existe, duplicidades na base e na consulta, e linhas da consulta cuja chave aparece mais de uma vez na
-              base.
+            <h1 className="text-2xl font-bold text-gray-900 tracking-tight font-sans">Comparação de planilhas</h1>
+            <p className="text-gray-600 mt-1 text-sm md:text-base max-w-3xl font-medium">
+              Cruze duas planilhas com uma <strong>planilha base</strong> (referência) e uma <strong>planilha de consulta</strong>{" "}
+              (o que você quer validar). Monte uma <strong>chave composta</strong> com uma ou mais colunas — equivalente a
+              um PROCV com várias colunas. Os relatórios incluem duplicidades internas em cada arquivo e o cruzamento
+              linha a linha.
             </p>
           </div>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <Card>
+        <Card className="border-gray-200 shadow-sm">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-lg">
-              <FileSpreadsheet className="h-5 w-5" />
+            <CardTitle className="flex items-center gap-2 text-lg text-gray-900">
+              <FileSpreadsheet className="h-5 w-5 text-[#0F172A]" />
               Planilha base
             </CardTitle>
-            <CardDescription>Referência para a comparação (equivalente à tabela do PROCV).</CardDescription>
+            <CardDescription className="text-gray-600">
+              Tabela de referência: aqui o sistema conta quantas vezes cada chave aparece.
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             <Input
@@ -454,6 +701,8 @@ export default function ComparacaoPlanilhasPage() {
                     recarregarBase(v)
                     setResultados(null)
                     setStats(null)
+                    setDetalheDupBase([])
+                    setDetalheDupConsulta([])
                   }}
                 >
                   <SelectTrigger className="mt-1">
@@ -472,13 +721,15 @@ export default function ComparacaoPlanilhasPage() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="border-gray-200 shadow-sm">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-lg">
-              <FileSpreadsheet className="h-5 w-5" />
+            <CardTitle className="flex items-center gap-2 text-lg text-gray-900">
+              <FileSpreadsheet className="h-5 w-5 text-[#0F172A]" />
               Planilha de consulta
             </CardTitle>
-            <CardDescription>Linhas que você quer cruzar com a base (valores “procurados”).</CardDescription>
+            <CardDescription className="text-gray-600">
+              Cada linha é verificada contra a base: encontrada, ausente ou com várias correspondências na base.
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             <Input
@@ -507,6 +758,8 @@ export default function ComparacaoPlanilhasPage() {
                     recarregarConsulta(v)
                     setResultados(null)
                     setStats(null)
+                    setDetalheDupBase([])
+                    setDetalheDupConsulta([])
                   }}
                 >
                   <SelectTrigger className="mt-1">
@@ -526,12 +779,12 @@ export default function ComparacaoPlanilhasPage() {
         </Card>
       </div>
 
-      <Card>
+      <Card className="border-gray-200 shadow-sm">
         <CardHeader>
-          <CardTitle>Chave de correspondência</CardTitle>
-          <CardDescription>
-            Cada par une uma coluna da <strong>base</strong> à coluna correspondente na <strong>consulta</strong>. A
-            chave final é a concatenação dos valores normalizados (várias colunas = chave composta).
+          <CardTitle className="text-gray-900">Chave de correspondência</CardTitle>
+          <CardDescription className="text-gray-600">
+            Cada par une uma coluna da <strong>base</strong> à coluna da <strong>consulta</strong>. Os valores são
+            normalizados e concatenados (várias colunas = chave composta, estilo PROCV avançado).
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -607,7 +860,7 @@ export default function ComparacaoPlanilhasPage() {
             </Button>
           </div>
 
-          <Button type="button" className="bg-slate-900 hover:bg-slate-800" onClick={comparar}>
+          <Button type="button" className="bg-[#0F172A] hover:bg-[#1E293B] text-white" onClick={comparar}>
             <GitCompare className="h-4 w-4 mr-2" />
             Comparar planilhas
           </Button>
@@ -616,52 +869,175 @@ export default function ComparacaoPlanilhasPage() {
 
       {stats && resultados && (
         <>
+          <Alert variant="warning" className="border-gray-200 bg-white shadow-sm">
+            <Info className="h-4 w-4 text-[#0F172A]" />
+            <AlertTitle className="text-gray-900">O que cada indicador significa</AlertTitle>
+            <AlertDescription className="text-sm text-gray-700 space-y-2 mt-2">
+              <p>
+                <strong className="text-violet-800">Múltiplo na base</strong> (por linha da consulta): a chave desta
+                linha aparece <strong>mais de uma vez na planilha base</strong> — como um PROCV que retornaria várias
+                linhas. Use o detalhamento abaixo para ver os números de linha na base.
+              </p>
+              <p>
+                <strong className="text-slate-800">Chaves dup. base</strong>: quantidade de{" "}
+                <strong>chaves diferentes</strong> que estão repetidas na base (cada CPF/chave repetido conta uma vez,
+                não uma vez por linha extra).
+              </p>
+              <p>
+                <strong className="text-slate-800">Chaves dup. consulta</strong>: o mesmo critério, mas na planilha de
+                consulta — útil para achar duplicatas antes do cruzamento.
+              </p>
+              <p>
+                A coluna <strong>Dup. consulta</strong> na tabela mostra quantas vezes a mesma chave aparece na consulta
+                (ex.: <code className="text-xs bg-gray-100 px-1 rounded">2×</code>).
+              </p>
+            </AlertDescription>
+          </Alert>
+
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-            <Card>
-              <CardContent className="pt-4">
-                <p className="text-xs text-slate-500 uppercase font-medium">Encontrados</p>
-                <p className="text-2xl font-bold text-emerald-700">{stats.encontrados}</p>
+            <Card className="border-emerald-200 bg-emerald-50/40 shadow-sm">
+              <CardHeader className="pb-2 pt-4">
+                <CardTitle className="text-emerald-900 text-base font-semibold">Encontrados</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-3xl font-bold text-emerald-900">{stats.encontrados}</p>
+                <p className="text-xs text-emerald-800/80 mt-1">Chave única na base</p>
               </CardContent>
             </Card>
-            <Card>
-              <CardContent className="pt-4">
-                <p className="text-xs text-slate-500 uppercase font-medium">Não encontrados</p>
-                <p className="text-2xl font-bold text-amber-700">{stats.naoEncontrados}</p>
+            <Card className="border-amber-200 bg-amber-50/40 shadow-sm">
+              <CardHeader className="pb-2 pt-4">
+                <CardTitle className="text-amber-900 text-base font-semibold">Não encontrados</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-3xl font-bold text-amber-900">{stats.naoEncontrados}</p>
+                <p className="text-xs text-amber-800/80 mt-1">Ausente na base</p>
               </CardContent>
             </Card>
-            <Card>
-              <CardContent className="pt-4">
-                <p className="text-xs text-slate-500 uppercase font-medium">Múltiplo na base</p>
-                <p className="text-2xl font-bold text-violet-700">{stats.multiplosBase}</p>
+            <Card className="border-violet-200 bg-violet-50/40 shadow-sm">
+              <CardHeader className="pb-2 pt-4">
+                <CardTitle className="text-violet-900 text-base font-semibold">Múltiplo na base</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-3xl font-bold text-violet-900">{stats.multiplosBase}</p>
+                <p className="text-xs text-violet-800/80 mt-1">Linhas da consulta</p>
               </CardContent>
             </Card>
-            <Card>
-              <CardContent className="pt-4">
-                <p className="text-xs text-slate-500 uppercase font-medium">Chaves dup. base</p>
-                <p className="text-2xl font-bold text-slate-800">{stats.dupBase}</p>
+            <Card className="border-slate-200 bg-slate-50/50 shadow-sm">
+              <CardHeader className="pb-2 pt-4">
+                <CardTitle className="text-slate-800 text-base font-semibold">Chaves dup. base</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-3xl font-bold text-slate-900">{stats.dupBase}</p>
+                <p className="text-xs text-slate-600 mt-1">Chaves repetidas na base</p>
               </CardContent>
             </Card>
-            <Card>
-              <CardContent className="pt-4">
-                <p className="text-xs text-slate-500 uppercase font-medium">Chaves dup. consulta</p>
-                <p className="text-2xl font-bold text-slate-800">{stats.dupConsulta}</p>
+            <Card className="border-slate-200 bg-slate-50/50 shadow-sm">
+              <CardHeader className="pb-2 pt-4">
+                <CardTitle className="text-slate-800 text-base font-semibold">Chaves dup. consulta</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-3xl font-bold text-slate-900">{stats.dupConsulta}</p>
+                <p className="text-xs text-slate-600 mt-1">Chaves repetidas na consulta</p>
               </CardContent>
             </Card>
-            <Card>
-              <CardContent className="pt-4">
-                <p className="text-xs text-slate-500 uppercase font-medium">Linhas consulta</p>
-                <p className="text-2xl font-bold text-slate-800">{resultados.length}</p>
+            <Card className="border-gray-200 bg-white shadow-sm">
+              <CardHeader className="pb-2 pt-4">
+                <CardTitle className="text-gray-900 text-base font-semibold">Linhas consulta</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-3xl font-bold text-gray-900">{resultados.length}</p>
+                <p className="text-xs text-gray-600 mt-1">Total analisado</p>
               </CardContent>
             </Card>
           </div>
 
-          <Card>
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+            <Card className="border-gray-200 shadow-sm">
+              <CardHeader>
+                <CardTitle className="text-gray-900 text-base">Duplicatas na base</CardTitle>
+                <CardDescription className="text-gray-600">
+                  Chaves que aparecem em mais de uma linha; coluna “Linhas” = número da linha no Excel (linha 1 = cabeçalho).
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {detalheDupBase.length === 0 ? (
+                  <p className="text-sm text-gray-500 py-4 text-center">Nenhuma chave duplicada na base.</p>
+                ) : (
+                  <div className="rounded-md border border-gray-100 max-h-64 overflow-y-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="bg-gray-100">
+                          <TableHead>Chave</TableHead>
+                          <TableHead className="w-20 text-center">Qtd</TableHead>
+                          <TableHead className="w-36">Linhas</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {detalheDupBase.map((d, i) => (
+                          <TableRow key={i}>
+                            <TableCell className="text-sm max-w-[200px] whitespace-normal break-words">{d.chaveLegivel}</TableCell>
+                            <TableCell className="text-center font-medium">{d.ocorrencias}</TableCell>
+                            <TableCell className="text-xs font-mono text-gray-700">{d.linhasPlanilha.join(", ")}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+            <Card className="border-gray-200 shadow-sm">
+              <CardHeader>
+                <CardTitle className="text-gray-900 text-base">Duplicatas na consulta</CardTitle>
+                <CardDescription className="text-gray-600">
+                  Mesmo critério na planilha de consulta — identifica inconsistências no segundo arquivo.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {detalheDupConsulta.length === 0 ? (
+                  <p className="text-sm text-gray-500 py-4 text-center">Nenhuma chave duplicada na consulta.</p>
+                ) : (
+                  <div className="rounded-md border border-gray-100 max-h-64 overflow-y-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="bg-gray-100">
+                          <TableHead>Chave</TableHead>
+                          <TableHead className="w-20 text-center">Qtd</TableHead>
+                          <TableHead className="w-36">Linhas</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {detalheDupConsulta.map((d, i) => (
+                          <TableRow key={i}>
+                            <TableCell className="text-sm max-w-[200px] whitespace-normal break-words">{d.chaveLegivel}</TableCell>
+                            <TableCell className="text-center font-medium">{d.ocorrencias}</TableCell>
+                            <TableCell className="text-xs font-mono text-gray-700">{d.linhasPlanilha.join(", ")}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card className="border-gray-200 shadow-sm">
             <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-              <CardTitle>Resultado por linha (consulta)</CardTitle>
+              <div>
+                <CardTitle className="text-gray-900">Resultado por linha (consulta)</CardTitle>
+                <CardDescription className="text-gray-600">
+                  Relatórios em Excel incluem abas: resultado, resumo/fontes, duplicatas na base e na consulta. O PDF traz o mesmo detalhamento em formato para impressão.
+                </CardDescription>
+              </div>
               <div className="flex flex-wrap gap-2">
-                <Button variant="outline" size="sm" onClick={exportarResultado}>
+                <Button variant="outline" size="sm" className="border-gray-300" onClick={exportarRelatorioExcel}>
                   <Download className="h-4 w-4 mr-1" />
-                  Exportar Excel
+                  Relatório Excel
+                </Button>
+                <Button variant="outline" size="sm" className="border-gray-300" onClick={() => void exportarRelatorioPdf()}>
+                  <FileText className="h-4 w-4 mr-1" />
+                  Relatório PDF
                 </Button>
               </div>
             </CardHeader>
@@ -695,10 +1071,10 @@ export default function ComparacaoPlanilhasPage() {
                 </Select>
               </div>
 
-              <div className="rounded-md border overflow-x-auto">
+              <div className="rounded-md border border-gray-100 overflow-x-auto">
                 <Table>
                   <TableHeader>
-                    <TableRow className="bg-slate-50">
+                    <TableRow className="bg-gray-100">
                       <TableHead className="w-24">Linha</TableHead>
                       <TableHead>Chave (consulta)</TableHead>
                       <TableHead className="w-28 text-center">Na base</TableHead>
@@ -722,9 +1098,9 @@ export default function ComparacaoPlanilhasPage() {
                           <TableCell>{badgeSituacao(r.situacao)}</TableCell>
                           <TableCell className="text-center">
                             {r.ocorrenciasNaConsulta > 1 ? (
-                              <Badge variant="outline" className="border-rose-200 text-rose-800">
+                              <span className="inline-flex items-center px-2 py-0.5 text-xs font-semibold rounded-sm border border-rose-200 bg-rose-50 text-rose-900">
                                 {r.ocorrenciasNaConsulta}×
-                              </Badge>
+                              </span>
                             ) : (
                               <span className="text-slate-400">—</span>
                             )}
