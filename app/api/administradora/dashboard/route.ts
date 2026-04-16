@@ -123,28 +123,21 @@ export async function GET(request: NextRequest) {
     const fimMesAnterior = new Date(Date.UTC(prevYearNum, prevMonthNum, 0, 23, 59, 59, 999))
     const fimMesAnteriorIso = fimMesAnterior.toISOString()
 
-    const [{ count: vidasCount }, { count: vinculosCount }, { count: vidasAteMesAnterior }, { count: vinculosAteMesAnterior }, { data: grupos }, { data: corretores }] = await Promise.all([
-      supabaseAdmin
-        .from("vidas_importadas")
-        .select("id", { count: "exact", head: true })
-        .eq("administradora_id", administradoraId)
-        .eq("tenant_id", tenantId),
-      supabaseAdmin
-        .from("clientes_grupos")
-        .select("id", { count: "exact", head: true })
-        .eq("administradora_id", administradoraId)
-        .eq("tenant_id", tenantId),
+    const [{ count: vidasCount }, { count: vidasAteMesAnterior }, { data: grupos }, { data: corretores }] = await Promise.all([
       supabaseAdmin
         .from("vidas_importadas")
         .select("id", { count: "exact", head: true })
         .eq("administradora_id", administradoraId)
         .eq("tenant_id", tenantId)
-        .lte("created_at", fimMesAnteriorIso),
+        .neq("ativo", false)
+        .not("grupo_id", "is", null),
       supabaseAdmin
-        .from("clientes_grupos")
+        .from("vidas_importadas")
         .select("id", { count: "exact", head: true })
         .eq("administradora_id", administradoraId)
         .eq("tenant_id", tenantId)
+        .neq("ativo", false)
+        .not("grupo_id", "is", null)
         .lte("created_at", fimMesAnteriorIso),
       supabaseAdmin
         .from("grupos_beneficiarios")
@@ -233,9 +226,8 @@ export async function GET(request: NextRequest) {
       faturas = await buscarFaturasPaginado(FATURAS_SELECT_SEM_GATEWAY)
     }
 
-    const clientesAtivos = (vidasCount || 0) > 0 ? Number(vidasCount || 0) : Number(vinculosCount || 0)
-    const clientesBaseMesAnterior =
-      (vidasCount || 0) > 0 ? Number(vidasAteMesAnterior || 0) : Number(vinculosAteMesAnterior || 0)
+    const clientesAtivos = Number(vidasCount || 0)
+    const clientesBaseMesAnterior = Number(vidasAteMesAnterior || 0)
     const clientesVariacaoAbs = clientesAtivos - clientesBaseMesAnterior
     const clientesVariacaoPercent: number | null =
       clientesBaseMesAnterior > 0
