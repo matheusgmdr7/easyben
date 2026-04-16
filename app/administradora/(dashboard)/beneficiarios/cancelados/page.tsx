@@ -105,6 +105,7 @@ export default function BeneficiariosCanceladosPage() {
   const [status, setStatus] = useState("todos")
   const [grupoFiltro, setGrupoFiltro] = useState("todos")
   const [corretorFiltro, setCorretorFiltro] = useState("todos")
+  const [buscaNome, setBuscaNome] = useState("")
   const [tipoPeriodo, setTipoPeriodo] = useState<"solicitacao" | "processamento">("solicitacao")
   const [periodoInicio, setPeriodoInicio] = useState("")
   const [periodoFim, setPeriodoFim] = useState("")
@@ -170,11 +171,11 @@ export default function BeneficiariosCanceladosPage() {
 
   useEffect(() => {
     setPaginaAtual(1)
-  }, [status, grupoFiltro, corretorFiltro, tipoPeriodo, periodoInicio, periodoFim])
+  }, [status, grupoFiltro, corretorFiltro, buscaNome, tipoPeriodo, periodoInicio, periodoFim])
 
   useEffect(() => {
     setSelecionados(new Set())
-  }, [registros.length, paginaAtual, status, grupoFiltro, corretorFiltro, tipoPeriodo, periodoInicio, periodoFim])
+  }, [registros.length, paginaAtual, status, grupoFiltro, corretorFiltro, buscaNome, tipoPeriodo, periodoInicio, periodoFim])
 
   const solicitados = useMemo(
     () => registros.filter((r) => r.status_fluxo === "solicitado"),
@@ -184,16 +185,21 @@ export default function BeneficiariosCanceladosPage() {
     () => registros.filter((r) => r.status_fluxo !== "solicitado"),
     [registros]
   )
+  const registrosFiltrados = useMemo(() => {
+    const termo = buscaNome.trim().toLocaleLowerCase("pt-BR")
+    if (!termo) return registros
+    return registros.filter((r) => String(r.vida?.nome || "").toLocaleLowerCase("pt-BR").includes(termo))
+  }, [registros, buscaNome])
 
-  const totalPaginas = Math.max(1, Math.ceil(registros.length / itensPorPagina))
+  const totalPaginas = Math.max(1, Math.ceil(registrosFiltrados.length / itensPorPagina))
   const paginaAjustada = Math.min(paginaAtual, totalPaginas)
-  const resultadosPaginados = registros.slice(
+  const resultadosPaginados = registrosFiltrados.slice(
     (paginaAjustada - 1) * itensPorPagina,
     paginaAjustada * itensPorPagina
   )
-  const inicio = registros.length > 0 ? (paginaAjustada - 1) * itensPorPagina + 1 : 0
-  const fim = Math.min(paginaAjustada * itensPorPagina, registros.length)
-  const selecionadosRegistros = registros.filter((r) => selecionados.has(r.id))
+  const inicio = registrosFiltrados.length > 0 ? (paginaAjustada - 1) * itensPorPagina + 1 : 0
+  const fim = Math.min(paginaAjustada * itensPorPagina, registrosFiltrados.length)
+  const selecionadosRegistros = registrosFiltrados.filter((r) => selecionados.has(r.id))
   const selecionadosSolicitados = selecionadosRegistros.filter((r) => r.status_fluxo === "solicitado")
   const selecionadosReativaveis = selecionadosRegistros.filter((r) => r.status_fluxo !== "reativado")
 
@@ -601,7 +607,12 @@ export default function BeneficiariosCanceladosPage() {
         <CardHeader>
           <CardTitle>Filtros</CardTitle>
         </CardHeader>
-        <CardContent className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-7 gap-3">
+        <CardContent className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-8 gap-3">
+          <Input
+            value={buscaNome}
+            onChange={(e) => setBuscaNome(e.target.value)}
+            placeholder="Buscar por nome"
+          />
           <Select value={status} onValueChange={setStatus}>
             <SelectTrigger>
               <SelectValue placeholder="Status" />
@@ -721,7 +732,7 @@ export default function BeneficiariosCanceladosPage() {
         <CardContent>
           {loading ? (
             <p className="text-sm text-gray-500">Carregando...</p>
-          ) : registros.length === 0 ? (
+          ) : registrosFiltrados.length === 0 ? (
             <p className="text-sm text-gray-500">Nenhum registro encontrado para os filtros selecionados.</p>
           ) : (
             <>
@@ -803,7 +814,7 @@ export default function BeneficiariosCanceladosPage() {
               <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3">
                 <div className="flex items-center gap-3">
                   <p className="text-sm text-gray-600">
-                    Mostrando {inicio} a {fim} de {registros.length}
+                    Mostrando {inicio} a {fim} de {registrosFiltrados.length}
                   </p>
                   <Select
                     value={String(itensPorPagina)}

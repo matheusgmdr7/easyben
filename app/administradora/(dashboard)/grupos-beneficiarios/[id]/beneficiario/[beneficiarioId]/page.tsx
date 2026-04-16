@@ -33,6 +33,8 @@ export default function BeneficiarioDetalhesPage() {
   const [clienteSelecionado, setClienteSelecionado] = useState<ClienteItem | null>(null)
   const [tabAtiva, setTabAtiva] = useState("dados-basicos")
   const [dependentes, setDependentes] = useState<any[]>([])
+  /** Na ficha de um dependente, guarda o titular (valor_mensal etc.) para total família = titular + dependentes. */
+  const [vidaTitularFamiliar, setVidaTitularFamiliar] = useState<Record<string, unknown> | null>(null)
   const [titularesDoGrupoCpfs, setTitularesDoGrupoCpfs] = useState<string[]>([])
   const [faturas, setFaturas] = useState<any[]>([])
   const [contrato, setContrato] = useState<any>(null)
@@ -491,6 +493,7 @@ export default function BeneficiarioDetalhesPage() {
             : null) ?? null
         )
         if (diaVida) setDiaVencimentoVinculado(diaVida)
+        setVidaTitularFamiliar(null)
         if (v?.tipo === "titular" && v?.cpf) {
           const { data: deps } = await supabase
             .from("vidas_importadas")
@@ -499,6 +502,28 @@ export default function BeneficiarioDetalhesPage() {
             .eq("cpf_titular", String(v.cpf).replace(/\D/g, ""))
             .eq("tipo", "dependente")
           setDependentes(deps || [])
+        } else if (String(v?.tipo || "").toLowerCase() === "dependente" && v?.cpf_titular) {
+          const cpfTit = String(v.cpf_titular).replace(/\D/g, "")
+          if (cpfTit.length >= 11) {
+            const selDep = "id, nome, cpf, tipo, data_nascimento, parentesco, valor_mensal, acomodacao, produto_id, idade, dados_adicionais"
+            const [{ data: titRows }, { data: deps }] = await Promise.all([
+              supabase
+                .from("vidas_importadas")
+                .select(selDep)
+                .eq("grupo_id", grupoId)
+                .eq("cpf", cpfTit)
+                .neq("tipo", "dependente")
+                .limit(2),
+              supabase.from("vidas_importadas").select(selDep).eq("grupo_id", grupoId).eq("cpf_titular", cpfTit).eq("tipo", "dependente"),
+            ])
+            const tit = titRows?.[0]
+            setVidaTitularFamiliar(tit ? (tit as Record<string, unknown>) : null)
+            setDependentes(deps || [])
+          } else {
+            setDependentes([])
+          }
+        } else {
+          setDependentes([])
         }
         if (v?.produto_id) {
           const [{ data: contr }, pRes] = await Promise.all([
@@ -838,19 +863,35 @@ export default function BeneficiarioDetalhesPage() {
     return (clienteSelecionado._vida || clienteSelecionado.cliente || null) as Record<string, unknown> | null
   }, [clienteSelecionado])
 
-  /** Soma titular + dependentes; prioriza o total da API de faturamento quando disponível. */
+  /**
+   * Soma titular + dependentes conforme os valores na ficha (inclui cancelados/inativos).
+   * A API clientes-fatura só soma vidas ativas — ela não pode ser prioridade aqui, senão o card diverge
+   * de edições manuais e de famílias com titular/dependente inativo.
+   */
   const totalFamiliaFaturamento = useMemo(() => {
+    if (!clienteSelecionado || clienteSelecionado.cliente_tipo !== "vida_importada") {
+      if (valorBaseFatura != null) {
+        const v = normalizarEscalaValorMonetario(valorBaseFatura)
+        return v != null ? v : null
+      }
+      return null
+    }
+    const tipoItem = getTipoItem(clienteSelecionado)
+    const baseTitular =
+      tipoItem === "titular" ? dadosVidaTitular : vidaTitularFamiliar
+    if (baseTitular) {
+      let t = Number(normalizarEscalaValorMonetario((baseTitular as { valor_mensal?: unknown }).valor_mensal) ?? 0)
+      for (const dep of dependentes) {
+        t += Number(normalizarEscalaValorMonetario(dep?.valor_mensal) ?? 0)
+      }
+      return Number.isFinite(t) ? t : null
+    }
     if (valorBaseFatura != null) {
       const v = normalizarEscalaValorMonetario(valorBaseFatura)
       return v != null ? v : null
     }
-    if (!dadosVidaTitular) return null
-    let t = Number(normalizarEscalaValorMonetario((dadosVidaTitular as { valor_mensal?: unknown }).valor_mensal) ?? 0)
-    for (const dep of dependentes) {
-      t += Number(normalizarEscalaValorMonetario(dep?.valor_mensal) ?? 0)
-    }
-    return t > 0 ? t : null
-  }, [valorBaseFatura, dadosVidaTitular, dependentes])
+    return null
+  }, [valorBaseFatura, dadosVidaTitular, dependentes, clienteSelecionado, vidaTitularFamiliar])
 
   /** Enquanto edita, estima total com o valor digitado no titular + dependentes atuais na lista. */
   const totalFamiliaEstimadoEdicao = useMemo(() => {
