@@ -295,6 +295,36 @@ export async function GET(
       })
     }
 
+    /** Linha da vida com `cliente_administradora_id` tipo vida:… — ao vínculo CA bater o CPF, unifica numa única linha com UUID real e valor família. */
+    const rowVidaPorCpfTitular = new Map<string, (typeof resultado)[number]>()
+    for (const row of resultado) {
+      if (!String(row.cliente_administradora_id || "").startsWith("vida:")) continue
+      const cpfK = String(row.cliente_cpf || "").replace(/\D/g, "")
+      if (cpfK.length >= 11) rowVidaPorCpfTitular.set(cpfK, row)
+    }
+
+    /** Soma titular + dependentes quando o titular em `vidas` já tem o mesmo `cliente_administradora_id` (ex.: só entrou pelo vínculo do grupo). */
+    const valorFamiliarVidasPorClienteAdm = (caId: string): number | null => {
+      const id = String(caId || "").trim()
+      if (!id) return null
+      for (const vi of vidas) {
+        if (tipo(vi) === "dependente") continue
+        if (String(vi.cliente_administradora_id || "").trim() !== id) continue
+        const cpfT = cpfNorm(vi) || undefined
+        let tot = Number(vi.valor_mensal ?? 0)
+        if (cpfT) {
+          for (const d of vidas) {
+            if (tipo(d) !== "dependente") continue
+            if (String(d.cpf_titular ?? "").replace(/\D/g, "") === cpfT) {
+              tot += Number(d.valor_mensal ?? 0)
+            }
+          }
+        }
+        return tot
+      }
+      return null
+    }
+
     const idsClienteAdm = Array.from(
       new Set((vinculos || []).filter((v) => v.cliente_tipo === "cliente_administradora").map((v) => String(v.cliente_id || "")))
     ).filter(Boolean)
@@ -418,13 +448,28 @@ export async function GET(
         if (caIdStr && clienteAdmIdsJaListadosPorVida.has(caIdStr)) continue
         const vw = viewMap.get(String(ca.id || ""))
         const r = resolveClienteNomeECampos(ca, vw, propostaById, nomePorVidaClienteAdmId)
+        const cpfCliente = String(r.cpf || "").replace(/\D/g, "")
+        const rowVidaMesmoCpf = cpfCliente.length >= 11 ? rowVidaPorCpfTitular.get(cpfCliente) : undefined
+        if (rowVidaMesmoCpf) {
+          rowVidaMesmoCpf.id = caIdStr
+          rowVidaMesmoCpf.cliente_administradora_id = caIdStr
+          if (!rowVidaMesmoCpf.dia_vencimento && ca.dia_vencimento) {
+            const diaNorm = String(ca.dia_vencimento).replace(/\D/g, "").padStart(2, "0").slice(-2)
+            if (diaNorm === "01" || diaNorm === "10") rowVidaMesmoCpf.dia_vencimento = diaNorm
+          }
+          if (!rowVidaMesmoCpf.cliente_email?.trim() && r.email) rowVidaMesmoCpf.cliente_email = r.email
+          clienteAdmIdsJaListadosPorVida.add(caIdStr)
+          rowVidaPorCpfTitular.delete(cpfCliente)
+          continue
+        }
         resultado.push({
           id: String(ca.id || ""),
           cliente_administradora_id: String(ca.id || ""),
           cliente_nome: r.nome,
           cliente_email: r.email,
           cliente_cpf: r.cpf,
-          valor_mensal: Number(vw?.valor_mensal ?? ca.valor_mensal ?? 0),
+          valor_mensal:
+            valorFamiliarVidasPorClienteAdm(caIdStr) ?? Number(vw?.valor_mensal ?? ca.valor_mensal ?? 0),
           dia_vencimento: ca.dia_vencimento ? String(ca.dia_vencimento).padStart(2, "0") : undefined,
         })
       }
@@ -436,13 +481,28 @@ export async function GET(
         if (caIdStr && clienteAdmIdsJaListadosPorVida.has(caIdStr)) continue
         const vw = viewMap.get(String(ca.id || ""))
         const r = resolveClienteNomeECampos(ca, vw, propostaById, nomePorVidaClienteAdmId)
+        const cpfCliente = String(r.cpf || "").replace(/\D/g, "")
+        const rowVidaMesmoCpf = cpfCliente.length >= 11 ? rowVidaPorCpfTitular.get(cpfCliente) : undefined
+        if (rowVidaMesmoCpf) {
+          rowVidaMesmoCpf.id = caIdStr
+          rowVidaMesmoCpf.cliente_administradora_id = caIdStr
+          if (!rowVidaMesmoCpf.dia_vencimento && ca.dia_vencimento) {
+            const diaNorm = String(ca.dia_vencimento).replace(/\D/g, "").padStart(2, "0").slice(-2)
+            if (diaNorm === "01" || diaNorm === "10") rowVidaMesmoCpf.dia_vencimento = diaNorm
+          }
+          if (!rowVidaMesmoCpf.cliente_email?.trim() && r.email) rowVidaMesmoCpf.cliente_email = r.email
+          clienteAdmIdsJaListadosPorVida.add(caIdStr)
+          rowVidaPorCpfTitular.delete(cpfCliente)
+          continue
+        }
         resultado.push({
           id: String(ca.id || ""),
           cliente_administradora_id: String(ca.id || ""),
           cliente_nome: r.nome,
           cliente_email: r.email,
           cliente_cpf: r.cpf,
-          valor_mensal: Number(vw?.valor_mensal ?? ca.valor_mensal ?? 0),
+          valor_mensal:
+            valorFamiliarVidasPorClienteAdm(caIdStr) ?? Number(vw?.valor_mensal ?? ca.valor_mensal ?? 0),
           dia_vencimento: ca.dia_vencimento ? String(ca.dia_vencimento).padStart(2, "0") : undefined,
         })
       }
