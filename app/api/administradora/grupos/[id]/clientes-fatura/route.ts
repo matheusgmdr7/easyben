@@ -303,26 +303,31 @@ export async function GET(
       if (cpfK.length >= 11) rowVidaPorCpfTitular.set(cpfK, row)
     }
 
-    /** Soma titular + dependentes quando o titular em `vidas` já tem o mesmo `cliente_administradora_id` (ex.: só entrou pelo vínculo do grupo). */
-    const valorFamiliarVidasPorClienteAdm = (caId: string): number | null => {
-      const id = String(caId || "").trim()
-      if (!id) return null
-      for (const vi of vidas) {
-        if (tipo(vi) === "dependente") continue
-        if (String(vi.cliente_administradora_id || "").trim() !== id) continue
-        const cpfT = cpfNorm(vi) || undefined
-        let tot = Number(vi.valor_mensal ?? 0)
-        if (cpfT) {
-          for (const d of vidas) {
-            if (tipo(d) !== "dependente") continue
-            if (String(d.cpf_titular ?? "").replace(/\D/g, "") === cpfT) {
-              tot += Number(d.valor_mensal ?? 0)
-            }
+    /**
+     * Índices de total familiar (titular + dependentes) para manter a mesma regra exibida no
+     * beneficiário/contrato também na tela de gerar fatura.
+     */
+    const valorFamiliarVidasByClienteAdm = new Map<string, number>()
+    const valorFamiliarVidasByCpfTitular = new Map<string, number>()
+    for (const vi of vidas) {
+      if (tipo(vi) === "dependente") continue
+      const cpfTitular = cpfNorm(vi)
+      let total = Number(vi.valor_mensal ?? 0)
+      if (cpfTitular) {
+        for (const d of vidas) {
+          if (tipo(d) !== "dependente") continue
+          if (String(d.cpf_titular ?? "").replace(/\D/g, "") === cpfTitular) {
+            total += Number(d.valor_mensal ?? 0)
           }
         }
-        return tot
+        if (!valorFamiliarVidasByCpfTitular.has(cpfTitular)) {
+          valorFamiliarVidasByCpfTitular.set(cpfTitular, total)
+        }
       }
-      return null
+      const caId = String(vi.cliente_administradora_id || "").trim()
+      if (caId && !valorFamiliarVidasByClienteAdm.has(caId)) {
+        valorFamiliarVidasByClienteAdm.set(caId, total)
+      }
     }
 
     const idsClienteAdm = Array.from(
@@ -469,7 +474,9 @@ export async function GET(
           cliente_email: r.email,
           cliente_cpf: r.cpf,
           valor_mensal:
-            valorFamiliarVidasPorClienteAdm(caIdStr) ?? Number(vw?.valor_mensal ?? ca.valor_mensal ?? 0),
+            valorFamiliarVidasByClienteAdm.get(caIdStr) ??
+            (cpfCliente.length >= 11 ? valorFamiliarVidasByCpfTitular.get(cpfCliente) : undefined) ??
+            Number(vw?.valor_mensal ?? ca.valor_mensal ?? 0),
           dia_vencimento: ca.dia_vencimento ? String(ca.dia_vencimento).padStart(2, "0") : undefined,
         })
       }
@@ -502,7 +509,9 @@ export async function GET(
           cliente_email: r.email,
           cliente_cpf: r.cpf,
           valor_mensal:
-            valorFamiliarVidasPorClienteAdm(caIdStr) ?? Number(vw?.valor_mensal ?? ca.valor_mensal ?? 0),
+            valorFamiliarVidasByClienteAdm.get(caIdStr) ??
+            (cpfCliente.length >= 11 ? valorFamiliarVidasByCpfTitular.get(cpfCliente) : undefined) ??
+            Number(vw?.valor_mensal ?? ca.valor_mensal ?? 0),
           dia_vencimento: ca.dia_vencimento ? String(ca.dia_vencimento).padStart(2, "0") : undefined,
         })
       }
