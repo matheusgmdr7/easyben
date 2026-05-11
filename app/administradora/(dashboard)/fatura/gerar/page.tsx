@@ -493,11 +493,42 @@ export default function FaturaGerarPage() {
   }
 
   const clienteJaFaturadoNoMesCompetencia = (c: ClienteFatura) => {
-    const mesRef = mesReferenciaFaturamento(c)
+    // Workaround do caso descrito:
+    // alguns boletos gerados com "Dia 10" acabam com vencimento no dia 11.
+    // Isso pode alterar o mês de competência calculado pela regra "hoje.getDate <= dia".
+    // Para não listar clientes como elegíveis novamente, consideramos também a competência
+    // para dia 11 quando o cliente está com dia 10 (ou rascunho equivalente).
+
+    if (modalLoteOpen && vencimentoLote.trim().length >= 10) {
+      const mesRef = mesReferenciaFaturamento(c)
+      return boletosGrupo.some(
+        (b) =>
+          b.cliente_administradora_id === c.cliente_administradora_id &&
+          obterAnoMes(b.data_vencimento) === mesRef
+      )
+    }
+
+    const hoje = new Date()
+    const dia = String(c.dia_vencimento || draftDiaVencimento[c.id] || "")
+      .replace(/\D/g, "")
+      .padStart(2, "0")
+      .slice(-2)
+
+    const calcularMesRefParaDia = (diaNum: number) => {
+      const mesAtual = hoje.getMonth()
+      const mesRef = hoje.getDate() <= diaNum ? mesAtual : mesAtual + 1
+      const data = new Date(hoje.getFullYear(), mesRef, diaNum)
+      const y = data.getFullYear()
+      const m = String(data.getMonth() + 1).padStart(2, "0")
+      return `${y}-${m}`
+    }
+
+    const mesRefs = dia === "10" ? [calcularMesRefParaDia(10), calcularMesRefParaDia(11)] : [mesReferenciaFaturamento(c)]
+
     return boletosGrupo.some(
       (b) =>
         b.cliente_administradora_id === c.cliente_administradora_id &&
-        obterAnoMes(b.data_vencimento) === mesRef
+        mesRefs.includes(obterAnoMes(b.data_vencimento))
     )
   }
 
@@ -509,7 +540,14 @@ export default function FaturaGerarPage() {
       list = list.filter((b) => obterAnoMes(b.data_vencimento) === mesVencimentoBoletos)
     }
     if (diaVencimentoBoletos !== "todos") {
-      list = list.filter((b) => obterDiaMesVencimento(b.data_vencimento) === diaVencimentoBoletos)
+      list = list.filter((b) => {
+        const diaVenc = obterDiaMesVencimento(b.data_vencimento)
+        // Workaround: quando o usuário filtra "Dia 10", alguns boletos podem ter sido
+        // persistidos com vencimento no dia 11. Para não esconder boletos já gerados,
+        // tratamos Dia 10 como (10 ou 11).
+        if (diaVencimentoBoletos === "10") return diaVenc === "10" || diaVenc === "11"
+        return diaVenc === diaVencimentoBoletos
+      })
     }
     return list
   }, [boletosGrupo, mesVencimentoBoletos, diaVencimentoBoletos])
