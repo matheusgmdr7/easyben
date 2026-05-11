@@ -6,41 +6,45 @@ export const maxDuration = 60
 
 type RegistroGenerico = Record<string, unknown>
 
-async function carregarVidasGrupo(
-  grupoId: string,
-  administradoraId: string,
-  tenantId?: string
-): Promise<Array<RegistroGenerico>> {
+const PAGE_VIDAS_IMPORTADAS = 1000
+
+/**
+ * Vidas do grupo para faturamento.
+ * - Filtra só por `grupo_id` + `administradora_id` (o GET já validou o grupo). Não usar `.eq(tenant_id)` aqui:
+ *   linhas legadas ou importadas com `tenant_id` NULL sumiam da lista.
+ * - Pagina em lotes: PostgREST limita ~1000 linhas por resposta sem range.
+ */
+async function carregarVidasGrupo(grupoId: string, administradoraId: string): Promise<Array<RegistroGenerico>> {
   const filtrosBase = (query: any) => query.eq("grupo_id", grupoId).eq("administradora_id", administradoraId)
-  const filtrosComTenant = (query: any) => (tenantId ? filtrosBase(query).eq("tenant_id", tenantId) : filtrosBase(query))
 
-  // 1) Select completo
-  let fullSelect = await filtrosComTenant(
-    supabaseAdmin
-      .from("vidas_importadas")
-      .select("id, nome, cpf, valor_mensal, emails, dados_adicionais, cliente_administradora_id, tipo, cpf_titular, produto_id, plano, idade, acomodacao, ativo")
+  async function todasPaginas(selectCols: string): Promise<{ rows: Array<RegistroGenerico>; error: unknown }> {
+    const rows: Array<RegistroGenerico> = []
+    let from = 0
+    for (;;) {
+      const { data, error } = await filtrosBase(
+        supabaseAdmin.from("vidas_importadas").select(selectCols).range(from, from + PAGE_VIDAS_IMPORTADAS - 1)
+      )
+      if (error) return { rows: [], error }
+      const chunk = (data || []) as Array<RegistroGenerico>
+      rows.push(...chunk)
+      if (chunk.length < PAGE_VIDAS_IMPORTADAS) break
+      from += PAGE_VIDAS_IMPORTADAS
+    }
+    return { rows, error: null }
+  }
+
+  let r = await todasPaginas(
+    "id, nome, cpf, valor_mensal, emails, dados_adicionais, cliente_administradora_id, tipo, cpf_titular, produto_id, plano, idade, acomodacao, ativo"
   )
-  if (!fullSelect.error) return (fullSelect.data || []) as Array<RegistroGenerico>
+  if (!r.error) return r.rows
 
-  // 2) Select mínimo com tenant
-  let minimalSelect = await filtrosComTenant(
-    supabaseAdmin
-      .from("vidas_importadas")
-      .select("id, nome, cpf, tipo, cpf_titular, valor_mensal, cliente_administradora_id, dados_adicionais, emails, produto_id, ativo")
+  r = await todasPaginas(
+    "id, nome, cpf, tipo, cpf_titular, valor_mensal, cliente_administradora_id, dados_adicionais, emails, produto_id, ativo"
   )
-  if (!minimalSelect.error) return (minimalSelect.data || []) as Array<RegistroGenerico>
+  if (!r.error) return r.rows
 
-  // 3) Select mínimo sem tenant
-  minimalSelect = await filtrosBase(
-    supabaseAdmin
-      .from("vidas_importadas")
-      .select("id, nome, cpf, tipo, cpf_titular, valor_mensal, cliente_administradora_id, dados_adicionais, emails, produto_id, ativo")
-  )
-  if (!minimalSelect.error) return (minimalSelect.data || []) as Array<RegistroGenerico>
-
-  // 4) Último fallback: tudo sem depender de colunas específicas
-  const starSelect = await filtrosBase(supabaseAdmin.from("vidas_importadas").select("*"))
-  if (!starSelect.error) return (starSelect.data || []) as Array<RegistroGenerico>
+  r = await todasPaginas("*")
+  if (!r.error) return r.rows
 
   return []
 }
@@ -162,7 +166,7 @@ export async function GET(
     /** Evita duplicar o mesmo titular: a linha via `vidas_importadas` já soma dependentes; a via vínculo CA só traz valor do cadastro/view. */
     const clienteAdmIdsJaListadosPorVida = new Set<string>()
 
-    const vidas = (await carregarVidasGrupo(grupoId, administradoraId, tenantId)).filter((v) => v?.ativo !== false)
+    const vidas = (await carregarVidasGrupo(grupoId, administradoraId)).filter((v) => v?.ativo !== false)
     const tipo = (v: RegistroGenerico) => String((v.tipo ?? "titular") ?? "").toLowerCase()
     const cpfNorm = (v: RegistroGenerico) => (v.cpf ? String(v.cpf).replace(/\D/g, "") : "")
 

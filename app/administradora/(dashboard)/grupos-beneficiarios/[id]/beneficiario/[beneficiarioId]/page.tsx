@@ -1895,6 +1895,7 @@ export default function BeneficiarioDetalhesPage() {
                       <TableHead>Valor</TableHead>
                       <TableHead>Vencimento</TableHead>
                       <TableHead>Status</TableHead>
+                      <TableHead>Data de liquidação</TableHead>
                       <TableHead className="text-right">Boleto</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -1903,6 +1904,11 @@ export default function BeneficiarioDetalhesPage() {
                       const valorF = f.valor_total ?? f.valor
                       const vencF = f.data_vencimento ?? f.vencimento
                       const boletoUrl = f.boleto_link ?? f.asaas_boleto_url ?? f.boleto_url
+                      const dataLiquidacaoRaw = f.pagamento_data ?? f.data_pagamento ?? f.data_liquidacao
+                      const dataLiquidacao =
+                        dataLiquidacaoRaw != null && String(dataLiquidacaoRaw).trim() !== ""
+                          ? String(dataLiquidacaoRaw).slice(0, 10)
+                          : null
                       return (
                         <TableRow key={f.id} className={i % 2 === 0 ? "bg-gray-50" : "bg-white"}>
                           <TableCell>{f.numero_fatura || "-"}</TableCell>
@@ -1912,6 +1918,9 @@ export default function BeneficiarioDetalhesPage() {
                             <Badge variant="outline" className="capitalize">
                               {f.status || "-"}
                             </Badge>
+                          </TableCell>
+                          <TableCell className="text-gray-700 whitespace-nowrap">
+                            {dataLiquidacao ? formatarData(dataLiquidacao) : "—"}
                           </TableCell>
                           <TableCell className="text-right">
                             <div className="flex items-center justify-end gap-1">

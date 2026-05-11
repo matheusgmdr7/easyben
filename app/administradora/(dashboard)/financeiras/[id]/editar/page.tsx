@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/select"
 import { ArrowLeft, Save } from "lucide-react"
 import type { AdministradoraFinanceira } from "@/services/financeiras-service"
+import { FinanceirasWebhookEventosAsaas } from "@/components/administradora/financeiras-webhook-eventos-asaas"
 
 export default function EditarFinanceiraPage() {
   const router = useRouter()
@@ -131,7 +132,7 @@ export default function EditarFinanceiraPage() {
         <p className="text-sm text-gray-500 mt-0.5">Altere os dados da conexão com o gateway.</p>
       </div>
 
-      <div className="px-6 py-6 max-w-2xl">
+      <div className="px-6 py-6 max-w-3xl space-y-8">
         <Card>
           <CardHeader>
             <CardTitle className="text-lg">Dados da conexão</CardTitle>
@@ -181,15 +182,28 @@ export default function EditarFinanceiraPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  API Token (opcional)
+                  API Token {form.instituicao_financeira === "asaas" ? "(webhook)" : "(opcional)"}
                 </label>
                 <Input
                   type="password"
                   value={form.api_token}
                   onChange={(e) => setForm({ ...form, api_token: e.target.value })}
-                  placeholder="Token adicional"
+                  placeholder={
+                    form.instituicao_financeira === "asaas"
+                      ? "Mesmo token configurado no webhook Asaas"
+                      : "Token adicional"
+                  }
                   className="border-gray-300"
                 />
+                {form.instituicao_financeira === "asaas" && (
+                  <p className="mt-1.5 text-xs text-gray-600 leading-relaxed">
+                    Opcional porém recomendado: use o mesmo segredo definido como token do webhook no
+                    Asaas. O sistema aceita esse valor na validação do endpoint de eventos — veja a
+                    seção <strong className="text-gray-700">Eventos</strong> abaixo. Alternativa: só
+                    a variável de ambiente <code className="bg-gray-100 px-1 rounded">ASAAS_WEBHOOK_TOKEN</code>{" "}
+                    no servidor com o mesmo segredo.
+                  </p>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Ambiente</label>
@@ -232,6 +246,15 @@ export default function EditarFinanceiraPage() {
             </form>
           </CardContent>
         </Card>
+
+        {form.instituicao_financeira === "asaas" ? (
+          <FinanceirasWebhookEventosAsaas nomeFinanceira={form.nome.trim() || undefined} />
+        ) : (
+          <p className="text-sm text-gray-500">
+            O guia de webhooks por eventos está disponível quando a instituição é{" "}
+            <strong className="text-gray-700">Asaas</strong>.
+          </p>
+        )}
       </div>
     </div>
   )
