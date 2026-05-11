@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { useRouter } from "next/navigation"
 import { getAdministradoraLogada } from "@/services/auth-administradoras-service"
 import { GruposBeneficiariosService, type GrupoBeneficiarios } from "@/services/grupos-beneficiarios-service"
@@ -34,7 +34,25 @@ import {
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Progress } from "@/components/ui/progress"
-import { AlertTriangle, Banknote, Loader2, ExternalLink, ChevronRight, FileCheck, CheckCircle2, FileText, CheckSquare, Square, Search, Minus, Plus, Info } from "lucide-react"
+import {
+  AlertTriangle,
+  Banknote,
+  Loader2,
+  ExternalLink,
+  ChevronRight,
+  FileCheck,
+  CheckCircle2,
+  FileText,
+  CheckSquare,
+  Square,
+  Search,
+  Minus,
+  Plus,
+  Info,
+  CalendarRange,
+  AlertCircle,
+  CircleDashed,
+} from "lucide-react"
 import { formatarMoeda, formatarData, formatarDataHora } from "@/utils/formatters"
 
 interface ClienteFatura {
@@ -76,6 +94,20 @@ function obterAnoMes(data?: string | null) {
   const base = String(data).slice(0, 10)
   if (!/^\d{4}-\d{2}-\d{2}$/.test(base)) return ""
   return base.slice(0, 7)
+}
+
+/** Dia do mês (DD) a partir de data yyyy-MM-dd, para filtro de vencimento dos boletos. */
+function obterDiaMesVencimento(data?: string | null): string {
+  const base = String(data).slice(0, 10)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(base)) return ""
+  return base.slice(8, 10)
+}
+
+/** Rótulo curto para select de mês (YYYY-MM). */
+function formatarMesAnoResumo(ym: string): string {
+  const [y, m] = ym.split("-").map((x) => Number(x))
+  if (!y || !m || m < 1 || m > 12) return ym
+  return new Date(y, m - 1, 1).toLocaleDateString("pt-BR", { month: "long", year: "numeric" })
 }
 
 /** Máximo de boletos por chamada à API (requisições menores evitam 502/timeout do gateway). */
@@ -130,6 +162,10 @@ export default function FaturaGerarPage() {
   const [vencimentoLote, setVencimentoLote] = useState("")
   const [taxaLote, setTaxaLote] = useState("")
   const [buscaBoletos, setBuscaBoletos] = useState("")
+  /** `todos` = sem filtro de mês; `YYYY-MM` = vencimento naquele mês (campo data_vencimento). */
+  const [mesVencimentoBoletos, setMesVencimentoBoletos] = useState<string>("todos")
+  /** Dia do mês na data de vencimento do boleto: `todos` | `01` | `10` (alinhado ao cadastro de clientes). */
+  const [diaVencimentoBoletos, setDiaVencimentoBoletos] = useState<string>("todos")
   const [paginaBoletos, setPaginaBoletos] = useState(1)
   const [itensPorPaginaBoletos] = useState(10)
   const [buscaClientes, setBuscaClientes] = useState("")
@@ -244,6 +280,12 @@ export default function FaturaGerarPage() {
     setClientesMinimizado(false)
     setBuscaBoletos("")
     setBuscaClientes("")
+    setFiltroDiaVencimento("todos")
+    setDiaVencimentoBoletos("todos")
+    const hoje = new Date()
+    setMesVencimentoBoletos(
+      `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}`
+    )
     setPaginaBoletos(1)
     setPaginaClientes(1)
     await carregarBoletosDoGrupo(grupo.id, { silent: true })
@@ -460,7 +502,61 @@ export default function FaturaGerarPage() {
   }
 
   const termoBuscaBoletos = normalizarTexto(buscaBoletos)
-  const boletosGrupoFiltrados = boletosGrupo.filter((b) => {
+
+  const boletosFiltradosPorMesDiaVencimento = useMemo(() => {
+    let list = boletosGrupo
+    if (mesVencimentoBoletos !== "todos") {
+      list = list.filter((b) => obterAnoMes(b.data_vencimento) === mesVencimentoBoletos)
+    }
+    if (diaVencimentoBoletos !== "todos") {
+      list = list.filter((b) => obterDiaMesVencimento(b.data_vencimento) === diaVencimentoBoletos)
+    }
+    return list
+  }, [boletosGrupo, mesVencimentoBoletos, diaVencimentoBoletos])
+
+  const resumoBoletosMes = useMemo(() => {
+    const list = boletosFiltradosPorMesDiaVencimento
+    const total = list.length
+    const pagos = list.filter((b) => String(b.status || "").toLowerCase() === "paga").length
+    const atrasados = list.filter((b) => String(b.status || "").toLowerCase() === "atrasada").length
+    const pendentes = list.filter((b) => String(b.status || "").toLowerCase() === "pendente").length
+    const parcialmentePagas = list.filter(
+      (b) => String(b.status || "").toLowerCase() === "parcialmente_paga"
+    ).length
+    const canceladas = list.filter((b) => {
+      const s = String(b.status || "").toLowerCase()
+      return s === "cancelada" || s === "cancelado"
+    }).length
+    const naoPagos = total - pagos
+    const outros = Math.max(0, naoPagos - pendentes - atrasados - canceladas - parcialmentePagas)
+    return { total, pagos, naoPagos, atrasados, pendentes, canceladas, parcialmentePagas, outros }
+  }, [boletosFiltradosPorMesDiaVencimento])
+
+  const mesesOpcoesBoletos = useMemo(() => {
+    const set = new Set<string>()
+    const hoje = new Date()
+    for (let i = 0; i < 36; i++) {
+      const d = new Date(hoje.getFullYear(), hoje.getMonth() - i, 1)
+      set.add(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`)
+    }
+    for (const b of boletosGrupo) {
+      const m = obterAnoMes(b.data_vencimento)
+      if (m) set.add(m)
+    }
+    return [...set].sort((a, b) => b.localeCompare(a))
+  }, [boletosGrupo])
+
+  const labelMesVencimentoSelecionado =
+    mesVencimentoBoletos === "todos"
+      ? "Todos os meses (vencimento)"
+      : formatarMesAnoResumo(mesVencimentoBoletos)
+
+  const labelFiltrosBoletosResumo =
+    diaVencimentoBoletos === "todos"
+      ? labelMesVencimentoSelecionado
+      : `${labelMesVencimentoSelecionado} · venc. dia ${diaVencimentoBoletos}`
+
+  const boletosGrupoFiltrados = boletosFiltradosPorMesDiaVencimento.filter((b) => {
     if (!termoBuscaBoletos) return true
     const alvo = [
       b.cliente_nome,
@@ -766,10 +862,10 @@ export default function FaturaGerarPage() {
           </Alert>
         )}
 
-        <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 mt-6">
-          <div className="xl:col-span-3 2xl:col-span-3">
-            <Card className="xl:sticky xl:top-6 rounded-md">
-              <CardHeader>
+        <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 mt-6 xl:items-start">
+          <div className="xl:col-span-3 2xl:col-span-3 xl:sticky xl:top-6 xl:self-start xl:max-h-[calc(100vh-6.5rem)]">
+            <Card className="rounded-md xl:flex xl:min-h-0 xl:max-h-[calc(100vh-6.5rem)] xl:flex-col">
+              <CardHeader className="shrink-0">
                 <CardTitle className="text-xl font-semibold tracking-tight">
                   Grupos de beneficiários
                 </CardTitle>
@@ -777,7 +873,7 @@ export default function FaturaGerarPage() {
                   Selecione um grupo para carregar clientes e faturas.
                 </p>
               </CardHeader>
-              <CardContent>
+              <CardContent className="xl:flex xl:min-h-0 xl:flex-1 xl:flex-col">
                 {loadingGrupos ? (
                   <div className="space-y-2 py-2">
                     {Array.from({ length: 5 }).map((_, i) => (
@@ -789,7 +885,7 @@ export default function FaturaGerarPage() {
                     Nenhum grupo de beneficiários encontrado.
                   </p>
                 ) : (
-                  <div className="space-y-2.5 max-h-[60vh] overflow-y-auto pr-1">
+                  <div className="space-y-2.5 overflow-y-auto pr-1 min-h-[min(50vh,320px)] max-h-[min(72vh,640px)] xl:min-h-[12rem] xl:max-h-[calc(100vh-11.5rem)] xl:flex-1">
                     {grupos.map((g) => (
                       <button
                         key={g.id}
@@ -883,18 +979,128 @@ export default function FaturaGerarPage() {
                   Nenhum boleto gerado ainda para este grupo neste contexto. Após gerar, o histórico aparece aqui.
                 </p>
               ) : (
-                <div className="space-y-3">
-                  <div className="relative max-w-md">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                    <Input
-                      value={buscaBoletos}
-                      onChange={(e) => {
-                        setBuscaBoletos(e.target.value)
-                        setPaginaBoletos(1)
-                      }}
-                      placeholder="Buscar por cliente, status, nº da fatura ou data de geração..."
-                      className="pl-9"
-                    />
+                <div className="space-y-5">
+                  <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between xl:gap-6">
+                    <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-2 xl:max-w-2xl xl:shrink-0">
+                      <div className="space-y-2">
+                        <Label className="text-xs font-medium text-gray-600">Mês de referência (vencimento)</Label>
+                        <Select
+                          value={mesVencimentoBoletos}
+                          onValueChange={(v) => {
+                            setMesVencimentoBoletos(v)
+                            setPaginaBoletos(1)
+                          }}
+                        >
+                          <SelectTrigger className="h-10 w-full border-gray-200 bg-white">
+                            <SelectValue placeholder="Mês" />
+                          </SelectTrigger>
+                          <SelectContent className="max-h-[min(60vh,320px)]">
+                            <SelectItem value="todos">Todos os meses</SelectItem>
+                            {mesesOpcoesBoletos.map((ym) => (
+                              <SelectItem key={ym} value={ym}>
+                                {formatarMesAnoResumo(ym)}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-xs font-medium text-gray-600">Dia de vencimento</Label>
+                        <Select
+                          value={diaVencimentoBoletos}
+                          onValueChange={(v) => {
+                            setDiaVencimentoBoletos(v)
+                            setPaginaBoletos(1)
+                          }}
+                        >
+                          <SelectTrigger className="h-10 w-full border-gray-200 bg-white">
+                            <SelectValue placeholder="Dia" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="todos">Todos os dias</SelectItem>
+                            <SelectItem value="01">Dia 01</SelectItem>
+                            <SelectItem value="10">Dia 10</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <div className="relative w-full xl:flex-1 xl:max-w-md">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                      <Input
+                        value={buscaBoletos}
+                        onChange={(e) => {
+                          setBuscaBoletos(e.target.value)
+                          setPaginaBoletos(1)
+                        }}
+                        placeholder="Buscar por cliente, status, nº da fatura ou data de geração..."
+                        className="pl-9 h-10"
+                      />
+                    </div>
+                  </div>
+                  <p className="text-xs text-gray-500 leading-relaxed -mt-1 xl:-mt-2">
+                    Resumo e tabela usam a <strong className="text-gray-700">data de vencimento</strong> do boleto (mês
+                    e, se escolhido, dia 01 ou 10). A busca refina sobre o resultado desses filtros.
+                  </p>
+
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    <div className="rounded-md border border-gray-200 bg-white px-4 py-3">
+                      <div className="flex items-center gap-2 text-xs font-medium text-gray-500">
+                        <CalendarRange className="h-3.5 w-3.5 shrink-0 text-gray-400" aria-hidden />
+                        Boletos (vencimento)
+                      </div>
+                      <p className="mt-1.5 text-xl font-semibold tabular-nums text-gray-900">{resumoBoletosMes.total}</p>
+                      <p className="mt-0.5 text-xs text-gray-500 line-clamp-2">{labelFiltrosBoletosResumo}</p>
+                    </div>
+                    <div className="rounded-md border border-gray-200 bg-white px-4 py-3">
+                      <div className="flex items-center gap-2 text-xs font-medium text-gray-500">
+                        <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-gray-400" aria-hidden />
+                        Pagos
+                      </div>
+                      <p className="mt-1.5 text-xl font-semibold tabular-nums text-gray-900">{resumoBoletosMes.pagos}</p>
+                      <p className="mt-0.5 text-xs text-gray-500">
+                        {resumoBoletosMes.total > 0
+                          ? `${Math.round((resumoBoletosMes.pagos / resumoBoletosMes.total) * 100)}% do total`
+                          : "—"}
+                      </p>
+                    </div>
+                    <div className="rounded-md border border-gray-200 bg-white px-4 py-3">
+                      <div className="flex items-center gap-2 text-xs font-medium text-gray-500">
+                        <AlertCircle className="h-3.5 w-3.5 shrink-0 text-gray-400" aria-hidden />
+                        Não pagos
+                      </div>
+                      <p className="mt-1.5 text-xl font-semibold tabular-nums text-gray-900">{resumoBoletosMes.naoPagos}</p>
+                      <p className="mt-0.5 text-xs text-gray-500">Exceto status &quot;paga&quot;</p>
+                    </div>
+                    <div className="rounded-md border border-gray-200 bg-white px-4 py-3 sm:col-span-2 xl:col-span-1">
+                      <div className="flex items-center gap-2 text-xs font-medium text-gray-500">
+                        <CircleDashed className="h-3.5 w-3.5 shrink-0 text-gray-400" aria-hidden />
+                        Detalhe (não pagos)
+                      </div>
+                      <ul className="mt-2 space-y-1 text-sm text-gray-700">
+                        <li className="flex justify-between gap-2">
+                          <span className="text-gray-600">Em aberto</span>
+                          <span className="font-medium tabular-nums text-gray-900">{resumoBoletosMes.pendentes}</span>
+                        </li>
+                        <li className="flex justify-between gap-2">
+                          <span className="text-gray-600">Atrasados</span>
+                          <span className="font-medium tabular-nums text-gray-900">{resumoBoletosMes.atrasados}</span>
+                        </li>
+                        <li className="flex justify-between gap-2">
+                          <span className="text-gray-600">Parcialmente pago</span>
+                          <span className="font-medium tabular-nums text-gray-900">{resumoBoletosMes.parcialmentePagas}</span>
+                        </li>
+                        <li className="flex justify-between gap-2">
+                          <span className="text-gray-600">Cancelados</span>
+                          <span className="font-medium tabular-nums text-gray-900">{resumoBoletosMes.canceladas}</span>
+                        </li>
+                        {resumoBoletosMes.outros > 0 && (
+                          <li className="flex justify-between gap-2 border-t border-gray-100 pt-1.5 mt-1">
+                            <span className="text-gray-600">Outros status</span>
+                            <span className="font-medium tabular-nums text-gray-900">{resumoBoletosMes.outros}</span>
+                          </li>
+                        )}
+                      </ul>
+                    </div>
                   </div>
 
                   {boletosGrupoFiltrados.length === 0 ? (
@@ -1033,7 +1239,7 @@ export default function FaturaGerarPage() {
               <p className="text-sm font-medium text-gray-800">{grupoSelecionado.nome}</p>
               <p className="text-sm text-gray-500 font-normal">
                 Lista apenas titulares. O valor inclui titular e dependentes vinculados. Ao gerar boleto, a taxa de administração é somada.
-                Regra mensal: cada cliente pode ser faturado uma vez por mês. O filtro de dia de vencimento restringe a lista (inclui rascunho antes de vincular); &quot;Selecionar todos&quot; marca só os que aparecem nessa lista. A ordem prioriza quem ainda não foi faturado no mês e, entre eles, quem já tem dia 01 ou 10.
+                Regra mensal: cada cliente pode ser faturado uma vez por mês. O filtro &quot;Dia 01 / Dia 10&quot; mostra só quem já tem esse dia (importação ou cadastro); use &quot;Todos os vencimentos&quot; para ver titulares sem dia vinculado. &quot;Selecionar todos&quot; considera só a lista visível. A ordem prioriza quem ainda não foi faturado no mês e, entre eles, quem já tem dia 01 ou 10.
               </p>
               {clientesDisponiveisLoteFiltrados.length > 0 && (
                 <div className="flex flex-wrap items-center gap-2 pt-2">
@@ -1140,7 +1346,20 @@ export default function FaturaGerarPage() {
                   </div>
 
                   {clientesFiltrados.length === 0 ? (
-                    <p className="text-sm text-gray-500 py-4 text-center">Nenhum cliente encontrado para a busca informada.</p>
+                    <div className="py-6 text-center space-y-1">
+                      <p className="text-sm text-gray-600">
+                        {filtroDiaVencimento !== "todos" && termoBuscaClientes
+                          ? "Nenhum titular corresponde à busca e ao dia de vencimento selecionados."
+                          : filtroDiaVencimento !== "todos"
+                            ? "Nenhum titular corresponde ao dia de vencimento selecionado."
+                            : "Nenhum cliente encontrado para a busca informada."}
+                      </p>
+                      {clientes.length > 0 && filtroDiaVencimento !== "todos" && (
+                        <p className="text-xs text-gray-500 max-w-md mx-auto">
+                          Há {clientes.length} titular(es) no grupo; importados sem dia 01/10 gravado só aparecem em &quot;Todos os vencimentos&quot; até vincular o dia na linha.
+                        </p>
+                      )}
+                    </div>
                   ) : (
                     <>
                       <div className="w-full rounded-md border border-gray-100">
