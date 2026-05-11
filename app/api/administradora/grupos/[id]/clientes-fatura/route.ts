@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase-admin"
-import { getCurrentTenantId } from "@/lib/tenant-query-helper"
+import { resolveTenantIdForAdministradora } from "@/lib/resolve-tenant-administradora"
 
 export const maxDuration = 60
 
@@ -107,18 +107,7 @@ export async function GET(
       )
     }
 
-    // Priorizar tenant da administradora (garante contexto correto em multi-tenant)
-    let tenantId: string
-    const { data: adm } = await supabaseAdmin
-      .from("administradoras")
-      .select("tenant_id")
-      .eq("id", administradoraId)
-      .maybeSingle()
-    if (adm?.tenant_id) {
-      tenantId = adm.tenant_id
-    } else {
-      tenantId = await getCurrentTenantId()
-    }
+    const tenantId = await resolveTenantIdForAdministradora(administradoraId)
 
     // Garantir que o grupo pertence à administradora
     let { data: grupo, error: errGrupo } = await supabaseAdmin

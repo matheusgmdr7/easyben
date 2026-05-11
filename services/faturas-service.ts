@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { supabase } from "@/lib/supabase"
 import { getCurrentTenantId } from "@/lib/tenant-query-helper"
+import { resolveTenantIdForAdministradora } from "@/lib/resolve-tenant-administradora"
 
 export interface Fatura {
   id: string
@@ -149,7 +150,9 @@ export class FaturasService {
    */
   static async criar(dados: CriarFaturaData, client?: SupabaseClient): Promise<Fatura> {
     try {
-      const tenantId = await getCurrentTenantId()
+      const tenantId = dados.administradora_id
+        ? await resolveTenantIdForAdministradora(String(dados.administradora_id))
+        : await getCurrentTenantId()
       const db = client ?? supabase
 
       // Gerar número da fatura

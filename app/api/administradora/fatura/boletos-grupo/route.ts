@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase-admin"
-import { getCurrentTenantId } from "@/lib/tenant-query-helper"
+import { resolveTenantIdForAdministradora } from "@/lib/resolve-tenant-administradora"
 import { getBoletoLinkFromFatura } from "@/lib/fatura-boleto-link"
 
 const MAX_FATURAS_GRUPO = 500
@@ -38,9 +38,9 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    const tenantId = await getCurrentTenantId()
+    const tenantId = await resolveTenantIdForAdministradora(administradoraId)
 
-    const { data: grupo } = await supabaseAdmin
+    let { data: grupo } = await supabaseAdmin
       .from("grupos_beneficiarios")
       .select("id")
       .eq("id", grupoId)
@@ -49,14 +49,32 @@ export async function GET(request: NextRequest) {
       .maybeSingle()
 
     if (!grupo) {
+      const fallbackGrupo = await supabaseAdmin
+        .from("grupos_beneficiarios")
+        .select("id")
+        .eq("id", grupoId)
+        .eq("administradora_id", administradoraId)
+        .maybeSingle()
+      grupo = fallbackGrupo.data
+    }
+
+    if (!grupo) {
       return NextResponse.json({ error: "Grupo não encontrado" }, { status: 404 })
     }
 
-    const { data: vinculos } = await supabaseAdmin
+    let { data: vinculos } = await supabaseAdmin
       .from("clientes_grupos")
       .select("id, cliente_id, cliente_tipo")
       .eq("grupo_id", grupoId)
       .eq("tenant_id", tenantId)
+
+    if (!vinculos || vinculos.length === 0) {
+      const fb = await supabaseAdmin
+        .from("clientes_grupos")
+        .select("id, cliente_id, cliente_tipo")
+        .eq("grupo_id", grupoId)
+      vinculos = fb.data || []
+    }
 
     const clienteIds: string[] = []
     const nomePorId: Record<string, string> = {}
@@ -64,43 +82,83 @@ export async function GET(request: NextRequest) {
     for (const v of vinculos || []) {
       if (v.cliente_tipo === "cliente_administradora") {
         clienteIds.push(v.cliente_id)
-        const { data: vw } = await supabaseAdmin
+        let { data: vw } = await supabaseAdmin
           .from("vw_clientes_administradoras_completo")
           .select("id, cliente_nome")
           .eq("id", v.cliente_id)
           .eq("tenant_id", tenantId)
           .maybeSingle()
+        if (!vw) {
+          const fb = await supabaseAdmin
+            .from("vw_clientes_administradoras_completo")
+            .select("id, cliente_nome")
+            .eq("id", v.cliente_id)
+            .maybeSingle()
+          vw = fb.data
+        }
         if (vw) nomePorId[v.cliente_id] = (vw as any)?.cliente_nome || "Cliente"
         continue
       }
       if (v.cliente_tipo === "proposta") {
-        const { data: clienteAdm } = await supabaseAdmin
+        let { data: clienteAdm } = await supabaseAdmin
           .from("clientes_administradoras")
           .select("id")
           .eq("proposta_id", v.cliente_id)
           .eq("tenant_id", tenantId)
           .maybeSingle()
+        if (!clienteAdm) {
+          const fbCa = await supabaseAdmin
+            .from("clientes_administradoras")
+            .select("id")
+            .eq("proposta_id", v.cliente_id)
+            .maybeSingle()
+          clienteAdm = fbCa.data
+        }
         if (clienteAdm) {
           clienteIds.push(clienteAdm.id)
-          const { data: vw } = await supabaseAdmin
+          let { data: vw } = await supabaseAdmin
             .from("vw_clientes_administradoras_completo")
             .select("id, cliente_nome")
             .eq("id", clienteAdm.id)
             .eq("tenant_id", tenantId)
             .maybeSingle()
+          if (!vw) {
+            const fbVw = await supabaseAdmin
+              .from("vw_clientes_administradoras_completo")
+              .select("id, cliente_nome")
+              .eq("id", clienteAdm.id)
+              .maybeSingle()
+            vw = fbVw.data
+          }
           if (vw) nomePorId[clienteAdm.id] = (vw as any)?.cliente_nome || "Cliente"
         }
       }
     }
 
     // Incluir clientes_administradora_id das vidas importadas do grupo (titulares com fatura)
-    const { data: vidasGrupo } = await supabaseAdmin
+    const { data: vidasComTenant } = await supabaseAdmin
       .from("vidas_importadas")
       .select("id, nome, cliente_administradora_id")
       .eq("grupo_id", grupoId)
       .eq("administradora_id", administradoraId)
       .eq("tenant_id", tenantId)
-    for (const vida of vidasGrupo || []) {
+    const vidasSet = new Map<string, { nome?: string; cliente_administradora_id?: string }>()
+    for (const vida of vidasComTenant || []) {
+      const id = String((vida as any).id || "")
+      if (id) vidasSet.set(id, vida as any)
+    }
+    if (vidasSet.size === 0) {
+      const { data: vidasSemTenant } = await supabaseAdmin
+        .from("vidas_importadas")
+        .select("id, nome, cliente_administradora_id")
+        .eq("grupo_id", grupoId)
+        .eq("administradora_id", administradoraId)
+      for (const vida of vidasSemTenant || []) {
+        const id = String((vida as any).id || "")
+        if (id) vidasSet.set(id, vida as any)
+      }
+    }
+    for (const vida of vidasSet.values()) {
       const caId = (vida as any).cliente_administradora_id
       if (caId && typeof caId === "string" && caId.trim() !== "" && !clienteIds.includes(caId)) {
         clienteIds.push(caId)
@@ -112,12 +170,13 @@ export async function GET(request: NextRequest) {
       return NextResponse.json([])
     }
 
+    // Não filtrar por tenant_id aqui: em rotas /api o tenant do request pode divergir do gravado na
+    // fatura (FaturasService.criar usava getCurrentTenantId). administradora_id + clientes do grupo já delimitam.
     const { data: faturasRaw, error } = await supabaseAdmin
       .from("faturas")
       .select("id, cliente_administradora_id, numero_fatura, valor, status, vencimento, pagamento_data, asaas_boleto_url, boleto_url, gateway_id, asaas_charge_id, created_at")
       .in("cliente_administradora_id", clienteIds)
       .eq("administradora_id", administradoraId)
-      .eq("tenant_id", tenantId)
       .limit(FETCH_CAP)
 
     if (error) {

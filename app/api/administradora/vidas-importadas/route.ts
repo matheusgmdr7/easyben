@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase-admin"
 import { getCurrentTenantId } from "@/lib/tenant-query-helper"
+import { resolveTenantIdForAdministradora } from "@/lib/resolve-tenant-administradora"
 
 /**
  * GET /api/administradora/vidas-importadas?grupo_id=xxx
@@ -25,18 +26,9 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "grupo_id, grupo_ids ou administradora_id é obrigatório" }, { status: 400 })
     }
 
-    let tenantId = await getCurrentTenantId()
-
-    // Em ambiente local, pode não haver tenant_slug no header/cookie.
-    // Quando administradora_id for informado, priorizamos o tenant vinculado à administradora.
-    if (administradoraId) {
-      const { data: admRow } = await supabaseAdmin
-        .from("administradoras")
-        .select("tenant_id")
-        .eq("id", administradoraId)
-        .maybeSingle()
-      if (admRow?.tenant_id) tenantId = admRow.tenant_id
-    }
+    const tenantId = administradoraId
+      ? await resolveTenantIdForAdministradora(administradoraId)
+      : await getCurrentTenantId()
 
     // Buscar todas as vidas em lotes (Supabase/PostgREST limitam a 1000 por request)
     const PAGE_SIZE = 1000

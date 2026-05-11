@@ -205,11 +205,15 @@ export default function FaturaGerarPage() {
       const res = await fetch(
         `/api/administradora/fatura/boletos-grupo?grupo_id=${encodeURIComponent(grupoId)}&administradora_id=${encodeURIComponent(administradoraId)}`
       )
+      const data = await res.json().catch(() => ({}))
       if (res.ok) {
-        const list = await res.json()
-        setBoletosGrupo(Array.isArray(list) ? list : [])
+        setBoletosGrupo(Array.isArray(data) ? data : [])
       } else {
         setBoletosGrupo([])
+        const msg = typeof (data as { error?: string }).error === "string" ? (data as { error: string }).error : ""
+        if (!options?.silent && msg) {
+          toast.error(msg)
+        }
       }
     } catch (e) {
       if (!options?.silent) {

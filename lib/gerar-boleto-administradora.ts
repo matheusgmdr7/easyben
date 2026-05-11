@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase-admin"
 import { getCurrentTenantId } from "@/lib/tenant-query-helper"
+import { resolveTenantIdForAdministradora } from "@/lib/resolve-tenant-administradora"
 import { validarCPF } from "@/utils/validacoes"
 import { FinanceirasService } from "@/services/financeiras-service"
 import AsaasServiceInstance from "@/services/asaas-service"
@@ -141,7 +142,9 @@ export async function gerarBoletoAdministradora(body: Record<string, unknown>): 
       )
     }
 
-    const tenantId = await getCurrentTenantId()
+    const tenantId = administradora_id
+      ? await resolveTenantIdForAdministradora(String(administradora_id))
+      : await getCurrentTenantId()
     const valorNum = Number(valor)
     if (isNaN(valorNum) || valorNum <= 0) {
       return NextResponse.json({ error: "Valor inválido" }, { status: 400 })
