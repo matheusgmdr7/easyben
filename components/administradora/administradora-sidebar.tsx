@@ -24,6 +24,7 @@ import {
   BriefcaseIcon,
   ChartBarSquareIcon,
   TableCellsIcon,
+  ClipboardDocumentListIcon,
 } from "@heroicons/react/24/outline"
 import { supabase } from "@/lib/supabase-auth"
 
@@ -39,6 +40,7 @@ export default function AdministradoraSidebar() {
   const [financeiroMenuOpen, setFinanceiroMenuOpen] = useState(false)
   const [contratoMenuOpen, setContratoMenuOpen] = useState(false)
   const [beneficiariosMenuOpen, setBeneficiariosMenuOpen] = useState(false)
+  const [auditoriaMenuOpen, setAuditoriaMenuOpen] = useState(false)
   
   // Estado para hover (auto-colapsar)
   const [isHovered, setIsHovered] = useState(false)
@@ -248,6 +250,9 @@ export default function AdministradoraSidebar() {
     }
     if (pathname?.startsWith('/administradora/beneficiarios')) {
       setBeneficiariosMenuOpen(true)
+    }
+    if (pathname?.startsWith('/administradora/auditoria')) {
+      setAuditoriaMenuOpen(true)
     }
   }, [pathname])
   
@@ -517,6 +522,51 @@ export default function AdministradoraSidebar() {
                       >
                         <DocumentDuplicateIcon className="h-4 w-4" />
                         <span>Devedores</span>
+                      </Link>
+                    </li>
+                  </ul>
+                )}
+              </li>
+              <li>
+                <button
+                  onClick={() => setAuditoriaMenuOpen(!auditoriaMenuOpen)}
+                  className={cn(
+                    "flex items-center justify-between w-full px-3 sm:px-4 py-2.5 sm:py-3 transition-all duration-300 ease-in-out font-medium text-xs sm:text-sm rounded-md",
+                    isActive("/administradora/auditoria")
+                      ? "bg-[#1E293B] text-white shadow-md active-item"
+                      : "text-gray-300 hover:bg-[#1E293B] hover:text-white hover:scale-[1.02] hover:shadow-md",
+                    !isVisuallyCollapsed && !isActive("/administradora/auditoria") && "hover:translate-x-1",
+                    isVisuallyCollapsed && "justify-center px-2"
+                  )}
+                  title={isVisuallyCollapsed ? "Auditoria" : ""}
+                >
+                  {!isVisuallyCollapsed && <span className="truncate flex-1 text-left">Auditoria</span>}
+                  <div className="flex items-center gap-2">
+                    <ClipboardDocumentListIcon className="h-5 w-5 flex-shrink-0" />
+                    {!isVisuallyCollapsed && (
+                      auditoriaMenuOpen ? (
+                        <ChevronDownIcon className="h-4 w-4 flex-shrink-0" />
+                      ) : (
+                        <ChevronRightIcon className="h-4 w-4 flex-shrink-0" />
+                      )
+                    )}
+                  </div>
+                </button>
+                {!isVisuallyCollapsed && auditoriaMenuOpen && (
+                  <ul className="ml-4 mt-1 space-y-0.5">
+                    <li>
+                      <Link
+                        href="/administradora/auditoria/faturas"
+                        className={cn(
+                          "flex items-center gap-2 px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm rounded-md transition-all duration-300",
+                          isActive("/administradora/auditoria/faturas")
+                            ? "bg-[#1E293B]/80 text-white"
+                            : "text-gray-300 hover:bg-[#1E293B]/50 hover:text-white"
+                        )}
+                        onClick={closeSidebar}
+                      >
+                        <DocumentDuplicateIcon className="h-4 w-4" />
+                        <span>Auditar faturas</span>
                       </Link>
                     </li>
                   </ul>

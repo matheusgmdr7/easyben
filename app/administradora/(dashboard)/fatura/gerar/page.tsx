@@ -1,7 +1,7 @@
 "use client"
 
-import { useState, useEffect, useMemo } from "react"
-import { useRouter } from "next/navigation"
+import { useState, useEffect, useMemo, useRef, Suspense } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
 import { getAdministradoraLogada } from "@/services/auth-administradoras-service"
 import { GruposBeneficiariosService, type GrupoBeneficiarios } from "@/services/grupos-beneficiarios-service"
 import { toast } from "sonner"
@@ -122,8 +122,10 @@ function chunkArray<T>(arr: T[], size: number): T[][] {
   return out
 }
 
-export default function FaturaGerarPage() {
+function FaturaGerarPageContent() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const queryAbrirClienteFeito = useRef<string | null>(null)
   const [administradoraId, setAdministradoraId] = useState<string | null>(null)
   const [grupos, setGrupos] = useState<GrupoBeneficiarios[]>([])
   const [grupoSelecionado, setGrupoSelecionado] = useState<GrupoBeneficiarios | null>(null)
@@ -323,6 +325,71 @@ export default function FaturaGerarPage() {
     setDescricao(partes.join(". "))
     setModalOpen(true)
   }
+
+  const queryGrupo = searchParams.get("grupo")
+  const queryCliente = searchParams.get("cliente")
+
+  useEffect(() => {
+    if (!queryGrupo || !queryCliente) {
+      queryAbrirClienteFeito.current = null
+      return
+    }
+    if (!administradoraId || loadingGrupos) return
+    if (grupos.length === 0) return
+
+    const g = grupos.find((gr) => gr.id === queryGrupo)
+    if (!g) {
+      toast.error("Grupo da URL não encontrado.")
+      router.replace("/administradora/fatura/gerar", { scroll: false })
+      return
+    }
+
+    const sig = `${queryGrupo}:${queryCliente}`
+    if (queryAbrirClienteFeito.current === sig) return
+    queryAbrirClienteFeito.current = sig
+
+    let cancelado = false
+    void (async () => {
+      try {
+        await selecionarGrupo(g)
+        if (cancelado) return
+        const res = await fetch(
+          `/api/administradora/grupos/${encodeURIComponent(queryGrupo)}/clientes-fatura?administradora_id=${encodeURIComponent(administradoraId)}`
+        )
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok) {
+          toast.error((data as { error?: string }).error || "Erro ao carregar cliente para gerar fatura.")
+          queryAbrirClienteFeito.current = null
+          return
+        }
+        const list = Array.isArray(data) ? (data as ClienteFatura[]) : []
+        const cli = list.find((c) => c.cliente_administradora_id === queryCliente)
+        if (cancelado) return
+        if (cli) {
+          abrirModal(cli)
+        } else {
+          toast.error("Titular não encontrado na lista de faturamento deste grupo.")
+          queryAbrirClienteFeito.current = null
+        }
+      } catch {
+        if (!cancelado) {
+          toast.error("Erro ao preparar geração de fatura.")
+          queryAbrirClienteFeito.current = null
+        }
+      } finally {
+        if (!cancelado) {
+          router.replace("/administradora/fatura/gerar", { scroll: false })
+        }
+      }
+    })()
+
+    return () => {
+      cancelado = true
+      queryAbrirClienteFeito.current = null
+    }
+    // selecionarGrupo/abrirModal são estáveis na intenção do fluxo; evita reexecução em loop
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- deps explícitos da query e carregamento de grupos
+  }, [queryGrupo, queryCliente, administradoraId, grupos, loadingGrupos, router])
 
   async function vincularDiaVencimentoCliente(cliente: ClienteFatura) {
     if (!administradoraId) return
@@ -650,23 +717,27 @@ export default function FaturaGerarPage() {
       if (da !== db) return da - db
       return (a.cliente_nome || "").localeCompare(b.cliente_nome || "", "pt-BR", { sensitivity: "base" })
     })
-  const totalPaginasClientes = Math.max(1, Math.ceil(clientesFiltrados.length / itensPorPaginaClientes))
-  const clientesPaginados = clientesFiltrados.slice(
-    (paginaClientes - 1) * itensPorPaginaClientes,
-    paginaClientes * itensPorPaginaClientes
+
+  /** Só titulares ainda sem fatura no mês de competência (mesmo critério do lote / API). Quem já faturou aparece no card Boletos. */
+  const clientesFiltradosElegiveisGerar = clientesFiltrados.filter((c) => !clienteJaFaturadoNoMesCompetencia(c))
+
+  const totalPaginasClientes = Math.max(
+    1,
+    Math.ceil(clientesFiltradosElegiveisGerar.length / itensPorPaginaClientes)
+  )
+  const paginaClientesClamp = Math.min(paginaClientes, totalPaginasClientes)
+  const clientesPaginados = clientesFiltradosElegiveisGerar.slice(
+    (paginaClientesClamp - 1) * itensPorPaginaClientes,
+    paginaClientesClamp * itensPorPaginaClientes
   )
 
-  /** Elegíveis para lote na visão atual (filtro de dia + busca aplicados). */
-  const clientesDisponiveisLoteFiltrados = clientesFiltrados.filter(
-    (c) => !clienteJaFaturadoNoMesCompetencia(c)
-  )
+  /** Elegíveis para lote = mesma lista exibida no card (apenas sem fatura no mês). */
+  const clientesDisponiveisLoteFiltrados = clientesFiltradosElegiveisGerar
   const selecionadosParaLote = clientesDisponiveisLoteFiltrados.filter(
     (c) => selecionadosLote.has(c.id) || selecionadosLote.has(c.cliente_administradora_id)
   )
 
   function toggleSelecaoLote(c: ClienteFatura) {
-    const isFaturado = clienteJaFaturadoNoMesCompetencia(c)
-    if (isFaturado) return
     setSelecionadosLote((prev) => {
       const next = new Set(prev)
       const key = c.id
@@ -1276,8 +1347,8 @@ export default function FaturaGerarPage() {
               </div>
               <p className="text-sm font-medium text-gray-800">{grupoSelecionado.nome}</p>
               <p className="text-sm text-gray-500 font-normal">
-                Lista apenas titulares. O valor inclui titular e dependentes vinculados. Ao gerar boleto, a taxa de administração é somada.
-                Regra mensal: cada cliente pode ser faturado uma vez por mês. O filtro &quot;Dia 01 / Dia 10&quot; mostra só quem já tem esse dia (importação ou cadastro); use &quot;Todos os vencimentos&quot; para ver titulares sem dia vinculado. &quot;Selecionar todos&quot; considera só a lista visível. A ordem prioriza quem ainda não foi faturado no mês e, entre eles, quem já tem dia 01 ou 10.
+                Lista apenas titulares <strong className="font-medium text-gray-700">ainda sem fatura no mês de competência</strong> (quem já foi faturado aparece no card Boletos do grupo). O valor inclui titular e dependentes. Ao gerar boleto, a taxa de administração é somada.
+                O filtro &quot;Dia 01 / Dia 10&quot; restringe por dia vinculado; use &quot;Todos os vencimentos&quot; para ver quem ainda não tem dia 01/10 gravado. &quot;Selecionar todos&quot; considera todos os titulares elegíveis após busca e filtro de dia. A ordem prioriza quem já tem dia 01 ou 10.
               </p>
               {clientesDisponiveisLoteFiltrados.length > 0 && (
                 <div className="flex flex-wrap items-center gap-2 pt-2">
@@ -1398,6 +1469,15 @@ export default function FaturaGerarPage() {
                         </p>
                       )}
                     </div>
+                  ) : clientesFiltradosElegiveisGerar.length === 0 ? (
+                    <div className="py-6 text-center space-y-2">
+                      <p className="text-sm text-gray-700 font-medium">
+                        Nenhum titular disponível para nova fatura no mês de competência atual.
+                      </p>
+                      <p className="text-xs text-gray-500 max-w-lg mx-auto">
+                        Todos os titulares que aparecem com os filtros atuais já possuem boleto/fatura com vencimento nesse mês. Consulte ou edite no card <span className="font-medium">Boletos do grupo</span> acima.
+                      </p>
+                    </div>
                   ) : (
                     <>
                       <div className="w-full rounded-md border border-gray-100">
@@ -1413,23 +1493,18 @@ export default function FaturaGerarPage() {
                           </TableHeader>
                           <TableBody>
                             {clientesPaginados.map((c) => {
-                              const isFaturado = clienteJaFaturadoNoMesCompetencia(c)
                               const isSelecionado = selecionadosLote.has(c.id) || selecionadosLote.has(c.cliente_administradora_id)
                               return (
                                 <TableRow key={c.id}>
                                   <TableCell className="w-10">
-                                    {!isFaturado ? (
-                                      <button
-                                        type="button"
-                                        onClick={() => toggleSelecaoLote(c)}
-                                        className="p-1 rounded hover:bg-gray-100"
-                                        aria-label={isSelecionado ? "Desmarcar" : "Selecionar para lote"}
-                                      >
-                                        {isSelecionado ? <CheckSquare className="h-5 w-5 text-[#0F172A]" /> : <Square className="h-5 w-5 text-gray-400" />}
-                                      </button>
-                                    ) : (
-                                      <span className="text-gray-300">—</span>
-                                    )}
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleSelecaoLote(c)}
+                                      className="p-1 rounded hover:bg-gray-100"
+                                      aria-label={isSelecionado ? "Desmarcar" : "Selecionar para lote"}
+                                    >
+                                      {isSelecionado ? <CheckSquare className="h-5 w-5 text-[#0F172A]" /> : <Square className="h-5 w-5 text-gray-400" />}
+                                    </button>
                                   </TableCell>
                                   <TableCell className="font-medium">
                                     <span>{c.cliente_nome || "—"}</span>
@@ -1446,60 +1521,42 @@ export default function FaturaGerarPage() {
                                   <TableCell>{c.dia_vencimento || "—"}</TableCell>
                                   <TableCell>{formatarMoeda(c.valor_mensal || 0)}</TableCell>
                                   <TableCell className="text-right">
-                                    {isFaturado ? (
-                                      <div className="flex flex-col xl:flex-row items-end justify-end gap-2">
-                                        <span className="inline-flex items-center gap-1 text-sm font-medium text-green-700">
-                                          <CheckCircle2 className="h-4 w-4" />
-                                      Faturado no mês
-                                        </span>
-                                        <Button
-                                          size="sm"
-                                          variant="outline"
-                                          onClick={() => irParaAbaFinanceiroCliente(c)}
-                                          className="border-slate-300 text-slate-800 hover:bg-slate-50"
-                                        >
-                                          <FileText className="h-4 w-4 mr-1" />
-                                          Editar fatura
-                                        </Button>
-                                      </div>
-                                    ) : (
-                                      <div className="flex flex-col xl:flex-row justify-end items-end gap-2">
-                                        {!c.dia_vencimento && (
-                                          <>
-                                            <Select
-                                              value={draftDiaVencimento[c.id] || ""}
-                                              onValueChange={(v) =>
-                                                setDraftDiaVencimento((prev) => ({ ...prev, [c.id]: v }))
-                                              }
-                                            >
-                                              <SelectTrigger className="h-8 w-24">
-                                                <SelectValue placeholder="Dia" />
-                                              </SelectTrigger>
-                                              <SelectContent>
-                                                <SelectItem value="01">Dia 01</SelectItem>
-                                                <SelectItem value="10">Dia 10</SelectItem>
-                                              </SelectContent>
-                                            </Select>
-                                            <Button
-                                              size="sm"
-                                              variant="outline"
-                                              onClick={() => vincularDiaVencimentoCliente(c)}
-                                              disabled={!!salvandoDiaCliente[c.id]}
-                                            >
-                                              {salvandoDiaCliente[c.id] ? "Salvando..." : "Vincular"}
-                                            </Button>
-                                          </>
-                                        )}
-                                        <Button
-                                          size="sm"
-                                          onClick={() => abrirModal(c)}
-                                          disabled={financeirasAtivas.length === 0}
-                                          className="bg-[#0F172A] hover:bg-[#1E293B] text-white"
-                                        >
-                                          Gerar boleto
-                                        </Button>
-                                      </div>
-                                    )}
+                                    <div className="flex flex-col xl:flex-row justify-end items-end gap-2">
+                                      {!c.dia_vencimento && (
+                                        <>
+                                          <Select
+                                            value={draftDiaVencimento[c.id] || ""}
+                                            onValueChange={(v) =>
+                                              setDraftDiaVencimento((prev) => ({ ...prev, [c.id]: v }))
+                                            }
+                                          >
+                                            <SelectTrigger className="h-8 w-24">
+                                              <SelectValue placeholder="Dia" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                              <SelectItem value="01">Dia 01</SelectItem>
+                                              <SelectItem value="10">Dia 10</SelectItem>
+                                            </SelectContent>
+                                          </Select>
+                                          <Button
+                                            size="sm"
+                                            variant="outline"
+                                            onClick={() => vincularDiaVencimentoCliente(c)}
+                                            disabled={!!salvandoDiaCliente[c.id]}
+                                          >
+                                            {salvandoDiaCliente[c.id] ? "Salvando..." : "Vincular"}
+                                          </Button>
+                                        </>
+                                      )}
+                                      <Button
+                                        size="sm"
+                                        onClick={() => abrirModal(c)}
+                                        disabled={financeirasAtivas.length === 0}
+                                        className="bg-[#0F172A] hover:bg-[#1E293B] text-white"
+                                      >
+                                        Gerar boleto
+                                      </Button>
+                                    </div>
                                   </TableCell>
                                 </TableRow>
                               )
@@ -1510,7 +1567,7 @@ export default function FaturaGerarPage() {
 
                       <div className="flex items-center justify-between pt-2">
                         <p className="text-sm text-gray-500">
-                          Mostrando {clientesPaginados.length} de {clientesFiltrados.length} cliente(s)
+                          Mostrando {clientesPaginados.length} de {clientesFiltradosElegiveisGerar.length} titular(es) elegível(is) à geração
                         </p>
                         <div className="flex items-center gap-2">
                           <Button
@@ -1518,19 +1575,19 @@ export default function FaturaGerarPage() {
                             size="sm"
                             variant="outline"
                             onClick={() => setPaginaClientes((p) => Math.max(1, p - 1))}
-                            disabled={paginaClientes === 1}
+                            disabled={paginaClientesClamp <= 1}
                           >
                             Anterior
                           </Button>
                           <span className="text-sm text-gray-600">
-                            Página {paginaClientes} de {totalPaginasClientes}
+                            Página {paginaClientesClamp} de {totalPaginasClientes}
                           </span>
                           <Button
                             type="button"
                             size="sm"
                             variant="outline"
                             onClick={() => setPaginaClientes((p) => Math.min(totalPaginasClientes, p + 1))}
-                            disabled={paginaClientes >= totalPaginasClientes}
+                            disabled={paginaClientesClamp >= totalPaginasClientes}
                           >
                             Próxima
                           </Button>
@@ -1900,5 +1957,13 @@ export default function FaturaGerarPage() {
         </DialogContent>
       </Dialog>
     </div>
+  )
+}
+
+export default function FaturaGerarPage() {
+  return (
+    <Suspense fallback={<div className="p-6 text-sm text-gray-500">Carregando…</div>}>
+      <FaturaGerarPageContent />
+    </Suspense>
   )
 }
