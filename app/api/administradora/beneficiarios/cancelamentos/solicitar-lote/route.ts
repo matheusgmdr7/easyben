@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase-admin"
 import { getCurrentTenantId } from "@/lib/tenant-query-helper"
 
+export const maxDuration = 120
+
+const CHUNK_IN = 80
+const CHUNK_INSERT = 100
+
 type Vida = {
   id: string
   administradora_id: string
@@ -32,6 +37,56 @@ function normalizarNome(v: unknown): string {
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
     .trim()
+}
+
+function chunkArray<T>(arr: T[], size: number): T[][] {
+  const out: T[][] = []
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size))
+  return out
+}
+
+async function atualizarVidaInativa(
+  vida: Vida,
+  observacoes: string,
+  administradoraId: string,
+  tenantId: string
+): Promise<string | null> {
+  const payload = { ativo: false, observacoes }
+  const base = () =>
+    supabaseAdmin
+      .from("vidas_importadas")
+      .update(payload)
+      .eq("id", vida.id)
+      .eq("administradora_id", administradoraId)
+
+  if (tenantId) {
+    const { data, error } = await base().eq("tenant_id", tenantId).select("id")
+    if (error) return error.message
+    if (data && data.length > 0) return null
+  }
+
+  const { data: dataLegado, error: errLegado } = await base().select("id")
+  if (errLegado) return errLegado.message
+  if (!dataLegado?.length) return "Registro não atualizado (vida inexistente ou já inativa)"
+  return null
+}
+
+async function registrarHistoricoVida(
+  vida: Vida,
+  observacoes: string,
+  tenantId: string
+): Promise<void> {
+  const alteracoes = {
+    ativo: { antes: vida.ativo ?? true, depois: false },
+    observacoes: { antes: vida.observacoes ?? null, depois: observacoes },
+  }
+  const payload: { vida_id: string; alteracoes: typeof alteracoes; tenant_id?: string } = {
+    vida_id: vida.id,
+    alteracoes,
+  }
+  if (tenantId) payload.tenant_id = tenantId
+  const { error } = await supabaseAdmin.from("vidas_importadas_historico").insert(payload)
+  if (error) console.warn(`[solicitar-lote] histórico vida ${vida.id}:`, error.message)
 }
 
 async function resolverTenantDaAdministradora(administradoraId: string): Promise<string> {
@@ -114,28 +169,43 @@ export async function POST(request: NextRequest) {
     // 1) Busca direta por IDs recebidos (mais confiável que apenas mapa em memória)
     let vidasPorIds = [] as Vida[]
     if (beneficiarioIds.length > 0) {
-      const { data: porIdsTenant, error: errPorIdsTenant } = await supabaseAdmin
-        .from("vidas_importadas")
-        .select("id, administradora_id, grupo_id, nome, cpf, cpf_titular, tipo, ativo, observacoes")
-        .eq("administradora_id", administradoraId)
-        .eq("tenant_id", tenantId)
-        .neq("ativo", false)
-        .in("id", beneficiarioIds)
-      if (errPorIdsTenant) throw errPorIdsTenant
-      vidasPorIds = (porIdsTenant || []) as Vida[]
+      const idsEncontradosPorChunk = new Set<string>()
+      for (const idsChunk of chunkArray(beneficiarioIds, CHUNK_IN)) {
+        let q = supabaseAdmin
+          .from("vidas_importadas")
+          .select("id, administradora_id, grupo_id, nome, cpf, cpf_titular, tipo, ativo, observacoes")
+          .eq("administradora_id", administradoraId)
+          .neq("ativo", false)
+          .in("id", idsChunk)
+        if (tenantId) q = q.eq("tenant_id", tenantId)
+        const { data: porIdsTenant, error: errPorIdsTenant } = await q
+        if (errPorIdsTenant) throw errPorIdsTenant
+        for (const v of (porIdsTenant || []) as Vida[]) {
+          const idNorm = normalizarVidaId(v.id)
+          if (!idsEncontradosPorChunk.has(idNorm)) {
+            idsEncontradosPorChunk.add(idNorm)
+            vidasPorIds.push(v)
+          }
+        }
+      }
 
-      if (vidasPorIds.length < beneficiarioIds.length) {
-        const idsEncontrados = new Set(vidasPorIds.map((v) => normalizarVidaId(v.id)))
-        const faltantes = beneficiarioIds.filter((id) => !idsEncontrados.has(normalizarVidaId(id)))
-        if (faltantes.length > 0) {
+      const faltantes = beneficiarioIds.filter((id) => !idsEncontradosPorChunk.has(normalizarVidaId(id)))
+      if (faltantes.length > 0) {
+        for (const idsChunk of chunkArray(faltantes, CHUNK_IN)) {
           const { data: porIdsLegado, error: errPorIdsLegado } = await supabaseAdmin
             .from("vidas_importadas")
             .select("id, administradora_id, grupo_id, nome, cpf, cpf_titular, tipo, ativo, observacoes")
             .eq("administradora_id", administradoraId)
             .neq("ativo", false)
-            .in("id", faltantes)
+            .in("id", idsChunk)
           if (errPorIdsLegado) throw errPorIdsLegado
-          vidasPorIds = [...vidasPorIds, ...((porIdsLegado || []) as Vida[])]
+          for (const v of (porIdsLegado || []) as Vida[]) {
+            const idNorm = normalizarVidaId(v.id)
+            if (!idsEncontradosPorChunk.has(idNorm)) {
+              idsEncontradosPorChunk.add(idNorm)
+              vidasPorIds.push(v)
+            }
+          }
         }
       }
     }
@@ -224,14 +294,21 @@ export async function POST(request: NextRequest) {
     }
 
     const idsAfetar = vidasAfetar.map((v) => v.id)
-    const { data: existentesSolicitados } = await supabaseAdmin
-      .from("cancelamentos_beneficiarios")
-      .select("vida_id")
-      .eq("administradora_id", administradoraId)
-      .eq("tenant_id", tenantId)
-      .eq("status_fluxo", "solicitado")
-      .in("vida_id", idsAfetar)
-    const idsComSolicitacaoAberta = new Set((existentesSolicitados || []).map((r: any) => String(r.vida_id)))
+    const idsComSolicitacaoAberta = new Set<string>()
+    for (const idsChunk of chunkArray(idsAfetar, CHUNK_IN)) {
+      let qExist = supabaseAdmin
+        .from("cancelamentos_beneficiarios")
+        .select("vida_id")
+        .eq("administradora_id", administradoraId)
+        .eq("status_fluxo", "solicitado")
+        .in("vida_id", idsChunk)
+      if (tenantId) qExist = qExist.eq("tenant_id", tenantId)
+      const { data: existentesSolicitados, error: errExist } = await qExist
+      if (errExist) throw errExist
+      for (const r of existentesSolicitados || []) {
+        idsComSolicitacaoAberta.add(String((r as { vida_id: string }).vida_id))
+      }
+    }
 
     const jaSolicitados = vidasAfetar.filter((v) => idsComSolicitacaoAberta.has(v.id))
     const vidasParaSolicitar = vidasAfetar.filter((v) => !idsComSolicitacaoAberta.has(v.id))
@@ -268,40 +345,35 @@ export async function POST(request: NextRequest) {
       data_solicitacao: new Date().toISOString(),
     }))
 
-    const { error: errInsert } = await supabaseAdmin
-      .from("cancelamentos_beneficiarios")
-      .insert(cancelamentos)
-    if (errInsert) throw errInsert
+    for (const lote of chunkArray(cancelamentos, CHUNK_INSERT)) {
+      const { error: errInsert } = await supabaseAdmin.from("cancelamentos_beneficiarios").insert(lote)
+      if (errInsert) throw errInsert
+    }
 
     const carimbo = new Date().toLocaleString("pt-BR")
     const nota = `Cancelamento solicitado em lote em ${carimbo}.`
+    const avisosAtualizacao: string[] = []
+    let vidasAtualizadas = 0
+
     for (const vida of vidasParaSolicitar) {
       const obsAtual = String(vida.observacoes || "").trim()
       const observacoes = obsAtual ? `${obsAtual}\n${nota}` : nota
-      const { error: errVida } = await supabaseAdmin
-        .from("vidas_importadas")
-        .update({ ativo: false, observacoes })
-        .eq("id", vida.id)
-        .eq("administradora_id", administradoraId)
-        .eq("tenant_id", tenantId)
-      if (errVida) throw errVida
-
-      await supabaseAdmin.from("vidas_importadas_historico").insert({
-        vida_id: vida.id,
-        tenant_id: tenantId,
-        alteracoes: {
-          ativo: { antes: vida.ativo ?? true, depois: false },
-          observacoes: { antes: vida.observacoes ?? null, depois: observacoes },
-        },
-      })
+      const erroVida = await atualizarVidaInativa(vida, observacoes, administradoraId, tenantId)
+      if (erroVida) {
+        avisosAtualizacao.push(`${vida.nome || vida.id}: ${erroVida}`)
+        continue
+      }
+      vidasAtualizadas += 1
+      await registrarHistoricoVida(vida, observacoes, tenantId)
     }
 
     return NextResponse.json({
       success: true,
       solicitados: vidasParaSolicitar.length,
+      vidas_atualizadas: vidasAtualizadas,
       ja_solicitados: jaSolicitados.length,
       ignorados,
-      beneficiarios_afetados: vidasParaSolicitar.map((v) => ({ id: v.id, nome: v.nome, tipo: v.tipo })),
+      avisos: avisosAtualizacao.slice(0, 15),
       diagnostico: {
         ids_recebidos: beneficiarioIds.length,
         referencias_recebidas: referenciasEntrada.length,

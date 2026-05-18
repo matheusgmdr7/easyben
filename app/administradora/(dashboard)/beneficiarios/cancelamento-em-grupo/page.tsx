@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
+import { cn } from "@/lib/utils"
 import * as XLSX from "xlsx"
 import { toast } from "sonner"
 import { getAdministradoraLogada } from "@/services/auth-administradoras-service"
@@ -41,6 +42,8 @@ function normalizarTexto(v: unknown) {
     .toLowerCase()
     .trim()
 }
+
+const ITENS_POR_PAGINA_PREVIEW = 25
 
 function parseArquivo(file: File): Promise<{ headers: string[]; rows: LinhaArquivo[] }> {
   return new Promise((resolve, reject) => {
@@ -92,6 +95,7 @@ export default function CancelamentoEmGrupoPage() {
   const [loadingArquivo, setLoadingArquivo] = useState(false)
   const [loadingVidas, setLoadingVidas] = useState(false)
   const [enviando, setEnviando] = useState(false)
+  const [paginaPreview, setPaginaPreview] = useState(1)
 
   function baixarTemplateCancelamentoGrupo() {
     try {
@@ -162,6 +166,7 @@ export default function CancelamentoEmGrupoPage() {
         return { __cpfs: cpfs, __nomes: nomes }
       })
       setRows(normalizadas)
+      setPaginaPreview(1)
       toast.success(`${r.length} linha(s) carregada(s).`)
     } catch (e: any) {
       toast.error("Erro ao ler arquivo: " + (e?.message || "desconhecido"))
@@ -271,6 +276,18 @@ export default function CancelamentoEmGrupoPage() {
     [preview]
   )
 
+  const totalPaginasPreview = Math.max(1, Math.ceil(preview.length / ITENS_POR_PAGINA_PREVIEW))
+  const paginaPreviewSegura = Math.min(paginaPreview, totalPaginasPreview)
+
+  const previewPaginada = useMemo(() => {
+    const inicio = (paginaPreviewSegura - 1) * ITENS_POR_PAGINA_PREVIEW
+    return preview.slice(inicio, inicio + ITENS_POR_PAGINA_PREVIEW)
+  }, [preview, paginaPreviewSegura])
+
+  useEffect(() => {
+    setPaginaPreview((p) => Math.min(Math.max(1, p), totalPaginasPreview))
+  }, [preview.length, totalPaginasPreview])
+
   async function solicitarLote() {
     if (!administradoraId) {
       toast.error("Administradora não identificada.")
@@ -289,9 +306,8 @@ export default function CancelamentoEmGrupoPage() {
           administradora_id: administradoraId,
           beneficiario_ids: idsEncontrados,
           referencias: preview
-            .filter((p) => p.beneficiarioId || p.cpfArquivo || p.nomeArquivo)
+            .filter((p) => !p.beneficiarioId && (p.cpfArquivo || p.nomeArquivo))
             .map((p) => ({
-              id: p.beneficiarioId || undefined,
               cpf: p.cpfArquivo || undefined,
               nome: p.nomeArquivo || undefined,
             })),
@@ -302,11 +318,11 @@ export default function CancelamentoEmGrupoPage() {
       if (!res.ok) throw new Error(data?.error || "Erro ao solicitar cancelamento em lote")
       const ignorados = Array.isArray(data?.ignorados) ? data.ignorados.length : 0
       const jaSolicitados = Number(data?.ja_solicitados || 0)
-      const idsRecebidos = Number(data?.diagnostico?.ids_recebidos || 0)
-      const refsRecebidas = Number(data?.diagnostico?.referencias_recebidas || 0)
-      const idsMapeados = Number(data?.diagnostico?.ids_mapeados || 0)
+      const solicitados = Number(data?.solicitados || 0)
+      const vidasAtualizadas = Number(data?.vidas_atualizadas ?? solicitados)
+      const avisos = Array.isArray(data?.avisos) ? (data.avisos as string[]) : []
       toast.success(
-        `Solicitação enviada. Novos: ${data?.solicitados || 0}${jaSolicitados > 0 ? ` | Já solicitados: ${jaSolicitados}` : ""}${ignorados > 0 ? ` | Ignorados: ${ignorados}` : ""}${idsRecebidos > 0 ? ` | IDs mapeados: ${idsMapeados}/${idsRecebidos}` : ""}${refsRecebidas > 0 ? ` | Referências: ${refsRecebidas}` : ""}`
+        `Solicitação registrada. Novos: ${solicitados}${jaSolicitados > 0 ? ` | Já solicitados: ${jaSolicitados}` : ""}${ignorados > 0 ? ` | Ignorados: ${ignorados}` : ""}${vidasAtualizadas !== solicitados ? ` | Vidas atualizadas: ${vidasAtualizadas}` : ""}`
       )
       if (ignorados > 0) {
         const amostra = Array.isArray(data?.diagnostico?.amostra_ignorados)
@@ -318,9 +334,15 @@ export default function CancelamentoEmGrupoPage() {
           toast.info(`Amostra de ignorados: ${amostra}`)
         }
       }
+      if (avisos.length > 0) {
+        toast.warning(
+          `Alguns cadastros não foram atualizados (${avisos.length}). O cancelamento foi solicitado. Ex.: ${avisos[0]}`
+        )
+      }
       setFile(null)
       setRows([])
       setMotivoLote("")
+      setPaginaPreview(1)
     } catch (e: any) {
       toast.error(e?.message || "Erro ao solicitar cancelamento em lote")
     } finally {
@@ -328,8 +350,8 @@ export default function CancelamentoEmGrupoPage() {
     }
   }
 
-  function removerLinhaPreview(linhaIndex: number) {
-    setRows((prev) => prev.filter((_, idx) => idx !== linhaIndex))
+  function removerLinhaPreview(indiceNaListaRows: number) {
+    setRows((prev) => prev.filter((_, idx) => idx !== indiceNaListaRows))
   }
 
   return (
@@ -440,7 +462,7 @@ export default function CancelamentoEmGrupoPage() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {preview.slice(0, 300).map((p, previewIdx) => (
+                      {previewPaginada.map((p) => (
                         <TableRow key={`${p.linha}-${p.cpfArquivo}-${p.nomeArquivo}`}>
                           <TableCell>{p.linha}</TableCell>
                           <TableCell>{p.nomeArquivo || "—"}</TableCell>
@@ -454,11 +476,12 @@ export default function CancelamentoEmGrupoPage() {
                           <TableCell>{p.motivoNaoEncontrado || "—"}</TableCell>
                           <TableCell>
                             <span
-                              className={`inline-flex items-center px-2 py-0.5 text-xs font-semibold rounded-sm border ${
+                              className={cn(
+                                "inline-flex items-center px-2 py-0.5 text-xs font-semibold rounded-sm border",
                                 p.status === "Encontrado"
                                   ? "bg-emerald-100 text-emerald-800 border-emerald-200"
                                   : "bg-amber-100 text-amber-800 border-amber-200"
-                              }`}
+                              )}
                             >
                               {p.status}
                             </span>
@@ -468,7 +491,7 @@ export default function CancelamentoEmGrupoPage() {
                               type="button"
                               variant="outline"
                               size="sm"
-                              onClick={() => removerLinhaPreview(previewIdx)}
+                              onClick={() => removerLinhaPreview(p.linha - 1)}
                               className="h-8 text-red-600 hover:text-red-700 hover:border-red-200 hover:bg-red-50"
                             >
                               Excluir
@@ -479,10 +502,35 @@ export default function CancelamentoEmGrupoPage() {
                     </TableBody>
                   </Table>
                 </div>
-                {preview.length > 300 && (
-                  <p className="text-xs text-gray-500 mt-2">
-                    Exibindo as 300 primeiras linhas na prévia.
-                  </p>
+                {preview.length > ITENS_POR_PAGINA_PREVIEW && (
+                  <div className="flex flex-wrap items-center justify-between gap-2 mt-3 text-sm text-gray-600">
+                    <span>
+                      Página {paginaPreviewSegura} de {totalPaginasPreview} ·{" "}
+                      {(paginaPreviewSegura - 1) * ITENS_POR_PAGINA_PREVIEW + 1}–
+                      {Math.min(paginaPreviewSegura * ITENS_POR_PAGINA_PREVIEW, preview.length)} de{" "}
+                      {preview.length} linha(s)
+                    </span>
+                    <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={paginaPreviewSegura <= 1}
+                        onClick={() => setPaginaPreview((p) => Math.max(1, p - 1))}
+                      >
+                        Anterior
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={paginaPreviewSegura >= totalPaginasPreview}
+                        onClick={() => setPaginaPreview((p) => Math.min(totalPaginasPreview, p + 1))}
+                      >
+                        Próxima
+                      </Button>
+                    </div>
+                  </div>
                 )}
               </>
             )}

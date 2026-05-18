@@ -25,6 +25,7 @@ import {
   ChartBarSquareIcon,
   TableCellsIcon,
   ClipboardDocumentListIcon,
+  ExclamationTriangleIcon,
 } from "@heroicons/react/24/outline"
 import { supabase } from "@/lib/supabase-auth"
 
@@ -843,6 +844,21 @@ export default function AdministradoraSidebar() {
                 </button>
                 {!isVisuallyCollapsed && financeiroMenuOpen && (
                   <ul className="ml-4 mt-1 space-y-0.5">
+                    <li>
+                      <Link
+                        href="/administradora/financeiro/inadimplencia"
+                        className={cn(
+                          "flex items-center gap-2 px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm rounded-md transition-all duration-300",
+                          isActive("/administradora/financeiro/inadimplencia")
+                            ? "bg-[#1E293B]/80 text-white"
+                            : "text-gray-300 hover:bg-[#1E293B]/50 hover:text-white"
+                        )}
+                        onClick={closeSidebar}
+                      >
+                        <ExclamationTriangleIcon className="h-4 w-4" />
+                        <span>Inadimplência</span>
+                      </Link>
+                    </li>
                     <li>
                       <Link
                         href="/administradora/financeiro/pesquisar"

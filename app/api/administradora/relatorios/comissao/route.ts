@@ -205,6 +205,8 @@ export async function GET(request: NextRequest) {
       numero_fatura: string | null
       valor_fatura: number
       vencimento: string | null
+      /** Status do boleto/cobrança (normalizado: pendente, paga, atrasada, cancelada, etc.) */
+      status_boleto: string
       percentual_comissao: number
       valor_comissao: number
     }> = []
@@ -222,6 +224,7 @@ export async function GET(request: NextRequest) {
 
       const valor = Number(f.valor ?? 0)
       const valorComissao = Number(((valor * percentual) / 100).toFixed(2))
+      const statusBoleto = normalizarStatus(String(f.status || ""))
       linhas.push({
         fatura_id: f.id,
         cliente_administradora_id: cid,
@@ -231,6 +234,7 @@ export async function GET(request: NextRequest) {
         numero_fatura: f.numero_fatura ?? null,
         valor_fatura: valor,
         vencimento: f.vencimento ?? null,
+        status_boleto: statusBoleto || "pendente",
         percentual_comissao: percentual,
         valor_comissao: valorComissao,
       })

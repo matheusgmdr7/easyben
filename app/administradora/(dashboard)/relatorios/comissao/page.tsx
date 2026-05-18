@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { FileDown, FileSpreadsheet, Search } from "lucide-react"
+import { Badge } from "@/components/ui/badge"
 import { formatarData, formatarMoeda } from "@/utils/formatters"
 import { cn } from "@/lib/utils"
 
@@ -19,8 +20,39 @@ type LinhaComissao = {
   numero_fatura: string | null
   valor_fatura: number
   vencimento: string | null
+  /** Status normalizado da cobrança/boleto (ex.: paga, pendente). */
+  status_boleto: string
   percentual_comissao: number
   valor_comissao: number
+}
+
+const ROTULO_STATUS_BOLETO: Record<string, string> = {
+  pendente: "Pendente",
+  paga: "Paga",
+  atrasada: "Atrasada",
+  cancelada: "Cancelada",
+  parcialmente_paga: "Parcialmente Paga",
+}
+
+function rotuloStatusBoleto(codigo: string): string {
+  const c = String(codigo || "").trim().toLowerCase()
+  return ROTULO_STATUS_BOLETO[c] || (c ? c.charAt(0).toUpperCase() + c.slice(1) : "—")
+}
+
+function classeBadgeStatusBoleto(codigo: string): string {
+  switch (String(codigo || "").trim().toLowerCase()) {
+    case "paga":
+      return "bg-emerald-100 text-emerald-900 border-transparent"
+    case "atrasada":
+      return "bg-red-100 text-red-900 border-transparent"
+    case "cancelada":
+      return "bg-gray-100 text-gray-800 border-transparent"
+    case "parcialmente_paga":
+      return "bg-blue-100 text-blue-900 border-transparent"
+    case "pendente":
+    default:
+      return "bg-amber-100 text-amber-900 border-transparent"
+  }
 }
 
 type Corretor = { id: string; nome: string }
@@ -118,7 +150,14 @@ export default function RelatorioComissaoPage() {
         throw new Error(data?.error || "Erro ao buscar relatório")
       }
 
-      setLinhas(Array.isArray(data?.linhas) ? data.linhas : [])
+      setLinhas(
+        Array.isArray(data?.linhas)
+          ? data.linhas.map((l: LinhaComissao) => ({
+              ...l,
+              status_boleto: typeof l.status_boleto === "string" ? l.status_boleto : "pendente",
+            }))
+          : []
+      )
       setTotalFaturas(Number(data?.total_valor_faturas ?? 0))
       setTotalComissao(Number(data?.total_comissao ?? 0))
       setTotalClientesDistintos(Number(data?.total_clientes_distintos ?? 0))
@@ -150,8 +189,8 @@ export default function RelatorioComissaoPage() {
       const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" })
       const margem = 8
       const larguraUtil = doc.internal.pageSize.getWidth() - margem * 2
-      const headers = ["Qtd", "Corretora", "Cliente", "Nº fatura", "Vencimento", "Valor", "%", "Comissão"]
-      const colWidths = [9, 36, 54, 32, 22, 26, 14, 30]
+      const headers = ["Qtd", "Corretora", "Cliente", "Nº fatura", "Vencimento", "Status", "Valor", "%", "Comissão"]
+      const colWidths = [9, 32, 48, 28, 20, 22, 24, 12, 28]
       const headerRowH = 6
       const maxY = 196
       const pct = Number(String(percentualStr).replace(",", ".")) || 0
@@ -214,6 +253,7 @@ export default function RelatorioComissaoPage() {
           nomeClienteCurto,
           item.numero_fatura || "—",
           item.vencimento ? formatarData(item.vencimento) : "—",
+          rotuloStatusBoleto(item.status_boleto),
           formatarMoeda(item.valor_fatura),
           `${item.percentual_comissao}%`,
           formatarMoeda(item.valor_comissao),
@@ -267,6 +307,7 @@ export default function RelatorioComissaoPage() {
         Cliente: item.cliente_nome || "-",
         NumeroFatura: item.numero_fatura || "-",
         Vencimento: item.vencimento ? formatarData(item.vencimento) : "-",
+        StatusBoleto: rotuloStatusBoleto(item.status_boleto),
         ValorFatura: item.valor_fatura,
         PercentualComissao: item.percentual_comissao,
         ValorComissao: item.valor_comissao,
@@ -404,6 +445,7 @@ export default function RelatorioComissaoPage() {
                   <th className="text-left px-3 py-2 font-semibold">Cliente</th>
                   <th className="text-left px-3 py-2 font-semibold">Nº fatura</th>
                   <th className="text-left px-3 py-2 font-semibold">Vencimento</th>
+                  <th className="text-left px-3 py-2 font-semibold">Status</th>
                   <th className="text-right px-3 py-2 font-semibold">Valor</th>
                   <th className="text-right px-3 py-2 font-semibold">% comissão</th>
                   <th className="text-right px-3 py-2 font-semibold">Comissão</th>
@@ -412,7 +454,7 @@ export default function RelatorioComissaoPage() {
               <tbody>
                 {linhasPaginadas.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="px-3 py-8 text-center text-gray-500">
+                    <td colSpan={9} className="px-3 py-8 text-center text-gray-500">
                       {loading ? "Carregando…" : "Nenhum dado. Ajuste os filtros e clique em Gerar relatório."}
                     </td>
                   </tr>
@@ -431,6 +473,17 @@ export default function RelatorioComissaoPage() {
                         <td className="px-3 py-2 text-gray-700">
                           {row.vencimento ? formatarData(row.vencimento) : "—"}
                         </td>
+                        <td className="px-3 py-2 text-gray-800 whitespace-nowrap">
+                          <Badge
+                            variant="outline"
+                            className={cn(
+                              "font-medium text-[11px] leading-tight shadow-none",
+                              classeBadgeStatusBoleto(row.status_boleto)
+                            )}
+                          >
+                            {rotuloStatusBoleto(row.status_boleto)}
+                          </Badge>
+                        </td>
                         <td className="px-3 py-2 text-right tabular-nums">{formatarMoeda(row.valor_fatura)}</td>
                         <td className="px-3 py-2 text-right tabular-nums">{row.percentual_comissao}%</td>
                         <td className="px-3 py-2 text-right font-medium tabular-nums">
@@ -444,7 +497,7 @@ export default function RelatorioComissaoPage() {
               {linhas.length > 0 && (
                 <tfoot className="bg-slate-100 border-t-2 border-slate-200">
                   <tr>
-                    <td colSpan={5} className="px-3 py-2 text-right font-semibold text-gray-800">
+                    <td colSpan={6} className="px-3 py-2 text-right font-semibold text-gray-800">
                       Totais ({linhas.length} fatura{linhas.length !== 1 ? "s" : ""} · {totalClientesDistintos} cliente
                       {totalClientesDistintos !== 1 ? "s" : ""})
                     </td>
