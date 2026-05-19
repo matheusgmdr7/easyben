@@ -84,6 +84,92 @@ export interface CriarConfiguracaoFaturamentoData {
   instrucoes_boleto?: string
 }
 
+const STATUS_PROPOSTA_ATIVA = ["aprovada", "assinada", "finalizada"] as const
+
+/**
+ * Conta beneficiários ativos do grupo, alinhado à listagem em grupos-beneficiarios/[id]
+ * (vidas importadas ativas; se não houver vidas no grupo, vínculos com cliente/proposta ativos).
+ */
+async function contarBeneficiariosAtivosPorGrupo(
+  grupoId: string,
+  administradoraId: string,
+  tenantId: string
+): Promise<number> {
+  const baseVidas = () =>
+    supabase
+      .from("vidas_importadas")
+      .select("*", { count: "exact", head: true })
+      .eq("grupo_id", grupoId)
+      .eq("administradora_id", administradoraId)
+
+  let qTotal = baseVidas()
+  let qAtivas = baseVidas().neq("ativo", false)
+  if (tenantId) {
+    qTotal = qTotal.eq("tenant_id", tenantId)
+    qAtivas = qAtivas.eq("tenant_id", tenantId)
+  }
+
+  const [{ count: totalComTenant }, { count: ativasComTenant }] = await Promise.all([qTotal, qAtivas])
+  let totalVidas = totalComTenant ?? 0
+  let vidasAtivas = ativasComTenant ?? 0
+
+  if (totalVidas === 0) {
+    const [{ count: totalLegado }, { count: ativasLegado }] = await Promise.all([
+      baseVidas(),
+      baseVidas().neq("ativo", false),
+    ])
+    totalVidas = totalLegado ?? 0
+    vidasAtivas = ativasLegado ?? 0
+  }
+
+  if (totalVidas > 0) {
+    return vidasAtivas
+  }
+
+  let qVinculos = supabase
+    .from("clientes_grupos")
+    .select("cliente_id, cliente_tipo")
+    .eq("grupo_id", grupoId)
+  if (tenantId) qVinculos = qVinculos.eq("tenant_id", tenantId)
+
+  const { data: vinculos, error: errVinculos } = await qVinculos
+  if (errVinculos) throw errVinculos
+  if (!vinculos?.length) return 0
+
+  const idsCa = vinculos
+    .filter((v) => v.cliente_tipo === "cliente_administradora" && v.cliente_id)
+    .map((v) => String(v.cliente_id))
+  const idsProposta = vinculos
+    .filter((v) => v.cliente_tipo === "proposta" && v.cliente_id)
+    .map((v) => String(v.cliente_id))
+
+  let ativos = 0
+
+  if (idsCa.length > 0) {
+    let qCa = supabase
+      .from("clientes_administradoras")
+      .select("*", { count: "exact", head: true })
+      .in("id", idsCa)
+      .eq("status", "ativo")
+    if (tenantId) qCa = qCa.eq("tenant_id", tenantId)
+    const { count, error } = await qCa
+    if (error) throw error
+    ativos += count ?? 0
+  }
+
+  if (idsProposta.length > 0) {
+    const { count, error } = await supabase
+      .from("propostas")
+      .select("*", { count: "exact", head: true })
+      .in("id", idsProposta)
+      .in("status", [...STATUS_PROPOSTA_ATIVA])
+    if (error) throw error
+    ativos += count ?? 0
+  }
+
+  return ativos
+}
+
 /**
  * Service para gerenciar grupos de beneficiários
  */
@@ -128,28 +214,13 @@ export class GruposBeneficiariosService {
 
       if (error) throw error
 
-      // Buscar total de beneficiários: clientes/propostas vinculados (clientes_grupos) + vidas importadas
       const gruposComClientes = await Promise.all(
         (data || []).map(async (grupo) => {
-          const { count: countVinculos } = await supabase
-            .from("clientes_grupos")
-            .select("*", { count: "exact", head: true })
-            .eq("grupo_id", grupo.id)
-            .eq("tenant_id", tenantId)
-
-          const { count: countVidas } = await supabase
-            .from("vidas_importadas")
-            .select("*", { count: "exact", head: true })
-            .eq("grupo_id", grupo.id)
-            .eq("administradora_id", administradoraId)
-            .eq("tenant_id", tenantId)
-            .neq("ativo", false)
-
-          // Evita dupla contagem:
-          // quando há vidas_importadas no grupo, elas já representam o universo de beneficiários.
-          // clientes_grupos é usado como vínculo operacional e pode repetir titulares já presentes em vidas.
-          const totalBeneficiarios = (countVidas || 0) > 0 ? (countVidas || 0) : (countVinculos || 0)
-
+          const totalBeneficiarios = await contarBeneficiariosAtivosPorGrupo(
+            grupo.id,
+            administradoraId,
+            tenantId
+          )
           return {
             ...grupo,
             total_clientes: totalBeneficiarios,

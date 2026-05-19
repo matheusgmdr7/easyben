@@ -61,6 +61,15 @@ export default function DetalhesGrupoPage() {
     return "titular"
   }
 
+  function isBeneficiarioAtivo(item: any): boolean {
+    if (item?.situacao === "Ativo") return true
+    if (item?.situacao === "Inativo") return false
+    if (item.cliente_tipo === "vida_importada") {
+      return item.cliente?.ativo !== false && item._vida?.ativo !== false
+    }
+    return true
+  }
+
   useEffect(() => {
     if (grupoId) {
       carregarGrupo()
@@ -129,9 +138,15 @@ export default function DetalhesGrupoPage() {
 
       const adm = getAdministradoraLogada()
       const qAdmin = adm?.id ? `&administradora_id=${encodeURIComponent(adm.id)}` : ""
-      const res = await fetch(`/api/administradora/vidas-importadas?grupo_id=${encodeURIComponent(grupoId)}${qAdmin}&somente_ativos=1`)
-      const vidas = (await res.json().catch(() => [])) || []
-      const vidasArray = Array.isArray(vidas) ? vidas : []
+      const urlVidasBase = `/api/administradora/vidas-importadas?grupo_id=${encodeURIComponent(grupoId)}${qAdmin}`
+      const [resAtivos, resTodasVidas] = await Promise.all([
+        fetch(`${urlVidasBase}&somente_ativos=1`),
+        fetch(urlVidasBase),
+      ])
+      const vidasAtivas = (await resAtivos.json().catch(() => [])) || []
+      const vidasTodas = (await resTodasVidas.json().catch(() => [])) || []
+      const vidasArray = Array.isArray(vidasAtivas) ? vidasAtivas : []
+      const grupoPossuiVidasImportadas = Array.isArray(vidasTodas) && vidasTodas.length > 0
       const vidaPorClienteAdmId = new Map<string, any>()
       for (const v of vidasArray) {
         const caId = String(v?.cliente_administradora_id || "").trim()
@@ -163,10 +178,10 @@ export default function DetalhesGrupoPage() {
         _vida: { ...v, valor_mensal: v.valor_mensal },
       }))
 
-      // Otimização: quando há vidas importadas, elas são a fonte oficial da tela.
-      // Nesse cenário não precisamos montar os dados de clientes_grupos (query pesada em lote).
-      if (vidasComoClientes.length > 0) {
-        setClientes(vidasComoClientes)
+      // Quando o grupo tem vidas importadas (ativas ou não), elas são a fonte oficial.
+      // Mesmo com zero ativas após cancelamento, não usa clientes_grupos (evita contagem/lista defasada).
+      if (grupoPossuiVidasImportadas) {
+        setClientes(vidasComoClientes.filter((c) => isBeneficiarioAtivo(c)))
         return
       }
 
@@ -253,13 +268,10 @@ export default function DetalhesGrupoPage() {
         })
       )
 
-      const clientesFiltrados = clientesCompletos.filter((c) => c.cliente)
-
-      // Fonte única por grupo:
-      // - Se houver vidas importadas, elas são a origem oficial dos beneficiários.
-      // - Só usa clientes_grupos quando o grupo não tiver vidas importadas.
-      const usaVidasImportadasComoFontePrincipal = vidasComoClientes.length > 0
-      setClientes(usaVidasImportadasComoFontePrincipal ? vidasComoClientes : clientesFiltrados)
+      const clientesFiltrados = clientesCompletos.filter(
+        (c) => c.cliente && isBeneficiarioAtivo(c)
+      )
+      setClientes(clientesFiltrados)
     } catch (error: any) {
       console.error("Erro ao carregar clientes:", error)
       toast.error("Erro ao carregar clientes")
@@ -540,7 +552,18 @@ export default function DetalhesGrupoPage() {
     }
   }
 
-  const clientesFiltrados = clientes.filter((item) => {
+  const clientesAtivos = useMemo(() => clientes.filter(isBeneficiarioAtivo), [clientes])
+
+  const resumoCards = useMemo(
+    () => ({
+      total: clientesAtivos.length,
+      titulares: clientesAtivos.filter((c) => getTipoItem(c) === "titular").length,
+      dependentes: clientesAtivos.filter((c) => getTipoItem(c) === "dependente").length,
+    }),
+    [clientesAtivos]
+  )
+
+  const clientesFiltrados = clientesAtivos.filter((item) => {
     if (filtroTipo === "titular" && getTipoItem(item) !== "titular") return false
     if (filtroCorretora !== "todas") {
       const corretorId = obterCorretorIdItem(item)
@@ -682,33 +705,33 @@ export default function DetalhesGrupoPage() {
         <Card className="border border-slate-200 bg-white shadow-sm rounded-lg">
           <CardHeader className="pb-2">
             <CardTitle className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-              Total de Beneficiários
+              Beneficiários ativos
             </CardTitle>
           </CardHeader>
           <CardContent className="pt-0">
-            <div className="text-2xl font-bold text-slate-800 tracking-tight">{clientes.length}</div>
+            <div className="text-2xl font-bold text-slate-800 tracking-tight">{resumoCards.total}</div>
           </CardContent>
         </Card>
 
         <Card className="border border-slate-200 bg-white shadow-sm rounded-lg">
           <CardHeader className="pb-2">
             <CardTitle className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-              Total de Titulares
+              Titulares ativos
             </CardTitle>
           </CardHeader>
           <CardContent className="pt-0">
-            <div className="text-2xl font-bold text-slate-800 tracking-tight">{clientes.filter((c) => getTipoItem(c) === "titular").length}</div>
+            <div className="text-2xl font-bold text-slate-800 tracking-tight">{resumoCards.titulares}</div>
           </CardContent>
         </Card>
 
         <Card className="border border-slate-200 bg-white shadow-sm rounded-lg">
           <CardHeader className="pb-2">
             <CardTitle className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-              Total de Dependentes
+              Dependentes ativos
             </CardTitle>
           </CardHeader>
           <CardContent className="pt-0">
-            <div className="text-2xl font-bold text-slate-800 tracking-tight">{clientes.filter((c) => getTipoItem(c) === "dependente").length}</div>
+            <div className="text-2xl font-bold text-slate-800 tracking-tight">{resumoCards.dependentes}</div>
           </CardContent>
         </Card>
 

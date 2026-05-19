@@ -150,7 +150,7 @@ export default function GruposBeneficiariosPage() {
           <TableHeader>
             <TableRow className="bg-gray-50">
               <TableHead className="font-bold">Nome do Grupo</TableHead>
-              <TableHead className="font-bold">Total de Beneficiários</TableHead>
+              <TableHead className="font-bold">Beneficiários ativos</TableHead>
               <TableHead className="font-bold">Status</TableHead>
               <TableHead className="font-bold text-right">Ações</TableHead>
             </TableRow>
