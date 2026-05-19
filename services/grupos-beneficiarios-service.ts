@@ -123,6 +123,8 @@ async function contarBeneficiariosAtivosPorGrupo(
   }
 
   if (totalVidas > 0) {
+    // Contagem por vidas_importadas.ativo (após sincronização no cancelamento).
+    // Não subtrai cancelamentos aqui: RLS do browser pode divergir e zerar a coluna na listagem.
     return vidasAtivas
   }
 

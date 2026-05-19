@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase-admin"
-import { getCurrentTenantId } from "@/lib/tenant-query-helper"
+import {
+  inativarVidaImportada,
+  resolverTenantIdAdministradora,
+  sincronizarVidasInativasPorCancelamentos,
+} from "@/lib/cancelamento-beneficiario-vida"
 
 export const maxDuration = 120
 
@@ -45,60 +49,6 @@ function chunkArray<T>(arr: T[], size: number): T[][] {
   return out
 }
 
-async function atualizarVidaInativa(
-  vida: Vida,
-  observacoes: string,
-  administradoraId: string,
-  tenantId: string
-): Promise<string | null> {
-  const payload = { ativo: false, observacoes }
-  const base = () =>
-    supabaseAdmin
-      .from("vidas_importadas")
-      .update(payload)
-      .eq("id", vida.id)
-      .eq("administradora_id", administradoraId)
-
-  if (tenantId) {
-    const { data, error } = await base().eq("tenant_id", tenantId).select("id")
-    if (error) return error.message
-    if (data && data.length > 0) return null
-  }
-
-  const { data: dataLegado, error: errLegado } = await base().select("id")
-  if (errLegado) return errLegado.message
-  if (!dataLegado?.length) return "Registro não atualizado (vida inexistente ou já inativa)"
-  return null
-}
-
-async function registrarHistoricoVida(
-  vida: Vida,
-  observacoes: string,
-  tenantId: string
-): Promise<void> {
-  const alteracoes = {
-    ativo: { antes: vida.ativo ?? true, depois: false },
-    observacoes: { antes: vida.observacoes ?? null, depois: observacoes },
-  }
-  const payload: { vida_id: string; alteracoes: typeof alteracoes; tenant_id?: string } = {
-    vida_id: vida.id,
-    alteracoes,
-  }
-  if (tenantId) payload.tenant_id = tenantId
-  const { error } = await supabaseAdmin.from("vidas_importadas_historico").insert(payload)
-  if (error) console.warn(`[solicitar-lote] histórico vida ${vida.id}:`, error.message)
-}
-
-async function resolverTenantDaAdministradora(administradoraId: string): Promise<string> {
-  const { data: adm } = await supabaseAdmin
-    .from("administradoras")
-    .select("tenant_id")
-    .eq("id", administradoraId)
-    .maybeSingle()
-  if (adm?.tenant_id) return adm.tenant_id
-  return getCurrentTenantId()
-}
-
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json().catch(() => ({}))
@@ -121,7 +71,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const tenantId = await resolverTenantDaAdministradora(administradoraId)
+    const tenantId = await resolverTenantIdAdministradora(administradoraId)
 
     const { data: vidasGrupoTenant, error: errVidasTenant } = await supabaseAdmin
       .from("vidas_importadas")
@@ -356,21 +306,32 @@ export async function POST(request: NextRequest) {
     let vidasAtualizadas = 0
 
     for (const vida of vidasParaSolicitar) {
-      const obsAtual = String(vida.observacoes || "").trim()
-      const observacoes = obsAtual ? `${obsAtual}\n${nota}` : nota
-      const erroVida = await atualizarVidaInativa(vida, observacoes, administradoraId, tenantId)
-      if (erroVida) {
-        avisosAtualizacao.push(`${vida.nome || vida.id}: ${erroVida}`)
+      const res = await inativarVidaImportada({
+        vidaId: vida.id,
+        administradoraId,
+        tenantId,
+        notaObservacao: nota,
+      })
+      if (!res.ok) {
+        avisosAtualizacao.push(`${vida.nome || vida.id}: ${res.error || "falha ao inativar"}`)
         continue
       }
       vidasAtualizadas += 1
-      await registrarHistoricoVida(vida, observacoes, tenantId)
+    }
+
+    const sync = await sincronizarVidasInativasPorCancelamentos({
+      administradoraId,
+      tenantId,
+    })
+    for (const e of sync.erros) {
+      if (avisosAtualizacao.length < 15) avisosAtualizacao.push(e)
     }
 
     return NextResponse.json({
       success: true,
       solicitados: vidasParaSolicitar.length,
       vidas_atualizadas: vidasAtualizadas,
+      vidas_sincronizadas: sync.atualizadas,
       ja_solicitados: jaSolicitados.length,
       ignorados,
       avisos: avisosAtualizacao.slice(0, 15),

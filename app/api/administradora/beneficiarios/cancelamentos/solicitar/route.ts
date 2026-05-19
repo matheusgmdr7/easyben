@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase-admin"
-import { getCurrentTenantId } from "@/lib/tenant-query-helper"
+import {
+  inativarVidaImportada,
+  resolverTenantIdAdministradora,
+} from "@/lib/cancelamento-beneficiario-vida"
 
 type Vida = {
   id: string
@@ -18,16 +21,6 @@ function limparDigitos(v: string | null | undefined) {
   return String(v || "").replace(/\D/g, "")
 }
 
-async function resolverTenantDaAdministradora(administradoraId: string): Promise<string> {
-  const { data: adm } = await supabaseAdmin
-    .from("administradoras")
-    .select("tenant_id")
-    .eq("id", administradoraId)
-    .maybeSingle()
-  if (adm?.tenant_id) return adm.tenant_id
-  return getCurrentTenantId()
-}
-
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json().catch(() => ({}))
@@ -40,17 +33,26 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "administradora_id e beneficiario_id são obrigatórios" }, { status: 400 })
     }
 
-    const tenantId = await resolverTenantDaAdministradora(administradoraId)
+    const tenantId = await resolverTenantIdAdministradora(administradoraId)
 
-    const { data: vidaBase, error: errVida } = await supabaseAdmin
-      .from("vidas_importadas")
-      .select("id, administradora_id, grupo_id, nome, cpf, cpf_titular, tipo, ativo, observacoes")
-      .eq("id", vidaId)
-      .eq("administradora_id", administradoraId)
-      .eq("tenant_id", tenantId)
-      .maybeSingle()
+    const buscarVida = async (comTenant: boolean) => {
+      let q = supabaseAdmin
+        .from("vidas_importadas")
+        .select("id, administradora_id, grupo_id, nome, cpf, cpf_titular, tipo, ativo, observacoes")
+        .eq("id", vidaId)
+        .eq("administradora_id", administradoraId)
+      if (comTenant && tenantId) q = q.eq("tenant_id", tenantId)
+      return q.maybeSingle()
+    }
 
+    let { data: vidaBase, error: errVida } = await buscarVida(true)
     if (errVida) throw errVida
+    if (!vidaBase) {
+      const legado = await buscarVida(false)
+      if (legado.error) throw legado.error
+      vidaBase = legado.data
+    }
+
     if (!vidaBase) return NextResponse.json({ error: "Beneficiário não encontrado" }, { status: 404 })
 
     const vidaPrincipal = vidaBase as Vida
@@ -61,24 +63,34 @@ export async function POST(request: NextRequest) {
     if (tipo === "titular") {
       const cpfTitular = limparDigitos(vidaPrincipal.cpf)
       if (cpfTitular.length >= 11) {
-        const { data: dependentes, error: errDeps } = await supabaseAdmin
-          .from("vidas_importadas")
-          .select("id, administradora_id, grupo_id, nome, cpf, cpf_titular, tipo, ativo, observacoes")
-          .eq("administradora_id", administradoraId)
-          .eq("tenant_id", tenantId)
-          .eq("grupo_id", grupoId)
-          .eq("tipo", "dependente")
-          .eq("ativo", true)
-          .eq("cpf_titular", cpfTitular)
+        const buscarDeps = async (comTenant: boolean) => {
+          let q = supabaseAdmin
+            .from("vidas_importadas")
+            .select("id, administradora_id, grupo_id, nome, cpf, cpf_titular, tipo, ativo, observacoes")
+            .eq("administradora_id", administradoraId)
+            .eq("grupo_id", grupoId)
+            .eq("tipo", "dependente")
+            .neq("ativo", false)
+            .eq("cpf_titular", cpfTitular)
+          if (comTenant && tenantId) q = q.eq("tenant_id", tenantId)
+          return q
+        }
+        let { data: dependentes, error: errDeps } = await buscarDeps(true)
         if (errDeps) throw errDeps
+        if (!dependentes?.length) {
+          const legado = await buscarDeps(false)
+          if (legado.error) throw legado.error
+          dependentes = legado.data
+        }
         vidasAfetadas = [vidaPrincipal, ...((dependentes || []) as Vida[])]
       }
     }
 
     const carimbo = new Date().toLocaleString("pt-BR")
-    const nota = tipo === "titular"
-      ? `Cancelamento solicitado em ${carimbo} (titular + dependentes).`
-      : `Cancelamento solicitado em ${carimbo} (dependente).`
+    const nota =
+      tipo === "titular"
+        ? `Cancelamento solicitado em ${carimbo} (titular + dependentes).`
+        : `Cancelamento solicitado em ${carimbo} (dependente).`
 
     const cancelamentosParaInserir = vidasAfetadas.map((vida) => ({
       tenant_id: tenantId,
@@ -98,26 +110,15 @@ export async function POST(request: NextRequest) {
       .select("id, vida_id, status_fluxo")
     if (errInsert) throw errInsert
 
+    const avisos: string[] = []
     for (const vida of vidasAfetadas) {
-      const obsAtual = String(vida.observacoes || "").trim()
-      const observacoes = obsAtual ? `${obsAtual}\n${nota}` : nota
-      const { error: errUpdate } = await supabaseAdmin
-        .from("vidas_importadas")
-        .update({ ativo: false, observacoes })
-        .eq("id", vida.id)
-        .eq("administradora_id", administradoraId)
-        .eq("tenant_id", tenantId)
-      if (errUpdate) throw errUpdate
-
-      const alteracoes = {
-        ativo: { antes: vida.ativo ?? true, depois: false },
-        observacoes: { antes: vida.observacoes ?? null, depois: observacoes },
-      }
-      await supabaseAdmin.from("vidas_importadas_historico").insert({
-        vida_id: vida.id,
-        tenant_id: tenantId,
-        alteracoes,
+      const res = await inativarVidaImportada({
+        vidaId: vida.id,
+        administradoraId,
+        tenantId,
+        notaObservacao: nota,
       })
+      if (!res.ok) avisos.push(`${vida.nome || vida.id}: ${res.error || "falha ao inativar"}`)
     }
 
     return NextResponse.json({
@@ -125,6 +126,7 @@ export async function POST(request: NextRequest) {
       cancelamentos_criados: inseridos?.length || 0,
       beneficiarios_afetados: vidasAfetadas.map((v) => ({ id: v.id, nome: v.nome, tipo: v.tipo || "titular" })),
       tipo_solicitacao: tipo,
+      avisos: avisos.slice(0, 10),
     })
   } catch (e: unknown) {
     console.error("Erro ao solicitar cancelamento:", e)

@@ -31,34 +31,46 @@ export async function GET(request: NextRequest) {
 
     const tenantId = await resolverTenantDaAdministradora(administradoraId)
 
-    let query = supabaseAdmin
-      .from("cancelamentos_beneficiarios")
-      .select(`
+    const buildQuery = () => {
+      let q = supabaseAdmin
+        .from("cancelamentos_beneficiarios")
+        .select(`
         *,
-        vida:vidas_importadas(id, nome, cpf, tipo, ativo, grupo_id, corretor_id, valor_mensal),
+        vida:vidas_importadas(id, nome, cpf, tipo, ativo, grupo_id, corretor_id, valor_mensal, dados_adicionais),
         grupo_origem:grupos_beneficiarios!cancelamentos_beneficiarios_grupo_origem_id_fkey(id, nome),
         grupo_destino:grupos_beneficiarios!cancelamentos_beneficiarios_grupo_destino_reativacao_id_fkey(id, nome)
       `)
-      .eq("administradora_id", administradoraId)
-      .eq("tenant_id", tenantId)
-      .order("data_solicitacao", { ascending: false })
+        .eq("administradora_id", administradoraId)
+        .eq("tenant_id", tenantId)
+        .order("data_solicitacao", { ascending: false })
 
-    if (status && ["solicitado", "processado_operadora", "reativado"].includes(status)) {
-      query = query.eq("status_fluxo", status)
+      if (status && ["solicitado", "processado_operadora", "reativado"].includes(status)) {
+        q = q.eq("status_fluxo", status)
+      }
+      if (grupoId) {
+        q = q.eq("grupo_origem_id", grupoId)
+      }
+      if (inicioSolicitacao) q = q.gte("data_solicitacao", `${inicioSolicitacao}T00:00:00.000Z`)
+      if (fimSolicitacao) q = q.lte("data_solicitacao", `${fimSolicitacao}T23:59:59.999Z`)
+      if (inicioProcessamento) q = q.gte("data_cancelamento_operadora", inicioProcessamento)
+      if (fimProcessamento) q = q.lte("data_cancelamento_operadora", fimProcessamento)
+      return q
     }
-    if (grupoId) {
-      query = query.eq("grupo_origem_id", grupoId)
+
+    const PAGE_SIZE = 1000
+    const allData: unknown[] = []
+    let from = 0
+    let hasMore = true
+    while (hasMore) {
+      const { data: chunk, error } = await buildQuery().range(from, from + PAGE_SIZE - 1)
+      if (error) throw error
+      const list = chunk || []
+      allData.push(...list)
+      hasMore = list.length === PAGE_SIZE
+      from += PAGE_SIZE
     }
 
-    if (inicioSolicitacao) query = query.gte("data_solicitacao", `${inicioSolicitacao}T00:00:00.000Z`)
-    if (fimSolicitacao) query = query.lte("data_solicitacao", `${fimSolicitacao}T23:59:59.999Z`)
-    if (inicioProcessamento) query = query.gte("data_cancelamento_operadora", inicioProcessamento)
-    if (fimProcessamento) query = query.lte("data_cancelamento_operadora", fimProcessamento)
-
-    const { data, error } = await query
-    if (error) throw error
-
-    let lista = Array.isArray(data) ? data : []
+    let lista = allData
     if (corretorId) {
       lista = lista.filter((item: any) => String(item?.vida?.corretor_id || "") === corretorId)
     }

@@ -62,6 +62,8 @@ export default function AdministradoraSidebar() {
   
   // Estado visual (colapsado quando não está com hover)
   const isVisuallyCollapsed = isCollapsed && !isHovered
+  /** Mobile com drawer aberto = menu completo (rótulos + submenus). Desktop = não colapsado ou hover. */
+  const isMenuExpanded = isMobile ? isOpen : !isVisuallyCollapsed
   
   // Estado para logo e nome da administradora
   const [administradoraInfo, setAdministradoraInfo] = useState<{
@@ -265,8 +267,8 @@ export default function AdministradoraSidebar() {
       active 
         ? "bg-[#1E293B] text-white shadow-md active-item" 
         : "text-gray-300 hover:bg-[#1E293B] hover:text-white hover:scale-[1.02] hover:shadow-md",
-      !isVisuallyCollapsed && !active && "hover:translate-x-1",
-      isVisuallyCollapsed && "justify-center px-2"
+      isMenuExpanded && !active && "hover:translate-x-1",
+      !isMenuExpanded && "justify-center px-2"
     )
   }
 
@@ -337,12 +339,12 @@ export default function AdministradoraSidebar() {
         onMouseLeave={handleMouseLeave}
         className={`fixed top-0 left-0 z-40 h-screen bg-[#0F172A] shadow-lg transition-all duration-300 ease-in-out ${
           isOpen
-            ? isVisuallyCollapsed
-              ? "w-16 sm:w-20 translate-x-0"
-              : "w-64 lg:w-72 translate-x-0"
-            : isVisuallyCollapsed
-              ? "w-16 sm:w-20 -translate-x-full"
-              : "w-64 lg:w-72 -translate-x-full"
+            ? isMenuExpanded
+              ? "w-64 sm:w-72 translate-x-0"
+              : "w-16 sm:w-20 translate-x-0"
+            : isMenuExpanded
+              ? "w-64 sm:w-72 -translate-x-full"
+              : "w-16 sm:w-20 -translate-x-full"
         } md:translate-x-0 ${isVisuallyCollapsed ? "md:w-16 lg:w-20" : "md:w-64 lg:w-72"}`}
         style={{ fontFamily: "'Inter', sans-serif" }}
       >
@@ -355,7 +357,7 @@ export default function AdministradoraSidebar() {
               boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06)'
             }}
           >
-            {!isVisuallyCollapsed ? (
+            {isMenuExpanded ? (
               <Link
                 href="/administradora/dashboard"
                 className="flex items-center justify-center w-full h-full"
@@ -430,9 +432,9 @@ export default function AdministradoraSidebar() {
                   href="/administradora/dashboard"
                   className={getMenuItemClasses("/administradora/dashboard")}
                   onClick={closeSidebar}
-                  title={isVisuallyCollapsed ? "Dashboard" : ""}
+                  title={!isMenuExpanded ? "Dashboard" : ""}
                 >
-                  {!isVisuallyCollapsed && <span className="truncate flex-1">Dashboard</span>}
+                  {isMenuExpanded && <span className="truncate flex-1">Dashboard</span>}
                   <HomeIcon className="h-5 w-5 flex-shrink-0" />
                 </Link>
               </li>
@@ -444,17 +446,17 @@ export default function AdministradoraSidebar() {
                     isActive("/administradora/relatorios") || isActive("/administradora/faturamento") || isActive("/administradora/fatura/devedores")
                       ? "bg-[#1E293B] text-white shadow-md active-item"
                       : "text-gray-300 hover:bg-[#1E293B] hover:text-white hover:scale-[1.02] hover:shadow-md",
-                    !isVisuallyCollapsed &&
+                    isMenuExpanded &&
                       !(isActive("/administradora/relatorios") || isActive("/administradora/faturamento") || isActive("/administradora/fatura/devedores")) &&
                       "hover:translate-x-1",
-                    isVisuallyCollapsed && "justify-center px-2"
+                    !isMenuExpanded && "justify-center px-2"
                   )}
-                  title={isVisuallyCollapsed ? "Relatórios" : ""}
+                  title={!isMenuExpanded ? "Relatórios" : ""}
                 >
-                  {!isVisuallyCollapsed && <span className="truncate flex-1 text-left">Relatórios</span>}
+                  {isMenuExpanded && <span className="truncate flex-1 text-left">Relatórios</span>}
                   <div className="flex items-center gap-2">
                     <ChartBarSquareIcon className="h-5 w-5 flex-shrink-0" />
-                    {!isVisuallyCollapsed && (
+                    {isMenuExpanded && (
                       relatoriosMenuOpen ? (
                         <ChevronDownIcon className="h-4 w-4 flex-shrink-0" />
                       ) : (
@@ -463,7 +465,7 @@ export default function AdministradoraSidebar() {
                     )}
                   </div>
                 </button>
-                {!isVisuallyCollapsed && relatoriosMenuOpen && (
+                {isMenuExpanded && relatoriosMenuOpen && (
                   <ul className="ml-4 mt-1 space-y-0.5">
                     <li>
                       <Link
@@ -536,15 +538,15 @@ export default function AdministradoraSidebar() {
                     isActive("/administradora/auditoria")
                       ? "bg-[#1E293B] text-white shadow-md active-item"
                       : "text-gray-300 hover:bg-[#1E293B] hover:text-white hover:scale-[1.02] hover:shadow-md",
-                    !isVisuallyCollapsed && !isActive("/administradora/auditoria") && "hover:translate-x-1",
-                    isVisuallyCollapsed && "justify-center px-2"
+                    isMenuExpanded && !isActive("/administradora/auditoria") && "hover:translate-x-1",
+                    !isMenuExpanded && "justify-center px-2"
                   )}
-                  title={isVisuallyCollapsed ? "Auditoria" : ""}
+                  title={!isMenuExpanded ? "Auditoria" : ""}
                 >
-                  {!isVisuallyCollapsed && <span className="truncate flex-1 text-left">Auditoria</span>}
+                  {isMenuExpanded && <span className="truncate flex-1 text-left">Auditoria</span>}
                   <div className="flex items-center gap-2">
                     <ClipboardDocumentListIcon className="h-5 w-5 flex-shrink-0" />
-                    {!isVisuallyCollapsed && (
+                    {isMenuExpanded && (
                       auditoriaMenuOpen ? (
                         <ChevronDownIcon className="h-4 w-4 flex-shrink-0" />
                       ) : (
@@ -553,7 +555,7 @@ export default function AdministradoraSidebar() {
                     )}
                   </div>
                 </button>
-                {!isVisuallyCollapsed && auditoriaMenuOpen && (
+                {isMenuExpanded && auditoriaMenuOpen && (
                   <ul className="ml-4 mt-1 space-y-0.5">
                     <li>
                       <Link
@@ -582,13 +584,13 @@ export default function AdministradoraSidebar() {
                     isActive("/administradora/grupos-beneficiarios")
                       ? "bg-[#1E293B] text-white shadow-md active-item"
                       : "text-gray-300 hover:bg-[#1E293B] hover:text-white hover:scale-[1.02] hover:shadow-md",
-                    !isVisuallyCollapsed && !isActive("/administradora/grupos-beneficiarios") && "hover:translate-x-1",
-                    isVisuallyCollapsed && "justify-center px-2"
+                    isMenuExpanded && !isActive("/administradora/grupos-beneficiarios") && "hover:translate-x-1",
+                    !isMenuExpanded && "justify-center px-2"
                   )}
                   onClick={closeSidebar}
-                  title={isVisuallyCollapsed ? "Grupo de Beneficiários" : ""}
+                  title={!isMenuExpanded ? "Grupo de Beneficiários" : ""}
                 >
-                  {!isVisuallyCollapsed && <span className="truncate flex-1">Grupo de Beneficiários</span>}
+                  {isMenuExpanded && <span className="truncate flex-1">Grupo de Beneficiários</span>}
                   <UserGroupIcon className="h-5 w-5 flex-shrink-0" />
                 </Link>
               </li>
@@ -601,15 +603,15 @@ export default function AdministradoraSidebar() {
                     isActive("/administradora/beneficiarios")
                       ? "bg-[#1E293B] text-white shadow-md active-item"
                       : "text-gray-300 hover:bg-[#1E293B] hover:text-white hover:scale-[1.02] hover:shadow-md",
-                    !isVisuallyCollapsed && !isActive("/administradora/beneficiarios") && "hover:translate-x-1",
-                    isVisuallyCollapsed && "justify-center px-2"
+                    isMenuExpanded && !isActive("/administradora/beneficiarios") && "hover:translate-x-1",
+                    !isMenuExpanded && "justify-center px-2"
                   )}
-                  title={isVisuallyCollapsed ? "Beneficiários" : ""}
+                  title={!isMenuExpanded ? "Beneficiários" : ""}
                 >
-                  {!isVisuallyCollapsed && <span className="truncate flex-1 text-left">Beneficiários</span>}
+                  {isMenuExpanded && <span className="truncate flex-1 text-left">Beneficiários</span>}
                   <div className="flex items-center gap-2">
                     <UsersIcon className="h-5 w-5 flex-shrink-0" />
-                    {!isVisuallyCollapsed && (
+                    {isMenuExpanded && (
                       beneficiariosMenuOpen ? (
                         <ChevronDownIcon className="h-4 w-4 flex-shrink-0" />
                       ) : (
@@ -618,7 +620,7 @@ export default function AdministradoraSidebar() {
                     )}
                   </div>
                 </button>
-                {!isVisuallyCollapsed && beneficiariosMenuOpen && (
+                {isMenuExpanded && beneficiariosMenuOpen && (
                   <ul className="ml-4 mt-1 space-y-0.5">
                     <li>
                       <Link
@@ -752,15 +754,15 @@ export default function AdministradoraSidebar() {
                     isActive("/administradora/fatura") 
                       ? "bg-[#1E293B] text-white shadow-md active-item" 
                       : "text-gray-300 hover:bg-[#1E293B] hover:text-white hover:scale-[1.02] hover:shadow-md",
-                    !isVisuallyCollapsed && !isActive("/administradora/fatura") && "hover:translate-x-1",
-                    isVisuallyCollapsed && "justify-center px-2"
+                    isMenuExpanded && !isActive("/administradora/fatura") && "hover:translate-x-1",
+                    !isMenuExpanded && "justify-center px-2"
                   )}
-                  title={isVisuallyCollapsed ? "Fatura" : ""}
+                  title={!isMenuExpanded ? "Fatura" : ""}
                 >
-                  {!isVisuallyCollapsed && <span className="truncate flex-1 text-left">Fatura</span>}
+                  {isMenuExpanded && <span className="truncate flex-1 text-left">Fatura</span>}
                   <div className="flex items-center gap-2">
                     <DocumentDuplicateIcon className="h-5 w-5 flex-shrink-0" />
-                    {!isVisuallyCollapsed && (
+                    {isMenuExpanded && (
                       faturaMenuOpen ? (
                         <ChevronDownIcon className="h-4 w-4 flex-shrink-0" />
                       ) : (
@@ -769,7 +771,7 @@ export default function AdministradoraSidebar() {
                     )}
                   </div>
                 </button>
-                {!isVisuallyCollapsed && faturaMenuOpen && (
+                {isMenuExpanded && faturaMenuOpen && (
                   <ul className="ml-4 mt-1 space-y-0.5">
                     <li>
                       <Link
@@ -810,9 +812,9 @@ export default function AdministradoraSidebar() {
                   href="/administradora/financeiras"
                   className={getMenuItemClasses("/administradora/financeiras")}
                   onClick={closeSidebar}
-                  title={isVisuallyCollapsed ? "Financeira" : ""}
+                  title={!isMenuExpanded ? "Financeira" : ""}
                 >
-                  {!isVisuallyCollapsed && <span className="truncate flex-1">Financeira</span>}
+                  {isMenuExpanded && <span className="truncate flex-1">Financeira</span>}
                   <BuildingOffice2Icon className="h-5 w-5 flex-shrink-0" />
                 </Link>
               </li>
@@ -825,15 +827,15 @@ export default function AdministradoraSidebar() {
                     isActive("/administradora/financeiro")
                       ? "bg-[#1E293B] text-white shadow-md active-item"
                       : "text-gray-300 hover:bg-[#1E293B] hover:text-white hover:scale-[1.02] hover:shadow-md",
-                    !isVisuallyCollapsed && !isActive("/administradora/financeiro") && "hover:translate-x-1",
-                    isVisuallyCollapsed && "justify-center px-2"
+                    isMenuExpanded && !isActive("/administradora/financeiro") && "hover:translate-x-1",
+                    !isMenuExpanded && "justify-center px-2"
                   )}
-                  title={isVisuallyCollapsed ? "Financeiro" : ""}
+                  title={!isMenuExpanded ? "Financeiro" : ""}
                 >
-                  {!isVisuallyCollapsed && <span className="truncate flex-1 text-left">Financeiro</span>}
+                  {isMenuExpanded && <span className="truncate flex-1 text-left">Financeiro</span>}
                   <div className="flex items-center gap-2">
                     <CurrencyDollarIcon className="h-5 w-5 flex-shrink-0" />
-                    {!isVisuallyCollapsed && (
+                    {isMenuExpanded && (
                       financeiroMenuOpen ? (
                         <ChevronDownIcon className="h-4 w-4 flex-shrink-0" />
                       ) : (
@@ -842,7 +844,7 @@ export default function AdministradoraSidebar() {
                     )}
                   </div>
                 </button>
-                {!isVisuallyCollapsed && financeiroMenuOpen && (
+                {isMenuExpanded && financeiroMenuOpen && (
                   <ul className="ml-4 mt-1 space-y-0.5">
                     <li>
                       <Link
@@ -886,15 +888,15 @@ export default function AdministradoraSidebar() {
                     isActive("/administradora/contrato")
                       ? "bg-[#1E293B] text-white shadow-md active-item"
                       : "text-gray-300 hover:bg-[#1E293B] hover:text-white hover:scale-[1.02] hover:shadow-md",
-                    !isVisuallyCollapsed && !isActive("/administradora/contrato") && "hover:translate-x-1",
-                    isVisuallyCollapsed && "justify-center px-2"
+                    isMenuExpanded && !isActive("/administradora/contrato") && "hover:translate-x-1",
+                    !isMenuExpanded && "justify-center px-2"
                   )}
-                  title={isVisuallyCollapsed ? "Contrato" : ""}
+                  title={!isMenuExpanded ? "Contrato" : ""}
                 >
-                  {!isVisuallyCollapsed && <span className="truncate flex-1 text-left">Contrato</span>}
+                  {isMenuExpanded && <span className="truncate flex-1 text-left">Contrato</span>}
                   <div className="flex items-center gap-2">
                     <DocumentTextIcon className="h-5 w-5 flex-shrink-0" />
-                    {!isVisuallyCollapsed && (
+                    {isMenuExpanded && (
                       contratoMenuOpen ? (
                         <ChevronDownIcon className="h-4 w-4 flex-shrink-0" />
                       ) : (
@@ -903,7 +905,7 @@ export default function AdministradoraSidebar() {
                     )}
                   </div>
                 </button>
-                {!isVisuallyCollapsed && contratoMenuOpen && (
+                {isMenuExpanded && contratoMenuOpen && (
                   <ul className="ml-4 mt-1 space-y-0.5">
                     <li>
                       <Link
@@ -946,13 +948,13 @@ export default function AdministradoraSidebar() {
                     isActive("/administradora/propostas") 
                       ? "bg-[#1E293B] text-white shadow-md active-item" 
                       : "text-gray-300 hover:bg-[#1E293B] hover:text-white hover:scale-[1.02] hover:shadow-md",
-                    !isVisuallyCollapsed && !isActive("/administradora/propostas") && "hover:translate-x-1",
-                    isVisuallyCollapsed && "justify-center px-2"
+                    isMenuExpanded && !isActive("/administradora/propostas") && "hover:translate-x-1",
+                    !isMenuExpanded && "justify-center px-2"
                   )}
                   onClick={closeSidebar}
-                  title={isVisuallyCollapsed ? "Propostas" : ""}
+                  title={!isMenuExpanded ? "Propostas" : ""}
                 >
-                  {!isVisuallyCollapsed && <span className="truncate flex-1">Propostas</span>}
+                  {isMenuExpanded && <span className="truncate flex-1">Propostas</span>}
                   <DocumentTextIcon className="h-5 w-5 flex-shrink-0" />
                 </Link>
               </li>
@@ -964,13 +966,13 @@ export default function AdministradoraSidebar() {
                     isActive("/administradora/corretores") 
                       ? "bg-[#1E293B] text-white shadow-md active-item" 
                       : "text-gray-300 hover:bg-[#1E293B] hover:text-white hover:scale-[1.02] hover:shadow-md",
-                    !isVisuallyCollapsed && !isActive("/administradora/corretores") && "hover:translate-x-1",
-                    isVisuallyCollapsed && "justify-center px-2"
+                    isMenuExpanded && !isActive("/administradora/corretores") && "hover:translate-x-1",
+                    !isMenuExpanded && "justify-center px-2"
                   )}
                   onClick={closeSidebar}
-                  title={isVisuallyCollapsed ? "Corretores" : ""}
+                  title={!isMenuExpanded ? "Corretores" : ""}
                 >
-                  {!isVisuallyCollapsed && <span className="truncate flex-1">Corretores</span>}
+                  {isMenuExpanded && <span className="truncate flex-1">Corretores</span>}
                   <BriefcaseIcon className="h-5 w-5 flex-shrink-0" />
                 </Link>
               </li>
@@ -982,13 +984,13 @@ export default function AdministradoraSidebar() {
                     isActive("/administradora/configuracoes") 
                       ? "bg-[#1E293B] text-white shadow-md active-item" 
                       : "text-gray-300 hover:bg-[#1E293B] hover:text-white hover:scale-[1.02] hover:shadow-md",
-                    !isVisuallyCollapsed && !isActive("/administradora/configuracoes") && "hover:translate-x-1",
-                    isVisuallyCollapsed && "justify-center px-2"
+                    isMenuExpanded && !isActive("/administradora/configuracoes") && "hover:translate-x-1",
+                    !isMenuExpanded && "justify-center px-2"
                   )}
                   onClick={closeSidebar}
-                  title={isVisuallyCollapsed ? "Configurações" : ""}
+                  title={!isMenuExpanded ? "Configurações" : ""}
                 >
-                  {!isVisuallyCollapsed && <span className="truncate flex-1">Configurações</span>}
+                  {isMenuExpanded && <span className="truncate flex-1">Configurações</span>}
                   <Cog6ToothIcon className="h-5 w-5 flex-shrink-0" />
                 </Link>
               </li>

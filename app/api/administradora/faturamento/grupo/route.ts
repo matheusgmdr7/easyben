@@ -7,12 +7,14 @@ import {
   dataAniversarioNoAno,
   valorProdutoComCacheFaixas,
 } from "@/lib/calcular-valor-produto"
+import { carregarMatriculasPorClienteAdministradora, resolverMatriculaVida } from "@/lib/matricula-beneficiario"
 
 export interface LinhaFaturamento {
   id: string
   cpf: string
   tipo: "titular" | "dependente"
   nome: string
+  matricula: string
   idade: number
   valor: number
   acomodacao: string
@@ -94,7 +96,9 @@ export async function GET(request: NextRequest) {
     while (hasMore) {
       const { data: chunk } = await supabaseAdmin
         .from("vidas_importadas")
-        .select("id, nome, cpf, cpf_titular, tipo, data_nascimento, idade, produto_id, valor_mensal, acomodacao, ativo")
+        .select(
+          "id, nome, cpf, cpf_titular, tipo, data_nascimento, idade, produto_id, valor_mensal, acomodacao, ativo, dados_adicionais, cliente_administradora_id"
+        )
         .eq("grupo_id", grupoId)
         .eq("tenant_id", tenantId)
         .order("tipo", { ascending: true })
@@ -134,6 +138,11 @@ export async function GET(request: NextRequest) {
       idsProdutosParaPreco.length > 0
         ? await carregarFaixasProdutosContratoPorIds(idsProdutosParaPreco, tenantId)
         : new Map()
+
+    const matriculaPorClienteAdm = await carregarMatriculasPorClienteAdministradora(
+      supabaseAdmin,
+      vidasAtivas.map((v) => String((v as { cliente_administradora_id?: string }).cliente_administradora_id || ""))
+    )
 
     const linhasComVinculo: Array<LinhaFaturamento & { cpf_norm: string; cpf_titular_norm: string }> = []
     for (const v of vidasAtivas) {
@@ -183,11 +192,14 @@ export async function GET(request: NextRequest) {
 
       const cpfStr = normalizarCpf(v.cpf ? String(v.cpf) : "")
       const cpfFormatado = cpfStr.length === 11 ? cpfStr.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4") : (v.cpf ? String(v.cpf) : "-")
+      const matricula = resolverMatriculaVida(v as Record<string, unknown>, matriculaPorClienteAdm)
+
       linhasComVinculo.push({
         id: v.id,
         cpf: cpfFormatado,
         tipo: (v.tipo === "dependente" ? "dependente" : "titular") as "titular" | "dependente",
         nome: v.nome || "-",
+        matricula: matricula || "-",
         idade: idadeRef ?? 0,
         valor,
         acomodacao,

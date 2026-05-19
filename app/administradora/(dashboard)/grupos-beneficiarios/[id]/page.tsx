@@ -13,7 +13,118 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { ArrowLeft, FileText, FileSearch, Search, ChevronLeft, ChevronRight, UserX, Loader2 } from "lucide-react"
+import { ArrowLeft, FileText, FileSearch, Search, ChevronLeft, ChevronRight, UserX, Loader2, UserMinus } from "lucide-react"
+
+type ModoListaGrupo = "ativos" | "cancelados"
+
+function mapVidaParaItemCliente(v: Record<string, unknown>) {
+  const ativo = v.ativo !== false
+  return {
+    id: v.id,
+    cliente_id: v.id,
+    cliente_tipo: "vida_importada" as const,
+    cliente: {
+      nome: v.nome,
+      cpf: v.cpf,
+      nome_mae: v.nome_mae,
+      tipo: v.tipo,
+      data_nascimento: v.data_nascimento,
+      idade: v.idade,
+      parentesco: v.parentesco,
+      cpf_titular: v.cpf_titular,
+      produto_id: v.produto_id,
+      ativo,
+    },
+    situacao: ativo ? "Ativo" : "Inativo",
+    _vida: { ...v, valor_mensal: v.valor_mensal },
+  }
+}
+
+function formatarDataHora(v?: string | null) {
+  if (!v) return "—"
+  const d = new Date(v)
+  if (Number.isNaN(d.getTime())) return "—"
+  return d.toLocaleString("pt-BR")
+}
+
+function formatarDataCurta(v?: string | null) {
+  if (!v) return "—"
+  const d = new Date(`${String(v).slice(0, 10)}T00:00:00`)
+  if (Number.isNaN(d.getTime())) return "—"
+  return d.toLocaleDateString("pt-BR")
+}
+
+function rotuloStatusCancelamento(status?: string | null) {
+  const s = String(status || "").toLowerCase()
+  if (s === "solicitado") return "Solicitado"
+  if (s === "processado_operadora") return "Processado na operadora"
+  if (s === "reativado") return "Reativado"
+  return "Cancelado / inativo"
+}
+
+/** Matrícula = Carteirinha saúde (contrato / importação de matrículas). */
+function extrairMatriculaDeDados(dados: Record<string, unknown> | null | undefined): string {
+  if (!dados) return ""
+  const direto = String(dados.numero_carteirinha || "").trim()
+  if (direto) return direto
+  const adic =
+    dados.dados_adicionais && typeof dados.dados_adicionais === "object"
+      ? (dados.dados_adicionais as Record<string, unknown>)
+      : {}
+  return String(
+    adic.numero_carteirinha ??
+      adic["Número da carteirinha"] ??
+      adic["Numero da carteirinha"] ??
+      adic.carteirinha ??
+      ""
+  ).trim()
+}
+
+function obterMatriculaItem(item: any): string {
+  const fontes = [item?.cliente, item?._vida, (item?._cancelamento as { vida?: Record<string, unknown> })?.vida]
+  for (const dados of fontes) {
+    const m = extrairMatriculaDeDados(dados as Record<string, unknown>)
+    if (m) return m
+  }
+  return "—"
+}
+
+async function enriquecerMatriculaContrato(itens: any[], supabaseClient: { from: (t: string) => any }): Promise<any[]> {
+  const caIds = [
+    ...new Set(
+      itens
+        .map((i) => String((i._vida as { cliente_administradora_id?: string })?.cliente_administradora_id || "").trim())
+        .filter(Boolean)
+    ),
+  ]
+  if (caIds.length === 0) return itens
+
+  const matriculaPorCa = new Map<string, string>()
+  for (let i = 0; i < caIds.length; i += 100) {
+    const chunk = caIds.slice(i, i + 100)
+    const { data } = await supabaseClient
+      .from("clientes_administradoras")
+      .select("id, numero_carteirinha")
+      .in("id", chunk)
+    for (const row of data || []) {
+      const m = String((row as { numero_carteirinha?: string }).numero_carteirinha || "").trim()
+      if (m) matriculaPorCa.set(String((row as { id: string }).id), m)
+    }
+  }
+
+  return itens.map((item) => {
+    const caId = String((item._vida as { cliente_administradora_id?: string })?.cliente_administradora_id || "").trim()
+    const doContrato = caId ? matriculaPorCa.get(caId) : undefined
+    if (!doContrato) return item
+    return {
+      ...item,
+      cliente: {
+        ...item.cliente,
+        numero_carteirinha: String(item.cliente?.numero_carteirinha || "").trim() || doContrato,
+      },
+    }
+  })
+}
 
 export default function DetalhesGrupoPage() {
   const params = useParams()
@@ -25,6 +136,8 @@ export default function DetalhesGrupoPage() {
   const [loading, setLoading] = useState(true)
   const [loadingClientes, setLoadingClientes] = useState(false)
   const [clientes, setClientes] = useState<any[]>([])
+  const [clientesCancelados, setClientesCancelados] = useState<any[]>([])
+  const [modoLista, setModoLista] = useState<ModoListaGrupo>("ativos")
   const [showModalGerarFatura, setShowModalGerarFatura] = useState(false)
   const [clienteSelecionado, setClienteSelecionado] = useState<any>(null)
   const [dadosFatura, setDadosFatura] = useState({
@@ -68,6 +181,58 @@ export default function DetalhesGrupoPage() {
       return item.cliente?.ativo !== false && item._vida?.ativo !== false
     }
     return true
+  }
+
+  async function buscarCancelamentosDoGrupo(administradoraId: string) {
+    try {
+      const res = await fetch(
+        `/api/administradora/beneficiarios/cancelamentos?administradora_id=${encodeURIComponent(administradoraId)}&grupo_id=${encodeURIComponent(grupoId)}`
+      )
+      const lista = await res.json().catch(() => [])
+      if (!Array.isArray(lista)) return []
+      return lista.filter(
+        (c) => String((c as { status_fluxo?: string }).status_fluxo || "").toLowerCase() !== "reativado"
+      )
+    } catch {
+      return []
+    }
+  }
+
+  async function enriquecerComCancelamentos(
+    itens: any[],
+    cancelamentosGrupo: Array<Record<string, unknown>>
+  ): Promise<any[]> {
+    if (itens.length === 0) return itens
+    const porVida = new Map<string, Record<string, unknown>>()
+    for (const c of cancelamentosGrupo) {
+      const vid = String(
+        (c as { vida_id?: string; vida?: { id?: string } }).vida_id ||
+          (c as { vida?: { id?: string } }).vida?.id ||
+          ""
+      )
+      if (!vid) continue
+      const prev = porVida.get(vid) as { data_solicitacao?: string } | undefined
+      const atual = c as { data_solicitacao?: string }
+      if (!prev || new Date(atual.data_solicitacao || 0) > new Date(prev.data_solicitacao || 0)) {
+        porVida.set(vid, c)
+      }
+    }
+    return itens.map((item) => {
+      const can = porVida.get(String(item.id))
+      return can ? { ...item, _cancelamento: can } : item
+    })
+  }
+
+  async function sincronizarInativosDoGrupo(administradoraId: string) {
+    try {
+      await fetch("/api/administradora/beneficiarios/cancelamentos/sincronizar-vidas-inativas", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ administradora_id: administradoraId, grupo_id: grupoId }),
+      })
+    } catch {
+      /* não bloqueia a tela */
+    }
   }
 
   useEffect(() => {
@@ -137,15 +302,19 @@ export default function DetalhesGrupoPage() {
       if (error) throw error
 
       const adm = getAdministradoraLogada()
-      const qAdmin = adm?.id ? `&administradora_id=${encodeURIComponent(adm.id)}` : ""
+      const admId = adm?.id || ""
+      const qAdmin = admId ? `&administradora_id=${encodeURIComponent(admId)}` : ""
       const urlVidasBase = `/api/administradora/vidas-importadas?grupo_id=${encodeURIComponent(grupoId)}${qAdmin}`
-      const [resAtivos, resTodasVidas] = await Promise.all([
+      const [resAtivos, resTodasVidas, resInativos] = await Promise.all([
         fetch(`${urlVidasBase}&somente_ativos=1`),
         fetch(urlVidasBase),
+        fetch(`${urlVidasBase}&somente_inativos=1`),
       ])
       const vidasAtivas = (await resAtivos.json().catch(() => [])) || []
       const vidasTodas = (await resTodasVidas.json().catch(() => [])) || []
+      const vidasInativas = (await resInativos.json().catch(() => [])) || []
       const vidasArray = Array.isArray(vidasAtivas) ? vidasAtivas : []
+      const vidasInativasArray = Array.isArray(vidasInativas) ? vidasInativas : []
       const grupoPossuiVidasImportadas = Array.isArray(vidasTodas) && vidasTodas.length > 0
       const vidaPorClienteAdmId = new Map<string, any>()
       for (const v of vidasArray) {
@@ -158,30 +327,52 @@ export default function DetalhesGrupoPage() {
         }
       }
 
-      const vidasComoClientes = vidasArray.map((v: { corretor_id?: string | null }) => ({
-        id: v.id,
-        cliente_id: v.id,
-        cliente_tipo: "vida_importada",
-        cliente: {
-          nome: v.nome,
-          cpf: v.cpf,
-          nome_mae: v.nome_mae,
-          tipo: v.tipo,
-          data_nascimento: v.data_nascimento,
-          idade: v.idade,
-          parentesco: v.parentesco,
-          cpf_titular: v.cpf_titular,
-          produto_id: v.produto_id,
-          ativo: v.ativo !== false,
-        },
-        situacao: v.ativo !== false ? "Ativo" : "Inativo",
-        _vida: { ...v, valor_mensal: v.valor_mensal },
-      }))
-
       // Quando o grupo tem vidas importadas (ativas ou não), elas são a fonte oficial.
       // Mesmo com zero ativas após cancelamento, não usa clientes_grupos (evita contagem/lista defasada).
       if (grupoPossuiVidasImportadas) {
-        setClientes(vidasComoClientes.filter((c) => isBeneficiarioAtivo(c)))
+        if (admId) {
+          await sincronizarInativosDoGrupo(admId)
+          const [resAtivos2, resInativos2] = await Promise.all([
+            fetch(`${urlVidasBase}&somente_ativos=1`),
+            fetch(`${urlVidasBase}&somente_inativos=1`),
+          ])
+          const vidasAtivas2 = (await resAtivos2.json().catch(() => [])) || []
+          const vidasInativas2 = (await resInativos2.json().catch(() => [])) || []
+          vidasArray.length = 0
+          vidasArray.push(...(Array.isArray(vidasAtivas2) ? vidasAtivas2 : []))
+          vidasInativasArray.length = 0
+          vidasInativasArray.push(...(Array.isArray(vidasInativas2) ? vidasInativas2 : []))
+        }
+
+        const vidasComoClientesAtual = vidasArray.map((v) =>
+          mapVidaParaItemCliente(v as Record<string, unknown>)
+        )
+        const vidasInativasAtual = vidasInativasArray.map((v) =>
+          mapVidaParaItemCliente(v as Record<string, unknown>)
+        )
+
+        const cancelamentosGrupo = admId ? await buscarCancelamentosDoGrupo(admId) : []
+        const idsComCancelamentoAberto = new Set(
+          cancelamentosGrupo.map((c) =>
+            String(
+              (c as { vida_id?: string; vida?: { id?: string } }).vida_id ||
+                (c as { vida?: { id?: string } }).vida?.id ||
+                ""
+            )
+          ).filter(Boolean)
+        )
+
+        let ativos = vidasComoClientesAtual.filter(
+          (c) => isBeneficiarioAtivo(c) && !idsComCancelamentoAberto.has(String(c.id))
+        )
+        let cancelados = vidasInativasAtual.filter((c) => !isBeneficiarioAtivo(c))
+        ativos = await enriquecerMatriculaContrato(ativos, supabase)
+        cancelados = await enriquecerMatriculaContrato(cancelados, supabase)
+        if (admId) {
+          cancelados = await enriquecerComCancelamentos(cancelados, cancelamentosGrupo)
+        }
+        setClientes(ativos)
+        setClientesCancelados(cancelados)
         return
       }
 
@@ -268,10 +459,22 @@ export default function DetalhesGrupoPage() {
         })
       )
 
-      const clientesFiltrados = clientesCompletos.filter(
-        (c) => c.cliente && isBeneficiarioAtivo(c)
+      const comCliente = clientesCompletos.filter((c) => c.cliente)
+      const cancelamentosGrupo = admId ? await buscarCancelamentosDoGrupo(admId) : []
+      const idsComCancelamentoAberto = new Set(
+        cancelamentosGrupo.map((c) => String((c as { vida_id?: string }).vida_id || "")).filter(Boolean)
       )
-      setClientes(clientesFiltrados)
+      let ativos = comCliente.filter(
+        (c) => isBeneficiarioAtivo(c) && !idsComCancelamentoAberto.has(String(c.id))
+      )
+      let cancelados = comCliente.filter((c) => !isBeneficiarioAtivo(c))
+      ativos = await enriquecerMatriculaContrato(ativos, supabase)
+      cancelados = await enriquecerMatriculaContrato(cancelados, supabase)
+      if (admId) {
+        cancelados = await enriquecerComCancelamentos(cancelados, cancelamentosGrupo)
+      }
+      setClientes(ativos)
+      setClientesCancelados(cancelados)
     } catch (error: any) {
       console.error("Erro ao carregar clientes:", error)
       toast.error("Erro ao carregar clientes")
@@ -530,16 +733,7 @@ export default function DetalhesGrupoPage() {
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data?.error || "Erro ao solicitar cancelamento")
 
-      const idsAfetados = new Set(
-        Array.isArray(data?.beneficiarios_afetados)
-          ? data.beneficiarios_afetados.map((b: { id?: string }) => String(b?.id || "")).filter(Boolean)
-          : []
-      )
-      if (idsAfetados.size > 0) {
-        setClientes((prev) => prev.filter((c) => !idsAfetados.has(String(c.id))))
-      } else {
-        await carregarClientes()
-      }
+      await carregarClientes()
 
       toast.success("Cancelamento solicitado com sucesso.")
       setConfirmSolicitarCancelamentoOpen(false)
@@ -559,11 +753,14 @@ export default function DetalhesGrupoPage() {
       total: clientesAtivos.length,
       titulares: clientesAtivos.filter((c) => getTipoItem(c) === "titular").length,
       dependentes: clientesAtivos.filter((c) => getTipoItem(c) === "dependente").length,
+      cancelados: clientesCancelados.length,
     }),
-    [clientesAtivos]
+    [clientesAtivos, clientesCancelados]
   )
 
-  const clientesFiltrados = clientesAtivos.filter((item) => {
+  const listaBaseModo = modoLista === "ativos" ? clientesAtivos : clientesCancelados
+
+  const clientesFiltrados = listaBaseModo.filter((item) => {
     if (filtroTipo === "titular" && getTipoItem(item) !== "titular") return false
     if (filtroCorretora !== "todas") {
       const corretorId = obterCorretorIdItem(item)
@@ -594,7 +791,14 @@ export default function DetalhesGrupoPage() {
 
   useEffect(() => {
     setPaginaAtual(1)
-  }, [filtro, filtroTipo, filtroCorretora])
+  }, [filtro, filtroTipo, filtroCorretora, modoLista])
+
+  useEffect(() => {
+    if (modoLista === "cancelados") {
+      setModoSelecaoCorretorLote(false)
+      setSelecionadosSemCorretor(new Set())
+    }
+  }, [modoLista])
 
   useEffect(() => {
     setSelecionadosSemCorretor((prev) => {
@@ -621,6 +825,62 @@ export default function DetalhesGrupoPage() {
       })
       .filter((t: any) => t.cpf.length >= 11)
   }, [clientes])
+
+  function renderPaginacaoTabela() {
+    if (!(totalPaginas > 1 || clientesFiltrados.length > 0)) return null
+    return (
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 border-t border-gray-200 bg-gray-50/50">
+        <div className="flex flex-wrap items-center gap-3">
+          <p className="text-sm text-gray-600">
+            Mostrando {inicio} a {fim} de {clientesFiltrados.length}
+          </p>
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-gray-600">Itens por página:</span>
+            <Select
+              value={String(itensPorPagina)}
+              onValueChange={(v) => {
+                setItensPorPagina(Number(v))
+                setPaginaAtual(1)
+              }}
+            >
+              <SelectTrigger className="h-8 w-[70px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="25">25</SelectItem>
+                <SelectItem value="50">50</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setPaginaAtual((p) => Math.max(1, p - 1))}
+            disabled={paginaAtualAjustada <= 1}
+            className="h-8"
+          >
+            <ChevronLeft className="h-4 w-4 mr-1" />
+            Anterior
+          </Button>
+          <span className="text-sm text-gray-600 min-w-[80px] text-center">
+            Página {paginaAtualAjustada} de {totalPaginas}
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setPaginaAtual((p) => Math.min(totalPaginas, p + 1))}
+            disabled={paginaAtualAjustada >= totalPaginas}
+            className="h-8"
+          >
+            Próximo
+            <ChevronRight className="h-4 w-4 ml-1" />
+          </Button>
+        </div>
+      </div>
+    )
+  }
 
   if (loading) {
     return (
@@ -701,7 +961,7 @@ export default function DetalhesGrupoPage() {
       </div>
 
       {/* Informações do Grupo */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
         <Card className="border border-slate-200 bg-white shadow-sm rounded-lg">
           <CardHeader className="pb-2">
             <CardTitle className="text-xs font-semibold uppercase tracking-wider text-slate-500">
@@ -738,7 +998,18 @@ export default function DetalhesGrupoPage() {
         <Card className="border border-slate-200 bg-white shadow-sm rounded-lg">
           <CardHeader className="pb-2">
             <CardTitle className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-              Status
+              Cancelados
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <div className="text-2xl font-bold text-slate-600 tracking-tight">{resumoCards.cancelados}</div>
+          </CardContent>
+        </Card>
+
+        <Card className="border border-slate-200 bg-white shadow-sm rounded-lg">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+              Status do grupo
             </CardTitle>
           </CardHeader>
           <CardContent className="pt-0">
@@ -758,30 +1029,73 @@ export default function DetalhesGrupoPage() {
       {/* Lista de Clientes - mesmo design da tabela de grupos */}
       <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
         <div className="px-4 py-3 border-b border-gray-200 bg-gray-50/50 flex flex-wrap items-center justify-between gap-2">
-          <p className="text-sm text-gray-600">
-            Selecionados sem corretor: <span className="font-semibold text-gray-900">{totalSelecionadosSemCorretor}</span>
-            {loadingClientes && <span className="ml-2 text-xs text-gray-500 animate-pulse">Carregando beneficiários...</span>}
-          </p>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={alternarModoSelecaoCorretorLote}>
-              {modoSelecaoCorretorLote ? "Fechar seleção" : "Selecionar beneficiários"}
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant={modoLista === "ativos" ? "default" : "outline"}
+              className={modoLista === "ativos" ? "bg-[#0F172A] hover:bg-[#1E293B] text-white" : ""}
+              onClick={() => setModoLista("ativos")}
+            >
+              Ativos ({resumoCards.total})
             </Button>
-            {modoSelecaoCorretorLote && (
+            <Button
+              type="button"
+              size="sm"
+              variant={modoLista === "cancelados" ? "default" : "outline"}
+              className={
+                modoLista === "cancelados"
+                  ? "bg-[#0F172A] hover:bg-[#1E293B] text-white"
+                  : "text-slate-600"
+              }
+              onClick={() => setModoLista("cancelados")}
+            >
+              <UserMinus className="h-3.5 w-3.5 mr-1.5 opacity-80" strokeWidth={1.75} />
+              Cancelados ({resumoCards.cancelados})
+            </Button>
+            {modoLista === "ativos" && (
+              <p className="text-sm text-gray-600 ml-1">
+                Sem corretor: <span className="font-semibold text-gray-900">{totalSelecionadosSemCorretor}</span>
+              </p>
+            )}
+            {loadingClientes && (
+              <span className="text-xs text-gray-500 animate-pulse">Carregando beneficiários...</span>
+            )}
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            {modoLista === "cancelados" && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => router.push("/administradora/beneficiarios/cancelados")}
+              >
+                Tela de cancelamentos
+              </Button>
+            )}
+            {modoLista === "ativos" && (
               <>
-                <Button variant="outline" size="sm" onClick={selecionarTodosBeneficiariosDoGrupo}>
-                  Selecionar todos
+                <Button variant="outline" size="sm" onClick={alternarModoSelecaoCorretorLote}>
+                  {modoSelecaoCorretorLote ? "Fechar seleção" : "Selecionar beneficiários"}
                 </Button>
-                <Button variant="outline" size="sm" onClick={limparSelecaoSemCorretor}>
-                  Limpar seleção
-                </Button>
-                <Button
-                  size="sm"
-                  className="bg-[#0F172A] hover:bg-[#1E293B] text-white"
-                  disabled={totalSelecionadosSemCorretor === 0}
-                  onClick={() => setModalCorretorLoteOpen(true)}
-                >
-                  Vincular corretor em lote
-                </Button>
+                {modoSelecaoCorretorLote && (
+                  <>
+                    <Button variant="outline" size="sm" onClick={selecionarTodosBeneficiariosDoGrupo}>
+                      Selecionar todos
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={limparSelecaoSemCorretor}>
+                      Limpar seleção
+                    </Button>
+                    <Button
+                      size="sm"
+                      className="bg-[#0F172A] hover:bg-[#1E293B] text-white"
+                      disabled={totalSelecionadosSemCorretor === 0}
+                      onClick={() => setModalCorretorLoteOpen(true)}
+                    >
+                      Vincular corretor em lote
+                    </Button>
+                  </>
+                )}
               </>
             )}
           </div>
@@ -790,10 +1104,96 @@ export default function DetalhesGrupoPage() {
           <div className="px-4 py-8 text-sm text-gray-500 animate-pulse">Carregando informações dos beneficiários...</div>
         ) : clientesFiltrados.length === 0 ? (
           <div className="text-center py-8 text-gray-500">
-            {filtro.trim() || filtroTipo !== "titular" || filtroCorretora !== "todas"
-              ? "Nenhum cliente encontrado com os filtros aplicados"
-              : "Nenhum cliente vinculado a este grupo"}
+            {modoLista === "cancelados"
+              ? filtro.trim() || filtroTipo !== "titular" || filtroCorretora !== "todas"
+                ? "Nenhum cancelado encontrado com os filtros aplicados"
+                : "Nenhum beneficiário cancelado neste grupo"
+              : filtro.trim() || filtroTipo !== "titular" || filtroCorretora !== "todas"
+                ? "Nenhum cliente encontrado com os filtros aplicados"
+                : "Nenhum cliente ativo vinculado a este grupo"}
           </div>
+        ) : modoLista === "cancelados" ? (
+          <>
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-gray-50">
+                  <TableHead className="font-bold">Nome</TableHead>
+                  <TableHead className="font-bold hidden md:table-cell">Matrícula</TableHead>
+                  <TableHead className="font-bold">CPF/CNPJ</TableHead>
+                  <TableHead className="font-bold">Tipo</TableHead>
+                  <TableHead className="font-bold">Status cancelamento</TableHead>
+                  <TableHead className="font-bold">Solicitado em</TableHead>
+                  <TableHead className="font-bold">Operadora em</TableHead>
+                  <TableHead className="font-bold min-w-[140px]">Motivo</TableHead>
+                  <TableHead className="font-bold text-right">Ações</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {clientesPaginados.map((item) => {
+                  const can = item._cancelamento as
+                    | {
+                        status_fluxo?: string
+                        data_solicitacao?: string
+                        data_cancelamento_operadora?: string | null
+                        motivo_solicitacao?: string | null
+                      }
+                    | undefined
+                  return (
+                    <TableRow key={`cancelado-${item.id}`} className="hover:bg-slate-50/80">
+                      <TableCell className="font-medium">
+                        <div>{item.cliente?.nome || "—"}</div>
+                        <p className="text-xs text-gray-500 mt-0.5 md:hidden font-normal tabular-nums">
+                          Matrícula: {obterMatriculaItem(item)}
+                        </p>
+                      </TableCell>
+                      <TableCell className="hidden md:table-cell text-sm text-gray-700 tabular-nums">
+                        {obterMatriculaItem(item)}
+                      </TableCell>
+                      <TableCell>{formatarCpf(item.cliente?.cpf || item.cliente?.cnpj) || "—"}</TableCell>
+                      <TableCell>
+                        <span className="inline-flex items-center px-2 py-0.5 text-xs font-semibold rounded-sm border bg-gray-100 text-gray-700 border-gray-200">
+                          {getTipoItem(item) === "titular" ? "Titular" : "Dependente"}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <span className="inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-sm border bg-slate-50 text-slate-600 border-slate-200">
+                          {rotuloStatusCancelamento(can?.status_fluxo)}
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-sm text-gray-700">{formatarDataHora(can?.data_solicitacao)}</TableCell>
+                      <TableCell className="text-sm text-gray-700">
+                        {formatarDataCurta(can?.data_cancelamento_operadora)}
+                      </TableCell>
+                      <TableCell className="text-sm text-gray-700 max-w-[220px] whitespace-normal break-words">
+                        {can?.motivo_solicitacao?.trim() || "—"}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {item.cliente_tipo === "vida_importada" ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() =>
+                              router.push(
+                                `/administradora/grupos-beneficiarios/${grupoId}/beneficiario/vida-${item.id}`
+                              )
+                            }
+                            className="h-8 border-slate-200 text-slate-600 hover:bg-slate-50"
+                            title="Visualizar ficha"
+                          >
+                            <FileSearch className="h-4 w-4 mr-1" />
+                            Ver
+                          </Button>
+                        ) : (
+                          <span className="text-xs text-gray-400">—</span>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
+              </TableBody>
+            </Table>
+            {renderPaginacaoTabela()}
+          </>
         ) : (
           <>
             <Table>
@@ -801,6 +1201,7 @@ export default function DetalhesGrupoPage() {
                 <TableRow className="bg-gray-50">
                   {modoSelecaoCorretorLote && <TableHead className="font-bold w-[50px]">Sel.</TableHead>}
                   <TableHead className="font-bold">Nome</TableHead>
+                  <TableHead className="font-bold hidden md:table-cell">Matrícula</TableHead>
                   <TableHead className="font-bold">CPF/CNPJ</TableHead>
                   <TableHead className="font-bold">Tipo</TableHead>
                   <TableHead className="font-bold">Situação</TableHead>
@@ -837,7 +1238,13 @@ export default function DetalhesGrupoPage() {
                         {ehDependenteSemTitular && (
                           <p className="text-xs text-amber-600 mt-0.5 font-normal">Vincular titular</p>
                         )}
+                        <p className="text-xs text-gray-500 mt-0.5 md:hidden font-normal tabular-nums">
+                          Matrícula: {obterMatriculaItem(item)}
+                        </p>
                       </div>
+                    </TableCell>
+                    <TableCell className="hidden md:table-cell text-sm text-gray-700 tabular-nums">
+                      {obterMatriculaItem(item)}
                     </TableCell>
                     <TableCell>
                       {formatarCpf(item.cliente?.cpf || item.cliente?.cnpj) || "-"}
@@ -909,58 +1316,7 @@ export default function DetalhesGrupoPage() {
                 })}
             </TableBody>
           </Table>
-          {(totalPaginas > 1 || clientesFiltrados.length > 0) && (
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 border-t border-gray-200 bg-gray-50/50">
-              <div className="flex flex-wrap items-center gap-3">
-                <p className="text-sm text-gray-600">
-                  Mostrando {inicio} a {fim} de {clientesFiltrados.length}
-                </p>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-gray-600">Itens por página:</span>
-                  <Select
-                    value={String(itensPorPagina)}
-                    onValueChange={(v) => {
-                      setItensPorPagina(Number(v))
-                      setPaginaAtual(1)
-                    }}
-                  >
-                    <SelectTrigger className="h-8 w-[70px]">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="25">25</SelectItem>
-                      <SelectItem value="50">50</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setPaginaAtual((p) => Math.max(1, p - 1))}
-                  disabled={paginaAtualAjustada <= 1}
-                  className="h-8"
-                >
-                  <ChevronLeft className="h-4 w-4 mr-1" />
-                  Anterior
-                </Button>
-                <span className="text-sm text-gray-600 min-w-[80px] text-center">
-                  Página {paginaAtualAjustada} de {totalPaginas}
-                </span>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setPaginaAtual((p) => Math.min(totalPaginas, p + 1))}
-                  disabled={paginaAtualAjustada >= totalPaginas}
-                  className="h-8"
-                >
-                  Próximo
-                  <ChevronRight className="h-4 w-4 ml-1" />
-                </Button>
-              </div>
-            </div>
-          )}
+          {renderPaginacaoTabela()}
           </>
         )}
       </div>

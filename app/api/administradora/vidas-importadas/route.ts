@@ -21,6 +21,16 @@ export async function GET(request: NextRequest) {
     const somenteAtivos = ["1", "true", "sim"].includes(
       String(searchParams.get("somente_ativos") || "").toLowerCase()
     )
+    const somenteInativos = ["1", "true", "sim"].includes(
+      String(searchParams.get("somente_inativos") || "").toLowerCase()
+    )
+
+    if (somenteAtivos && somenteInativos) {
+      return NextResponse.json(
+        { error: "Use somente_ativos ou somente_inativos, não ambos." },
+        { status: 400 }
+      )
+    }
 
     if (!grupoId && grupoIds.length === 0 && !administradoraId) {
       return NextResponse.json({ error: "grupo_id, grupo_ids ou administradora_id é obrigatório" }, { status: 400 })
@@ -53,6 +63,8 @@ export async function GET(request: NextRequest) {
       }
       if (somenteAtivos) {
         query = query.neq("ativo", false)
+      } else if (somenteInativos) {
+        query = query.eq("ativo", false)
       }
       const { data: chunk, error } = await query
 

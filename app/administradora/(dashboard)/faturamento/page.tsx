@@ -21,6 +21,7 @@ interface LinhaFaturamento {
   cpf: string
   tipo: "titular" | "dependente"
   nome: string
+  matricula: string
   idade: number
   valor: number
   acomodacao: string
@@ -138,8 +139,8 @@ export default function FaturamentoPage() {
       y += 6
       doc.text(`Total de beneficiários: ${linhas.length}`, margin, y)
       y += 8
-      const headers = ["Nº", "CPF", "Tipo", "Nome", "Idade", "Valor", "Acomodação", "Faixa etária"]
-      const colWidths = [11, 32, 22, 48, 14, 24, 28, 62]
+      const headers = ["Nº", "CPF", "Tipo", "Nome", "Matrícula", "Idade", "Valor", "Acomodação", "Faixa etária"]
+      const colWidths = [11, 30, 20, 42, 28, 12, 22, 26, 58]
       doc.setFont(undefined, "bold")
       let x = margin
       headers.forEach((h, i) => {
@@ -166,14 +167,16 @@ export default function FaturamentoPage() {
         x += colWidths[1]
         doc.text(l.tipo === "titular" ? "Titular" : "Dependente", x, y)
         x += colWidths[2]
-        doc.text(doc.splitTextToSize(l.nome, colWidths[3] - 2)[0] || l.nome.slice(0, 25), x, y)
+        doc.text(doc.splitTextToSize(l.nome, colWidths[3] - 2)[0] || l.nome.slice(0, 22), x, y)
         x += colWidths[3]
-        doc.text(String(l.idade), x, y)
+        doc.text(doc.splitTextToSize(l.matricula || "-", colWidths[4] - 2)[0] || "-", x, y)
         x += colWidths[4]
-        doc.text(formatarMoeda(l.valor), x, y)
+        doc.text(String(l.idade), x, y)
         x += colWidths[5]
-        doc.text(l.acomodacao, x, y)
+        doc.text(formatarMoeda(l.valor), x, y)
         x += colWidths[6]
+        doc.text(l.acomodacao, x, y)
+        x += colWidths[7]
         const faixaPdf =
           l.mudanca_faixa &&
           l.mudanca_faixa_idade_anterior != null &&
@@ -184,7 +187,7 @@ export default function FaturamentoPage() {
             : l.mudanca_faixa
               ? "Mudou"
               : "-"
-        doc.text(doc.splitTextToSize(String(faixaPdf), colWidths[7] - 2)[0] || String(faixaPdf), x, y)
+        doc.text(doc.splitTextToSize(String(faixaPdf), colWidths[8] - 2)[0] || String(faixaPdf), x, y)
         y += rowHeight
       })
       y += 4
@@ -214,6 +217,7 @@ export default function FaturamentoPage() {
           "CPF",
           "Tipo",
           "Nome",
+          "Matrícula",
           "Idade",
           "Valor",
           "Acomodação",
@@ -227,6 +231,7 @@ export default function FaturamentoPage() {
           l.cpf,
           l.tipo === "titular" ? "Titular" : "Dependente",
           l.nome,
+          l.matricula || "-",
           l.idade,
           l.valor,
           l.acomodacao,
@@ -236,8 +241,8 @@ export default function FaturamentoPage() {
           l.mudanca_faixa_aniversario ? formatarData(l.mudanca_faixa_aniversario) : "",
         ]),
         [],
-        ["Total de beneficiários", linhas.length, "", "", "", "", "", "", "", "", ""],
-        ["TOTAL (R$)", "", "", "", "", total, "", "", "", "", ""],
+        ["Total de beneficiários", linhas.length, "", "", "", "", "", "", "", "", "", ""],
+        ["TOTAL (R$)", "", "", "", "", "", total, "", "", "", "", ""],
       ]
       const ws = XLSX.utils.aoa_to_sheet(wsData)
       const wb = XLSX.utils.book_new()
@@ -385,6 +390,7 @@ export default function FaturamentoPage() {
                       <TableHead className="font-semibold">CPF</TableHead>
                       <TableHead className="font-semibold">Tipo</TableHead>
                       <TableHead className="font-semibold">Nome</TableHead>
+                      <TableHead className="font-semibold hidden sm:table-cell">Matrícula</TableHead>
                       <TableHead className="font-semibold">Idade</TableHead>
                       <TableHead className="font-semibold">Valor</TableHead>
                       <TableHead className="font-semibold">Acomodação</TableHead>
@@ -408,7 +414,15 @@ export default function FaturamentoPage() {
                             {l.tipo}
                           </Badge>
                         </TableCell>
-                        <TableCell className="font-medium">{l.nome}</TableCell>
+                        <TableCell className="font-medium">
+                          <div>{l.nome}</div>
+                          <p className="text-xs text-gray-500 mt-0.5 sm:hidden tabular-nums">
+                            Matrícula: {l.matricula || "—"}
+                          </p>
+                        </TableCell>
+                        <TableCell className="hidden sm:table-cell text-sm text-gray-700 tabular-nums">
+                          {l.matricula || "—"}
+                        </TableCell>
                         <TableCell>{l.idade}</TableCell>
                         <TableCell className="font-medium">{formatarMoeda(l.valor)}</TableCell>
                         <TableCell>{l.acomodacao}</TableCell>
