@@ -823,15 +823,19 @@ export default function BeneficiariosCanceladosPage() {
                       setPaginaAtual(1)
                     }}
                   >
-                    <SelectTrigger className="h-8 w-[80px]">
+                    <SelectTrigger className="h-8 w-[100px]" aria-label="Linhas por página">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="10">10</SelectItem>
                       <SelectItem value="25">25</SelectItem>
                       <SelectItem value="50">50</SelectItem>
+                      <SelectItem value="100">100</SelectItem>
+                      <SelectItem value="200">200</SelectItem>
+                      <SelectItem value="300">300</SelectItem>
                     </SelectContent>
                   </Select>
+                  <span className="text-sm text-gray-500 whitespace-nowrap">por página</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <Button
