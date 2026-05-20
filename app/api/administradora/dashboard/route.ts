@@ -3,6 +3,11 @@ import { supabaseAdmin } from "@/lib/supabase-admin"
 import { getCurrentTenantId } from "@/lib/tenant-query-helper"
 import { FinanceirasService } from "@/services/financeiras-service"
 import { faturaPertenceAFinanceira, gatewayAsaasComoNoBanco } from "@/lib/fatura-filtro-financeira"
+import {
+  contarFaturasAtrasadasTotaisPorCliente,
+  identificarClientesCanceladosPorInadimplencia,
+  montarResumoAtrasadasNoPeriodo,
+} from "@/lib/dashboard-pendencias-atrasadas"
 
 type FaturaRow = {
   id: string
@@ -280,12 +285,18 @@ export async function GET(request: NextRequest) {
 
     const pendenciasFaturas: Array<{
       fatura_id: string
+      cliente_administradora_id: string | null
       cliente_nome: string
       vencimento: string
       status: string
       corretora: string
       link_boleto: string | null
+      boletos_atrasados_total?: number
+      segmento_atraso?: "um_boleto" | "dois_ou_mais" | null
+      cancelado_inadimplencia?: boolean
     }> = []
+
+    const faturasAtrasadasPeriodo: Array<{ cliente_administradora_id: string | null }> = []
 
     for (const f of faturas) {
       const status = normalizarStatus(f.status)
@@ -315,8 +326,12 @@ export async function GET(request: NextRequest) {
         const clienteAdmId = String(f.cliente_administradora_id || "").trim()
         const vidaCtx = clienteAdmId ? vidaByClienteAdmId.get(clienteAdmId) : undefined
         const corretora = vidaCtx?.corretor_id ? corretorNomeById.get(vidaCtx.corretor_id) || "—" : "—"
+        if (isAtrasada) {
+          faturasAtrasadasPeriodo.push({ cliente_administradora_id: clienteAdmId || null })
+        }
         pendenciasFaturas.push({
           fatura_id: String(f.id),
+          cliente_administradora_id: clienteAdmId || null,
           cliente_nome: String(f.cliente_nome || "Cliente"),
           vencimento: String(f.vencimento || "").slice(0, 10),
           status,
@@ -325,6 +340,38 @@ export async function GET(request: NextRequest) {
         })
       }
     }
+
+    const atrasadasTotaisPorCliente = await contarFaturasAtrasadasTotaisPorCliente(
+      administradoraId,
+      tenantId
+    )
+
+    const clientesComDuasOuMaisAtrasadas = Array.from(atrasadasTotaisPorCliente.entries())
+      .filter(([, n]) => n >= 2)
+      .map(([id]) => id)
+
+    const canceladosInadimplencia = await identificarClientesCanceladosPorInadimplencia(
+      clientesComDuasOuMaisAtrasadas,
+      administradoraId,
+      tenantId
+    )
+
+    for (const item of pendenciasFaturas) {
+      if (item.status !== "atrasada") continue
+      const caId = String(item.cliente_administradora_id || "").trim()
+      if (!caId) continue
+      const total = atrasadasTotaisPorCliente.get(caId) || 1
+      item.boletos_atrasados_total = total
+      item.segmento_atraso = total >= 2 ? "dois_ou_mais" : "um_boleto"
+      item.cancelado_inadimplencia =
+        total >= 2 && canceladosInadimplencia.has(caId)
+    }
+
+    const resumoAtrasadas = montarResumoAtrasadasNoPeriodo(
+      faturasAtrasadasPeriodo,
+      atrasadasTotaisPorCliente,
+      canceladosInadimplencia
+    )
 
     pendenciasFaturas.sort((a, b) => {
       const cmp = a.vencimento.localeCompare(b.vencimento)
@@ -363,6 +410,7 @@ export async function GET(request: NextRequest) {
       },
       pendencias_faturas: pendenciasFaturas,
       pendencias_total: totalPendenciasPeriodo,
+      resumo_atrasadas: resumoAtrasadas,
     })
   } catch (e: unknown) {
     console.error("Erro dashboard administradora:", e)

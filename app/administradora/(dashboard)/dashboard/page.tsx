@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { getAdministradoraLogada } from "@/services/auth-administradoras-service"
 import {
   ArrowDownRight,
@@ -8,12 +8,14 @@ import {
   Clock,
   DollarSign,
   ExternalLink,
-  LayoutList,
+  FileDown,
+  FileSpreadsheet,
   Minus,
   RefreshCw,
   TrendingUp,
   Users,
 } from "lucide-react"
+import * as XLSX from "xlsx"
 import { formatarData, formatarMoeda } from "@/utils/formatters"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -28,6 +30,22 @@ type PendenciaFatura = {
   status: string
   corretora: string
   link_boleto: string | null
+  boletos_atrasados_total?: number
+  segmento_atraso?: "um_boleto" | "dois_ou_mais" | null
+  cancelado_inadimplencia?: boolean
+}
+
+type ResumoAtrasadasDashboard = {
+  no_periodo: {
+    total_faturas_atrasadas: number
+    uma_fatura: { faturas: number; clientes: number }
+    duas_ou_mais: {
+      faturas: number
+      clientes: number
+      faturas_clientes_cancelados_inadimplencia: number
+      clientes_cancelados_inadimplencia: number
+    }
+  }
 }
 
 type UltimaSincronizacao = {
@@ -38,6 +56,57 @@ type UltimaSincronizacao = {
 }
 
 type FinanceiraOpcao = { id: string; nome: string }
+
+type FiltroPendencias = "todos" | "um_boleto" | "dois_ou_mais" | "cancelados_quitacao"
+
+function slugArquivo(nome: string) {
+  return nome
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .toLowerCase()
+    .slice(0, 48)
+}
+
+function rotuloFiltroPendencias(f: FiltroPendencias) {
+  if (f === "um_boleto") return "1 boleto em aberto"
+  if (f === "dois_ou_mais") return "2 ou mais boletos"
+  if (f === "cancelados_quitacao") return "Cancelados — quitação pendente"
+  return "Todos do período"
+}
+
+function rotuloSegmentoAtraso(item: PendenciaFatura) {
+  if (item.segmento_atraso === "dois_ou_mais") return "2+ boletos"
+  if (item.segmento_atraso === "um_boleto") return "1 boleto"
+  return "—"
+}
+
+function CardResumoMinimal({
+  titulo,
+  valorPrincipal,
+  detalhe,
+}: {
+  titulo: string
+  valorPrincipal: React.ReactNode
+  detalhe?: React.ReactNode
+}) {
+  return (
+    <div
+      className={cn(
+        "inline-flex min-w-0 max-w-full rounded-xl border border-slate-200/90",
+        "bg-gradient-to-br from-slate-50 via-white to-slate-50/80 px-3.5 py-2.5",
+        "shadow-[0_1px_2px_rgba(15,23,42,0.04)]"
+      )}
+    >
+      <div className="min-w-0">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">{titulo}</p>
+        <p className="mt-0.5 text-sm text-slate-800">{valorPrincipal}</p>
+        {detalhe ? <p className="mt-0.5 text-[11px] text-slate-500 leading-snug">{detalhe}</p> : null}
+      </div>
+    </div>
+  )
+}
 
 export default function AdministradoraDashboard() {
   const agora = new Date()
@@ -58,8 +127,12 @@ export default function AdministradoraDashboard() {
   })
   const [pendenciasFaturas, setPendenciasFaturas] = useState<PendenciaFatura[]>([])
   const [pendenciasTotalPeriodo, setPendenciasTotalPeriodo] = useState(0)
+  const [resumoAtrasadas, setResumoAtrasadas] = useState<ResumoAtrasadasDashboard | null>(null)
   const [ultimaSincronizacao, setUltimaSincronizacao] = useState<UltimaSincronizacao | null>(null)
   const [paginaPendencias, setPaginaPendencias] = useState(1)
+  const [filtroPendencias, setFiltroPendencias] = useState<FiltroPendencias>("todos")
+  const [exportandoPdfPendencias, setExportandoPdfPendencias] = useState(false)
+  const [exportandoExcelPendencias, setExportandoExcelPendencias] = useState(false)
   const [financeiras, setFinanceiras] = useState<FinanceiraOpcao[]>([])
   const [financeiraId, setFinanceiraId] = useState("")
   /** Período dos cards após o último carregamento com sucesso (evita usar mês/ano do select se o usuário não clicou em Aplicar). */
@@ -101,8 +174,16 @@ export default function AdministradoraDashboard() {
     setPendenciasTotalPeriodo(
       typeof payload?.pendencias_total === "number" ? payload.pendencias_total : 0
     )
+    setResumoAtrasadas(
+      payload?.resumo_atrasadas?.no_periodo ? (payload.resumo_atrasadas as ResumoAtrasadasDashboard) : null
+    )
     setPaginaPendencias(1)
+    setFiltroPendencias("todos")
   }
+
+  useEffect(() => {
+    setPaginaPendencias(1)
+  }, [filtroPendencias])
 
   useEffect(() => {
     const loadData = async () => {
@@ -145,6 +226,39 @@ export default function AdministradoraDashboard() {
     }
     loadData()
   }, [])
+
+  const pendenciasFiltradas = useMemo(() => {
+    if (filtroPendencias === "todos") return pendenciasFaturas
+    return pendenciasFaturas.filter((item) => {
+      if (item.status !== "atrasada") return false
+      if (filtroPendencias === "um_boleto") return item.segmento_atraso === "um_boleto"
+      if (filtroPendencias === "dois_ou_mais") return item.segmento_atraso === "dois_ou_mais"
+      if (filtroPendencias === "cancelados_quitacao") return item.cancelado_inadimplencia === true
+      return true
+    })
+  }, [pendenciasFaturas, filtroPendencias])
+
+  const filtrosPendencias: { id: FiltroPendencias; label: string; count: number }[] = useMemo(() => {
+    const atrasadas = pendenciasFaturas.filter((p) => p.status === "atrasada")
+    return [
+      { id: "todos" as const, label: "Todos do período", count: pendenciasFaturas.length },
+      {
+        id: "um_boleto" as const,
+        label: "1 boleto em aberto",
+        count: atrasadas.filter((p) => p.segmento_atraso === "um_boleto").length,
+      },
+      {
+        id: "dois_ou_mais" as const,
+        label: "2+ boletos em aberto",
+        count: atrasadas.filter((p) => p.segmento_atraso === "dois_ou_mais").length,
+      },
+      {
+        id: "cancelados_quitacao" as const,
+        label: "Cancelados — quitação",
+        count: atrasadas.filter((p) => p.cancelado_inadimplencia).length,
+      },
+    ]
+  }, [pendenciasFaturas])
 
   async function sincronizarStatusAgora() {
     if (!administradora?.id) return
@@ -267,14 +381,6 @@ export default function AdministradoraDashboard() {
     refV.mes >= 1 && refV.mes <= 12 ? `${nomesMesCompleto[refV.mes]} de ${refV.ano}` : "mês anterior"
   const baseAnterior = dashboardData.clientes_base_mes_anterior
 
-  const badgeStatus = (status: string) => {
-    const s = String(status || "").toLowerCase()
-    if (s === "vencida") return "bg-red-100 text-red-700"
-    if (s === "atrasada") return "bg-amber-100 text-amber-800"
-    if (s === "pendente") return "bg-sky-100 text-sky-900"
-    return "bg-gray-100 text-gray-700"
-  }
-
   function rotuloStatus(status: string) {
     const s = String(status || "").toLowerCase()
     if (s === "pendente") return "Pendente"
@@ -283,7 +389,121 @@ export default function AdministradoraDashboard() {
     return status || "—"
   }
 
-  const pendenciasFiltradas = pendenciasFaturas
+  function corPontoStatus(status: string) {
+    const s = String(status || "").toLowerCase()
+    if (s === "vencida") return "bg-rose-500"
+    if (s === "atrasada") return "bg-amber-500"
+    if (s === "pendente") return "bg-sky-500"
+    return "bg-slate-400"
+  }
+
+  const periodoExportLabel = `${mesRef}/${anoRef}`
+
+  function exportarExcelPendencias() {
+    if (pendenciasFiltradas.length === 0) {
+      toast.error("Não há registros no filtro atual para exportar")
+      return
+    }
+    try {
+      setExportandoExcelPendencias(true)
+      const wsData: (string | number)[][] = [
+        ["Período", periodoExportLabel],
+        ["Filtro", rotuloFiltroPendencias(filtroPendencias)],
+        ["Administradora", administradora?.nome_fantasia || administradora?.nome || ""],
+        [],
+        ["Nº", "Cliente", "Vencimento", "Status", "Boletos em aberto", "Segmento", "Cancelado inadimpl.", "Corretora", "Link boleto"],
+        ...pendenciasFiltradas.map((item, i) => [
+          i + 1,
+          item.cliente_nome,
+          item.vencimento ? formatarData(item.vencimento) : "",
+          rotuloStatus(item.status),
+          item.boletos_atrasados_total ?? "",
+          item.status === "atrasada" ? rotuloSegmentoAtraso(item) : "",
+          item.cancelado_inadimplencia ? "Sim" : "Não",
+          item.corretora || "",
+          item.link_boleto || "",
+        ]),
+      ]
+      const ws = XLSX.utils.aoa_to_sheet(wsData)
+      const wb = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(wb, ws, "Pendencias")
+      XLSX.writeFile(wb, `dashboard-pendencias-${periodoExportLabel.replace("/", "-")}-${slugArquivo(rotuloFiltroPendencias(filtroPendencias))}.xlsx`)
+      toast.success("Excel exportado")
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erro ao exportar Excel")
+    } finally {
+      setExportandoExcelPendencias(false)
+    }
+  }
+
+  async function exportarPdfPendencias() {
+    if (pendenciasFiltradas.length === 0) {
+      toast.error("Não há registros no filtro atual para exportar")
+      return
+    }
+    try {
+      setExportandoPdfPendencias(true)
+      const jsPDF = (await import("jspdf")).default
+      const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" })
+      const margin = 10
+      let y = 15
+      doc.setFontSize(14)
+      doc.setFont(undefined, "bold")
+      doc.text("Dashboard — faturas atrasadas e pendentes", margin, y)
+      y += 6
+      doc.setFontSize(10)
+      doc.setFont(undefined, "normal")
+      doc.text(`Período: ${periodoExportLabel} · Filtro: ${rotuloFiltroPendencias(filtroPendencias)}`, margin, y)
+      y += 5
+      doc.text(`Registros: ${pendenciasFiltradas.length}`, margin, y)
+      y += 8
+      const headers = ["Nº", "Cliente", "Venc.", "Status", "Boletos", "Segmento", "Canc. inad.", "Corretora"]
+      const colWidths = [10, 58, 22, 22, 16, 22, 22, 38]
+      doc.setFont(undefined, "bold")
+      let x = margin
+      headers.forEach((h, i) => {
+        doc.text(h, x, y)
+        x += colWidths[i]
+      })
+      y += 5
+      doc.setFont(undefined, "normal")
+      const rowHeight = 6
+      const totalWidth = colWidths.reduce((a, b) => a + b, 0)
+      pendenciasFiltradas.forEach((item, index) => {
+        if (y > 185) {
+          doc.addPage("landscape", "a4")
+          y = 15
+        }
+        if (index % 2 === 1) {
+          doc.setFillColor(248, 250, 252)
+          doc.rect(margin, y - 4, totalWidth, rowHeight, "F")
+        }
+        x = margin
+        const cells = [
+          String(index + 1),
+          item.cliente_nome,
+          item.vencimento ? formatarData(item.vencimento) : "—",
+          rotuloStatus(item.status),
+          item.boletos_atrasados_total != null ? String(item.boletos_atrasados_total) : "—",
+          item.status === "atrasada" ? rotuloSegmentoAtraso(item) : "—",
+          item.cancelado_inadimplencia ? "Sim" : "Não",
+          item.corretora || "—",
+        ]
+        cells.forEach((cell, i) => {
+          const w = colWidths[i] - 2
+          doc.text(doc.splitTextToSize(cell, w)[0] || cell.slice(0, 30), x, y)
+          x += colWidths[i]
+        })
+        y += rowHeight
+      })
+      doc.save(`dashboard-pendencias-${periodoExportLabel.replace("/", "-")}-${slugArquivo(rotuloFiltroPendencias(filtroPendencias))}.pdf`)
+      toast.success("PDF exportado")
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erro ao exportar PDF")
+    } finally {
+      setExportandoPdfPendencias(false)
+    }
+  }
 
   const itensPorPaginaPendencias = 10
   const totalPaginasPendencias = Math.max(1, Math.ceil(pendenciasFiltradas.length / itensPorPaginaPendencias))
@@ -610,42 +830,137 @@ export default function AdministradoraDashboard() {
               </span>
             ) : null}
           </p>
-          {pendenciasTotalPeriodo > 0 && (
-            <div className="mt-4 flex flex-wrap items-stretch gap-2">
-              <div
-                className={cn(
-                  "inline-flex min-w-0 max-w-full items-center gap-3 rounded-xl border border-slate-200/90",
-                  "bg-gradient-to-br from-slate-50 via-white to-slate-50/80 px-3.5 py-2.5",
-                  "shadow-[0_1px_2px_rgba(15,23,42,0.04)]"
-                )}
-              >
-                <span
-                  className={cn(
-                    "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg",
-                    "bg-[#0F172A]/[0.06] text-[#0F172A]"
-                  )}
-                  aria-hidden
-                >
-                  <LayoutList className="h-4 w-4" strokeWidth={2} />
-                </span>
-                <div className="min-w-0">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
-                    Listagem do período
-                  </p>
-                  <p className="mt-0.5 text-sm text-slate-800">
+          <div className="mt-4 flex flex-wrap items-stretch gap-2">
+            {pendenciasTotalPeriodo > 0 && (
+              <CardResumoMinimal
+                titulo="Listagem do período"
+                valorPrincipal={
+                  <>
                     <span className="font-semibold tabular-nums">{pendenciasTotalPeriodo}</span>
                     <span className="text-slate-600">
                       {" "}
                       fatura{pendenciasTotalPeriodo !== 1 ? "s" : ""} pendente
                       {pendenciasTotalPeriodo !== 1 ? "s" : ""}, atrasada
                       {pendenciasTotalPeriodo !== 1 ? "s" : ""} ou vencida
-                      {pendenciasTotalPeriodo !== 1 ? "s" : ""}
                     </span>
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
+                  </>
+                }
+              />
+            )}
+            {resumoAtrasadas && resumoAtrasadas.no_periodo.total_faturas_atrasadas > 0 && (
+              <>
+                <CardResumoMinimal
+                  titulo="Atrasadas — 1 boleto"
+                  valorPrincipal={
+                    <>
+                      <span className="font-semibold tabular-nums">{resumoAtrasadas.no_periodo.uma_fatura.faturas}</span>
+                      <span className="text-slate-600">
+                        {" "}
+                        fatura{resumoAtrasadas.no_periodo.uma_fatura.faturas !== 1 ? "s" : ""} ·{" "}
+                        <span className="font-semibold tabular-nums">{resumoAtrasadas.no_periodo.uma_fatura.clientes}</span>{" "}
+                        cliente{resumoAtrasadas.no_periodo.uma_fatura.clientes !== 1 ? "s" : ""}
+                      </span>
+                    </>
+                  }
+                />
+                <CardResumoMinimal
+                  titulo="Atrasadas — 2+ boletos"
+                  valorPrincipal={
+                    <>
+                      <span className="font-semibold tabular-nums">{resumoAtrasadas.no_periodo.duas_ou_mais.faturas}</span>
+                      <span className="text-slate-600">
+                        {" "}
+                        faturas ·{" "}
+                        <span className="font-semibold tabular-nums">{resumoAtrasadas.no_periodo.duas_ou_mais.clientes}</span>{" "}
+                        clientes
+                      </span>
+                    </>
+                  }
+                  detalhe="Requer atenção: múltiplos vencimentos em aberto."
+                />
+                {(resumoAtrasadas.no_periodo.duas_ou_mais.faturas_clientes_cancelados_inadimplencia > 0 ||
+                  resumoAtrasadas.no_periodo.duas_ou_mais.clientes_cancelados_inadimplencia > 0) && (
+                  <CardResumoMinimal
+                    titulo="Cancelados — quitação pendente"
+                    valorPrincipal={
+                      <>
+                        <span className="font-semibold tabular-nums">
+                          {resumoAtrasadas.no_periodo.duas_ou_mais.faturas_clientes_cancelados_inadimplencia}
+                        </span>
+                        <span className="text-slate-600">
+                          {" "}
+                          fatura
+                          {resumoAtrasadas.no_periodo.duas_ou_mais.faturas_clientes_cancelados_inadimplencia !== 1
+                            ? "s"
+                            : ""}{" "}
+                          ·{" "}
+                          <span className="font-semibold tabular-nums">
+                            {resumoAtrasadas.no_periodo.duas_ou_mais.clientes_cancelados_inadimplencia}
+                          </span>{" "}
+                          cliente
+                          {resumoAtrasadas.no_periodo.duas_ou_mais.clientes_cancelados_inadimplencia !== 1 ? "s" : ""}
+                        </span>
+                      </>
+                    }
+                    detalhe="Cancelados por inadimplência com boleto ainda em aberto."
+                  />
+                )}
+              </>
+            )}
+          </div>
+        </div>
+        <div className="border-b border-slate-200 bg-white px-5 py-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-wrap gap-1.5" role="tablist" aria-label="Filtrar listagem">
+            {filtrosPendencias.map((f) => (
+              <button
+                key={f.id}
+                type="button"
+                role="tab"
+                aria-selected={filtroPendencias === f.id}
+                onClick={() => setFiltroPendencias(f.id)}
+                className={cn(
+                  "h-8 rounded-sm border px-2.5 text-xs font-medium transition-colors",
+                  filtroPendencias === f.id
+                    ? "border-slate-800 bg-slate-900 text-white"
+                    : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900"
+                )}
+              >
+                {f.label}
+                <span
+                  className={cn(
+                    "ml-1.5 tabular-nums",
+                    filtroPendencias === f.id ? "text-slate-300" : "text-slate-400"
+                  )}
+                >
+                  ({f.count})
+                </span>
+              </button>
+            ))}
+          </div>
+          <div className="flex flex-wrap gap-2 shrink-0">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className={`${btnSquare} h-8 border-slate-300 text-xs`}
+              disabled={pendenciasFiltradas.length === 0 || exportandoPdfPendencias}
+              onClick={() => void exportarPdfPendencias()}
+            >
+              <FileDown className="h-3.5 w-3.5 mr-1.5 shrink-0" />
+              {exportandoPdfPendencias ? "Exportando…" : "PDF"}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className={`${btnSquare} h-8 border-slate-300 text-xs`}
+              disabled={pendenciasFiltradas.length === 0 || exportandoExcelPendencias}
+              onClick={exportarExcelPendencias}
+            >
+              <FileSpreadsheet className="h-3.5 w-3.5 mr-1.5 shrink-0" />
+              {exportandoExcelPendencias ? "Exportando…" : "Excel"}
+            </Button>
+          </div>
         </div>
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm">
@@ -654,6 +969,7 @@ export default function AdministradoraDashboard() {
                 <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">Nome</th>
                 <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">Vencimento</th>
                 <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">Status</th>
+                <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">Atraso</th>
                 <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">Corretora</th>
                 <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">Link do boleto</th>
               </tr>
@@ -661,8 +977,10 @@ export default function AdministradoraDashboard() {
             <tbody className="divide-y divide-slate-100">
               {pendenciasFiltradas.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-4 py-10 text-center text-sm text-slate-500">
-                    Nenhuma fatura pendente ou atrasada neste período.
+                  <td colSpan={6} className="px-4 py-10 text-center text-sm text-slate-500">
+                    {filtroPendencias === "todos"
+                      ? "Nenhuma fatura pendente ou atrasada neste período."
+                      : `Nenhum registro para o filtro "${rotuloFiltroPendencias(filtroPendencias)}".`}
                   </td>
                 </tr>
               ) : (
@@ -676,11 +994,28 @@ export default function AdministradoraDashboard() {
                       {item.vencimento ? formatarData(item.vencimento) : "—"}
                     </td>
                     <td className="px-4 py-2.5">
-                      <span
-                        className={`inline-flex px-2 py-0.5 rounded-sm text-xs font-medium ${badgeStatus(item.status)}`}
-                      >
+                      <span className="inline-flex items-center gap-1.5 text-xs text-slate-600">
+                        <span
+                          className={cn("h-1.5 w-1.5 shrink-0 rounded-full", corPontoStatus(item.status))}
+                          aria-hidden
+                        />
                         {rotuloStatus(item.status)}
                       </span>
+                    </td>
+                    <td className="px-4 py-2.5 text-xs text-slate-600">
+                      {item.status === "atrasada" && item.segmento_atraso ? (
+                        <div className="space-y-0.5">
+                          <span className="tabular-nums text-slate-700">
+                            {item.segmento_atraso === "dois_ou_mais" ? "2+ boletos" : "1 boleto"}
+                            {item.boletos_atrasados_total != null ? ` (${item.boletos_atrasados_total} total)` : ""}
+                          </span>
+                          {item.cancelado_inadimplencia && (
+                            <span className="block text-[11px] text-amber-800">Quitação pendente</span>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-slate-400">—</span>
+                      )}
                     </td>
                     <td className="px-4 py-2.5 text-slate-700">{item.corretora || "—"}</td>
                     <td className="px-4 py-2.5">
