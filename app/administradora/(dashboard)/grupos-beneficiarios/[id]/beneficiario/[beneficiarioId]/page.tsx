@@ -354,27 +354,42 @@ export default function BeneficiarioDetalhesPage() {
 
       const { supabase } = await import("@/lib/supabase")
       const qAdmin = adm?.id ? `&administradora_id=${encodeURIComponent(adm.id)}` : ""
-      const [corretoresData, g, vinculosRes, vidasRes] = await Promise.all([
+      const vidaIdDireto = beneficiarioId.startsWith("vida-") ? beneficiarioId.replace(/^vida-/, "") : ""
+
+      const [corretoresData, g, vinculosRes, vidasRes, vidaUnicaRes, cpfsTitularesRes] = await Promise.all([
         fetch(`/api/administradora/corretores?administradora_id=${encodeURIComponent(adm.id)}`).then((r) =>
           r.json().catch(() => [])
         ),
         GruposBeneficiariosService.buscarPorId(grupoId),
         supabase.from("clientes_grupos").select("*").eq("grupo_id", grupoId),
-        fetch(`/api/administradora/vidas-importadas?grupo_id=${encodeURIComponent(grupoId)}${qAdmin}`).then((r) =>
-          r.json().catch(() => [])
-        ),
+        vidaIdDireto
+          ? Promise.resolve([])
+          : fetch(`/api/administradora/vidas-importadas?grupo_id=${encodeURIComponent(grupoId)}${qAdmin}&lista=1`).then(
+              (r) => r.json().catch(() => [])
+            ),
+        vidaIdDireto
+          ? fetch(`/api/administradora/vidas-importadas/${encodeURIComponent(vidaIdDireto)}`).then((r) =>
+              r.ok ? r.json().catch(() => null) : null
+            )
+          : Promise.resolve(null),
+        supabase
+          .from("vidas_importadas")
+          .select("cpf, tipo")
+          .eq("grupo_id", grupoId)
+          .eq("administradora_id", adm.id),
       ])
       setCorretores(
         Array.isArray(corretoresData) ? corretoresData.map((c: any) => ({ id: String(c.id), nome: String(c.nome || "") })) : []
       )
       setGrupo(g)
       const vinculos = vinculosRes.data || []
-      const vidas = Array.isArray(vidasRes) ? vidasRes : []
+      const vidasBrutas = vidaIdDireto && vidaUnicaRes ? [vidaUnicaRes] : Array.isArray(vidasRes) ? vidasRes : []
+      const vidas = vidasBrutas.filter(Boolean)
       const cpfsTitulares = Array.from(
         new Set(
-          vidas
-            .filter((v: any) => String(v?.tipo || "titular").toLowerCase() !== "dependente")
-            .map((v: any) => String(v?.cpf || "").replace(/\D/g, ""))
+          (cpfsTitularesRes.data || [])
+            .filter((v: { tipo?: string }) => String(v?.tipo || "titular").toLowerCase() !== "dependente")
+            .map((v: { cpf?: string }) => String(v?.cpf || "").replace(/\D/g, ""))
             .filter((cpf: string) => cpf.length >= 11)
         )
       )

@@ -223,16 +223,24 @@ export default function DetalhesGrupoPage() {
     })
   }
 
-  async function sincronizarInativosDoGrupo(administradoraId: string) {
-    try {
-      await fetch("/api/administradora/beneficiarios/cancelamentos/sincronizar-vidas-inativas", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ administradora_id: administradoraId, grupo_id: grupoId }),
-      })
-    } catch {
-      /* não bloqueia a tela */
+  /** Sincroniza cancelamentos → vidas inativas sem bloquear a listagem inicial. */
+  function sincronizarInativosDoGrupoEmBackground(administradoraId: string) {
+    void fetch("/api/administradora/beneficiarios/cancelamentos/sincronizar-vidas-inativas", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ administradora_id: administradoraId, grupo_id: grupoId }),
+    }).catch(() => {})
+  }
+
+  function partirVidasEmAtivosECancelados(vidas: Record<string, unknown>[]) {
+    const ativos: ReturnType<typeof mapVidaParaItemCliente>[] = []
+    const cancelados: ReturnType<typeof mapVidaParaItemCliente>[] = []
+    for (const v of vidas) {
+      const item = mapVidaParaItemCliente(v)
+      if (isBeneficiarioAtivo(item)) ativos.push(item)
+      else cancelados.push(item)
     }
+    return { ativos, cancelados }
   }
 
   useEffect(() => {
@@ -304,20 +312,14 @@ export default function DetalhesGrupoPage() {
       const adm = getAdministradoraLogada()
       const admId = adm?.id || ""
       const qAdmin = admId ? `&administradora_id=${encodeURIComponent(admId)}` : ""
-      const urlVidasBase = `/api/administradora/vidas-importadas?grupo_id=${encodeURIComponent(grupoId)}${qAdmin}`
-      const [resAtivos, resTodasVidas, resInativos] = await Promise.all([
-        fetch(`${urlVidasBase}&somente_ativos=1`),
-        fetch(urlVidasBase),
-        fetch(`${urlVidasBase}&somente_inativos=1`),
-      ])
-      const vidasAtivas = (await resAtivos.json().catch(() => [])) || []
-      const vidasTodas = (await resTodasVidas.json().catch(() => [])) || []
-      const vidasInativas = (await resInativos.json().catch(() => [])) || []
-      const vidasArray = Array.isArray(vidasAtivas) ? vidasAtivas : []
-      const vidasInativasArray = Array.isArray(vidasInativas) ? vidasInativas : []
-      const grupoPossuiVidasImportadas = Array.isArray(vidasTodas) && vidasTodas.length > 0
+      const urlVidasBase = `/api/administradora/vidas-importadas?grupo_id=${encodeURIComponent(grupoId)}${qAdmin}&lista=1`
+      const resVidas = await fetch(urlVidasBase)
+      const vidasTodas = (await resVidas.json().catch(() => [])) || []
+      const vidasLista = Array.isArray(vidasTodas) ? (vidasTodas as Record<string, unknown>[]) : []
+      const grupoPossuiVidasImportadas = vidasLista.length > 0
+      const { ativos: vidasAtivasItens, cancelados: vidasInativasItens } = partirVidasEmAtivosECancelados(vidasLista)
       const vidaPorClienteAdmId = new Map<string, any>()
-      for (const v of vidasArray) {
+      for (const v of vidasLista.filter((x) => (x as { ativo?: boolean }).ativo !== false)) {
         const caId = String(v?.cliente_administradora_id || "").trim()
         if (!caId) continue
         const atual = vidaPorClienteAdmId.get(caId)
@@ -330,26 +332,7 @@ export default function DetalhesGrupoPage() {
       // Quando o grupo tem vidas importadas (ativas ou não), elas são a fonte oficial.
       // Mesmo com zero ativas após cancelamento, não usa clientes_grupos (evita contagem/lista defasada).
       if (grupoPossuiVidasImportadas) {
-        if (admId) {
-          await sincronizarInativosDoGrupo(admId)
-          const [resAtivos2, resInativos2] = await Promise.all([
-            fetch(`${urlVidasBase}&somente_ativos=1`),
-            fetch(`${urlVidasBase}&somente_inativos=1`),
-          ])
-          const vidasAtivas2 = (await resAtivos2.json().catch(() => [])) || []
-          const vidasInativas2 = (await resInativos2.json().catch(() => [])) || []
-          vidasArray.length = 0
-          vidasArray.push(...(Array.isArray(vidasAtivas2) ? vidasAtivas2 : []))
-          vidasInativasArray.length = 0
-          vidasInativasArray.push(...(Array.isArray(vidasInativas2) ? vidasInativas2 : []))
-        }
-
-        const vidasComoClientesAtual = vidasArray.map((v) =>
-          mapVidaParaItemCliente(v as Record<string, unknown>)
-        )
-        const vidasInativasAtual = vidasInativasArray.map((v) =>
-          mapVidaParaItemCliente(v as Record<string, unknown>)
-        )
+        if (admId) sincronizarInativosDoGrupoEmBackground(admId)
 
         const cancelamentosGrupo = admId ? await buscarCancelamentosDoGrupo(admId) : []
         const idsComCancelamentoAberto = new Set(
@@ -362,10 +345,8 @@ export default function DetalhesGrupoPage() {
           ).filter(Boolean)
         )
 
-        let ativos = vidasComoClientesAtual.filter(
-          (c) => isBeneficiarioAtivo(c) && !idsComCancelamentoAberto.has(String(c.id))
-        )
-        let cancelados = vidasInativasAtual.filter((c) => !isBeneficiarioAtivo(c))
+        let ativos = vidasAtivasItens.filter((c) => !idsComCancelamentoAberto.has(String(c.id)))
+        let cancelados = vidasInativasItens
         ativos = await enriquecerMatriculaContrato(ativos, supabase)
         cancelados = await enriquecerMatriculaContrato(cancelados, supabase)
         if (admId) {

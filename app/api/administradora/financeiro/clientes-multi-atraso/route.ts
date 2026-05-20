@@ -2,13 +2,24 @@ import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase-admin"
 import { resolveTenantIdForAdministradora } from "@/lib/resolve-tenant-administradora"
 import { listarClienteAdministradoraIdsENomesDoGrupo } from "@/lib/grupo-cliente-administradora-ids"
-import { CHUNK_IN_CLIENTE_IDS } from "@/lib/boletos-grupo-faturas"
+import {
+  contarFaturasAtrasadasPorCliente,
+  filtrarTitularesAtivosParaInadimplencia,
+  percentual,
+} from "@/lib/inadimplencia-grupo"
 
 export const maxDuration = 60
 
+export type ClienteAtrasoPayload = {
+  cliente_administradora_id: string
+  cliente_nome: string
+  quantidadeFaturasAtrasadas: number
+  vencimentos: string[]
+}
+
 /**
  * GET ?grupo_id=&administradora_id=
- * Titulares do grupo com mais de duas faturas com status atrasada e cadastro ativo.
+ * Situação atual: titulares ativos com faturas atrasadas, segmentados em 1 boleto vs 2+ boletos.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -46,96 +57,66 @@ export async function GET(request: NextRequest) {
       tenantId
     )
 
-    const counts = new Map<string, number>()
-    if (clienteIds.length > 0) {
-      for (let i = 0; i < clienteIds.length; i += CHUNK_IN_CLIENTE_IDS) {
-        const chunk = clienteIds.slice(i, i + CHUNK_IN_CLIENTE_IDS)
-        let { data, error } = await supabaseAdmin
-          .from("faturas")
-          .select("cliente_administradora_id")
-          .in("cliente_administradora_id", chunk)
-          .eq("administradora_id", administradoraId)
-          .eq("status", "atrasada")
+    const clienteIdsAtivos = await filtrarTitularesAtivosParaInadimplencia(
+      clienteIds,
+      grupoId,
+      administradoraId,
+      tenantId
+    )
 
-        if (error) {
-          const fb = await supabaseAdmin
-            .from("faturas")
-            .select("cliente_administradora_id")
-            .in("cliente_administradora_id", chunk)
-            .eq("administradora_id", administradoraId)
-            .eq("status", "atrasada")
-          data = fb.data
-          error = fb.error as typeof error
-        }
-        if (error) {
-          console.error("[clientes-multi-atraso] faturas:", error)
-          return NextResponse.json({ error: "Erro ao consultar faturas" }, { status: 500 })
-        }
-        for (const row of data || []) {
-          const ca = String((row as { cliente_administradora_id?: string }).cliente_administradora_id || "").trim()
-          if (!ca) continue
-          counts.set(ca, (counts.get(ca) || 0) + 1)
-        }
-      }
-    }
+    const counts = await contarFaturasAtrasadasPorCliente(clienteIdsAtivos, administradoraId, tenantId)
 
-    const candidatos = [...counts.entries()]
-      .filter(([, n]) => n > 2)
-      .map(([id]) => id)
-
-    if (candidatos.length === 0) {
-      return NextResponse.json({
-        grupo: { id: grupo.id, nome: grupo.nome },
-        criterio:
-          "Clientes administradora do grupo com mais de 2 faturas em status atrasada (todas, sem filtro de data) e status cadastral ativo.",
-        clientes: [],
-      })
-    }
-
-    const ativos = new Set<string>()
-    for (let i = 0; i < candidatos.length; i += CHUNK_IN_CLIENTE_IDS) {
-      const chunk = candidatos.slice(i, i + CHUNK_IN_CLIENTE_IDS)
-      let { data, error } = await supabaseAdmin
-        .from("clientes_administradoras")
-        .select("id, status")
-        .in("id", chunk)
-        .eq("administradora_id", administradoraId)
-        .eq("tenant_id", tenantId)
-
-      if (error) {
-        const fb = await supabaseAdmin
-          .from("clientes_administradoras")
-          .select("id, status")
-          .in("id", chunk)
-          .eq("administradora_id", administradoraId)
-        data = fb.data
-        error = fb.error as typeof error
-      }
-      if (error) {
-        console.error("[clientes-multi-atraso] clientes:", error)
-        return NextResponse.json({ error: "Erro ao consultar status dos clientes" }, { status: 500 })
-      }
-      for (const row of data || []) {
-        const id = String((row as { id?: string }).id || "").trim()
-        const st = String((row as { status?: string }).status || "").toLowerCase()
-        if (id && st === "ativo") ativos.add(id)
-      }
-    }
-
-    const clientes = candidatos
-      .filter((id) => ativos.has(id))
-      .map((id) => ({
+    function montarCliente(id: string): ClienteAtrasoPayload {
+      const info = counts.get(id)!
+      return {
         cliente_administradora_id: id,
         cliente_nome: nomePorId[id] || "Cliente",
-        quantidadeFaturasAtrasadas: counts.get(id) ?? 0,
-      }))
-      .sort((a, b) => (b.quantidadeFaturasAtrasadas || 0) - (a.quantidadeFaturasAtrasadas || 0))
+        quantidadeFaturasAtrasadas: info.quantidade,
+        vencimentos: info.vencimentos,
+      }
+    }
+
+    const umBoleto: ClienteAtrasoPayload[] = []
+    const doisOuMais: ClienteAtrasoPayload[] = []
+
+    for (const id of counts.keys()) {
+      const n = counts.get(id)?.quantidade ?? 0
+      if (n === 1) umBoleto.push(montarCliente(id))
+      else if (n >= 2) doisOuMais.push(montarCliente(id))
+    }
+
+    const sortPorQtd = (a: ClienteAtrasoPayload, b: ClienteAtrasoPayload) =>
+      b.quantidadeFaturasAtrasadas - a.quantidadeFaturasAtrasadas ||
+      a.cliente_nome.localeCompare(b.cliente_nome, "pt-BR")
+
+    umBoleto.sort(sortPorQtd)
+    doisOuMais.sort(sortPorQtd)
+
+    const baseTitulares = clienteIdsAtivos.length
+    const totalComAtraso = umBoleto.length + doisOuMais.length
+
+    const resumo = {
+      baseTitulares,
+      titularesComFaturaAtrasada: totalComAtraso,
+      percentualInadimplencia: percentual(totalComAtraso, baseTitulares),
+      comUmBoleto: umBoleto.length,
+      comDoisOuMaisBoletos: doisOuMais.length,
+      percentualUmBoleto: percentual(umBoleto.length, baseTitulares),
+      percentualDoisOuMais: percentual(doisOuMais.length, baseTitulares),
+    }
 
     return NextResponse.json({
       grupo: { id: grupo.id, nome: grupo.nome },
       criterio:
-        "Titulares do grupo (vínculo de faturamento) com mais de 2 faturas em status atrasada e status cadastral ativo em clientes_administradoras.",
-      clientes,
+        "Somente titulares ativos: status ativo em clientes_administradoras e, quando há vida importada no grupo, " +
+        "ao menos uma vida ativa vinculada. Faturas em status atrasada (todas em aberto, sem filtro de mês). " +
+        "1 boleto = exatamente uma fatura atrasada (~1 mês de atraso). " +
+        "2+ boletos = duas ou mais faturas atrasadas (dois ou mais meses/competências em aberto).",
+      resumo,
+      clientesUmBoleto: umBoleto,
+      clientesDoisOuMaisBoletos: doisOuMais,
+      /** @deprecated use clientesDoisOuMaisBoletos */
+      clientes: doisOuMais,
     })
   } catch (e: unknown) {
     console.error("clientes-multi-atraso:", e)

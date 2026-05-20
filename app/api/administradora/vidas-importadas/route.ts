@@ -24,6 +24,7 @@ export async function GET(request: NextRequest) {
     const somenteInativos = ["1", "true", "sim"].includes(
       String(searchParams.get("somente_inativos") || "").toLowerCase()
     )
+    const modoLista = ["1", "true", "sim"].includes(String(searchParams.get("lista") || "").toLowerCase())
 
     if (somenteAtivos && somenteInativos) {
       return NextResponse.json(
@@ -40,6 +41,10 @@ export async function GET(request: NextRequest) {
       ? await resolveTenantIdForAdministradora(administradoraId)
       : await getCurrentTenantId()
 
+    const COLS_LISTA =
+      "id, nome, cpf, nome_mae, tipo, data_nascimento, idade, parentesco, cpf_titular, produto_id, plano, acomodacao, ativo, valor_mensal, cliente_administradora_id, corretor_id, emails, telefones, dados_adicionais, grupo_id, administradora_id"
+    const selectCols = modoLista ? COLS_LISTA : "*"
+
     // Buscar todas as vidas em lotes (Supabase/PostgREST limitam a 1000 por request)
     const PAGE_SIZE = 1000
     const allData: any[] = []
@@ -48,7 +53,7 @@ export async function GET(request: NextRequest) {
     while (hasMore) {
       let query = supabaseAdmin
         .from("vidas_importadas")
-        .select("*")
+        .select(selectCols)
         .eq("tenant_id", tenantId)
         .order("tipo", { ascending: true })
         .order("nome", { ascending: true })
