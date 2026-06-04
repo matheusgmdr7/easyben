@@ -16,6 +16,8 @@ type FaturaRow = {
   id: string
   cliente_administradora_id: string | null
   cliente_nome: string | null
+  cliente_telefone?: string | null
+  numero_fatura?: string | null
   valor: number | null
   status: string | null
   vencimento: string | null
@@ -29,7 +31,7 @@ type FaturaRow = {
 }
 
 const FATURAS_SELECT_SEM_GATEWAY =
-  "id, cliente_administradora_id, cliente_nome, valor, status, vencimento, pagamento_data, boleto_url, asaas_boleto_url, asaas_invoice_url, asaas_payment_link"
+  "id, cliente_administradora_id, cliente_nome, cliente_telefone, numero_fatura, valor, status, vencimento, pagamento_data, boleto_url, asaas_boleto_url, asaas_invoice_url, asaas_payment_link"
 const FATURAS_SELECT_COM_GATEWAY = `${FATURAS_SELECT_SEM_GATEWAY}, gateway_nome`
 const FATURAS_SELECT_COM_GATEWAY_FIN = `${FATURAS_SELECT_COM_GATEWAY}, financeira_id`
 
@@ -281,6 +283,24 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    const telefonePorClienteAdm = new Map<string, string>()
+    if (clienteAdmIds.length > 0) {
+      for (let i = 0; i < clienteAdmIds.length; i += 500) {
+        const lote = clienteAdmIds.slice(i, i + 500)
+        const { data: clientesLote } = await supabaseAdmin
+          .from("vw_clientes_administradoras_completo")
+          .select("id, cliente_telefone")
+          .eq("administradora_id", administradoraId)
+          .in("id", lote)
+
+        for (const c of clientesLote || []) {
+          const id = String((c as { id?: string }).id || "").trim()
+          const tel = String((c as { cliente_telefone?: string }).cliente_telefone || "").trim()
+          if (id && tel) telefonePorClienteAdm.set(id, tel)
+        }
+      }
+    }
+
     let faturasPendentes = 0
     /** Soma de faturas não pagas no período (igual ao comportamento anterior do card). */
     let valorEmAberto = 0
@@ -290,6 +310,9 @@ export async function GET(request: NextRequest) {
       fatura_id: string
       cliente_administradora_id: string | null
       cliente_nome: string
+      cliente_telefone: string | null
+      numero_fatura: string | null
+      valor: number | null
       vencimento: string
       status: string
       corretora: string
@@ -332,10 +355,15 @@ export async function GET(request: NextRequest) {
         if (isAtrasada) {
           faturasAtrasadasPeriodo.push({ cliente_administradora_id: clienteAdmId || null })
         }
+        const telFatura = String(f.cliente_telefone || "").trim()
+        const telCadastro = clienteAdmId ? telefonePorClienteAdm.get(clienteAdmId) || "" : ""
         pendenciasFaturas.push({
           fatura_id: String(f.id),
           cliente_administradora_id: clienteAdmId || null,
           cliente_nome: String(f.cliente_nome || "Cliente"),
+          cliente_telefone: telFatura || telCadastro || null,
+          numero_fatura: f.numero_fatura ? String(f.numero_fatura) : null,
+          valor: Number.isFinite(valor) ? valor : null,
           vencimento: String(f.vencimento || "").slice(0, 10),
           status,
           corretora,
