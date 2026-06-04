@@ -1,5 +1,6 @@
 [build]
-  command = "npm ci --legacy-peer-deps && npm run build"
+  # Limpa cache webpack após restore do plugin Next.js (evita WasmHash / reading 'length' em CI).
+  command = "npm ci --legacy-peer-deps && rm -rf .next/cache node_modules/.cache && npm run build"
   publish = ".next"
 
 [build.environment]

@@ -7,6 +7,10 @@ const nextConfig = {
   },
   // webpackBuildWorker (experimental) costuma quebrar build em CI (ex.: Netlify) com erros opacos do webpack.
   webpack: (config, { dev }) => {
+    // Cache em disco no CI (Netlify) pode corromper e quebrar o WasmHash do webpack.
+    if (!dev && (process.env.NETLIFY === "true" || process.env.CI === "true")) {
+      config.cache = false
+    }
     if (dev) {
       config.watchOptions = {
         ...config.watchOptions,
