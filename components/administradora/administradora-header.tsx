@@ -7,6 +7,7 @@ import Link from "next/link"
 import { Settings, User, LogOut, Bell, AlertTriangle, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { getAdministradoraLogada } from "@/services/auth-administradoras-service"
+import { carregarNomeMarcaExibicao, nomeMarcaFallbackLocal } from "@/lib/administradora-marca"
 import {
   listarAlertasSistema,
   marcarTodosAlertasComoLidos,
@@ -71,17 +72,13 @@ export default function AdministradoraHeader({ sidebarCollapsed = false }: Admin
           emailFallback = administradora.email_login || null
         }
 
-        if (tenantId) {
-          const { data: tenantData } = await supabase
-            .from("tenants")
-            .select("nome_marca")
-            .eq("id", tenantId)
-            .maybeSingle()
-
-          setAdministradoraNome(tenantData?.nome_marca || nomeFallback || "Administradora")
-        } else {
-          setAdministradoraNome(nomeFallback || "Administradora")
+        const admParaMarca = administradora ?? {
+          nome: nomeFallback,
+          nome_fantasia: nomeFallback,
+          tenant_id: tenantId,
         }
+        const nomeExibicao = await carregarNomeMarcaExibicao(admParaMarca)
+        setAdministradoraNome(nomeExibicao || nomeMarcaFallbackLocal(admParaMarca))
         setAdministradoraEmail(emailFallback || null)
       } catch (error) {
         console.error("Erro ao carregar informações da administradora:", error)

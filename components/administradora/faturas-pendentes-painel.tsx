@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import { ExternalLink, FileDown, FileSpreadsheet, MessageCircle } from "lucide-react"
+import { ExternalLink, FileDown, FileSpreadsheet } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { formatarData, formatarMoeda } from "@/utils/formatters"
@@ -490,9 +490,8 @@ export function FaturasPendentesPainel({
                         <Button
                           type="button"
                           size="sm"
-                          variant="outline"
                           className={cn(
-                            "h-8 text-xs border-emerald-200 text-emerald-800 hover:bg-emerald-50",
+                            "h-8 text-xs font-medium bg-emerald-600 text-white hover:bg-emerald-700 border-0 shadow-none",
                             !podeWhatsApp && "opacity-50"
                           )}
                           disabled={!podeWhatsApp}
@@ -505,7 +504,6 @@ export function FaturasPendentesPainel({
                           }
                           onClick={() => enviarWhatsApp(item)}
                         >
-                          <MessageCircle className="h-3.5 w-3.5 mr-1.5 shrink-0" />
                           Enviar fatura
                         </Button>
                       </td>

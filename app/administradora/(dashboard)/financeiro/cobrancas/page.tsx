@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Loader2, RefreshCw } from "lucide-react"
+import { Loader2 } from "lucide-react"
 import { getAdministradoraLogada } from "@/services/auth-administradoras-service"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -11,6 +11,7 @@ import {
   FaturasPendentesPainel,
   type PendenciaFaturaItem,
 } from "@/components/administradora/faturas-pendentes-painel"
+import { useNomeMarcaAdministradora } from "@/hooks/use-nome-marca-administradora"
 
 type FinanceiraOpcao = { id: string; nome: string }
 
@@ -23,9 +24,10 @@ export default function CobrancasFinanceiroPage() {
     nome?: string
     nome_fantasia?: string
     telefone?: string
+    tenant_id?: string | null
   } | null>(null)
+  const nomeMarca = useNomeMarcaAdministradora(administradora)
   const [loading, setLoading] = useState(true)
-  const [sincronizando, setSincronizando] = useState(false)
   const [mesRef, setMesRef] = useState(String(agora.getMonth() + 1).padStart(2, "0"))
   const [anoRef, setAnoRef] = useState(String(agora.getFullYear()))
   const [pendencias, setPendencias] = useState<PendenciaFaturaItem[]>([])
@@ -85,60 +87,20 @@ export default function CobrancasFinanceiroPage() {
     void load()
   }, [])
 
-  async function aplicarPeriodo() {
+  async function aplicarFiltro() {
     if (!administradora?.id) return
     try {
       setLoading(true)
-      await carregarPendencias(administradora.id, anoRef, mesRef)
-      toast.success("Período atualizado")
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Erro ao aplicar período")
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  async function aoMudarFinanceira(novoId: string) {
-    setFinanceiraId(novoId)
-    if (!administradora?.id) return
-    try {
-      setLoading(true)
-      await carregarPendencias(administradora.id, anoRef, mesRef, novoId)
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Erro ao filtrar financeira")
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  async function sincronizarStatus() {
-    if (!administradora?.id) return
-    try {
-      setSincronizando(true)
-      const body: { administradora_id: string; financeira_id?: string } = {
-        administradora_id: administradora.id,
-      }
-      if (financeiraId.trim()) body.financeira_id = financeiraId.trim()
-
-      const res = await fetch("/api/sincronizar-status-asaas", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      })
-      const payload = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(payload?.error || "Erro na sincronização")
-
-      toast.success("Sincronização concluída. Atualizando listagem…")
       await carregarPendencias(administradora.id, anoRef, mesRef, financeiraId)
+      toast.success("Filtros aplicados")
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Erro na sincronização")
+      toast.error(e instanceof Error ? e.message : "Erro ao aplicar filtros")
     } finally {
-      setSincronizando(false)
+      setLoading(false)
     }
   }
 
   const periodoLabel = `${mesRef}/${anoRef}`
-  const nomeAdministradora = administradora?.nome_fantasia || administradora?.nome || ""
 
   if (loading && pendencias.length === 0) {
     return (
@@ -193,15 +155,6 @@ export default function CobrancasFinanceiroPage() {
                   min={2000}
                   max={2100}
                 />
-                <Button
-                  type="button"
-                  variant="outline"
-                  className={`${btnSquare} h-10`}
-                  onClick={() => void aplicarPeriodo()}
-                  disabled={loading || sincronizando}
-                >
-                  Aplicar período
-                </Button>
               </div>
             </div>
             <div className="flex flex-col gap-1 min-w-[12rem] flex-1 max-w-md">
@@ -211,9 +164,9 @@ export default function CobrancasFinanceiroPage() {
               <select
                 id="cobrancas-financeira"
                 value={financeiraId}
-                onChange={(e) => void aoMudarFinanceira(e.target.value)}
+                onChange={(e) => setFinanceiraId(e.target.value)}
                 className={`h-10 w-full ${btnSquare} border border-slate-300 bg-white px-3 text-sm`}
-                disabled={loading || sincronizando}
+                disabled={loading}
               >
                 <option value="">Todas as financeiras</option>
                 {financeiras.map((f) => (
@@ -225,12 +178,11 @@ export default function CobrancasFinanceiroPage() {
             </div>
             <Button
               type="button"
-              className={cn(btnSquare, "h-10")}
-              disabled={sincronizando || loading}
-              onClick={() => void sincronizarStatus()}
+              className={cn(btnSquare, "h-10 bg-[#0F172A] hover:bg-[#1E293B] text-white")}
+              onClick={() => void aplicarFiltro()}
+              disabled={loading}
             >
-              <RefreshCw className={cn("h-4 w-4 mr-2", sincronizando && "animate-spin")} />
-              {sincronizando ? "Sincronizando…" : "Sincronizar com gateway"}
+              Aplicar filtro
             </Button>
           </div>
           {alertaFiltroGateway && financeiraId.trim() ? (
@@ -246,7 +198,7 @@ export default function CobrancasFinanceiroPage() {
           pendencias={pendencias}
           financeiraId={financeiraId}
           periodoLabel={periodoLabel}
-          administradoraNome={nomeAdministradora}
+          administradoraNome={nomeMarca}
           mostrarEnvioWhatsApp
           exportPrefix="cobrancas"
         />
