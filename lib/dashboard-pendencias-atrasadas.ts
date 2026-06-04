@@ -8,16 +8,85 @@ export type ResumoSegmentoAtrasadas = {
   clientes: number
 }
 
+export type HistoricoFaturasCliente = {
+  total: number
+  pagas: number
+}
+
+export type SegmentoAtraso =
+  | "um_boleto_novo"
+  | "um_boleto_antigo"
+  | "dois_ou_mais"
+  | null
+
 export type ResumoAtrasadasDashboard = {
   criterio: string
   no_periodo: {
     total_faturas_atrasadas: number
-    uma_fatura: ResumoSegmentoAtrasadas
+    uma_fatura: ResumoSegmentoAtrasadas & {
+      novos: ResumoSegmentoAtrasadas
+      antigos: ResumoSegmentoAtrasadas
+    }
     duas_ou_mais: ResumoSegmentoAtrasadas & {
       faturas_clientes_cancelados_inadimplencia: number
       clientes_cancelados_inadimplencia: number
     }
   }
+}
+
+const STATUS_FATURA_PAGA = new Set(["paga", "pago", "parcialmente_paga"])
+
+/** Total de faturas geradas e quantas quitadas por cliente (histórico completo). */
+export async function contarHistoricoFaturasPorCliente(
+  administradoraId: string,
+  tenantId: string
+): Promise<Map<string, HistoricoFaturasCliente>> {
+  const counts = new Map<string, HistoricoFaturasCliente>()
+  const PAGE = 1000
+  let from = 0
+  let hasMore = true
+
+  while (hasMore) {
+    let q = supabaseAdmin
+      .from("faturas")
+      .select("cliente_administradora_id, status")
+      .eq("administradora_id", administradoraId)
+      .not("cliente_administradora_id", "is", null)
+      .range(from, from + PAGE - 1)
+
+    const tid = String(tenantId || "").trim()
+    if (tid) q = q.or(`tenant_id.eq.${tid},tenant_id.is.null`)
+    else q = q.is("tenant_id", null)
+
+    const { data, error } = await q
+    if (error) throw error
+
+    const list = data || []
+    for (const row of list) {
+      const ca = String((row as { cliente_administradora_id?: string }).cliente_administradora_id || "").trim()
+      if (!ca) continue
+      const st = String((row as { status?: string }).status || "").toLowerCase()
+      const atual = counts.get(ca) || { total: 0, pagas: 0 }
+      atual.total += 1
+      if (STATUS_FATURA_PAGA.has(st)) atual.pagas += 1
+      counts.set(ca, atual)
+    }
+    hasMore = list.length === PAGE
+    from += PAGE
+  }
+
+  return counts
+}
+
+/** 1 boleto atrasado: primeira fatura no sistema vs já teve faturas pagas. */
+export function classificarUmBoletoAtraso(
+  historico: HistoricoFaturasCliente | undefined
+): "um_boleto_novo" | "um_boleto_antigo" | null {
+  const total = historico?.total ?? 0
+  const pagas = historico?.pagas ?? 0
+  if (total <= 1) return "um_boleto_novo"
+  if (pagas >= 1) return "um_boleto_antigo"
+  return null
 }
 
 /** Conta faturas com status atrasada por cliente (todos os vencimentos). */
@@ -204,12 +273,17 @@ export async function identificarClientesCanceladosPorInadimplencia(
 export function montarResumoAtrasadasNoPeriodo(
   faturasAtrasadasPeriodo: Array<{ cliente_administradora_id?: string | null }>,
   atrasadasTotaisPorCliente: Map<string, number>,
-  canceladosInadimplencia: Set<string>
+  canceladosInadimplencia: Set<string>,
+  historicoPorCliente: Map<string, HistoricoFaturasCliente>
 ): ResumoAtrasadasDashboard {
   const umaFaturaClientes = new Set<string>()
+  const novosClientes = new Set<string>()
+  const antigosClientes = new Set<string>()
   const duasOuMaisClientes = new Set<string>()
   const duasOuMaisCanceladosClientes = new Set<string>()
   let faturasUma = 0
+  let faturasNovos = 0
+  let faturasAntigos = 0
   let faturasDuasOuMais = 0
   let faturasDuasOuMaisCancelados = 0
 
@@ -227,16 +301,31 @@ export function montarResumoAtrasadasNoPeriodo(
     } else {
       faturasUma += 1
       umaFaturaClientes.add(caId)
+      const sub = classificarUmBoletoAtraso(historicoPorCliente.get(caId))
+      if (sub === "um_boleto_novo") {
+        faturasNovos += 1
+        novosClientes.add(caId)
+      } else if (sub === "um_boleto_antigo") {
+        faturasAntigos += 1
+        antigosClientes.add(caId)
+      }
     }
   }
 
   return {
     criterio:
       "Faturas atrasadas no período (vencimento no mês). Segmentação 1 vs 2+ boletos usa o total de faturas atrasadas do cliente em todos os vencimentos. " +
+      "1 boleto (novos): uma fatura atrasada e apenas uma fatura gerada no sistema. " +
+      "1 boleto (antigos): uma fatura atrasada, com outras faturas já geradas e ao menos uma paga. " +
       "Cancelados por inadimplência: status inadimplente/cancelado ou cancelamento aberto com motivo de inadimplência, com quitação pendente.",
     no_periodo: {
       total_faturas_atrasadas: faturasAtrasadasPeriodo.length,
-      uma_fatura: { faturas: faturasUma, clientes: umaFaturaClientes.size },
+      uma_fatura: {
+        faturas: faturasUma,
+        clientes: umaFaturaClientes.size,
+        novos: { faturas: faturasNovos, clientes: novosClientes.size },
+        antigos: { faturas: faturasAntigos, clientes: antigosClientes.size },
+      },
       duas_ou_mais: {
         faturas: faturasDuasOuMais,
         clientes: duasOuMaisClientes.size,

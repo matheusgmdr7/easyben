@@ -4,9 +4,12 @@ import { getCurrentTenantId } from "@/lib/tenant-query-helper"
 import { FinanceirasService } from "@/services/financeiras-service"
 import { faturaPertenceAFinanceira, gatewayAsaasComoNoBanco } from "@/lib/fatura-filtro-financeira"
 import {
+  classificarUmBoletoAtraso,
   contarFaturasAtrasadasTotaisPorCliente,
+  contarHistoricoFaturasPorCliente,
   identificarClientesCanceladosPorInadimplencia,
   montarResumoAtrasadasNoPeriodo,
+  type SegmentoAtraso,
 } from "@/lib/dashboard-pendencias-atrasadas"
 
 type FaturaRow = {
@@ -292,7 +295,7 @@ export async function GET(request: NextRequest) {
       corretora: string
       link_boleto: string | null
       boletos_atrasados_total?: number
-      segmento_atraso?: "um_boleto" | "dois_ou_mais" | null
+      segmento_atraso?: SegmentoAtraso
       cancelado_inadimplencia?: boolean
     }> = []
 
@@ -346,6 +349,8 @@ export async function GET(request: NextRequest) {
       tenantId
     )
 
+    const historicoPorCliente = await contarHistoricoFaturasPorCliente(administradoraId, tenantId)
+
     const clientesComDuasOuMaisAtrasadas = Array.from(atrasadasTotaisPorCliente.entries())
       .filter(([, n]) => n >= 2)
       .map(([id]) => id)
@@ -362,7 +367,11 @@ export async function GET(request: NextRequest) {
       if (!caId) continue
       const total = atrasadasTotaisPorCliente.get(caId) || 1
       item.boletos_atrasados_total = total
-      item.segmento_atraso = total >= 2 ? "dois_ou_mais" : "um_boleto"
+      if (total >= 2) {
+        item.segmento_atraso = "dois_ou_mais"
+      } else {
+        item.segmento_atraso = classificarUmBoletoAtraso(historicoPorCliente.get(caId))
+      }
       item.cancelado_inadimplencia =
         total >= 2 && canceladosInadimplencia.has(caId)
     }
@@ -370,7 +379,8 @@ export async function GET(request: NextRequest) {
     const resumoAtrasadas = montarResumoAtrasadasNoPeriodo(
       faturasAtrasadasPeriodo,
       atrasadasTotaisPorCliente,
-      canceladosInadimplencia
+      canceladosInadimplencia,
+      historicoPorCliente
     )
 
     pendenciasFaturas.sort((a, b) => {
