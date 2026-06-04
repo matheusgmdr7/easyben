@@ -122,6 +122,13 @@ function diasEmAtrasoFatura(f: Record<string, unknown>): number | null {
   return dias
 }
 
+/** Data em que o boleto foi pago (mesma lógica da ficha do beneficiário na administradora). */
+function dataLiquidacaoFatura(f: Record<string, unknown>): string | null {
+  const raw = f.pagamento_data ?? f.data_pagamento ?? f.data_liquidacao
+  if (raw == null || String(raw).trim() === "") return null
+  return String(raw).slice(0, 10)
+}
+
 function badgeClassesFaturaStatus(status: string | null | undefined): string {
   const s = String(status || "")
     .toLowerCase()
@@ -536,6 +543,7 @@ export default function ClienteDashboardPage({ params }: ClienteDashboardPagePro
                                   f.asaas_invoice_url ??
                                   f.invoice_url
                                 const diasAtraso = diasEmAtrasoFatura(f)
+                                const dataLiquidacao = dataLiquidacaoFatura(f)
                                 return (
                                   <div
                                     key={f.id || `${i}`}
@@ -569,7 +577,7 @@ export default function ClienteDashboardPage({ params }: ClienteDashboardPagePro
                                         {f.status || "—"}
                                       </Badge>
                                     </div>
-                                    <div className="mt-4 grid grid-cols-3 gap-2 rounded-xl bg-slate-50/90 px-2.5 py-3 ring-1 ring-slate-100/80 sm:gap-3 sm:px-3">
+                                    <div className="mt-4 grid grid-cols-2 gap-2 rounded-xl bg-slate-50/90 px-2.5 py-3 ring-1 ring-slate-100/80 sm:grid-cols-4 sm:gap-3 sm:px-3">
                                       <div className="min-w-0">
                                         <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
                                           Valor
@@ -586,7 +594,7 @@ export default function ClienteDashboardPage({ params }: ClienteDashboardPagePro
                                           {vencF ? formatarData(String(vencF).slice(0, 10)) : "—"}
                                         </p>
                                       </div>
-                                      <div className="min-w-0 text-right sm:text-left">
+                                      <div className="min-w-0">
                                         <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
                                           Atraso
                                         </p>
@@ -599,6 +607,14 @@ export default function ClienteDashboardPage({ params }: ClienteDashboardPagePro
                                           {diasAtraso != null
                                             ? `${diasAtraso} ${diasAtraso === 1 ? "dia" : "dias"}`
                                             : "—"}
+                                        </p>
+                                      </div>
+                                      <div className="min-w-0">
+                                        <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                                          Liquidação
+                                        </p>
+                                        <p className="mt-0.5 text-xs font-semibold tabular-nums text-slate-900 sm:text-sm">
+                                          {dataLiquidacao ? formatarData(dataLiquidacao) : "—"}
                                         </p>
                                       </div>
                                     </div>
@@ -647,7 +663,7 @@ export default function ClienteDashboardPage({ params }: ClienteDashboardPagePro
                             <div className="hidden min-w-0 md:block">
                               <div className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-[0_2px_20px_rgba(15,23,42,0.04)]">
                                 <div className="overflow-x-auto">
-                                  <Table className="min-w-[42rem]">
+                                  <Table className="min-w-[48rem]">
                                     <TableHeader>
                                       <TableRow className="border-b border-slate-200/90 hover:bg-transparent">
                                         <TableHead className="h-11 bg-slate-50/95 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
@@ -665,6 +681,9 @@ export default function ClienteDashboardPage({ params }: ClienteDashboardPagePro
                                         <TableHead className="h-11 bg-slate-50/95 text-center text-[10px] font-semibold uppercase tracking-wide text-slate-500">
                                           Dias em atraso
                                         </TableHead>
+                                        <TableHead className="h-11 bg-slate-50/95 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                                          Data de liquidação
+                                        </TableHead>
                                         <TableHead className="h-11 bg-slate-50/95 text-right text-[10px] font-semibold uppercase tracking-wide text-slate-500">
                                           Boleto
                                         </TableHead>
@@ -681,6 +700,7 @@ export default function ClienteDashboardPage({ params }: ClienteDashboardPagePro
                                           f.asaas_invoice_url ??
                                           f.invoice_url
                                         const diasAtraso = diasEmAtrasoFatura(f)
+                                        const dataLiquidacao = dataLiquidacaoFatura(f)
                                         return (
                                           <TableRow
                                             key={f.id || `${i}`}
@@ -714,6 +734,9 @@ export default function ClienteDashboardPage({ params }: ClienteDashboardPagePro
                                               ) : (
                                                 <span className="text-slate-400">—</span>
                                               )}
+                                            </TableCell>
+                                            <TableCell className="whitespace-nowrap py-3.5 tabular-nums text-slate-700">
+                                              {dataLiquidacao ? formatarData(dataLiquidacao) : "—"}
                                             </TableCell>
                                             <TableCell className="py-3.5 text-right">
                                               {boletoUrl ? (
