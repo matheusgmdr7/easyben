@@ -22,12 +22,16 @@ export type PendenciaFaturaItem = {
   status: string
   corretora: string
   link_boleto: string | null
+  financeira_id?: string | null
+  financeira_nome?: string | null
   valor?: number | null
   numero_fatura?: string | null
   boletos_atrasados_total?: number
   segmento_atraso?: "um_boleto_novo" | "um_boleto_antigo" | "dois_ou_mais" | null
   cancelado_inadimplencia?: boolean
 }
+
+export type FinanceiraOpcaoPainel = { id: string; nome: string }
 
 export type FiltroPendencias =
   | "todos"
@@ -86,8 +90,8 @@ const btnSquare = "rounded-sm"
 type FaturasPendentesPainelProps = {
   pendencias: PendenciaFaturaItem[]
   financeiraId?: string
+  financeiras?: FinanceiraOpcaoPainel[]
   periodoLabel: string
-  administradoraNome?: string
   /** Exibe coluna e botão de envio via WhatsApp (wa.me). */
   mostrarEnvioWhatsApp?: boolean
   exportPrefix?: string
@@ -96,23 +100,49 @@ type FaturasPendentesPainelProps = {
 export function FaturasPendentesPainel({
   pendencias,
   financeiraId,
+  financeiras = [],
   periodoLabel,
-  administradoraNome,
   mostrarEnvioWhatsApp = false,
   exportPrefix = "faturas-pendentes",
 }: FaturasPendentesPainelProps) {
   const [paginaPendencias, setPaginaPendencias] = useState(1)
   const [filtroPendencias, setFiltroPendencias] = useState<FiltroPendencias>("todos")
+  const [filtroFinanceiraPainel, setFiltroFinanceiraPainel] = useState("")
   const [exportandoPdf, setExportandoPdf] = useState(false)
   const [exportandoExcel, setExportandoExcel] = useState(false)
 
+  const mostrarFiltroFinanceira = !financeiraId?.trim() && financeiras.length > 1
+  const mostrarColunaFinanceira = mostrarEnvioWhatsApp || mostrarFiltroFinanceira
+
   useEffect(() => {
     setPaginaPendencias(1)
-  }, [filtroPendencias, pendencias.length])
+  }, [filtroPendencias, filtroFinanceiraPainel, pendencias.length])
+
+  useEffect(() => {
+    if (financeiraId?.trim()) setFiltroFinanceiraPainel("")
+  }, [financeiraId])
+
+  const pendenciasPorFinanceira = useMemo(() => {
+    if (!filtroFinanceiraPainel.trim()) return pendencias
+    const alvo = filtroFinanceiraPainel.trim()
+    if (alvo === "__sem_financeira__") {
+      return pendencias.filter((item) => !String(item.financeira_nome || "").trim())
+    }
+    return pendencias.filter((item) => {
+      const id = String(item.financeira_id || "").trim()
+      if (id && id === alvo) return true
+      const fin = financeiras.find((f) => f.id === alvo)
+      if (!fin) return false
+      const nomeItem = String(item.financeira_nome || "").trim().toLowerCase()
+      const nomeFin = String(fin.nome || "").trim().toLowerCase()
+      return !!nomeItem && !!nomeFin && (nomeItem === nomeFin || nomeItem.includes(nomeFin))
+    })
+  }, [pendencias, filtroFinanceiraPainel, financeiras])
 
   const pendenciasFiltradas = useMemo(() => {
-    if (filtroPendencias === "todos") return pendencias
-    return pendencias.filter((item) => {
+    const base = pendenciasPorFinanceira
+    if (filtroPendencias === "todos") return base
+    return base.filter((item) => {
       if (item.status !== "atrasada") return false
       if (filtroPendencias === "um_boleto_novo") return item.segmento_atraso === "um_boleto_novo"
       if (filtroPendencias === "um_boleto_antigo") return item.segmento_atraso === "um_boleto_antigo"
@@ -120,12 +150,45 @@ export function FaturasPendentesPainel({
       if (filtroPendencias === "cancelados_quitacao") return item.cancelado_inadimplencia === true
       return true
     })
-  }, [pendencias, filtroPendencias])
+  }, [pendenciasPorFinanceira, filtroPendencias])
+
+  const filtrosFinanceiraPainel = useMemo(() => {
+    if (!mostrarFiltroFinanceira) return []
+    const contagem = new Map<string, number>()
+    for (const fin of financeiras) contagem.set(fin.id, 0)
+    let semFinanceira = 0
+    for (const item of pendencias) {
+      const id = String(item.financeira_id || "").trim()
+      if (id && contagem.has(id)) {
+        contagem.set(id, (contagem.get(id) || 0) + 1)
+        continue
+      }
+      const nome = String(item.financeira_nome || "").trim().toLowerCase()
+      const fin = financeiras.find((f) => String(f.nome || "").trim().toLowerCase() === nome)
+      if (fin) {
+        contagem.set(fin.id, (contagem.get(fin.id) || 0) + 1)
+      } else if (!nome) {
+        semFinanceira += 1
+      }
+    }
+    const tabs: { id: string; label: string; count: number }[] = [
+      { id: "", label: "Todas as financeiras", count: pendencias.length },
+      ...financeiras.map((f) => ({
+        id: f.id,
+        label: f.nome,
+        count: contagem.get(f.id) || 0,
+      })),
+    ]
+    if (semFinanceira > 0) {
+      tabs.push({ id: "__sem_financeira__", label: "Sem financeira", count: semFinanceira })
+    }
+    return tabs
+  }, [financeiras, mostrarFiltroFinanceira, pendencias])
 
   const filtrosPendencias: { id: FiltroPendencias; label: string; count: number }[] = useMemo(() => {
-    const atrasadas = pendencias.filter((p) => p.status === "atrasada")
+    const atrasadas = pendenciasPorFinanceira.filter((p) => p.status === "atrasada")
     return [
-      { id: "todos" as const, label: "Todos do período", count: pendencias.length },
+      { id: "todos" as const, label: "Todos do período", count: pendenciasPorFinanceira.length },
       {
         id: "um_boleto_novo" as const,
         label: "1 boleto em aberto (novos)",
@@ -147,7 +210,7 @@ export function FaturasPendentesPainel({
         count: atrasadas.filter((p) => p.cancelado_inadimplencia).length,
       },
     ]
-  }, [pendencias])
+  }, [pendenciasPorFinanceira])
 
   const itensPorPagina = 10
   const totalPaginas = Math.max(1, Math.ceil(pendenciasFiltradas.length / itensPorPagina))
@@ -167,13 +230,17 @@ export function FaturasPendentesPainel({
       toast.error("Telefone do cliente não cadastrado ou inválido. Atualize o cadastro do titular.")
       return
     }
+    const financeiraNome =
+      String(item.financeira_nome || "").trim() ||
+      (financeiraId ? financeiras.find((f) => f.id === financeiraId)?.nome : null) ||
+      null
     const mensagem = montarMensagemCobrancaFatura({
       clienteNome: item.cliente_nome,
       vencimento: item.vencimento,
       valor: item.valor,
       numeroFatura: item.numero_fatura,
       linkBoleto: item.link_boleto,
-      administradoraNome,
+      financeiraNome,
     })
     const url = montarUrlWhatsAppCobranca(item.cliente_telefone, mensagem)
     if (!url) {
@@ -194,6 +261,7 @@ export function FaturasPendentesPainel({
         "Nº",
         "Cliente",
         "Telefone",
+        ...(mostrarColunaFinanceira ? ["Financeira"] : []),
         "Vencimento",
         "Status",
         "Valor",
@@ -212,6 +280,7 @@ export function FaturasPendentesPainel({
           i + 1,
           item.cliente_nome,
           item.cliente_telefone || "",
+          ...(mostrarColunaFinanceira ? [item.financeira_nome || ""] : []),
           item.vencimento ? formatarData(item.vencimento) : "",
           rotuloStatus(item.status),
           item.valor != null ? formatarMoeda(Number(item.valor)) : "",
@@ -304,7 +373,7 @@ export function FaturasPendentesPainel({
     }
   }
 
-  const colSpanBase = mostrarEnvioWhatsApp ? 7 : 6
+  const colSpanBase = (mostrarEnvioWhatsApp ? 7 : 6) + (mostrarColunaFinanceira ? 1 : 0)
 
   return (
     <div className="rounded-sm border border-slate-200/90 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.06)] overflow-hidden">
@@ -329,6 +398,40 @@ export function FaturasPendentesPainel({
           ) : null}
         </p>
       </div>
+      {mostrarFiltroFinanceira ? (
+        <div className="border-b border-slate-200 bg-slate-50/60 px-5 py-3">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 mb-2">
+            Separar por financeira
+          </p>
+          <div className="flex flex-wrap gap-1.5" role="tablist" aria-label="Filtrar por financeira">
+            {filtrosFinanceiraPainel.map((f) => (
+              <button
+                key={f.id || "todas"}
+                type="button"
+                role="tab"
+                aria-selected={filtroFinanceiraPainel === f.id}
+                onClick={() => setFiltroFinanceiraPainel(f.id)}
+                className={cn(
+                  "h-8 rounded-sm border px-2.5 text-xs font-medium transition-colors",
+                  filtroFinanceiraPainel === f.id
+                    ? "border-emerald-700 bg-emerald-700 text-white"
+                    : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900"
+                )}
+              >
+                {f.label}
+                <span
+                  className={cn(
+                    "ml-1.5 tabular-nums",
+                    filtroFinanceiraPainel === f.id ? "text-emerald-100" : "text-slate-400"
+                  )}
+                >
+                  ({f.count})
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
       <div className="border-b border-slate-200 bg-white px-5 py-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-wrap gap-1.5" role="tablist" aria-label="Filtrar listagem">
           {filtrosPendencias.map((f) => (
@@ -389,6 +492,11 @@ export function FaturasPendentesPainel({
               <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">
                 Nome
               </th>
+              {mostrarColunaFinanceira ? (
+                <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                  Financeira
+                </th>
+              ) : null}
               <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">
                 Vencimento
               </th>
@@ -434,6 +542,11 @@ export function FaturasPendentesPainel({
                         <div className="text-[11px] font-normal text-slate-500 mt-0.5">{item.cliente_telefone}</div>
                       ) : null}
                     </td>
+                    {mostrarColunaFinanceira ? (
+                      <td className="px-4 py-2.5 text-xs text-slate-700 max-w-[10rem]">
+                        {item.financeira_nome || "—"}
+                      </td>
+                    ) : null}
                     <td className="px-4 py-2.5 tabular-nums text-slate-700">
                       {item.vencimento ? formatarData(item.vencimento) : "—"}
                     </td>

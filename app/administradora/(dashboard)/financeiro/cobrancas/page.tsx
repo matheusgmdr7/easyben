@@ -11,7 +11,6 @@ import {
   FaturasPendentesPainel,
   type PendenciaFaturaItem,
 } from "@/components/administradora/faturas-pendentes-painel"
-import { useNomeMarcaAdministradora } from "@/hooks/use-nome-marca-administradora"
 
 type FinanceiraOpcao = { id: string; nome: string }
 
@@ -26,7 +25,6 @@ export default function CobrancasFinanceiroPage() {
     telefone?: string
     tenant_id?: string | null
   } | null>(null)
-  const nomeMarca = useNomeMarcaAdministradora(administradora)
   const [loading, setLoading] = useState(true)
   const [mesRef, setMesRef] = useState(String(agora.getMonth() + 1).padStart(2, "0"))
   const [anoRef, setAnoRef] = useState(String(agora.getFullYear()))
@@ -197,8 +195,8 @@ export default function CobrancasFinanceiroPage() {
         <FaturasPendentesPainel
           pendencias={pendencias}
           financeiraId={financeiraId}
+          financeiras={financeiras}
           periodoLabel={periodoLabel}
-          administradoraNome={nomeMarca}
           mostrarEnvioWhatsApp
           exportPrefix="cobrancas"
         />

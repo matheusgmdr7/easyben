@@ -50,6 +50,47 @@ function gatewayNomePorFinanceira(nomeFinanceira: string | null | undefined): st
   return `Asaas - ${String(nomeFinanceira || "Financeira")}`
 }
 
+function resolverFinanceiraDaFatura(
+  f: FaturaRow,
+  financeiras: Awaited<ReturnType<typeof FinanceirasService.listar>>
+): { financeira_id: string | null; financeira_nome: string | null } {
+  const nomePorId = new Map(
+    financeiras.map((fin) => [fin.id, String(fin.nome || "Financeira").trim() || "Financeira"])
+  )
+  const fid = String(f.financeira_id || "").trim()
+  if (fid && nomePorId.has(fid)) {
+    return { financeira_id: fid, financeira_nome: nomePorId.get(fid)! }
+  }
+
+  const gw = String(f.gateway_nome || "").trim()
+  const extraido = gw.replace(/^Asaas\s*-\s*/i, "").trim()
+  if (extraido && extraido.toLowerCase() !== "asaas") {
+    const el = extraido.toLowerCase()
+    for (const fin of financeiras) {
+      const nome = String(fin.nome || "").trim()
+      if (!nome) continue
+      const nl = nome.toLowerCase()
+      if (el === nl || el.startsWith(nl) || nl.startsWith(el)) {
+        return { financeira_id: fin.id, financeira_nome: nome }
+      }
+    }
+    return { financeira_id: fid || null, financeira_nome: extraido }
+  }
+
+  const ativas = financeiras.filter((x) => x.ativo)
+  if (ativas.length === 1) {
+    return {
+      financeira_id: ativas[0].id,
+      financeira_nome: String(ativas[0].nome || "Financeira").trim() || "Financeira",
+    }
+  }
+
+  return {
+    financeira_id: fid || null,
+    financeira_nome: fid ? nomePorId.get(fid) || null : null,
+  }
+}
+
 type VidaMap = {
   grupo_id: string | null
   corretor_id: string | null
@@ -127,6 +168,8 @@ export async function GET(request: NextRequest) {
       gatewayNomeFiltro = gatewayNomePorFinanceira(financeiraFiltroNome)
       gatewayNomeEqFiltro = gatewayAsaasComoNoBanco(financeiraFiltroNome)
     }
+
+    const financeirasCadastro = await FinanceirasService.listar(administradoraId)
 
     const prevMonthNum = mes > 1 ? mes - 1 : 12
     const prevYearNum = mes > 1 ? ano : ano - 1
@@ -317,6 +360,8 @@ export async function GET(request: NextRequest) {
       status: string
       corretora: string
       link_boleto: string | null
+      financeira_id: string | null
+      financeira_nome: string | null
       boletos_atrasados_total?: number
       segmento_atraso?: SegmentoAtraso
       cancelado_inadimplencia?: boolean
@@ -357,6 +402,7 @@ export async function GET(request: NextRequest) {
         }
         const telFatura = String(f.cliente_telefone || "").trim()
         const telCadastro = clienteAdmId ? telefonePorClienteAdm.get(clienteAdmId) || "" : ""
+        const finInfo = resolverFinanceiraDaFatura(f, financeirasCadastro)
         pendenciasFaturas.push({
           fatura_id: String(f.id),
           cliente_administradora_id: clienteAdmId || null,
@@ -368,6 +414,8 @@ export async function GET(request: NextRequest) {
           status,
           corretora,
           link_boleto: linkBoletoFatura(f),
+          financeira_id: finInfo.financeira_id,
+          financeira_nome: finInfo.financeira_nome,
         })
       }
     }
@@ -412,6 +460,8 @@ export async function GET(request: NextRequest) {
     )
 
     pendenciasFaturas.sort((a, b) => {
+      const cmpFin = (a.financeira_nome || "").localeCompare(b.financeira_nome || "", "pt-BR")
+      if (cmpFin !== 0) return cmpFin
       const cmp = a.vencimento.localeCompare(b.vencimento)
       if (cmp !== 0) return cmp
       return a.cliente_nome.localeCompare(b.cliente_nome, "pt-BR")

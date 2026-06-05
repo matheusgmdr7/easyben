@@ -6,7 +6,8 @@ export type DadosMensagemCobranca = {
   valor?: number | null
   numeroFatura?: string | null
   linkBoleto: string
-  administradoraNome?: string | null
+  /** Nome da financeira (conta de cobrança) exibido ao final da mensagem. */
+  financeiraNome?: string | null
 }
 
 /** Dígitos com DDI 55 para links wa.me (Brasil). */
@@ -30,12 +31,12 @@ export function montarMensagemCobrancaFatura(dados: DadosMensagemCobranca): stri
       ? formatarMoeda(Number(dados.valor))
       : null
   const numero = String(dados.numeroFatura || "").trim()
-  const adm = String(dados.administradoraNome || "").trim()
+  const financeira = String(dados.financeiraNome || "").trim()
 
   const linhas = [
     `Olá, ${nome}!`,
     "",
-    "Identificamos uma fatura em aberto em nosso sistema.",
+    "Identificamos uma fatura em aberto referente ao seu plano de saúde.",
     venc ? `Vencimento: ${venc}` : null,
     valor ? `Valor: ${valor}` : null,
     numero ? `Nº da fatura: ${numero}` : null,
@@ -43,8 +44,12 @@ export function montarMensagemCobrancaFatura(dados: DadosMensagemCobranca): stri
     "Acesse o boleto para pagamento:",
     dados.linkBoleto,
     "",
+    "Você também pode consultar todos os seus pagamentos no portal do cliente:",
+    "https://easyben.com.br/benefit/cliente",
+    "Acesse com o seu CPF.",
+    "",
     "Em caso de dúvidas, responda esta mensagem.",
-    adm ? `\n${adm}` : null,
+    financeira ? `\n${financeira}` : null,
   ].filter((l): l is string => l != null && l !== "")
 
   return linhas.join("\n")
