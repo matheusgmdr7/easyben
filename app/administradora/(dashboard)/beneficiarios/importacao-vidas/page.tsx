@@ -11,6 +11,16 @@ import { Input } from "@/components/ui/input"
 import { formatarCEP, formatarTelefone } from "@/utils/formatters"
 import * as XLSX from "xlsx"
 import { AlertTriangle, Info } from "lucide-react"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 
 const CAMPOS_ALVO = [
   { id: "nome", label: "Nome", obrigatorio: true },
@@ -267,6 +277,13 @@ type ErrosLinhaPreview = {
   idade?: string
 }
 
+type AvisosLinhaPreview = {
+  cpf?: string
+}
+
+const AVISO_CPF_ATIVO_SISTEMA =
+  "CPF já cadastrado como ativo no sistema. Confirme se deseja prosseguir com a importação."
+
 const CAMPOS_TABELA: (keyof LinhaPreview)[] = [
   "nome", "cpf", "nome_mae", "nome_pai", "tipo", "data_nascimento", "idade", "sexo", "estado_civil",
   "parentesco", "cpf_titular", "identidade", "cns", "acomodacao",
@@ -312,6 +329,8 @@ export default function ImportacaoVidasPage() {
   const [consultandoCepManual, setConsultandoCepManual] = useState(false)
   const [cpfsAtivosSistema, setCpfsAtivosSistema] = useState<string[]>([])
   const [linhasExcluidasPreview, setLinhasExcluidasPreview] = useState<number[]>([])
+  const [confirmacaoCpfsAtivosOpen, setConfirmacaoCpfsAtivosOpen] = useState(false)
+  const [acaoPendenteCpfsAtivos, setAcaoPendenteCpfsAtivos] = useState<"import" | "manual" | null>(null)
   const [manualForm, setManualForm] = useState<Record<string, string>>({
     nome: "",
     cpf: "",
@@ -626,6 +645,7 @@ export default function ImportacaoVidasPage() {
 
   const validacaoPreview = useMemo(() => {
     const porLinha: Record<number, ErrosLinhaPreview> = {}
+    const avisosPorLinha: Record<number, AvisosLinhaPreview> = {}
     const cpfsAtivosSet = new Set(cpfsAtivosSistema)
     const linhasExcluidasSet = new Set(linhasExcluidasPreview)
 
@@ -674,11 +694,14 @@ export default function ImportacaoVidasPage() {
         const lista = titularesPorCpf.get(cpfNorm) || []
         lista.push(i)
         titularesPorCpf.set(cpfNorm, lista)
+      }
 
+      if (cpfDig.length >= 10) {
+        const cpfNorm = normalizarCpf(cpfDig)
         if (cpfsAtivosSet.has(cpfNorm)) {
-          porLinha[i] = {
-            ...(porLinha[i] || {}),
-            cpf: "CPF de titular já cadastrado como ativo no sistema.",
+          avisosPorLinha[i] = {
+            ...(avisosPorLinha[i] || {}),
+            cpf: AVISO_CPF_ATIVO_SISTEMA,
           }
         }
       }
@@ -696,8 +719,10 @@ export default function ImportacaoVidasPage() {
 
     const linhasComErro = Object.keys(porLinha).length
     const totalErros = Object.values(porLinha).reduce((acc, e) => acc + Object.keys(e).length, 0)
+    const linhasComAviso = Object.keys(avisosPorLinha).length
+    const totalAvisos = Object.values(avisosPorLinha).reduce((acc, e) => acc + Object.keys(e).length, 0)
 
-    return { porLinha, linhasComErro, totalErros }
+    return { porLinha, avisosPorLinha, linhasComErro, totalErros, linhasComAviso, totalAvisos }
   }, [linhasParaImportar, obterValorBrutoComOverride, cpfsAtivosSistema, linhasExcluidasPreview])
 
   const linhasAtivasComIndice = useMemo(
@@ -709,6 +734,21 @@ export default function ImportacaoVidasPage() {
   )
 
   const possuiErrosCriticosImportacao = validacaoPreview.linhasComErro > 0
+
+  const avisosCpfsAtivosNaImportacao = useMemo(
+    () =>
+      linhasAtivasComIndice
+        .filter(({ idxOriginal }) => !!validacaoPreview.avisosPorLinha[idxOriginal]?.cpf)
+        .map(({ linha, idxOriginal }) => {
+          const bruto = obterValorBrutoComOverride(idxOriginal, "cpf")
+          const dig = String(bruto || "").replace(/\D/g, "")
+          return {
+            nome: String(linha.nome || "Sem nome").trim() || "Sem nome",
+            cpf: dig.length >= 10 ? formatarCpf(normalizarCpf(dig)) : dig || "—",
+          }
+        }),
+    [linhasAtivasComIndice, validacaoPreview.avisosPorLinha, obterValorBrutoComOverride]
+  )
 
   const saveOverride = useCallback((i: number, field: keyof LinhaPreview, raw: string) => {
     const k = `${i}:${field}`
@@ -732,8 +772,8 @@ export default function ImportacaoVidasPage() {
     linhasAtivasComIndice.length > 0 &&
     linhasAtivasComIndice.some(({ linha }) => (linha.nome || "").trim().length > 0)
 
-  const handleImport = async () => {
-    if (!podemImportar || !administradoraId) return
+  async function executarImportacaoArquivo(confirmarCpfsAtivos: boolean) {
+    if (!administradoraId) return
     setImporting(true)
     try {
       const linhasComAdicionais = linhasAtivasComIndice.map(({ linha: l, idxOriginal }) => {
@@ -756,11 +796,19 @@ export default function ImportacaoVidasPage() {
           produto_id: produtoId || null,
           dia_vencimento: diaVencimento,
           data_vigencia: dataVigencia,
+          confirmar_cpfs_ativos: confirmarCpfsAtivos,
           linhas: linhasComAdicionais,
         }),
       })
       const json = await res.json()
-      if (!res.ok) throw new Error(json?.error || "Erro ao importar")
+      if (!res.ok) {
+        if (res.status === 409 && json?.codigo === "cpfs_ativos_existentes" && !confirmarCpfsAtivos) {
+          setAcaoPendenteCpfsAtivos("import")
+          setConfirmacaoCpfsAtivosOpen(true)
+          return
+        }
+        throw new Error(json?.error || "Erro ao importar")
+      }
       const msg = json.ignoradas > 0
         ? `Importadas ${json.importadas} vidas (${json.ignoradas} ignoradas por nome vazio).`
         : `Importadas ${json.importadas} vidas.`
@@ -783,6 +831,26 @@ export default function ImportacaoVidasPage() {
     } finally {
       setImporting(false)
     }
+  }
+
+  const handleImport = () => {
+    if (!podemImportar || !administradoraId) return
+    if (avisosCpfsAtivosNaImportacao.length > 0) {
+      setAcaoPendenteCpfsAtivos("import")
+      setConfirmacaoCpfsAtivosOpen(true)
+      return
+    }
+    void executarImportacaoArquivo(false)
+  }
+
+  function confirmarImportacaoComCpfsAtivos() {
+    setConfirmacaoCpfsAtivosOpen(false)
+    if (acaoPendenteCpfsAtivos === "import") {
+      void executarImportacaoArquivo(true)
+    } else if (acaoPendenteCpfsAtivos === "manual") {
+      void executarInclusaoManual(true)
+    }
+    setAcaoPendenteCpfsAtivos(null)
   }
 
   const podeIncluirManual =
@@ -819,30 +887,14 @@ export default function ImportacaoVidasPage() {
     }
   }
 
-  const handleIncluirManual = async () => {
+  async function executarInclusaoManual(confirmarCpfsAtivos: boolean) {
     if (!administradoraId) {
       toast.error("Administradora não identificada.")
       return
     }
-    if (!grupoId || !produtoId) {
-      toast.error("Selecione grupo e produto para vincular o beneficiário.")
-      return
-    }
-    const cpfDigitos = normalizarCpf(manualForm.cpf || "")
-    if (!cpfTemBaseValida(manualForm.cpf || "") || !cpfDigitos) {
-      toast.error("Informe um CPF válido para o beneficiário.")
-      return
-    }
-    if ((manualForm.tipo || "titular") === "dependente") {
-      const cpfTit = normalizarCpf(manualForm.cpf_titular || "")
-      if (!cpfTemBaseValida(manualForm.cpf_titular || "") || !cpfTit) {
-        toast.error("Para dependente, informe o CPF do titular.")
-        return
-      }
-    }
-
     setIncluindoManual(true)
     try {
+      const cpfDigitos = normalizarCpf(manualForm.cpf || "")
       const idadeNum = (manualForm.idade || "").trim() ? Number(manualForm.idade) : null
       const payloadLinha = {
         nome: (manualForm.nome || "").trim(),
@@ -884,11 +936,19 @@ export default function ImportacaoVidasPage() {
           produto_id: produtoId,
           dia_vencimento: diaVencimento,
           data_vigencia: dataVigencia,
+          confirmar_cpfs_ativos: confirmarCpfsAtivos,
           linhas: [payloadLinha],
         }),
       })
       const json = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(json?.error || "Erro ao incluir beneficiário manualmente")
+      if (!res.ok) {
+        if (res.status === 409 && json?.codigo === "cpfs_ativos_existentes" && !confirmarCpfsAtivos) {
+          setAcaoPendenteCpfsAtivos("manual")
+          setConfirmacaoCpfsAtivosOpen(true)
+          return
+        }
+        throw new Error(json?.error || "Erro ao incluir beneficiário manualmente")
+      }
 
       toast.success("Beneficiário incluído com sucesso.")
       setManualForm({
@@ -925,6 +985,38 @@ export default function ImportacaoVidasPage() {
     } finally {
       setIncluindoManual(false)
     }
+  }
+
+  const handleIncluirManual = () => {
+    if (!administradoraId) {
+      toast.error("Administradora não identificada.")
+      return
+    }
+    if (!grupoId || !produtoId) {
+      toast.error("Selecione grupo e produto para vincular o beneficiário.")
+      return
+    }
+    const cpfDigitos = normalizarCpf(manualForm.cpf || "")
+    if (!cpfTemBaseValida(manualForm.cpf || "") || !cpfDigitos) {
+      toast.error("Informe um CPF válido para o beneficiário.")
+      return
+    }
+    if ((manualForm.tipo || "titular") === "dependente") {
+      const cpfTit = normalizarCpf(manualForm.cpf_titular || "")
+      if (!cpfTemBaseValida(manualForm.cpf_titular || "") || !cpfTit) {
+        toast.error("Para dependente, informe o CPF do titular.")
+        return
+      }
+    }
+
+    const cpfsAtivosSet = new Set(cpfsAtivosSistema)
+    if (cpfsAtivosSet.has(cpfDigitos)) {
+      setAcaoPendenteCpfsAtivos("manual")
+      setConfirmacaoCpfsAtivosOpen(true)
+      return
+    }
+
+    void executarInclusaoManual(false)
   }
 
   function baixarTemplateImportacaoVidas() {
@@ -1361,14 +1453,26 @@ export default function ImportacaoVidasPage() {
 
                 <div>
                   <h3 className="text-sm font-medium text-gray-800 mb-2">Prévia ({linhasParaImportar.length} linhas) — atualiza ao alterar o mapeamento. Duplo-clique para editar.</h3>
-                  <div className="mb-3 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-700">
-                    {validacaoPreview.linhasComErro > 0 ? (
-                      <span className="text-red-700">
-                        Foram encontrados {validacaoPreview.totalErros} erro(s) em {validacaoPreview.linhasComErro} linha(s). Corrija os campos destacados em vermelho antes de importar.
-                      </span>
-                    ) : (
-                      <span className="text-emerald-700">Prévia validada: não há erros críticos de CPF/nome para importação.</span>
-                    )}
+                  <div className="mb-3 space-y-2">
+                    <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-700">
+                      {validacaoPreview.linhasComErro > 0 ? (
+                        <span className="text-red-700">
+                          Foram encontrados {validacaoPreview.totalErros} erro(s) em {validacaoPreview.linhasComErro} linha(s). Corrija os campos destacados em vermelho antes de importar.
+                        </span>
+                      ) : (
+                        <span className="text-emerald-700">Prévia validada: não há erros críticos de CPF/nome para importação.</span>
+                      )}
+                    </div>
+                    {validacaoPreview.linhasComAviso > 0 ? (
+                      <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                        <p className="flex items-start gap-2">
+                          <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" aria-hidden />
+                          <span>
+                            {validacaoPreview.totalAvisos} aviso(s) em {validacaoPreview.linhasComAviso} linha(s): CPF já ativo no sistema (destacado em amarelo). Ao importar, será solicitada confirmação para prosseguir.
+                          </span>
+                        </p>
+                      </div>
+                    ) : null}
                   </div>
                   <div className="mb-3 flex items-center justify-between gap-2">
                     <p className="text-xs text-gray-500">
@@ -1412,12 +1516,14 @@ export default function ImportacaoVidasPage() {
                             {CAMPOS_TABELA.map((field) => {
                               const isEditing = editingCell?.i === i && editingCell?.field === field
                               const errosLinha = validacaoPreview.porLinha[i] || {}
+                              const avisosLinha = validacaoPreview.avisosPorLinha[i] || {}
                               const temErroNoCampo =
                                 (field === "nome" && !!errosLinha.nome) ||
                                 (field === "cpf" && !!errosLinha.cpf) ||
                                 (field === "cpf_titular" && !!errosLinha.cpf_titular) ||
                                 (field === "idade" && !!errosLinha.idade) ||
                                 (field === "data_nascimento" && !!errosLinha.idade)
+                              const temAvisoNoCampo = field === "cpf" && !!avisosLinha.cpf && !errosLinha.cpf
                               const displayVal =
                                 field === "idade"
                                   ? (l.idade != null ? String(l.idade) : "-")
@@ -1432,7 +1538,12 @@ export default function ImportacaoVidasPage() {
                                     : (l[field] || "-")
                               const editVal = field === "idade" ? (l.idade != null ? String(l.idade) : "") : (l[field] || "")
                               return (
-                                <td key={field} className={`px-3 py-1.5 align-top ${temErroNoCampo ? "bg-red-50" : ""}`}>
+                                <td
+                                  key={field}
+                                  className={`px-3 py-1.5 align-top ${
+                                    temErroNoCampo ? "bg-red-50" : temAvisoNoCampo ? "bg-amber-50" : ""
+                                  }`}
+                                >
                                   {isEditing ? (
                                     <input
                                       autoFocus
@@ -1450,7 +1561,11 @@ export default function ImportacaoVidasPage() {
                                       role="button"
                                       tabIndex={0}
                                       className={`block min-h-[1.25rem] cursor-text rounded px-0.5 -mx-0.5 ${
-                                        temErroNoCampo ? "text-red-700 hover:bg-red-100" : "hover:bg-gray-100"
+                                        temErroNoCampo
+                                          ? "text-red-700 hover:bg-red-100"
+                                          : temAvisoNoCampo
+                                            ? "text-amber-900 hover:bg-amber-100"
+                                            : "hover:bg-gray-100"
                                       }`}
                                       title="Duplo-clique para editar"
                                       onDoubleClick={() => setEditingCell({ i, field })}
@@ -1464,6 +1579,9 @@ export default function ImportacaoVidasPage() {
                                   )}
                                   {field === "cpf" && errosLinha.cpf && (
                                     <p className="mt-1 text-[11px] text-red-700">{errosLinha.cpf}</p>
+                                  )}
+                                  {field === "cpf" && avisosLinha.cpf && !errosLinha.cpf && (
+                                    <p className="mt-1 text-[11px] text-amber-800">{avisosLinha.cpf}</p>
                                   )}
                                   {field === "cpf_titular" && errosLinha.cpf_titular && (
                                     <p className="mt-1 text-[11px] text-red-700">{errosLinha.cpf_titular}</p>
@@ -1641,6 +1759,58 @@ export default function ImportacaoVidasPage() {
           </>
         )}
       </div>
+
+      <AlertDialog
+        open={confirmacaoCpfsAtivosOpen}
+        onOpenChange={(open) => {
+          setConfirmacaoCpfsAtivosOpen(open)
+          if (!open) setAcaoPendenteCpfsAtivos(null)
+        }}
+      >
+        <AlertDialogContent className="border-slate-200 bg-white shadow-lg sm:rounded-lg sm:max-w-lg">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-lg font-semibold text-slate-900">
+              CPF já cadastrado como ativo
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3 text-sm text-slate-600">
+                <p>
+                  Um ou mais CPFs desta importação já constam como beneficiários ativos no sistema. Prosseguir pode
+                  gerar cadastros duplicados.
+                </p>
+                <ul className="max-h-40 overflow-y-auto rounded-md border border-amber-200 bg-amber-50/80 px-3 py-2 text-xs text-amber-950 space-y-1">
+                  {acaoPendenteCpfsAtivos === "manual" ? (
+                    <li>
+                      {formatarCpf(normalizarCpf(manualForm.cpf || ""))} — {(manualForm.nome || "Sem nome").trim() || "Sem nome"}
+                    </li>
+                  ) : (
+                    avisosCpfsAtivosNaImportacao.map((item) => (
+                      <li key={`${item.cpf}-${item.nome}`}>
+                        {item.cpf} — {item.nome}
+                      </li>
+                    ))
+                  )}
+                </ul>
+                <p>Deseja prosseguir com a importação mesmo assim?</p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="gap-2 sm:gap-0">
+            <AlertDialogCancel className="border-slate-200 text-slate-700 hover:bg-slate-50">
+              Não, cancelar
+            </AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-amber-600 text-white hover:bg-amber-700 focus:ring-amber-600"
+              onClick={(e) => {
+                e.preventDefault()
+                confirmarImportacaoComCpfsAtivos()
+              }}
+            >
+              Sim, prosseguir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

@@ -67,13 +67,23 @@ function normalizarCpf(valor: string | number | null | undefined): string {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { administradora_id, grupo_id, contrato_id, produto_id, dia_vencimento, data_vigencia, linhas } = body as {
+    const {
+      administradora_id,
+      grupo_id,
+      contrato_id,
+      produto_id,
+      dia_vencimento,
+      data_vigencia,
+      linhas,
+      confirmar_cpfs_ativos,
+    } = body as {
       administradora_id?: string
       grupo_id?: string
       contrato_id?: string | null
       produto_id?: string | null
       dia_vencimento?: string
       data_vigencia?: string
+      confirmar_cpfs_ativos?: boolean
       linhas?: Array<{
         nome?: string
         cpf?: string
@@ -224,16 +234,17 @@ export async function POST(request: NextRequest) {
         )
       }
 
-      if ((existentes || []).length > 0) {
+      if ((existentes || []).length > 0 && !confirmar_cpfs_ativos) {
         const repetidos = (existentes || [])
           .slice(0, 25)
           .map((v) => `${normalizarCpf(v.cpf)} (${String(v.nome || "-")} - ${String(v.tipo || "-")})`)
-          .join("; ")
         return NextResponse.json(
           {
             error:
-              `Importação bloqueada: já existem beneficiários ativos com os mesmos CPFs. ` +
-              `Evite duplicidade de cadastro e use edição/reativação quando necessário. ${repetidos}`,
+              `Já existem beneficiários ativos com os mesmos CPFs. ` +
+              `Confirme se deseja prosseguir com a importação ou use edição/reativação quando necessário.`,
+            codigo: "cpfs_ativos_existentes",
+            cpfs_ativos: repetidos,
           },
           { status: 409 }
         )
