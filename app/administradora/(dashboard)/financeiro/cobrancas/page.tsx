@@ -197,6 +197,7 @@ export default function CobrancasFinanceiroPage() {
           financeiraId={financeiraId}
           financeiras={financeiras}
           periodoLabel={periodoLabel}
+          administradoraId={administradora?.id}
           mostrarEnvioWhatsApp
           exportPrefix="cobrancas"
         />

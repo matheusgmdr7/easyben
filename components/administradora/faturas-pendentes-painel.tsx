@@ -1,7 +1,7 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
-import { ExternalLink, FileDown, FileSpreadsheet } from "lucide-react"
+import { useCallback, useEffect, useMemo, useState } from "react"
+import { CheckCircle2, ExternalLink, FileDown, FileSpreadsheet } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { formatarData, formatarMoeda } from "@/utils/formatters"
@@ -12,6 +12,15 @@ import {
   montarUrlWhatsAppCobranca,
   normalizarTelefoneWhatsApp,
 } from "@/lib/whatsapp-cobranca"
+import {
+  COBRANCA_ENVIADA_TTL_MS,
+  carregarEnviosRecentes,
+  filtrarEnviosAtivos,
+  minutosRestantesVisibilidade,
+  registrarEnvioCobranca,
+  rotuloEnvioRecente,
+  type RegistroEnvioCobranca,
+} from "@/lib/cobrancas-envio-recente"
 
 export type PendenciaFaturaItem = {
   fatura_id: string
@@ -94,6 +103,8 @@ type FaturasPendentesPainelProps = {
   periodoLabel: string
   /** Exibe coluna e botão de envio via WhatsApp (wa.me). */
   mostrarEnvioWhatsApp?: boolean
+  /** Usado para persistir envios recentes na sessão (página Cobranças). */
+  administradoraId?: string
   exportPrefix?: string
 }
 
@@ -103,6 +114,7 @@ export function FaturasPendentesPainel({
   financeiras = [],
   periodoLabel,
   mostrarEnvioWhatsApp = false,
+  administradoraId,
   exportPrefix = "faturas-pendentes",
 }: FaturasPendentesPainelProps) {
   const [paginaPendencias, setPaginaPendencias] = useState(1)
@@ -110,6 +122,14 @@ export function FaturasPendentesPainel({
   const [filtroFinanceiraPainel, setFiltroFinanceiraPainel] = useState("")
   const [exportandoPdf, setExportandoPdf] = useState(false)
   const [exportandoExcel, setExportandoExcel] = useState(false)
+  const [agoraUi, setAgoraUi] = useState(() => Date.now())
+  const [enviosRecentes, setEnviosRecentes] = useState<RegistroEnvioCobranca[]>([])
+
+  const ttlMinutos = Math.round(COBRANCA_ENVIADA_TTL_MS / 60_000)
+  const enviosPorFaturaId = useMemo(
+    () => new Map(enviosRecentes.map((e) => [e.fatura_id, e])),
+    [enviosRecentes]
+  )
 
   const mostrarFiltroFinanceira = !financeiraId?.trim() && financeiras.length > 1
   const mostrarColunaFinanceira = mostrarEnvioWhatsApp || mostrarFiltroFinanceira
@@ -121,6 +141,39 @@ export function FaturasPendentesPainel({
   useEffect(() => {
     if (financeiraId?.trim()) setFiltroFinanceiraPainel("")
   }, [financeiraId])
+
+  useEffect(() => {
+    if (!mostrarEnvioWhatsApp || !administradoraId?.trim()) {
+      setEnviosRecentes([])
+      return
+    }
+    setEnviosRecentes(carregarEnviosRecentes(administradoraId))
+  }, [administradoraId, mostrarEnvioWhatsApp])
+
+  useEffect(() => {
+    if (!mostrarEnvioWhatsApp || enviosRecentes.length === 0) return
+    const id = window.setInterval(() => {
+      setAgoraUi(Date.now())
+      setEnviosRecentes((atual) => {
+        const filtrado = filtrarEnviosAtivos(atual)
+        return filtrado.length === atual.length ? atual : filtrado
+      })
+    }, 30_000)
+    return () => window.clearInterval(id)
+  }, [enviosRecentes.length, mostrarEnvioWhatsApp])
+
+  const marcarEnvioRecente = useCallback(
+    (item: PendenciaFaturaItem) => {
+      if (!administradoraId?.trim()) return
+      setEnviosRecentes((atual) =>
+        registrarEnvioCobranca(administradoraId, {
+          fatura_id: item.fatura_id,
+          cliente_nome: item.cliente_nome,
+        }, atual)
+      )
+    },
+    [administradoraId]
+  )
 
   const pendenciasPorFinanceira = useMemo(() => {
     if (!filtroFinanceiraPainel.trim()) return pendencias
@@ -248,6 +301,8 @@ export function FaturasPendentesPainel({
       return
     }
     window.open(url, "_blank", "noopener,noreferrer")
+    marcarEnvioRecente(item)
+    toast.success(`Envio registrado para ${item.cliente_nome}. Visível na lista por ${ttlMinutos} min.`)
   }
 
   function exportarExcel() {
@@ -398,6 +453,38 @@ export function FaturasPendentesPainel({
           ) : null}
         </p>
       </div>
+      {mostrarEnvioWhatsApp && enviosRecentes.length > 0 ? (
+        <div className="border-b border-emerald-200 bg-emerald-50/90 px-5 py-3">
+          <div className="flex items-start gap-2">
+            <CheckCircle2 className="h-4 w-4 text-emerald-700 shrink-0 mt-0.5" aria-hidden />
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-semibold text-emerald-900">
+                Faturas enviadas recentemente ({enviosRecentes.length})
+              </p>
+              <p className="text-[11px] text-emerald-800/90 mt-0.5">
+                Após clicar em Enviar fatura, o registro permanece visível por até {ttlMinutos} minutos nesta
+                sessão.
+              </p>
+              <ul className="mt-2 flex flex-wrap gap-1.5">
+                {enviosRecentes.map((envio) => (
+                  <li
+                    key={envio.fatura_id}
+                    className="inline-flex items-center gap-1 rounded-sm border border-emerald-200 bg-white px-2 py-1 text-[11px] text-emerald-900"
+                  >
+                    <span className="font-medium truncate max-w-[12rem]">{envio.cliente_nome}</span>
+                    <span className="text-emerald-700 tabular-nums">
+                      · {rotuloEnvioRecente(envio.enviado_em, agoraUi)}
+                      {minutosRestantesVisibilidade(envio.enviado_em, agoraUi) > 0
+                        ? ` (mais ${minutosRestantesVisibilidade(envio.enviado_em, agoraUi)} min)`
+                        : ""}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+      ) : null}
       {mostrarFiltroFinanceira ? (
         <div className="border-b border-slate-200 bg-slate-50/60 px-5 py-3">
           <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 mb-2">
@@ -534,10 +621,25 @@ export function FaturasPendentesPainel({
                   mostrarEnvioWhatsApp &&
                   !!item.link_boleto &&
                   !!normalizarTelefoneWhatsApp(item.cliente_telefone)
+                const envioRecente = enviosPorFaturaId.get(item.fatura_id)
                 return (
-                  <tr key={item.fatura_id} className={idx % 2 === 0 ? "bg-white" : "bg-slate-50/50"}>
+                  <tr
+                    key={item.fatura_id}
+                    className={cn(
+                      idx % 2 === 0 ? "bg-white" : "bg-slate-50/50",
+                      envioRecente && "bg-emerald-50/70 ring-1 ring-inset ring-emerald-200/80"
+                    )}
+                  >
                     <td className="px-4 py-2.5 text-slate-800 font-medium">
-                      <div>{item.cliente_nome}</div>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span>{item.cliente_nome}</span>
+                        {envioRecente ? (
+                          <span className="inline-flex items-center gap-0.5 rounded-sm bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-800">
+                            <CheckCircle2 className="h-3 w-3 shrink-0" aria-hidden />
+                            {rotuloEnvioRecente(envioRecente.enviado_em, agoraUi)}
+                          </span>
+                        ) : null}
+                      </div>
                       {mostrarEnvioWhatsApp && item.cliente_telefone ? (
                         <div className="text-[11px] font-normal text-slate-500 mt-0.5">{item.cliente_telefone}</div>
                       ) : null}
@@ -604,7 +706,10 @@ export function FaturasPendentesPainel({
                           type="button"
                           size="sm"
                           className={cn(
-                            "h-8 text-xs font-medium bg-emerald-600 text-white hover:bg-emerald-700 border-0 shadow-none",
+                            "h-8 text-xs font-medium border-0 shadow-none",
+                            envioRecente
+                              ? "bg-emerald-100 text-emerald-900 hover:bg-emerald-200"
+                              : "bg-emerald-600 text-white hover:bg-emerald-700",
                             !podeWhatsApp && "opacity-50"
                           )}
                           disabled={!podeWhatsApp}
@@ -613,11 +718,13 @@ export function FaturasPendentesPainel({
                               ? "Sem link de boleto"
                               : !normalizarTelefoneWhatsApp(item.cliente_telefone)
                                 ? "Telefone do cliente inválido ou ausente"
-                                : "Abrir WhatsApp com mensagem e boleto"
+                                : envioRecente
+                                  ? `${rotuloEnvioRecente(envioRecente.enviado_em, agoraUi)} — clique para reenviar`
+                                  : "Abrir WhatsApp com mensagem e boleto"
                           }
                           onClick={() => enviarWhatsApp(item)}
                         >
-                          Enviar fatura
+                          {envioRecente ? "Reenviar" : "Enviar fatura"}
                         </Button>
                       </td>
                     ) : null}
