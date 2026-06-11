@@ -87,3 +87,25 @@ export function faturaCombinaFiltroStatus(
   if (alvo === "paga") return faturaEstaPaga(statusFatura, pagamentoData)
   return statusCanonicoEquivaleAoFiltro(statusFatura, alvo)
 }
+
+export function dataIsoFatura(val: unknown): string | null {
+  if (val == null || String(val).trim() === "") return null
+  return String(val).slice(0, 10)
+}
+
+/** Verifica se vencimento, data_vencimento ou liquidação cai no intervalo [inicio, fim]. */
+export function faturaDataCaiNoPeriodo(
+  f: {
+    vencimento?: string | null
+    data_vencimento?: string | null
+    pagamento_data?: string | null
+  },
+  inicio: string,
+  fim: string
+): boolean {
+  for (const raw of [f.vencimento, f.data_vencimento, f.pagamento_data]) {
+    const d = dataIsoFatura(raw)
+    if (d && d >= inicio && d <= fim) return true
+  }
+  return false
+}

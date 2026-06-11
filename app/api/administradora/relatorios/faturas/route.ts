@@ -5,6 +5,7 @@ import { FinanceirasService } from "@/services/financeiras-service"
 import { faturaCombinaFiltroFinanceira, faturaPertenceAFinanceira } from "@/lib/fatura-filtro-financeira"
 import {
   faturaCombinaFiltroStatus,
+  faturaDataCaiNoPeriodo,
   faturaEstaPaga,
   normalizarStatusFatura,
 } from "@/lib/fatura-status"
@@ -19,6 +20,7 @@ type FaturaRow = {
   valor: number | null
   status: string | null
   vencimento: string | null
+  data_vencimento?: string | null
   pagamento_data?: string | null
   boleto_url?: string | null
   asaas_boleto_url?: string | null
@@ -29,10 +31,12 @@ type FaturaRow = {
 }
 
 const FATURAS_BASE_COLS =
-  "id, cliente_administradora_id, cliente_nome, cliente_id, cliente_telefone, numero_fatura, valor, status, vencimento, pagamento_data, boleto_url, asaas_boleto_url, asaas_invoice_url, asaas_payment_link"
+  "id, cliente_administradora_id, cliente_nome, cliente_id, cliente_telefone, numero_fatura, valor, status, vencimento, data_vencimento, pagamento_data, boleto_url, asaas_boleto_url, asaas_invoice_url, asaas_payment_link"
 const FATURAS_SELECT_SEM_GATEWAY = FATURAS_BASE_COLS
 const FATURAS_SELECT_COM_GATEWAY = `${FATURAS_BASE_COLS}, gateway_nome`
 const FATURAS_SELECT_COM_GATEWAY_FIN = `${FATURAS_SELECT_COM_GATEWAY}, financeira_id`
+
+const STATUS_PAGA_NO_BANCO = ["paga", "pago", "RECEIVED", "CONFIRMED", "RECEIVED_IN_CASH", "DUNNING_RECEIVED"]
 
 function linkBoletoFatura(f: FaturaRow): string | null {
   const u =
@@ -59,6 +63,20 @@ function primeiroDiaMes(ano: number, mes: number): string {
 function ultimoDiaMes(ano: number, mes: number): string {
   const data = new Date(Date.UTC(ano, mes, 0))
   return `${ano}-${String(mes).padStart(2, "0")}-${String(data.getUTCDate()).padStart(2, "0")}`
+}
+
+function colunaInexistente(mensagem: string | undefined, coluna: string): boolean {
+  return new RegExp(`column\\s+"?${coluna}"?\\s+of relation`, "i").test(String(mensagem || ""))
+}
+
+function mesclarFaturasPorId(listas: Array<FaturaRow[] | null | undefined>): FaturaRow[] {
+  const mapa = new Map<string, FaturaRow>()
+  for (const lista of listas) {
+    for (const row of lista || []) {
+      if (row?.id) mapa.set(String(row.id), row)
+    }
+  }
+  return Array.from(mapa.values())
 }
 
 /** Primeiro número útil em `telefones` (JSONB) ou chaves de contato em `dados_adicionais`. */
@@ -98,6 +116,114 @@ function primeiroTelefoneDeVida(row: Record<string, unknown>): string | null {
   return null
 }
 
+/**
+ * Busca faturas da administradora.
+ * Escopo por `administradora_id` (sem filtro tenant em faturas — evita excluir legado com tenant divergente).
+ * Para "Somente paga", usa consultas separadas (evita sobrescrever `.or()` no PostgREST).
+ */
+async function buscarFaturasRelatorio(
+  administradoraId: string,
+  selectCols: string,
+  opcoes: {
+    ano?: string | null
+    mes?: string | null
+    somentePaga: boolean
+  }
+): Promise<{ faturas: FaturaRow[]; erro?: string }> {
+  const base = () =>
+    supabaseAdmin
+      .from("faturas")
+      .select(selectCols)
+      .eq("administradora_id", administradoraId)
+      .order("vencimento", { ascending: false })
+      .limit(8000)
+
+  const ano = opcoes.ano
+  const mes = opcoes.mes
+  if (!ano || !mes) {
+    const r = await base()
+    if (r.error) return { faturas: [], erro: mensagemErro(r.error) }
+    return { faturas: (r.data || []) as FaturaRow[] }
+  }
+
+  const anoNum = Number(ano)
+  const mesNum = Number(mes)
+  const inicio = primeiroDiaMes(anoNum, mesNum)
+  const fim = ultimoDiaMes(anoNum, mesNum)
+
+  if (opcoes.somentePaga) {
+    const [porVencimento, porPagamento, porStatusPaga] = await Promise.all([
+      base().gte("vencimento", inicio).lte("vencimento", fim),
+      base().gte("pagamento_data", inicio).lte("pagamento_data", fim),
+      base().in("status", STATUS_PAGA_NO_BANCO),
+    ])
+
+    const erros = [porVencimento.error, porPagamento.error, porStatusPaga.error].filter(Boolean)
+    if (erros.length === 3) {
+      return { faturas: [], erro: mensagemErro(erros[0]) }
+    }
+
+    let faturas = mesclarFaturasPorId([
+      porVencimento.data as FaturaRow[],
+      porPagamento.data as FaturaRow[],
+      porStatusPaga.data as FaturaRow[],
+    ])
+
+    faturas = faturas.filter(
+      (f) =>
+        faturaEstaPaga(String(f.status || ""), f.pagamento_data) &&
+        faturaDataCaiNoPeriodo(f, inicio, fim)
+    )
+    return { faturas }
+  }
+
+  const [porVencimento, porDataVencimento] = await Promise.all([
+    base().gte("vencimento", inicio).lte("vencimento", fim),
+    base().gte("data_vencimento", inicio).lte("data_vencimento", fim),
+  ])
+
+  if (porVencimento.error && porDataVencimento.error) {
+    if (colunaInexistente(porDataVencimento.error.message, "data_vencimento")) {
+      if (porVencimento.error) return { faturas: [], erro: mensagemErro(porVencimento.error) }
+      return { faturas: (porVencimento.data || []) as FaturaRow[] }
+    }
+    return { faturas: [], erro: mensagemErro(porVencimento.error) }
+  }
+
+  const faturas = mesclarFaturasPorId([
+    porVencimento.data as FaturaRow[],
+    colunaInexistente(porDataVencimento.error?.message, "data_vencimento")
+      ? null
+      : (porDataVencimento.data as FaturaRow[]),
+  ])
+  return { faturas }
+}
+
+async function buscarFaturasComFallbackColunas(
+  administradoraId: string,
+  opcoes: {
+    ano?: string | null
+    mes?: string | null
+    somentePaga: boolean
+  }
+): Promise<{ faturas: FaturaRow[]; erro?: string }> {
+  const tentativas = [
+    FATURAS_SELECT_COM_GATEWAY_FIN,
+    FATURAS_SELECT_COM_GATEWAY,
+    FATURAS_SELECT_SEM_GATEWAY.replace(", data_vencimento", ""),
+    FATURAS_SELECT_SEM_GATEWAY.replace(", data_vencimento", "").replace(", pagamento_data", ""),
+  ]
+
+  let ultimoErro = ""
+  for (const cols of tentativas) {
+    const r = await buscarFaturasRelatorio(administradoraId, cols, opcoes)
+    if (!r.erro) return r
+    ultimoErro = r.erro
+    if (!/column/i.test(r.erro)) break
+  }
+  return { faturas: [], erro: ultimoErro || "Erro ao buscar faturas" }
+}
+
 export async function GET(request: NextRequest) {
   try {
     const administradoraId = request.nextUrl.searchParams.get("administradora_id")
@@ -122,7 +248,6 @@ export async function GET(request: NextRequest) {
     const tenantId = administradora?.tenant_id || tenantAtual
 
     let financeiraFiltro = ""
-    /** Nome da financeira quando o filtro vem por `financeira_id` (match por id + legado por gateway). */
     let nomeFinanceiraPorId = ""
     if (financeiraIdParam) {
       const fin = await FinanceirasService.buscarPorId(financeiraIdParam, administradoraId)
@@ -138,11 +263,9 @@ export async function GET(request: NextRequest) {
       financeiraFiltro = String(request.nextUrl.searchParams.get("financeira") || "").trim().toLowerCase()
     }
 
-    let anoNum = 0
-    let mesNum = 0
     if (ano && mes) {
-      anoNum = Number(ano)
-      mesNum = Number(mes)
+      const anoNum = Number(ano)
+      const mesNum = Number(mes)
       if (!Number.isFinite(anoNum) || !Number.isFinite(mesNum) || mesNum < 1 || mesNum > 12) {
         return NextResponse.json({ error: "Período inválido. Informe ano e mes válidos." }, { status: 400 })
       }
@@ -158,55 +281,16 @@ export async function GET(request: NextRequest) {
           .filter(Boolean)
     const somentePaga = statusSolicitados.length === 1 && statusSolicitados[0] === "paga"
 
-    const montarQueryFaturas = (selectCols: string) => {
-      let q = supabaseAdmin
-        .from("faturas")
-        .select(selectCols)
-        .eq("administradora_id", administradoraId)
-        .order("vencimento", { ascending: false })
-        .limit(5000)
-      if (tenantId) {
-        q = q.or(`tenant_id.eq.${tenantId},tenant_id.is.null`)
-      }
-      if (ano && mes) {
-        const inicio = primeiroDiaMes(anoNum, mesNum)
-        const fim = ultimoDiaMes(anoNum, mesNum)
-        if (somentePaga) {
-          // Inclui quitadas por vencimento ou por data de liquidação no mês.
-          q = q.or(
-            `and(vencimento.gte.${inicio},vencimento.lte.${fim}),and(pagamento_data.gte.${inicio},pagamento_data.lte.${fim})`
-          )
-        } else {
-          q = q.gte("vencimento", inicio).lte("vencimento", fim)
-        }
-      }
-      return q
+    const { faturas: faturasBuscadas, erro: erroBusca } = await buscarFaturasComFallbackColunas(
+      administradoraId,
+      { ano, mes, somentePaga }
+    )
+    if (erroBusca) {
+      console.error("Erro ao buscar faturas do relatório:", erroBusca)
+      return NextResponse.json({ error: `Erro ao buscar faturas: ${erroBusca}` }, { status: 500 })
     }
 
-    let faturasRaw: FaturaRow[] | null = null
-    const r0 = await montarQueryFaturas(FATURAS_SELECT_COM_GATEWAY_FIN)
-    if (!r0.error) {
-      faturasRaw = r0.data as FaturaRow[] | null
-    } else {
-      console.warn("Relatório faturas: select com financeira_id falhou, tentando só gateway_nome:", r0.error)
-      const r1 = await montarQueryFaturas(FATURAS_SELECT_COM_GATEWAY)
-      if (!r1.error) {
-        faturasRaw = r1.data as FaturaRow[] | null
-      } else {
-        console.warn("Relatório faturas: select com gateway_nome falhou, tentando sem coluna:", r1.error)
-        const r2 = await montarQueryFaturas(FATURAS_SELECT_SEM_GATEWAY)
-        if (r2.error) {
-          console.error("Erro ao buscar faturas do relatório:", r2.error)
-          return NextResponse.json(
-            { error: `Erro ao buscar faturas: ${mensagemErro(r2.error)}` },
-            { status: 500 }
-          )
-        }
-        faturasRaw = r2.data as FaturaRow[] | null
-      }
-    }
-
-    const faturas = (faturasRaw || []) as FaturaRow[]
+    const faturas = faturasBuscadas
 
     const statusSet = new Set(statusSolicitados)
     const faturasFiltradasStatus =
@@ -229,7 +313,7 @@ export async function GET(request: NextRequest) {
       )
     )
 
-    let mapaVida = new Map<
+    const mapaVida = new Map<
       string,
       {
         cpf: string | null
@@ -253,13 +337,13 @@ export async function GET(request: NextRequest) {
       const { data: vidas, error: vidasError } = await queryVidas
       if (!vidasError) {
         for (const vida of vidas || []) {
-          const key = String((vida as any).cliente_administradora_id || "").trim()
+          const key = String((vida as { cliente_administradora_id?: string }).cliente_administradora_id || "").trim()
           if (!key) continue
           const tel = primeiroTelefoneDeVida(vida as Record<string, unknown>)
           const row = {
-            cpf: (vida as any).cpf || null,
-            grupo_id: (vida as any).grupo_id || null,
-            corretor_id: (vida as any).corretor_id || null,
+            cpf: (vida as { cpf?: string }).cpf || null,
+            grupo_id: (vida as { grupo_id?: string }).grupo_id || null,
+            corretor_id: (vida as { corretor_id?: string }).corretor_id || null,
             telefone: tel,
           }
           const prev = mapaVida.get(key)
@@ -317,7 +401,7 @@ export async function GET(request: NextRequest) {
           status: faturaEstaPaga(String(f.status || ""), f.pagamento_data)
             ? "paga"
             : normalizarStatusFatura(String(f.status || "")),
-          vencimento: f.vencimento || null,
+          vencimento: f.vencimento || f.data_vencimento || null,
           numero_fatura: f.numero_fatura || null,
           boleto_url: linkBoletoFatura(f),
           grupo_id: grupoVida,

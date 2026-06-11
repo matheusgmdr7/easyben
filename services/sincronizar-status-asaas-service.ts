@@ -17,6 +17,7 @@ export interface ResultadoSincronizacaoAsaas {
   faturas_inconsistentes_encontradas: number
   faturas_na_fila: number
   faturas_restantes: number
+  cobrancas_nao_encontradas: number
   proximo_offset: number | null
   erros: string[]
   alteracoes_status: Array<{
@@ -123,68 +124,49 @@ function montarFila(
   )
 }
 
-async function buscarConfigsAsaas(
-  administradoraId: string,
-  financeiraId?: string | null
-): Promise<Array<{ api_key: string; ambiente: string; nome?: string }>> {
-  const finId = String(financeiraId || "").trim()
+type ConfigAsaas = { api_key: string; ambiente: string; nome?: string }
 
-  const { data: adm } = await supabaseAdmin
-    .from("administradoras")
-    .select("tenant_id")
-    .eq("id", administradoraId)
-    .maybeSingle()
+function financeiraAsaasAtiva(row: {
+  instituicao_financeira?: string | null
+  api_key?: string | null
+  status_integracao?: string | null
+}): boolean {
+  return (
+    String(row?.instituicao_financeira || "").toLowerCase() === "asaas" &&
+    !!String(row?.api_key || "").trim() &&
+    (row?.status_integracao == null || String(row.status_integracao).toLowerCase() !== "inativa")
+  )
+}
 
-  const tenantId = adm?.tenant_id || null
-
-  if (finId) {
-    const { data: uma } = await supabaseAdmin
-      .from("administradora_financeiras")
-      .select("nome, api_key, ambiente, instituicao_financeira, status_integracao, ativo")
-      .eq("administradora_id", administradoraId)
-      .eq("id", finId)
-      .eq("ativo", true)
-      .maybeSingle()
-
-    if (!uma) return []
-    const okAsaas =
-      String(uma.instituicao_financeira || "").toLowerCase() === "asaas" &&
-      !!uma.api_key &&
-      (uma.status_integracao == null || String(uma.status_integracao).toLowerCase() !== "inativa")
-    if (!okAsaas) return []
-
-    return [
-      {
-        api_key: String(uma.api_key),
-        ambiente: String(uma.ambiente || "producao"),
-        nome: String(uma.nome || ""),
-      },
-    ]
+function deduplicarConfigs(configs: ConfigAsaas[]): ConfigAsaas[] {
+  const vistos = new Set<string>()
+  const out: ConfigAsaas[] = []
+  for (const c of configs) {
+    const key = String(c.api_key || "").trim()
+    if (!key || vistos.has(key)) continue
+    vistos.add(key)
+    out.push(c)
   }
+  return out
+}
 
-  if (tenantId) {
-    const { data: financeiras } = await supabaseAdmin
-      .from("administradora_financeiras")
-      .select("api_key, ambiente, instituicao_financeira, status_integracao, ativo")
-      .eq("administradora_id", administradoraId)
-      .eq("tenant_id", tenantId)
-      .eq("ativo", true)
+/** Todas as API keys Asaas ativas da administradora (consulta cobrança em qualquer financeira). */
+async function buscarTodasConfigsAsaasAtivas(administradoraId: string): Promise<ConfigAsaas[]> {
+  const { data: financeiras } = await supabaseAdmin
+    .from("administradora_financeiras")
+    .select("nome, api_key, ambiente, instituicao_financeira, status_integracao, ativo")
+    .eq("administradora_id", administradoraId)
+    .eq("ativo", true)
 
-    const asaasAtivas = (financeiras || []).filter(
-      (f: { instituicao_financeira?: string; api_key?: string; status_integracao?: string }) =>
-        String(f?.instituicao_financeira || "").toLowerCase() === "asaas" &&
-        !!f?.api_key &&
-        (f?.status_integracao == null || String(f.status_integracao).toLowerCase() !== "inativa")
-    )
+  const deFinanceiras = (financeiras || [])
+    .filter(financeiraAsaasAtiva)
+    .map((f: { api_key: string; ambiente?: string; nome?: string }) => ({
+      api_key: String(f.api_key),
+      ambiente: String(f.ambiente || "producao"),
+      nome: String(f.nome || ""),
+    }))
 
-    if (asaasAtivas.length > 0) {
-      return asaasAtivas.map((f: { api_key: string; ambiente?: string; nome?: string }) => ({
-        api_key: String(f.api_key),
-        ambiente: String(f.ambiente || "producao"),
-        nome: String(f.nome || ""),
-      }))
-    }
-  }
+  if (deFinanceiras.length > 0) return deduplicarConfigs(deFinanceiras)
 
   const { data: legado } = await supabaseAdmin
     .from("administradoras_config_financeira")
@@ -206,6 +188,26 @@ async function buscarConfigsAsaas(
   }
 
   return []
+}
+
+async function buscarConfigFinanceiraPorId(
+  administradoraId: string,
+  financeiraId: string
+): Promise<ConfigAsaas | null> {
+  const { data: uma } = await supabaseAdmin
+    .from("administradora_financeiras")
+    .select("nome, api_key, ambiente, instituicao_financeira, status_integracao, ativo")
+    .eq("administradora_id", administradoraId)
+    .eq("id", financeiraId)
+    .eq("ativo", true)
+    .maybeSingle()
+
+  if (!uma || !financeiraAsaasAtiva(uma)) return null
+  return {
+    api_key: String(uma.api_key),
+    ambiente: String(uma.ambiente || "producao"),
+    nome: String(uma.nome || ""),
+  }
 }
 
 async function buscarFaturasComCobranca(
@@ -351,20 +353,32 @@ export async function sincronizarStatusFaturasComAsaas(opcoes: {
     faturas_inconsistentes_encontradas: 0,
     faturas_na_fila: 0,
     faturas_restantes: 0,
+    cobrancas_nao_encontradas: 0,
     proximo_offset: null,
     erros: [],
     alteracoes_status: [],
   }
 
-  const configs = await buscarConfigsAsaas(administradoraId, financeiraId)
-  if (configs.length === 0) {
-    const msg = financeiraId
-      ? "Financeira não encontrada, inativa ou sem Asaas/API key para esta administradora."
-      : "Configuração do Asaas não encontrada ou sem API key ativa para esta administradora."
-    throw new Error(msg)
+  const configsBusca = await buscarTodasConfigsAsaasAtivas(administradoraId)
+  if (configsBusca.length === 0) {
+    throw new Error(
+      "Configuração do Asaas não encontrada ou sem API key ativa para esta administradora."
+    )
   }
 
-  const nomeFinanceiraSync = String(configs[0]?.nome || "Financeira").trim() || "Financeira"
+  let nomeFinanceiraSync = "Financeira"
+  if (financeiraId) {
+    const fin = await buscarConfigFinanceiraPorId(administradoraId, financeiraId)
+    if (fin?.nome) {
+      nomeFinanceiraSync = String(fin.nome).trim() || nomeFinanceiraSync
+    } else {
+      resultado.erros.push(
+        "Aviso: a financeira do filtro não tem API Asaas ativa; as cobranças serão consultadas nas demais financeiras configuradas."
+      )
+    }
+  } else {
+    nomeFinanceiraSync = String(configsBusca[0]?.nome || nomeFinanceiraSync).trim() || nomeFinanceiraSync
+  }
   const todas = await buscarFaturasComCobranca(
     administradoraId,
     financeiraId,
@@ -391,11 +405,14 @@ export async function sincronizarStatusFaturasComAsaas(opcoes: {
       const idBase = String(fatura.asaas_charge_id || fatura.gateway_id || "").trim()
       if (!idBase) continue
 
-      const { charge, ultimoStatusHttp } = await buscarChargeNoAsaas(configs, obterChargeIds(idBase))
+      const { charge, ultimoStatusHttp } = await buscarChargeNoAsaas(configsBusca, obterChargeIds(idBase))
       if (!charge) {
-        resultado.erros.push(
-          `Cobrança ${idBase} não encontrada no Asaas (HTTP ${ultimoStatusHttp ?? "?"})`
-        )
+        resultado.cobrancas_nao_encontradas++
+        if (resultado.erros.length < 8) {
+          resultado.erros.push(
+            `Cobrança ${idBase} não encontrada no Asaas (HTTP ${ultimoStatusHttp ?? "?"})`
+          )
+        }
         continue
       }
 
@@ -458,6 +475,12 @@ export async function sincronizarStatusFaturasComAsaas(opcoes: {
   if (restantes > 0) {
     resultado.erros.push(
       `Sincronização parcial: ${restantes} fatura(s) na fila para a próxima execução (offset ${resultado.proximo_offset}).`
+    )
+  }
+
+  if (resultado.cobrancas_nao_encontradas > 8) {
+    resultado.erros.push(
+      `Total de ${resultado.cobrancas_nao_encontradas} cobrança(s) não localizadas no Asaas nesta rodada.`
     )
   }
 

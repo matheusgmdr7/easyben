@@ -235,24 +235,58 @@ export default function AdministradoraDashboard() {
     if (!administradora?.id) return
     try {
       setSincronizando(true)
-      const body: { administradora_id: string; financeira_id?: string } = {
-        administradora_id: administradora.id,
+
+      let offset = 0
+      let verificadas = 0
+      let atualizadas = 0
+      const alteracoes: Array<{
+        fatura_id: string
+        numero_fatura: string | null
+        cliente_nome: string | null
+        de: string
+        para: string
+      }> = []
+      const avisos: string[] = []
+      let cobrancasNaoEncontradas = 0
+      let rodadas = 0
+      const maxRodadas = 12
+
+      while (rodadas < maxRodadas) {
+        const body: { administradora_id: string; financeira_id?: string; offset: number; modo: string } = {
+          administradora_id: administradora.id,
+          offset,
+          modo: "padrao",
+        }
+        if (financeiraId.trim()) body.financeira_id = financeiraId.trim()
+
+        const res = await fetch("/api/sincronizar-status-asaas", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        })
+        const payload = await res.json().catch(() => ({}))
+        if (!res.ok) throw new Error(payload?.error || "Erro na sincronização")
+
+        verificadas += Number(payload?.faturas_verificadas || 0)
+        atualizadas += Number(payload?.faturas_atualizadas || 0)
+        cobrancasNaoEncontradas += Number(payload?.cobrancas_nao_encontradas || 0)
+        if (Array.isArray(payload?.alteracoes_status)) {
+          alteracoes.push(...payload.alteracoes_status)
+        }
+        if (Array.isArray(payload?.erros)) {
+          for (const e of payload.erros) {
+            const msg = String(e || "").trim()
+            if (msg && !avisos.includes(msg)) avisos.push(msg)
+          }
+        }
+
+        const proximo = payload?.proximo_offset
+        if (proximo == null || proximo === "") break
+        offset = Number(proximo)
+        rodadas++
       }
-      if (financeiraId.trim()) body.financeira_id = financeiraId.trim()
 
-      const res = await fetch("/api/sincronizar-status-asaas", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      })
-      const payload = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(payload?.error || "Erro na sincronização")
-
-      const verificadas = Number(payload?.faturas_verificadas || 0)
-      const atualizadas = Number(payload?.faturas_atualizadas || 0)
-      const alteracoes = Array.isArray(payload?.alteracoes_status) ? payload.alteracoes_status : []
       const alteradas = alteracoes.length
-
       const resumoSync: UltimaSincronizacao = {
         executadoEm: new Date().toISOString(),
         verificadas,
@@ -263,17 +297,20 @@ export default function AdministradoraDashboard() {
       localStorage.setItem(`administradora_dashboard_ultima_sync_${administradora.id}`, JSON.stringify(resumoSync))
 
       toast.success(
-        `Sincronização concluída: ${atualizadas} atualizadas de ${verificadas} verificadas (${alteradas} com troca de status).`
+        `Sincronização concluída: ${atualizadas} atualizada(s), ${alteradas} status alterado(s), ${verificadas} verificada(s).`
       )
 
-      if (Array.isArray(payload?.erros) && payload.erros.length > 0) {
-        const primeira = String(payload.erros[0] || "")
-        toast.info(`Sincronização concluída com avisos: ${primeira}`)
+      if (cobrancasNaoEncontradas > 0) {
+        toast.info(
+          `${cobrancasNaoEncontradas} cobrança(s) não localizadas no Asaas (podem ser de outra conta ou já removidas).`
+        )
+      } else if (avisos.length > 0) {
+        toast.info(`Sincronização com avisos: ${avisos[0]}`)
       }
 
       if (alteradas > 0) {
         const top = alteracoes.slice(0, 8)
-        const linhas = top.map((a: any) => {
+        const linhas = top.map((a) => {
           const nome = String(a?.cliente_nome || a?.numero_fatura || a?.fatura_id || "Fatura")
           return `- ${nome}: ${String(a?.de || "-")} -> ${String(a?.para || "-")}`
         })
@@ -288,7 +325,7 @@ export default function AdministradoraDashboard() {
       const p = periodoDashboardRef.current
       await carregarDashboard(administradora.id, p.ano, p.mes, financeiraId)
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Erro ao sincronizar status com o Asaas")
+      toast.error(error instanceof Error ? error.message : "Erro ao sincronizar status com o gateway")
     } finally {
       setSincronizando(false)
     }
