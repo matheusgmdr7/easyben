@@ -3,6 +3,11 @@ import { supabaseAdmin } from "@/lib/supabase-admin"
 import { getCurrentTenantId } from "@/lib/tenant-query-helper"
 import { FinanceirasService } from "@/services/financeiras-service"
 import { faturaCombinaFiltroFinanceira, faturaPertenceAFinanceira } from "@/lib/fatura-filtro-financeira"
+import {
+  faturaCombinaFiltroStatus,
+  faturaEstaPaga,
+  normalizarStatusFatura,
+} from "@/lib/fatura-status"
 
 type FaturaRow = {
   id: string
@@ -14,6 +19,7 @@ type FaturaRow = {
   valor: number | null
   status: string | null
   vencimento: string | null
+  pagamento_data?: string | null
   boleto_url?: string | null
   asaas_boleto_url?: string | null
   asaas_invoice_url?: string | null
@@ -23,7 +29,7 @@ type FaturaRow = {
 }
 
 const FATURAS_BASE_COLS =
-  "id, cliente_administradora_id, cliente_nome, cliente_id, cliente_telefone, numero_fatura, valor, status, vencimento, boleto_url, asaas_boleto_url, asaas_invoice_url, asaas_payment_link"
+  "id, cliente_administradora_id, cliente_nome, cliente_id, cliente_telefone, numero_fatura, valor, status, vencimento, pagamento_data, boleto_url, asaas_boleto_url, asaas_invoice_url, asaas_payment_link"
 const FATURAS_SELECT_SEM_GATEWAY = FATURAS_BASE_COLS
 const FATURAS_SELECT_COM_GATEWAY = `${FATURAS_BASE_COLS}, gateway_nome`
 const FATURAS_SELECT_COM_GATEWAY_FIN = `${FATURAS_SELECT_COM_GATEWAY}, financeira_id`
@@ -44,47 +50,6 @@ function mensagemErro(e: unknown): string {
     return String((e as { message?: unknown }).message)
   }
   return String(e)
-}
-
-const ASAAS_TO_INTERNO: Record<string, string> = {
-  PENDING: "pendente",
-  RECEIVED: "paga",
-  CONFIRMED: "paga",
-  RECEIVED_IN_CASH: "paga",
-  OVERDUE: "atrasada",
-  REFUNDED: "cancelada",
-  REFUND_REQUESTED: "cancelada",
-  CHARGEBACK_REQUESTED: "cancelada",
-  CHARGEBACK_DISPUTE: "cancelada",
-  AWAITING_CHARGEBACK_REVERSAL: "cancelada",
-  DELETED: "cancelada",
-  CANCELED: "cancelada",
-  CANCELLED: "cancelada",
-  AWAITING_RISK_ANALYSIS: "pendente",
-}
-
-function normalizarStatus(status: string): string {
-  const bruto = String(status || "").trim()
-  if (!bruto) return ""
-
-  const upper = bruto.toUpperCase()
-  if (ASAAS_TO_INTERNO[upper]) return ASAAS_TO_INTERNO[upper]
-
-  const lower = bruto.toLowerCase()
-  if (lower === "paid" || lower === "pago") return "paga"
-  if (lower === "overdue") return "atrasada"
-  if (lower === "cancelled" || lower === "canceled") return "cancelada"
-  return lower
-}
-
-/** Status canônicos aceitos quando o filtro pede um status interno (ex.: paga). */
-function statusCanonicoEquivaleAoFiltro(statusFatura: string, statusFiltro: string): boolean {
-  const f = normalizarStatus(statusFatura)
-  const alvo = normalizarStatus(statusFiltro)
-  if (!f || !alvo) return false
-  if (f === alvo) return true
-  if (alvo === "paga" && (f === "parcialmente_paga" || f === "pago")) return true
-  return false
 }
 
 function primeiroDiaMes(ano: number, mes: number): string {
@@ -173,13 +138,25 @@ export async function GET(request: NextRequest) {
       financeiraFiltro = String(request.nextUrl.searchParams.get("financeira") || "").trim().toLowerCase()
     }
 
+    let anoNum = 0
+    let mesNum = 0
     if (ano && mes) {
-      const anoNum = Number(ano)
-      const mesNum = Number(mes)
+      anoNum = Number(ano)
+      mesNum = Number(mes)
       if (!Number.isFinite(anoNum) || !Number.isFinite(mesNum) || mesNum < 1 || mesNum > 12) {
         return NextResponse.json({ error: "Período inválido. Informe ano e mes válidos." }, { status: 400 })
       }
     }
+
+    const statusParamNorm = String(statusParam ?? "").trim().toLowerCase()
+    const filtrarTodosStatus = statusParamNorm === "todos"
+    const statusSolicitados = filtrarTodosStatus
+      ? []
+      : (statusParam || "pendente,vencida,atrasada")
+          .split(",")
+          .map((s) => normalizarStatusFatura(s))
+          .filter(Boolean)
+    const somentePaga = statusSolicitados.length === 1 && statusSolicitados[0] === "paga"
 
     const montarQueryFaturas = (selectCols: string) => {
       let q = supabaseAdmin
@@ -192,11 +169,16 @@ export async function GET(request: NextRequest) {
         q = q.or(`tenant_id.eq.${tenantId},tenant_id.is.null`)
       }
       if (ano && mes) {
-        const anoNum = Number(ano)
-        const mesNum = Number(mes)
-        q = q
-          .gte("vencimento", primeiroDiaMes(anoNum, mesNum))
-          .lte("vencimento", ultimoDiaMes(anoNum, mesNum))
+        const inicio = primeiroDiaMes(anoNum, mesNum)
+        const fim = ultimoDiaMes(anoNum, mesNum)
+        if (somentePaga) {
+          // Inclui quitadas por vencimento ou por data de liquidação no mês.
+          q = q.or(
+            `and(vencimento.gte.${inicio},vencimento.lte.${fim}),and(pagamento_data.gte.${inicio},pagamento_data.lte.${fim})`
+          )
+        } else {
+          q = q.gte("vencimento", inicio).lte("vencimento", fim)
+        }
       }
       return q
     }
@@ -226,24 +208,15 @@ export async function GET(request: NextRequest) {
 
     const faturas = (faturasRaw || []) as FaturaRow[]
 
-    // `todos` = sem filtro de status; ausência do parâmetro mantém padrão de devedores (em aberto).
-    const statusParamNorm = String(statusParam ?? "").trim().toLowerCase()
-    const filtrarTodosStatus = statusParamNorm === "todos"
-    const statusSolicitados = filtrarTodosStatus
-      ? []
-      : (statusParam || "pendente,vencida,atrasada")
-          .split(",")
-          .map((s) => normalizarStatus(s))
-          .filter(Boolean)
-
     const statusSet = new Set(statusSolicitados)
     const faturasFiltradasStatus =
       statusSet.size === 0
         ? faturas
         : faturas.filter((f) => {
             const st = String(f.status || "")
+            const pd = f.pagamento_data
             for (const alvo of statusSet) {
-              if (statusCanonicoEquivaleAoFiltro(st, alvo)) return true
+              if (faturaCombinaFiltroStatus(st, pd, alvo)) return true
             }
             return false
           })
@@ -341,7 +314,9 @@ export async function GET(request: NextRequest) {
           cpf: vida?.cpf || f.cliente_id || null,
           telefone: telFatura || telVida || null,
           valor_fatura: Number(f.valor || 0),
-          status: normalizarStatus(String(f.status || "")),
+          status: faturaEstaPaga(String(f.status || ""), f.pagamento_data)
+            ? "paga"
+            : normalizarStatusFatura(String(f.status || "")),
           vencimento: f.vencimento || null,
           numero_fatura: f.numero_fatura || null,
           boleto_url: linkBoletoFatura(f),

@@ -7,7 +7,7 @@ import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { ExternalLink, FileDown, FileSpreadsheet, Search, X } from "lucide-react"
+import { ExternalLink, FileDown, FileSpreadsheet, RefreshCw, Search, X } from "lucide-react"
 import { formatarData, formatarMoeda } from "@/utils/formatters"
 import { cn } from "@/lib/utils"
 
@@ -52,6 +52,7 @@ export default function DevedoresPage() {
   const [financeiras, setFinanceiras] = useState<Financeira[]>([])
   const [exportandoPDF, setExportandoPDF] = useState(false)
   const [exportandoExcel, setExportandoExcel] = useState(false)
+  const [sincronizandoStatus, setSincronizandoStatus] = useState(false)
 
   const [mesRef, setMesRef] = useState<string>("")
   const [anoRef, setAnoRef] = useState<string>("")
@@ -107,6 +108,72 @@ export default function DevedoresPage() {
     if (statusFiltro === "asaas") return "PENDING,RECEIVED,CONFIRMED,OVERDUE,REFUNDED,CANCELED"
     if (statusFiltro === "todos") return "todos"
     return statusFiltro
+  }
+
+  async function sincronizarStatusComAsaas() {
+    if (!administradoraId) return
+
+    try {
+      setSincronizandoStatus(true)
+      toast.info("Sincronizando status com o Asaas… isso pode levar alguns minutos.")
+
+      let offset = 0
+      let totalAtualizadas = 0
+      let totalAlteracoes = 0
+      let inconsistentes = 0
+      let rodadas = 0
+      const maxRodadas = 15
+
+      while (rodadas < maxRodadas) {
+        const body: Record<string, unknown> = {
+          administradora_id: administradoraId,
+          modo: "padrao",
+          offset,
+        }
+        if (financeiraFiltro && financeiraFiltro !== "todos") {
+          body.financeira_id = financeiraFiltro
+        }
+
+        const res = await fetch("/api/sincronizar-status-asaas", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        })
+        const payload = await res.json().catch(() => ({}))
+        if (!res.ok) throw new Error(payload?.error || "Erro na sincronização")
+
+        totalAtualizadas += Number(payload?.faturas_atualizadas || 0)
+        totalAlteracoes += Array.isArray(payload?.alteracoes_status)
+          ? payload.alteracoes_status.length
+          : 0
+        inconsistentes = Math.max(
+          inconsistentes,
+          Number(payload?.faturas_inconsistentes_encontradas || 0)
+        )
+
+        const proximo = payload?.proximo_offset
+        if (proximo == null || proximo === "") break
+        offset = Number(proximo)
+        rodadas++
+      }
+
+      if (totalAlteracoes > 0) {
+        toast.success(
+          `Sincronização concluída: ${totalAlteracoes} status corrigido(s) de ${totalAtualizadas} fatura(s) atualizada(s).`
+        )
+        await carregarRelatorio()
+      } else if (inconsistentes > 0) {
+        toast.info(
+          `Nenhuma alteração nesta rodada. Ainda há ${inconsistentes} fatura(s) com possível inconsistência — execute novamente se necessário.`
+        )
+      } else {
+        toast.success("Status já estão alinhados com o Asaas para as faturas verificadas.")
+      }
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Erro ao sincronizar status")
+    } finally {
+      setSincronizandoStatus(false)
+    }
   }
 
   async function carregarRelatorio() {
@@ -517,6 +584,15 @@ export default function DevedoresPage() {
           >
             <X className="h-4 w-4 mr-1" />
             Limpar
+          </Button>
+          <Button
+            onClick={sincronizarStatusComAsaas}
+            disabled={sincronizandoStatus || !administradoraId}
+            variant="outline"
+            className="h-9 px-4 text-sm border-emerald-300 text-emerald-800 hover:bg-emerald-50 rounded-sm"
+          >
+            <RefreshCw className={cn("h-4 w-4 mr-1", sincronizandoStatus && "animate-spin")} />
+            {sincronizandoStatus ? "Sincronizando…" : "Sincronizar status (Asaas)"}
           </Button>
           <Button
             variant="outline"
