@@ -105,7 +105,7 @@ export default function DevedoresPage() {
     if (statusFiltro === "principais") return "pendente,vencida,atrasada"
     if (statusFiltro === "historico") return "atrasada,cancelada,paga"
     if (statusFiltro === "asaas") return "PENDING,RECEIVED,CONFIRMED,OVERDUE,REFUNDED,CANCELED"
-    if (statusFiltro === "todos") return ""
+    if (statusFiltro === "todos") return "todos"
     return statusFiltro
   }
 
@@ -122,8 +122,7 @@ export default function DevedoresPage() {
       }
       if (grupoId && grupoId !== "todos") url.searchParams.set("grupo_id", grupoId)
       if (corretorId && corretorId !== "todos") url.searchParams.set("corretor_id", corretorId)
-      const status = obterStatusParaBusca()
-      if (status) url.searchParams.set("status", status)
+      url.searchParams.set("status", obterStatusParaBusca())
       if (financeiraFiltro && financeiraFiltro !== "todos") {
         url.searchParams.set("financeira_id", financeiraFiltro)
       }

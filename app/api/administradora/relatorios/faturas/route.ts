@@ -71,10 +71,20 @@ function normalizarStatus(status: string): string {
   if (ASAAS_TO_INTERNO[upper]) return ASAAS_TO_INTERNO[upper]
 
   const lower = bruto.toLowerCase()
-  if (lower === "paid") return "paga"
+  if (lower === "paid" || lower === "pago") return "paga"
   if (lower === "overdue") return "atrasada"
   if (lower === "cancelled" || lower === "canceled") return "cancelada"
   return lower
+}
+
+/** Status canônicos aceitos quando o filtro pede um status interno (ex.: paga). */
+function statusCanonicoEquivaleAoFiltro(statusFatura: string, statusFiltro: string): boolean {
+  const f = normalizarStatus(statusFatura)
+  const alvo = normalizarStatus(statusFiltro)
+  if (!f || !alvo) return false
+  if (f === alvo) return true
+  if (alvo === "paga" && (f === "parcialmente_paga" || f === "pago")) return true
+  return false
 }
 
 function primeiroDiaMes(ano: number, mes: number): string {
@@ -216,17 +226,27 @@ export async function GET(request: NextRequest) {
 
     const faturas = (faturasRaw || []) as FaturaRow[]
 
-    // Padrão alinhado ao relatório de devedores: faturas em aberto (pendente/vencida/atrasada).
-    const statusSolicitados = (statusParam || "pendente,vencida,atrasada")
-      .split(",")
-      .map((s) => normalizarStatus(s))
-      .filter(Boolean)
+    // `todos` = sem filtro de status; ausência do parâmetro mantém padrão de devedores (em aberto).
+    const statusParamNorm = String(statusParam ?? "").trim().toLowerCase()
+    const filtrarTodosStatus = statusParamNorm === "todos"
+    const statusSolicitados = filtrarTodosStatus
+      ? []
+      : (statusParam || "pendente,vencida,atrasada")
+          .split(",")
+          .map((s) => normalizarStatus(s))
+          .filter(Boolean)
 
     const statusSet = new Set(statusSolicitados)
     const faturasFiltradasStatus =
       statusSet.size === 0
         ? faturas
-        : faturas.filter((f) => statusSet.has(normalizarStatus(String(f.status || ""))))
+        : faturas.filter((f) => {
+            const st = String(f.status || "")
+            for (const alvo of statusSet) {
+              if (statusCanonicoEquivaleAoFiltro(st, alvo)) return true
+            }
+            return false
+          })
 
     const clienteIds = Array.from(
       new Set(
