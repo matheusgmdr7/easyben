@@ -29,8 +29,9 @@ type FaturaRow = {
   financeira_id?: string | null
 }
 
+/** Sem `data_vencimento`: coluna ausente no banco de produção (só `vencimento`). */
 const FATURAS_BASE_COLS =
-  "id, cliente_administradora_id, cliente_nome, cliente_id, cliente_telefone, numero_fatura, valor, status, vencimento, data_vencimento, pagamento_data, boleto_url, asaas_boleto_url, asaas_invoice_url, asaas_payment_link"
+  "id, cliente_administradora_id, cliente_nome, cliente_id, cliente_telefone, numero_fatura, valor, status, vencimento, pagamento_data, boleto_url, asaas_boleto_url, asaas_invoice_url, asaas_payment_link"
 const FATURAS_SELECT_SEM_GATEWAY = FATURAS_BASE_COLS
 const FATURAS_SELECT_COM_GATEWAY = `${FATURAS_BASE_COLS}, gateway_nome`
 const FATURAS_SELECT_COM_GATEWAY_FIN = `${FATURAS_SELECT_COM_GATEWAY}, financeira_id`
@@ -63,7 +64,14 @@ function ultimoDiaMes(ano: number, mes: number): string {
 }
 
 function colunaInexistente(mensagem: string | undefined, coluna: string): boolean {
-  return new RegExp(`column\\s+"?${coluna}"?\\s+of relation`, "i").test(String(mensagem || ""))
+  const msg = String(mensagem || "")
+  if (!msg) return false
+  const esc = coluna.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+  return (
+    new RegExp(`column\\s+(?:[\\w.]+\\.)?"?${esc}"?\\s+does not exist`, "i").test(msg) ||
+    new RegExp(`column\\s+"?${esc}"?\\s+of relation`, "i").test(msg) ||
+    new RegExp(`Could not find the '${esc}' column`, "i").test(msg)
+  )
 }
 
 function mesclarFaturasPorId(listas: Array<FaturaRow[] | null | undefined>): FaturaRow[] {
@@ -114,9 +122,10 @@ function primeiroTelefoneDeVida(row: Record<string, unknown>): string | null {
 }
 
 /**
- * Busca faturas da administradora no período (mesmo critério para atrasada, paga, etc.).
- * 1) vencimento no mês; 2) data_vencimento no mês; 3) se filtro paga, também pagamento_data no mês.
- * O filtro de status é aplicado depois em memória (como em "Somente atrasada").
+ * Busca faturas da administradora no período.
+ * Mesmo critério para todos os status (atrasada, paga, etc.): vencimento no mês.
+ * Complemento opcional por `pagamento_data` (quitadas no mês com vencimento em outro mês).
+ * O filtro de status é aplicado depois em memória.
  */
 async function buscarFaturasRelatorio(
   administradoraId: string,
@@ -149,32 +158,32 @@ async function buscarFaturasRelatorio(
   const fim = ultimoDiaMes(anoNum, mesNum)
 
   const porVencimento = await base().gte("vencimento", inicio).lte("vencimento", fim)
-  const porDataVencimento = await base().gte("data_vencimento", inicio).lte("data_vencimento", fim)
   const porPagamento = opcoes.incluirPagamentoNoPeriodo
     ? await base().gte("pagamento_data", inicio).lte("pagamento_data", fim)
     : null
 
-  const erros = [porVencimento.error, porDataVencimento.error, porPagamento?.error].filter(Boolean)
-  if (erros.length === (opcoes.incluirPagamentoNoPeriodo ? 3 : 2)) {
+  const listas: Array<FaturaRow[] | null | undefined> = []
+  if (!porVencimento.error) {
+    listas.push(porVencimento.data as FaturaRow[])
+  }
+
+  if (porPagamento && !porPagamento.error) {
+    listas.push(porPagamento.data as FaturaRow[])
+  }
+
+  if (listas.length > 0) {
+    return { faturas: mesclarFaturasPorId(listas) }
+  }
+
+  const erros = [porVencimento.error, porPagamento?.error].filter(Boolean)
+  const erroColuna =
+    erros.length > 0 &&
+    erros.every((e) => /column/i.test(mensagemErro(e)) || colunaInexistente(e?.message, "pagamento_data"))
+  if (erroColuna) {
     return { faturas: [], erro: mensagemErro(erros[0]) }
   }
 
-  const listas: Array<FaturaRow[] | null | undefined> = [
-    porVencimento.data as FaturaRow[],
-    colunaInexistente(porDataVencimento.error?.message, "data_vencimento")
-      ? null
-      : (porDataVencimento.data as FaturaRow[]),
-  ]
-
-  if (opcoes.incluirPagamentoNoPeriodo && porPagamento) {
-    listas.push(
-      colunaInexistente(porPagamento.error?.message, "pagamento_data")
-        ? null
-        : (porPagamento.data as FaturaRow[])
-    )
-  }
-
-  return { faturas: mesclarFaturasPorId(listas) }
+  return { faturas: [], erro: mensagemErro(erros[0] || porVencimento.error) }
 }
 
 async function buscarFaturasComFallbackColunas(
@@ -188,8 +197,8 @@ async function buscarFaturasComFallbackColunas(
   const tentativas = [
     FATURAS_SELECT_COM_GATEWAY_FIN,
     FATURAS_SELECT_COM_GATEWAY,
-    FATURAS_SELECT_SEM_GATEWAY.replace(", data_vencimento", ""),
-    FATURAS_SELECT_SEM_GATEWAY.replace(", data_vencimento", "").replace(", pagamento_data", ""),
+    FATURAS_SELECT_SEM_GATEWAY,
+    FATURAS_SELECT_SEM_GATEWAY.replace(", pagamento_data", ""),
   ]
 
   let ultimoErro = ""
