@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase-admin"
 import { getCurrentTenantId } from "@/lib/tenant-query-helper"
+import { listarClienteAdministradoraIdsENomesDoGrupo } from "@/lib/grupo-cliente-administradora-ids"
+import { carregarVidasImportadasDoGrupo } from "@/lib/vidas-importadas-grupo"
 import { FinanceirasService } from "@/services/financeiras-service"
 import { faturaCombinaFiltroFinanceira, faturaPertenceAFinanceira } from "@/lib/fatura-filtro-financeira"
 import {
@@ -61,6 +63,29 @@ function primeiroDiaMes(ano: number, mes: number): string {
 function ultimoDiaMes(ano: number, mes: number): string {
   const data = new Date(Date.UTC(ano, mes, 0))
   return `${ano}-${String(mes).padStart(2, "0")}-${String(data.getUTCDate()).padStart(2, "0")}`
+}
+
+/** Clientes do grupo: vínculos em `clientes_grupos` + `vidas_importadas` (mesmo critério de boletos/inadimplência). */
+async function listarClienteIdsDoGrupo(
+  grupoId: string,
+  administradoraId: string,
+  tenantId: string | null | undefined
+): Promise<Set<string>> {
+  const ids = new Set<string>()
+  if (tenantId) {
+    const { ids: doGrupo } = await listarClienteAdministradoraIdsENomesDoGrupo(
+      grupoId,
+      administradoraId,
+      tenantId
+    )
+    for (const id of doGrupo) ids.add(id)
+  }
+  const vidas = await carregarVidasImportadasDoGrupo(grupoId, administradoraId)
+  for (const vida of vidas) {
+    const id = String(vida.cliente_administradora_id || "").trim()
+    if (id) ids.add(id)
+  }
+  return ids
 }
 
 /** Primeiro número útil em `telefones` (JSONB) ou chaves de contato em `dados_adicionais`. */
@@ -234,6 +259,11 @@ export async function GET(request: NextRequest) {
           .filter(Boolean)
     const somentePaga = statusSolicitados.length === 1 && statusSolicitados[0] === "paga"
 
+    const filtrarPorGrupo = Boolean(grupoId && grupoId !== "todos")
+    const clienteIdsDoGrupo = filtrarPorGrupo
+      ? await listarClienteIdsDoGrupo(grupoId!, administradoraId, tenantId)
+      : null
+
     const { faturas: faturasBuscadas, erro: erroBusca } = await buscarFaturasComFallbackColunas(
       administradoraId,
       { ano, mes, filtroPagaNoBanco: somentePaga }
@@ -286,6 +316,9 @@ export async function GET(request: NextRequest) {
       if (tenantId) {
         queryVidas = queryVidas.or(`tenant_id.eq.${tenantId},tenant_id.is.null`)
       }
+      if (filtrarPorGrupo) {
+        queryVidas = queryVidas.eq("grupo_id", grupoId!)
+      }
 
       const { data: vidas, error: vidasError } = await queryVidas
       if (!vidasError) {
@@ -317,10 +350,11 @@ export async function GET(request: NextRequest) {
     const linhas = faturasFiltradasStatus
       .filter((f) => {
         const clienteId = String(f.cliente_administradora_id || "").trim()
+        if (clienteIdsDoGrupo) {
+          if (!clienteId || !clienteIdsDoGrupo.has(clienteId)) return false
+        }
         const vida = clienteId ? mapaVida.get(clienteId) : undefined
-        const grupoVida = vida?.grupo_id || null
         const corretorVida = vida?.corretor_id || null
-        if (grupoId && grupoId !== "todos" && grupoVida !== grupoId) return false
         if (corretorId && corretorId !== "todos" && corretorVida !== corretorId) return false
         if (financeiraIdParam) {
           if (
