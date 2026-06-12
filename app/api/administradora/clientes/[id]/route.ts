@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase-admin"
+import {
+  normalizarCorretorIdVinculo,
+  sincronizarCorretorClienteEVidas,
+} from "@/lib/corretor-cliente-vinculo"
 
 /**
  * PATCH /api/administradora/clientes/[id]
@@ -44,7 +48,7 @@ export async function PATCH(
       .eq("id", administradora_id)
       .maybeSingle()
     const tenantId = adm?.tenant_id || null
-    const corretorIdFinal = corretor_id === "" || corretor_id === undefined ? null : corretor_id
+    const corretorIdFinal = normalizarCorretorIdVinculo(corretor_id)
     const atualizacoes: Record<string, unknown> = {}
 
     if ("corretor_id" in body) {
@@ -122,46 +126,14 @@ export async function PATCH(
       return NextResponse.json({ error: "Cliente não encontrado" }, { status: 404 })
     }
 
-    // Sincroniza corretor nas vidas importadas vinculadas ao cliente e registra histórico.
-    // Isso mantém a exibição por grupo consistente quando o grupo usa vidas_importadas como fonte principal.
-    if ("corretor_id" in atualizacoes && (clienteAtual?.corretor_id || null) !== (corretorIdFinal || null)) {
-      let queryVidasRelacionadas = supabaseAdmin
-        .from("vidas_importadas")
-        .select("id, corretor_id")
-        .eq("cliente_administradora_id", id)
-        .eq("administradora_id", administradora_id)
-      if (tenantId) queryVidasRelacionadas = queryVidasRelacionadas.eq("tenant_id", tenantId)
-      const { data: vidasRelacionadas } = await queryVidasRelacionadas
-
-      if ((vidasRelacionadas || []).length > 0) {
-        let queryUpdateVidas = supabaseAdmin
-          .from("vidas_importadas")
-          .update({ corretor_id: corretorIdFinal })
-          .eq("cliente_administradora_id", id)
-          .eq("administradora_id", administradora_id)
-        if (tenantId) queryUpdateVidas = queryUpdateVidas.eq("tenant_id", tenantId)
-        await queryUpdateVidas
-
-        try {
-          if (tenantId) {
-            const historicoPayload = (vidasRelacionadas || []).map((vida) => ({
-              vida_id: vida.id,
-              tenant_id: tenantId,
-              alteracoes: {
-                corretor_id: {
-                  antes: vida.corretor_id ?? null,
-                  depois: corretorIdFinal ?? null,
-                },
-              },
-            }))
-            if (historicoPayload.length > 0) {
-              await supabaseAdmin.from("vidas_importadas_historico").insert(historicoPayload)
-            }
-          }
-        } catch {
-          // Histórico é complementar; não bloqueia a atualização do vínculo.
-        }
-      }
+    if ("corretor_id" in atualizacoes && (clienteAtual?.corretor_id || null) !== corretorIdFinal) {
+      await sincronizarCorretorClienteEVidas({
+        administradoraId: administradora_id,
+        tenantId,
+        corretorId: corretorIdFinal,
+        clienteAdministradoraIds: [id],
+        registrarHistoricoVidas: true,
+      })
     }
     return NextResponse.json(data)
   } catch (e: unknown) {

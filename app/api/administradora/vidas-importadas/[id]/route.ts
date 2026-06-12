@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase-admin"
 import { getCurrentTenantId } from "@/lib/tenant-query-helper"
 import { obterValorProdutoPorIdade, calcularIdade } from "@/lib/calcular-valor-produto"
+import {
+  normalizarCorretorIdVinculo,
+  sincronizarCorretorClienteEVidas,
+} from "@/lib/corretor-cliente-vinculo"
 
 const CAMPOS_EDITAVEIS = [
   "nome", "cpf", "nome_mae", "nome_pai", "tipo", "data_nascimento", "idade", "parentesco",
@@ -228,6 +232,18 @@ export async function PUT(
       } catch {
         // Tabela historico pode não existir; não quebra a atualização
       }
+    }
+
+    if ("corretor_id" in alteracoes) {
+      const admId = String((data as { administradora_id?: string }).administradora_id || administradoraId).trim()
+      const caId = String((data as { cliente_administradora_id?: string }).cliente_administradora_id || "").trim()
+      await sincronizarCorretorClienteEVidas({
+        administradoraId: admId,
+        tenantId: (data as { tenant_id?: string }).tenant_id || tenantId,
+        corretorId: normalizarCorretorIdVinculo(updates.corretor_id),
+        vidaIds: [id],
+        clienteAdministradoraIds: caId ? [caId] : undefined,
+      })
     }
 
     return NextResponse.json(data)

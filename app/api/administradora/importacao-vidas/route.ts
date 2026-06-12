@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase-admin"
 import { getCurrentTenantId } from "@/lib/tenant-query-helper"
+import { sincronizarCorretorClienteEVidas } from "@/lib/corretor-cliente-vinculo"
 import { obterValorProdutoPorIdade, calcularIdade } from "@/lib/calcular-valor-produto"
 
 /**
@@ -402,7 +403,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Nenhuma linha com Nome válido para importar" }, { status: 400 })
     }
 
-    const { data, error } = await supabaseAdmin.from("vidas_importadas").insert(toInsert).select("id")
+    const { data, error } = await supabaseAdmin.from("vidas_importadas").insert(toInsert).select("id, corretor_id, cliente_administradora_id")
 
     if (error) {
       console.error("Erro ao inserir vidas_importadas:", error)
@@ -412,7 +413,23 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const importadas = (data || []).length
+    const inseridas = data || []
+    const corretorPorCliente = new Map<string, string>()
+    for (const row of inseridas) {
+      const cor = String((row as { corretor_id?: string }).corretor_id || "").trim()
+      const ca = String((row as { cliente_administradora_id?: string }).cliente_administradora_id || "").trim()
+      if (cor && ca) corretorPorCliente.set(ca, cor)
+    }
+    for (const [caId, corId] of corretorPorCliente) {
+      await sincronizarCorretorClienteEVidas({
+        administradoraId: administradora_id,
+        tenantId,
+        corretorId: corId,
+        clienteAdministradoraIds: [caId],
+      })
+    }
+
+    const importadas = inseridas.length
     return NextResponse.json({
       success: true,
       importadas,

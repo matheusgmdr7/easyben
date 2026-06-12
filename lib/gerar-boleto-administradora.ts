@@ -313,6 +313,7 @@ export async function gerarBoletoAdministradora(body: Record<string, unknown>): 
           }
           if (diaVencimentoVida) syncPayload.dia_vencimento = diaVencimentoVida
           if (dataVigenciaVida) syncPayload.data_vigencia = dataVigenciaVida
+          if (vidaAny.corretor_id) syncPayload.corretor_id = vidaAny.corretor_id
           await supabaseAdmin
             .from("clientes_administradoras")
             .update(syncPayload)
@@ -333,6 +334,7 @@ export async function gerarBoletoAdministradora(body: Record<string, unknown>): 
           data_vigencia: dataVigenciaVida ?? dataVig.toISOString().slice(0, 10),
           valor_mensal: Number(vidaAny.valor_mensal) || valorNum,
           status: "ativo",
+          corretor_id: vidaAny.corretor_id || null,
         }
         const { data: novoCa, error: errInsert } = await supabaseAdmin
           .from("clientes_administradoras")

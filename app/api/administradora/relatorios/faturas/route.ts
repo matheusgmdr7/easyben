@@ -10,6 +10,7 @@ import {
   faturaEstaPaga,
   normalizarStatusFatura,
 } from "@/lib/fatura-status"
+import { montarMapaCorretorPorCliente } from "@/lib/corretor-cliente-vinculo"
 
 type FaturaRow = {
   id: string
@@ -301,7 +302,6 @@ export async function GET(request: NextRequest) {
       {
         cpf: string | null
         grupo_id: string | null
-        corretor_id: string | null
         telefone: string | null
       }
     >()
@@ -309,7 +309,7 @@ export async function GET(request: NextRequest) {
     if (clienteIds.length > 0) {
       let queryVidas = supabaseAdmin
         .from("vidas_importadas")
-        .select("cliente_administradora_id, cpf, grupo_id, corretor_id, telefones, dados_adicionais")
+        .select("cliente_administradora_id, cpf, grupo_id, telefones, dados_adicionais")
         .eq("administradora_id", administradoraId)
         .in("cliente_administradora_id", clienteIds)
 
@@ -329,7 +329,6 @@ export async function GET(request: NextRequest) {
           const row = {
             cpf: (vida as { cpf?: string }).cpf || null,
             grupo_id: (vida as { grupo_id?: string }).grupo_id || null,
-            corretor_id: (vida as { corretor_id?: string }).corretor_id || null,
             telefone: tel,
           }
           const prev = mapaVida.get(key)
@@ -339,7 +338,6 @@ export async function GET(request: NextRequest) {
             mapaVida.set(key, {
               cpf: prev.cpf || row.cpf,
               grupo_id: prev.grupo_id || row.grupo_id,
-              corretor_id: prev.corretor_id || row.corretor_id,
               telefone: prev.telefone || row.telefone,
             })
           }
@@ -347,15 +345,16 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    const mapaCorretor = await montarMapaCorretorPorCliente(clienteIds, administradoraId, tenantId)
+
     const linhas = faturasFiltradasStatus
       .filter((f) => {
         const clienteId = String(f.cliente_administradora_id || "").trim()
         if (clienteIdsDoGrupo) {
           if (!clienteId || !clienteIdsDoGrupo.has(clienteId)) return false
         }
-        const vida = clienteId ? mapaVida.get(clienteId) : undefined
-        const corretorVida = vida?.corretor_id || null
-        if (corretorId && corretorId !== "todos" && corretorVida !== corretorId) return false
+        const corretorCliente = clienteId ? mapaCorretor.get(clienteId) ?? null : null
+        if (corretorId && corretorId !== "todos" && corretorCliente !== corretorId) return false
         if (financeiraIdParam) {
           if (
             !faturaPertenceAFinanceira(
@@ -375,7 +374,7 @@ export async function GET(request: NextRequest) {
         const clienteId = String(f.cliente_administradora_id || "").trim()
         const vida = clienteId ? mapaVida.get(clienteId) : undefined
         const grupoVida = vida?.grupo_id || null
-        const corretorVida = vida?.corretor_id || null
+        const corretorVida = clienteId ? mapaCorretor.get(clienteId) ?? null : null
 
         const telFatura = String(f.cliente_telefone || "").trim()
         const telVida = String(vida?.telefone || "").trim()

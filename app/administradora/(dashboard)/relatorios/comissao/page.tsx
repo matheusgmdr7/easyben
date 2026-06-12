@@ -56,6 +56,7 @@ function classeBadgeStatusBoleto(codigo: string): string {
 }
 
 type Corretor = { id: string; nome: string }
+type Financeira = { id: string; nome: string }
 
 const MESES = [
   { value: "01", label: "Janeiro" },
@@ -85,19 +86,21 @@ export default function RelatorioComissaoPage() {
   const [loading, setLoading] = useState(false)
   const [administradoraId, setAdministradoraId] = useState<string | null>(null)
   const [corretores, setCorretores] = useState<Corretor[]>([])
+  const [financeiras, setFinanceiras] = useState<Financeira[]>([])
   const [exportandoPDF, setExportandoPDF] = useState(false)
   const [exportandoExcel, setExportandoExcel] = useState(false)
 
   const [mesRef, setMesRef] = useState("")
   const [anoRef, setAnoRef] = useState("")
   const [corretorId, setCorretorId] = useState<string>(CORRETOR_TODAS)
+  const [financeiraFiltro, setFinanceiraFiltro] = useState<string>("todos")
   const [percentualStr, setPercentualStr] = useState("10")
 
   useEffect(() => {
     const administradora = getAdministradoraLogada()
     if (administradora?.id) {
       setAdministradoraId(administradora.id)
-      void carregarCorretores(administradora.id)
+      void carregarFiltros(administradora.id)
     }
     const agora = new Date()
     setMesRef(String(agora.getMonth() + 1).padStart(2, "0"))
@@ -109,17 +112,27 @@ export default function RelatorioComissaoPage() {
     setPaginaAtual((p) => Math.min(Math.max(1, p), tp))
   }, [linhas])
 
-  async function carregarCorretores(admId: string) {
+  async function carregarFiltros(admId: string) {
     try {
-      const res = await fetch(`/api/administradora/corretores?administradora_id=${encodeURIComponent(admId)}`)
-      if (res.ok) {
-        const data = await res.json()
+      const [corretoresRes, financeirasRes] = await Promise.all([
+        fetch(`/api/administradora/corretores?administradora_id=${encodeURIComponent(admId)}`),
+        fetch(`/api/administradora/financeiras?administradora_id=${encodeURIComponent(admId)}`),
+      ])
+      if (corretoresRes.ok) {
+        const data = await corretoresRes.json()
         setCorretores(Array.isArray(data) ? data : [])
       } else {
         setCorretores([])
       }
+      if (financeirasRes.ok) {
+        const data = await financeirasRes.json()
+        setFinanceiras(Array.isArray(data) ? data : [])
+      } else {
+        setFinanceiras([])
+      }
     } catch {
       setCorretores([])
+      setFinanceiras([])
     }
   }
 
@@ -143,6 +156,9 @@ export default function RelatorioComissaoPage() {
       url.searchParams.set("ano", anoRef)
       url.searchParams.set("corretor_id", corretorId)
       url.searchParams.set("percentual", String(pct))
+      if (financeiraFiltro && financeiraFiltro !== "todos") {
+        url.searchParams.set("financeira_id", financeiraFiltro)
+      }
 
       const res = await fetch(url.toString(), { cache: "no-store" })
       const data = await res.json().catch(() => ({}))
@@ -346,14 +362,15 @@ export default function RelatorioComissaoPage() {
       <div className="bg-white border-b border-gray-200 px-6 py-4">
         <h1 className="text-xl font-semibold text-gray-800">Relatório de comissão</h1>
         <p className="text-sm text-gray-500 mt-0.5 max-w-3xl">
-          Faturas <strong>pagas</strong> com <strong>vencimento</strong> no mês de referência, para clientes com corretor
-          vinculado (contrato ou beneficiário). Use <strong>Todas as corretoras</strong> para consolidar. A comissão de
-          cada linha é o percentual sobre o valor da fatura.
+          Faturas <strong>pagas</strong> com <strong>vencimento</strong> no mês de referência. Filtre por{" "}
+          <strong>financeira</strong> e <strong>corretor</strong> para validar a origem de cada cobrança. Use{" "}
+          <strong>Todas as corretoras</strong> para consolidar. A comissão de cada linha é o percentual sobre o valor
+          da fatura.
         </p>
       </div>
 
       <div className="bg-white border-b border-gray-200 px-6 py-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3 mb-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-3 mb-4">
           <div>
             <label className="block text-xs text-gray-600 mb-1">Mês de referência</label>
             <Select value={mesRef} onValueChange={setMesRef}>
@@ -390,6 +407,22 @@ export default function RelatorioComissaoPage() {
                 {corretores.map((c) => (
                   <SelectItem key={c.id} value={c.id}>
                     {c.nome}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <label className="block text-xs text-gray-600 mb-1">Financeira</label>
+            <Select value={financeiraFiltro} onValueChange={setFinanceiraFiltro}>
+              <SelectTrigger className="h-10 w-full rounded-md border border-gray-300 bg-background px-3 py-2 text-sm">
+                <SelectValue placeholder="Todas as financeiras" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="todos">Todas as financeiras</SelectItem>
+                {financeiras.map((f) => (
+                  <SelectItem key={f.id} value={f.id}>
+                    {f.nome}
                   </SelectItem>
                 ))}
               </SelectContent>

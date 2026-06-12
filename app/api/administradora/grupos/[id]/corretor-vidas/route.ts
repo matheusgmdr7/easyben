@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase-admin"
 import { getCurrentTenantId } from "@/lib/tenant-query-helper"
+import {
+  normalizarCorretorIdVinculo,
+  sincronizarCorretorClienteEVidas,
+} from "@/lib/corretor-cliente-vinculo"
 
 /**
  * PUT /api/administradora/grupos/[id]/corretor-vidas
@@ -37,26 +41,20 @@ export async function PUT(
       return NextResponse.json({ error: "Grupo não encontrado" }, { status: 404 })
     }
 
-    const { data, error } = await supabaseAdmin
-      .from("vidas_importadas")
-      .update({
-        corretor_id: corretor_id === "" || corretor_id === undefined ? null : corretor_id,
-      })
-      .eq("grupo_id", grupoId)
-      .eq("administradora_id", administradora_id)
-      .select("id")
+    const corretorIdFinal = normalizarCorretorIdVinculo(corretor_id)
 
-    if (error) {
-      console.error("Erro ao atualizar corretor das vidas:", error)
-      return NextResponse.json(
-        { error: error.message || "Erro ao atualizar" },
-        { status: 500 }
-      )
-    }
+    const sync = await sincronizarCorretorClienteEVidas({
+      administradoraId: administradora_id,
+      tenantId,
+      corretorId: corretorIdFinal,
+      grupoId,
+      registrarHistoricoVidas: true,
+    })
 
     return NextResponse.json({
       success: true,
-      atualizadas: (data || []).length,
+      atualizadas: sync.vidasAtualizadas,
+      clientes_sincronizados: sync.clientesAtualizados,
     })
   } catch (e: unknown) {
     console.error("Erro PUT corretor-vidas:", e)
