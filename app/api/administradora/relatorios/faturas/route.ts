@@ -5,7 +5,6 @@ import { FinanceirasService } from "@/services/financeiras-service"
 import { faturaCombinaFiltroFinanceira, faturaPertenceAFinanceira } from "@/lib/fatura-filtro-financeira"
 import {
   faturaCombinaFiltroStatus,
-  faturaDataCaiNoPeriodo,
   faturaEstaPaga,
   normalizarStatusFatura,
 } from "@/lib/fatura-status"
@@ -35,8 +34,6 @@ const FATURAS_BASE_COLS =
 const FATURAS_SELECT_SEM_GATEWAY = FATURAS_BASE_COLS
 const FATURAS_SELECT_COM_GATEWAY = `${FATURAS_BASE_COLS}, gateway_nome`
 const FATURAS_SELECT_COM_GATEWAY_FIN = `${FATURAS_SELECT_COM_GATEWAY}, financeira_id`
-
-const STATUS_PAGA_NO_BANCO = ["paga", "pago", "RECEIVED", "CONFIRMED", "RECEIVED_IN_CASH", "DUNNING_RECEIVED"]
 
 function linkBoletoFatura(f: FaturaRow): string | null {
   const u =
@@ -117,9 +114,9 @@ function primeiroTelefoneDeVida(row: Record<string, unknown>): string | null {
 }
 
 /**
- * Busca faturas da administradora.
- * Escopo por `administradora_id` (sem filtro tenant em faturas — evita excluir legado com tenant divergente).
- * Para "Somente paga", usa consultas separadas (evita sobrescrever `.or()` no PostgREST).
+ * Busca faturas da administradora no período (mesmo critério para atrasada, paga, etc.).
+ * 1) vencimento no mês; 2) data_vencimento no mês; 3) se filtro paga, também pagamento_data no mês.
+ * O filtro de status é aplicado depois em memória (como em "Somente atrasada").
  */
 async function buscarFaturasRelatorio(
   administradoraId: string,
@@ -127,7 +124,7 @@ async function buscarFaturasRelatorio(
   opcoes: {
     ano?: string | null
     mes?: string | null
-    somentePaga: boolean
+    incluirPagamentoNoPeriodo: boolean
   }
 ): Promise<{ faturas: FaturaRow[]; erro?: string }> {
   const base = () =>
@@ -151,52 +148,33 @@ async function buscarFaturasRelatorio(
   const inicio = primeiroDiaMes(anoNum, mesNum)
   const fim = ultimoDiaMes(anoNum, mesNum)
 
-  if (opcoes.somentePaga) {
-    const [porVencimento, porPagamento, porStatusPaga] = await Promise.all([
-      base().gte("vencimento", inicio).lte("vencimento", fim),
-      base().gte("pagamento_data", inicio).lte("pagamento_data", fim),
-      base().in("status", STATUS_PAGA_NO_BANCO),
-    ])
+  const porVencimento = await base().gte("vencimento", inicio).lte("vencimento", fim)
+  const porDataVencimento = await base().gte("data_vencimento", inicio).lte("data_vencimento", fim)
+  const porPagamento = opcoes.incluirPagamentoNoPeriodo
+    ? await base().gte("pagamento_data", inicio).lte("pagamento_data", fim)
+    : null
 
-    const erros = [porVencimento.error, porPagamento.error, porStatusPaga.error].filter(Boolean)
-    if (erros.length === 3) {
-      return { faturas: [], erro: mensagemErro(erros[0]) }
-    }
-
-    let faturas = mesclarFaturasPorId([
-      porVencimento.data as FaturaRow[],
-      porPagamento.data as FaturaRow[],
-      porStatusPaga.data as FaturaRow[],
-    ])
-
-    faturas = faturas.filter(
-      (f) =>
-        faturaEstaPaga(String(f.status || ""), f.pagamento_data) &&
-        faturaDataCaiNoPeriodo(f, inicio, fim)
-    )
-    return { faturas }
+  const erros = [porVencimento.error, porDataVencimento.error, porPagamento?.error].filter(Boolean)
+  if (erros.length === (opcoes.incluirPagamentoNoPeriodo ? 3 : 2)) {
+    return { faturas: [], erro: mensagemErro(erros[0]) }
   }
 
-  const [porVencimento, porDataVencimento] = await Promise.all([
-    base().gte("vencimento", inicio).lte("vencimento", fim),
-    base().gte("data_vencimento", inicio).lte("data_vencimento", fim),
-  ])
-
-  if (porVencimento.error && porDataVencimento.error) {
-    if (colunaInexistente(porDataVencimento.error.message, "data_vencimento")) {
-      if (porVencimento.error) return { faturas: [], erro: mensagemErro(porVencimento.error) }
-      return { faturas: (porVencimento.data || []) as FaturaRow[] }
-    }
-    return { faturas: [], erro: mensagemErro(porVencimento.error) }
-  }
-
-  const faturas = mesclarFaturasPorId([
+  const listas: Array<FaturaRow[] | null | undefined> = [
     porVencimento.data as FaturaRow[],
     colunaInexistente(porDataVencimento.error?.message, "data_vencimento")
       ? null
       : (porDataVencimento.data as FaturaRow[]),
-  ])
-  return { faturas }
+  ]
+
+  if (opcoes.incluirPagamentoNoPeriodo && porPagamento) {
+    listas.push(
+      colunaInexistente(porPagamento.error?.message, "pagamento_data")
+        ? null
+        : (porPagamento.data as FaturaRow[])
+    )
+  }
+
+  return { faturas: mesclarFaturasPorId(listas) }
 }
 
 async function buscarFaturasComFallbackColunas(
@@ -204,7 +182,7 @@ async function buscarFaturasComFallbackColunas(
   opcoes: {
     ano?: string | null
     mes?: string | null
-    somentePaga: boolean
+    incluirPagamentoNoPeriodo: boolean
   }
 ): Promise<{ faturas: FaturaRow[]; erro?: string }> {
   const tentativas = [
@@ -283,7 +261,7 @@ export async function GET(request: NextRequest) {
 
     const { faturas: faturasBuscadas, erro: erroBusca } = await buscarFaturasComFallbackColunas(
       administradoraId,
-      { ano, mes, somentePaga }
+      { ano, mes, incluirPagamentoNoPeriodo: somentePaga }
     )
     if (erroBusca) {
       console.error("Erro ao buscar faturas do relatório:", erroBusca)

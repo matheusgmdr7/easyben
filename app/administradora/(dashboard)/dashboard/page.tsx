@@ -249,7 +249,7 @@ export default function AdministradoraDashboard() {
       const avisos: string[] = []
       let cobrancasNaoEncontradas = 0
       let rodadas = 0
-      const maxRodadas = 12
+      const maxRodadas = 8
 
       while (rodadas < maxRodadas) {
         const body: { administradora_id: string; financeira_id?: string; offset: number; modo: string } = {
@@ -264,8 +264,24 @@ export default function AdministradoraDashboard() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
         })
-        const payload = await res.json().catch(() => ({}))
-        if (!res.ok) throw new Error(payload?.error || "Erro na sincronização")
+        const raw = await res.text()
+        let payload: Record<string, unknown> = {}
+        try {
+          payload = raw ? (JSON.parse(raw) as Record<string, unknown>) : {}
+        } catch {
+          if (res.status === 504 || res.status === 408) {
+            throw new Error(
+              "A sincronização excedeu o tempo limite do servidor. Tente novamente — cada clique processa um lote de faturas."
+            )
+          }
+          throw new Error(
+            `Resposta inválida do servidor (HTTP ${res.status}). Tente novamente em instantes.`
+          )
+        }
+        if (!res.ok) {
+          const msg = String(payload?.error || "").trim()
+          throw new Error(msg || `Erro na sincronização (HTTP ${res.status})`)
+        }
 
         verificadas += Number(payload?.faturas_verificadas || 0)
         atualizadas += Number(payload?.faturas_atualizadas || 0)

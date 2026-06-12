@@ -7,7 +7,8 @@ import {
   normalizarStatusFatura,
 } from "@/lib/fatura-status"
 
-export const LIMITE_FATURAS_POR_EXECUCAO = 180
+/** Lote pequeno para caber no maxDuration (60s) da Vercel por requisição. */
+export const LIMITE_FATURAS_POR_EXECUCAO = 40
 
 export type ModoSincronizacaoAsaas = "padrao" | "inconsistentes" | "todos"
 
@@ -131,11 +132,17 @@ function financeiraAsaasAtiva(row: {
   api_key?: string | null
   status_integracao?: string | null
 }): boolean {
-  return (
-    String(row?.instituicao_financeira || "").toLowerCase() === "asaas" &&
-    !!String(row?.api_key || "").trim() &&
-    (row?.status_integracao == null || String(row.status_integracao).toLowerCase() !== "inativa")
-  )
+  const inst = String(row?.instituicao_financeira || "")
+    .trim()
+    .toLowerCase()
+  const status = String(row?.status_integracao || "")
+    .trim()
+    .toLowerCase()
+  const apiOk = !!String(row?.api_key || "").trim()
+  if (!apiOk) return false
+  if (inst && inst !== "asaas") return false
+  if (status === "inativa") return false
+  return true
 }
 
 function deduplicarConfigs(configs: ConfigAsaas[]): ConfigAsaas[] {
@@ -168,16 +175,34 @@ async function buscarTodasConfigsAsaasAtivas(administradoraId: string): Promise<
 
   if (deFinanceiras.length > 0) return deduplicarConfigs(deFinanceiras)
 
-  const { data: legado } = await supabaseAdmin
+  let { data: legado } = await supabaseAdmin
     .from("administradoras_config_financeira")
-    .select("api_key, ambiente")
+    .select("api_key, ambiente, instituicao_financeira, status_integracao")
     .eq("administradora_id", administradoraId)
-    .eq("instituicao_financeira", "asaas")
+    .eq("status_integracao", "ativa")
     .not("api_key", "is", null)
     .limit(1)
 
+  if (!legado?.length) {
+    const retry = await supabaseAdmin
+      .from("administradoras_config_financeira")
+      .select("api_key, ambiente, instituicao_financeira, status_integracao")
+      .eq("administradora_id", administradoraId)
+      .not("api_key", "is", null)
+      .limit(1)
+    legado = retry.data
+  }
+
   const legadoRow = Array.isArray(legado) ? legado[0] : legado
   if (legadoRow?.api_key) {
+    const inst = String(legadoRow.instituicao_financeira || "")
+      .trim()
+      .toLowerCase()
+    const status = String(legadoRow.status_integracao || "")
+      .trim()
+      .toLowerCase()
+    if (inst && inst !== "asaas") return []
+    if (status === "inativa") return []
     return [
       {
         api_key: String(legadoRow.api_key),
@@ -217,11 +242,11 @@ async function buscarFaturasComCobranca(
   erros: string[]
 ): Promise<FaturaSyncRow[]> {
   const selectComFin =
-    "id, numero_fatura, cliente_nome, asaas_charge_id, gateway_id, status, pagamento_data, gateway_nome, financeira_id, valor, valor_total, vencimento, data_vencimento"
+    "id, numero_fatura, cliente_nome, asaas_charge_id, gateway_id, status, pagamento_data, gateway_nome, financeira_id, valor, valor_total, vencimento"
   const selectSemFin =
-    "id, numero_fatura, cliente_nome, asaas_charge_id, gateway_id, status, pagamento_data, gateway_nome, valor, valor_total, vencimento, data_vencimento"
+    "id, numero_fatura, cliente_nome, asaas_charge_id, gateway_id, status, pagamento_data, gateway_nome, valor, valor_total, vencimento"
   const selectMin =
-    "id, numero_fatura, cliente_nome, asaas_charge_id, gateway_id, status, pagamento_data, valor, valor_total, vencimento, data_vencimento"
+    "id, numero_fatura, cliente_nome, asaas_charge_id, gateway_id, status, pagamento_data, valor, valor_total, vencimento"
 
   let qF = supabaseAdmin
     .from("faturas")
@@ -310,7 +335,7 @@ async function buscarChargeNoAsaas(
 
     for (const id of idsCandidatos) {
       const controller = new AbortController()
-      const timeout = setTimeout(() => controller.abort(), 8000)
+      const timeout = setTimeout(() => controller.abort(), 5000)
       const response = await fetch(`${baseUrl}/payments/${id}`, {
         headers: {
           access_token: conf.api_key,
@@ -465,7 +490,7 @@ export async function sincronizarStatusFaturasComAsaas(opcoes: {
         })
       }
 
-      await new Promise((resolve) => setTimeout(resolve, 40))
+      await new Promise((resolve) => setTimeout(resolve, 15))
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : String(error)
       resultado.erros.push(`Erro ao processar fatura ${fatura.id}: ${msg}`)

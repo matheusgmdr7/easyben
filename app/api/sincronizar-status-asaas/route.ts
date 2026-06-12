@@ -13,7 +13,10 @@ export const maxDuration = 60
  */
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json()
+    const body = await request.json().catch(() => null)
+    if (!body || typeof body !== "object") {
+      return NextResponse.json({ error: "Corpo da requisição inválido" }, { status: 400 })
+    }
     const administradora_id = body?.administradora_id
     const financeira_id =
       body?.financeira_id != null && String(body.financeira_id).trim() !== ""
