@@ -130,8 +130,8 @@ export default function CorretorDetalhePage() {
               Clientes vinculados ({clientes.length})
             </CardTitle>
             <p className="text-sm text-gray-500">
-              Para vincular um cliente a este corretor, vá em Clientes (Contrato) e altere o
-              corretor do cliente.
+              Clientes com corretor no contrato ou na vida importada. Para vincular, use o grupo de
+              beneficiários ou a tela de Clientes (Contrato).
             </p>
           </CardHeader>
           <CardContent>
