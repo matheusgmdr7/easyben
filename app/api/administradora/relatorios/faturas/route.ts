@@ -63,27 +63,6 @@ function ultimoDiaMes(ano: number, mes: number): string {
   return `${ano}-${String(mes).padStart(2, "0")}-${String(data.getUTCDate()).padStart(2, "0")}`
 }
 
-function colunaInexistente(mensagem: string | undefined, coluna: string): boolean {
-  const msg = String(mensagem || "")
-  if (!msg) return false
-  const esc = coluna.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-  return (
-    new RegExp(`column\\s+(?:[\\w.]+\\.)?"?${esc}"?\\s+does not exist`, "i").test(msg) ||
-    new RegExp(`column\\s+"?${esc}"?\\s+of relation`, "i").test(msg) ||
-    new RegExp(`Could not find the '${esc}' column`, "i").test(msg)
-  )
-}
-
-function mesclarFaturasPorId(listas: Array<FaturaRow[] | null | undefined>): FaturaRow[] {
-  const mapa = new Map<string, FaturaRow>()
-  for (const lista of listas) {
-    for (const row of lista || []) {
-      if (row?.id) mapa.set(String(row.id), row)
-    }
-  }
-  return Array.from(mapa.values())
-}
-
 /** Primeiro número útil em `telefones` (JSONB) ou chaves de contato em `dados_adicionais`. */
 function primeiroTelefoneDeVida(row: Record<string, unknown>): string | null {
   let arr: unknown = row.telefones
@@ -121,11 +100,14 @@ function primeiroTelefoneDeVida(row: Record<string, unknown>): string | null {
   return null
 }
 
+/** Critério PostgREST para faturas quitadas no banco (vencimento filtrado à parte). */
+const OR_FILTRO_PAGA_NO_BANCO =
+  "status.in.(paga,pago),and(pagamento_data.not.is.null,status.not.in.(cancelada,canceled,cancelled))"
+
 /**
- * Busca faturas da administradora no período.
- * Mesmo critério para todos os status (atrasada, paga, etc.): vencimento no mês.
- * Complemento opcional por `pagamento_data` (quitadas no mês com vencimento em outro mês).
- * O filtro de status é aplicado depois em memória.
+ * Busca faturas da administradora.
+ * - "Somente paga": quitadas no banco (`paga`/`pago` ou `pagamento_data` sem cancelada) + vencimento no mês.
+ * - Demais filtros: vencimento no mês; status aplicado depois em memória.
  */
 async function buscarFaturasRelatorio(
   administradoraId: string,
@@ -133,7 +115,7 @@ async function buscarFaturasRelatorio(
   opcoes: {
     ano?: string | null
     mes?: string | null
-    incluirPagamentoNoPeriodo: boolean
+    filtroPagaNoBanco?: boolean
   }
 ): Promise<{ faturas: FaturaRow[]; erro?: string }> {
   const base = () =>
@@ -147,7 +129,11 @@ async function buscarFaturasRelatorio(
   const ano = opcoes.ano
   const mes = opcoes.mes
   if (!ano || !mes) {
-    const r = await base()
+    let q = base()
+    if (opcoes.filtroPagaNoBanco) {
+      q = q.or(OR_FILTRO_PAGA_NO_BANCO)
+    }
+    const r = await q
     if (r.error) return { faturas: [], erro: mensagemErro(r.error) }
     return { faturas: (r.data || []) as FaturaRow[] }
   }
@@ -157,33 +143,13 @@ async function buscarFaturasRelatorio(
   const inicio = primeiroDiaMes(anoNum, mesNum)
   const fim = ultimoDiaMes(anoNum, mesNum)
 
-  const porVencimento = await base().gte("vencimento", inicio).lte("vencimento", fim)
-  const porPagamento = opcoes.incluirPagamentoNoPeriodo
-    ? await base().gte("pagamento_data", inicio).lte("pagamento_data", fim)
-    : null
-
-  const listas: Array<FaturaRow[] | null | undefined> = []
-  if (!porVencimento.error) {
-    listas.push(porVencimento.data as FaturaRow[])
+  let q = base().gte("vencimento", inicio).lte("vencimento", fim)
+  if (opcoes.filtroPagaNoBanco) {
+    q = q.or(OR_FILTRO_PAGA_NO_BANCO)
   }
-
-  if (porPagamento && !porPagamento.error) {
-    listas.push(porPagamento.data as FaturaRow[])
-  }
-
-  if (listas.length > 0) {
-    return { faturas: mesclarFaturasPorId(listas) }
-  }
-
-  const erros = [porVencimento.error, porPagamento?.error].filter(Boolean)
-  const erroColuna =
-    erros.length > 0 &&
-    erros.every((e) => /column/i.test(mensagemErro(e)) || colunaInexistente(e?.message, "pagamento_data"))
-  if (erroColuna) {
-    return { faturas: [], erro: mensagemErro(erros[0]) }
-  }
-
-  return { faturas: [], erro: mensagemErro(erros[0] || porVencimento.error) }
+  const r = await q
+  if (r.error) return { faturas: [], erro: mensagemErro(r.error) }
+  return { faturas: (r.data || []) as FaturaRow[] }
 }
 
 async function buscarFaturasComFallbackColunas(
@@ -191,7 +157,7 @@ async function buscarFaturasComFallbackColunas(
   opcoes: {
     ano?: string | null
     mes?: string | null
-    incluirPagamentoNoPeriodo: boolean
+    filtroPagaNoBanco?: boolean
   }
 ): Promise<{ faturas: FaturaRow[]; erro?: string }> {
   const tentativas = [
@@ -270,7 +236,7 @@ export async function GET(request: NextRequest) {
 
     const { faturas: faturasBuscadas, erro: erroBusca } = await buscarFaturasComFallbackColunas(
       administradoraId,
-      { ano, mes, incluirPagamentoNoPeriodo: somentePaga }
+      { ano, mes, filtroPagaNoBanco: somentePaga }
     )
     if (erroBusca) {
       console.error("Erro ao buscar faturas do relatório:", erroBusca)
@@ -281,7 +247,7 @@ export async function GET(request: NextRequest) {
 
     const statusSet = new Set(statusSolicitados)
     const faturasFiltradasStatus =
-      statusSet.size === 0
+      somentePaga || statusSet.size === 0
         ? faturas
         : faturas.filter((f) => {
             const st = String(f.status || "")
