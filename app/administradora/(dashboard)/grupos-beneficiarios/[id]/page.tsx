@@ -25,10 +25,13 @@ import {
   UserMinus,
   CreditCard,
   X,
-  Sparkles,
+  UserPlus,
+  Users,
+  CheckCircle,
   type LucideIcon,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { faturaEstaPaga } from "@/lib/fatura-status"
 
 type ModoListaGrupo = "ativos" | "cancelados"
 
@@ -165,6 +168,29 @@ function itemEhClienteNovo(item: any): boolean {
   return Number(item?._qtdBoletos ?? 0) === 1
 }
 
+function itemEhClienteAntigo(item: any): boolean {
+  return Number(item?._qtdBoletos ?? 0) > 2
+}
+
+function itemUltimaFaturaPaga(item: any): boolean {
+  return item?._ultimaFaturaPaga === true
+}
+
+type FaturaResumoRow = {
+  cliente_administradora_id?: string
+  status?: string
+  pagamento_data?: string | null
+  vencimento?: string | null
+  created_at?: string | null
+}
+
+function compararFaturaMaisRecente(a: FaturaResumoRow, b: FaturaResumoRow): number {
+  const va = String(a.vencimento || "").slice(0, 10)
+  const vb = String(b.vencimento || "").slice(0, 10)
+  if (va !== vb) return vb.localeCompare(va)
+  return String(b.created_at || "").localeCompare(String(a.created_at || ""))
+}
+
 async function enriquecerMatriculaContrato(itens: any[], supabaseClient: { from: (t: string) => any }): Promise<any[]> {
   const caIds = [
     ...new Set(
@@ -202,8 +228,8 @@ async function enriquecerMatriculaContrato(itens: any[], supabaseClient: { from:
   })
 }
 
-/** Conta faturas/boletos por contrato para filtro "clientes novos" (exatamente 1 boleto). */
-async function enriquecerQtdBoletos(
+/** Conta boletos e status da última fatura (por vencimento) por contrato. */
+async function enriquecerDadosFaturasCliente(
   itens: any[],
   supabaseClient: { from: (t: string) => any },
   administradoraId: string
@@ -211,26 +237,37 @@ async function enriquecerQtdBoletos(
   const caIds = [
     ...new Set(itens.map((i) => obterClienteAdministradoraIdItem(i)).filter((id): id is string => Boolean(id))),
   ]
-  if (caIds.length === 0) return itens.map((item) => ({ ...item, _qtdBoletos: 0 }))
+  if (caIds.length === 0) {
+    return itens.map((item) => ({ ...item, _qtdBoletos: 0, _ultimaFaturaPaga: false }))
+  }
 
-  const contagemPorCa = new Map<string, number>()
+  const faturasPorCa = new Map<string, FaturaResumoRow[]>()
   for (let i = 0; i < caIds.length; i += 100) {
     const chunk = caIds.slice(i, i + 100)
     const { data } = await supabaseClient
       .from("faturas")
-      .select("cliente_administradora_id")
+      .select("cliente_administradora_id, status, pagamento_data, vencimento, created_at")
       .in("cliente_administradora_id", chunk)
       .eq("administradora_id", administradoraId)
     for (const row of data || []) {
-      const ca = String((row as { cliente_administradora_id?: string }).cliente_administradora_id || "").trim()
-      if (ca) contagemPorCa.set(ca, (contagemPorCa.get(ca) || 0) + 1)
+      const ca = String((row as FaturaResumoRow).cliente_administradora_id || "").trim()
+      if (!ca) continue
+      const lista = faturasPorCa.get(ca) || []
+      lista.push(row as FaturaResumoRow)
+      faturasPorCa.set(ca, lista)
     }
   }
 
   return itens.map((item) => {
     const caId = obterClienteAdministradoraIdItem(item)
-    const qtd = caId ? contagemPorCa.get(caId) || 0 : 0
-    return { ...item, _qtdBoletos: qtd }
+    const faturas = caId ? faturasPorCa.get(caId) || [] : []
+    const ultima =
+      faturas.length > 0 ? [...faturas].sort(compararFaturaMaisRecente)[0] : null
+    return {
+      ...item,
+      _qtdBoletos: faturas.length,
+      _ultimaFaturaPaga: ultima ? faturaEstaPaga(ultima.status, ultima.pagamento_data) : false,
+    }
   })
 }
 
@@ -298,6 +335,8 @@ export default function DetalhesGrupoPage() {
   const [filtroSemCorretor, setFiltroSemCorretor] = useState(false)
   const [filtroSemMatricula, setFiltroSemMatricula] = useState(false)
   const [filtroClientesNovos, setFiltroClientesNovos] = useState(false)
+  const [filtroClientesAntigos, setFiltroClientesAntigos] = useState(false)
+  const [filtroPagos, setFiltroPagos] = useState(false)
   const [paginaAtual, setPaginaAtual] = useState(1)
   const [itensPorPagina, setItensPorPagina] = useState(25)
   const [confirmSolicitarCancelamentoOpen, setConfirmSolicitarCancelamentoOpen] = useState(false)
@@ -501,8 +540,8 @@ export default function DetalhesGrupoPage() {
         ativos = await enriquecerCorretorContrato(ativos, supabase)
         cancelados = await enriquecerCorretorContrato(cancelados, supabase)
         if (admId) {
-          ativos = await enriquecerQtdBoletos(ativos, supabase, admId)
-          cancelados = await enriquecerQtdBoletos(cancelados, supabase, admId)
+          ativos = await enriquecerDadosFaturasCliente(ativos, supabase, admId)
+          cancelados = await enriquecerDadosFaturasCliente(cancelados, supabase, admId)
           cancelados = await enriquecerComCancelamentos(cancelados, cancelamentosGrupo)
         }
         setClientes(ativos)
@@ -607,8 +646,8 @@ export default function DetalhesGrupoPage() {
       ativos = await enriquecerCorretorContrato(ativos, supabase)
       cancelados = await enriquecerCorretorContrato(cancelados, supabase)
       if (admId) {
-        ativos = await enriquecerQtdBoletos(ativos, supabase, admId)
-        cancelados = await enriquecerQtdBoletos(cancelados, supabase, admId)
+        ativos = await enriquecerDadosFaturasCliente(ativos, supabase, admId)
+        cancelados = await enriquecerDadosFaturasCliente(cancelados, supabase, admId)
         cancelados = await enriquecerComCancelamentos(cancelados, cancelamentosGrupo)
       }
       setClientes(ativos)
@@ -916,11 +955,18 @@ export default function DetalhesGrupoPage() {
       semCorretor: listaBaseContagemFiltros.filter((c) => !itemTemCorretor(c)).length,
       semMatricula: listaBaseContagemFiltros.filter((c) => !itemTemMatricula(c)).length,
       clientesNovos: listaBaseContagemFiltros.filter((c) => itemEhClienteNovo(c)).length,
+      clientesAntigos: listaBaseContagemFiltros.filter((c) => itemEhClienteAntigo(c)).length,
+      pagos: listaBaseContagemFiltros.filter((c) => itemUltimaFaturaPaga(c)).length,
     }),
     [listaBaseContagemFiltros, corretores]
   )
 
-  const filtrosRapidosAtivos = filtroSemCorretor || filtroSemMatricula || filtroClientesNovos
+  const filtrosRapidosAtivos =
+    filtroSemCorretor ||
+    filtroSemMatricula ||
+    filtroClientesNovos ||
+    filtroClientesAntigos ||
+    filtroPagos
 
   const clientesFiltrados = listaBaseModo.filter((item) => {
     if (filtroTipo === "titular" && getTipoItem(item) !== "titular") return false
@@ -931,6 +977,8 @@ export default function DetalhesGrupoPage() {
     }
     if (filtroSemMatricula && itemTemMatricula(item)) return false
     if (filtroClientesNovos && !itemEhClienteNovo(item)) return false
+    if (filtroClientesAntigos && !itemEhClienteAntigo(item)) return false
+    if (filtroPagos && !itemUltimaFaturaPaga(item)) return false
     if (!filtro.trim()) return true
     const termoNome = filtro.toLowerCase().trim()
     const termoDigitos = termoNome.replace(/\D/g, "")
@@ -956,7 +1004,7 @@ export default function DetalhesGrupoPage() {
 
   useEffect(() => {
     setPaginaAtual(1)
-  }, [filtro, filtroTipo, filtroCorretora, filtroSemCorretor, filtroSemMatricula, filtroClientesNovos, modoLista])
+  }, [filtro, filtroTipo, filtroCorretora, filtroSemCorretor, filtroSemMatricula, filtroClientesNovos, filtroClientesAntigos, filtroPagos, modoLista])
 
   useEffect(() => {
     if (modoLista === "cancelados") {
@@ -1126,6 +1174,8 @@ export default function DetalhesGrupoPage() {
         {(contagemFiltrosRapidos.semCorretor > 0 ||
           contagemFiltrosRapidos.semMatricula > 0 ||
           contagemFiltrosRapidos.clientesNovos > 0 ||
+          contagemFiltrosRapidos.clientesAntigos > 0 ||
+          contagemFiltrosRapidos.pagos > 0 ||
           filtrosRapidosAtivos) && (
           <div className="mt-4 pt-4 border-t border-gray-100 flex flex-wrap items-center gap-2">
             <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mr-0.5">
@@ -1154,8 +1204,24 @@ export default function DetalhesGrupoPage() {
               onClick={() => setFiltroClientesNovos((prev) => !prev)}
               label="Clientes novos"
               contagem={contagemFiltrosRapidos.clientesNovos}
-              icone={Sparkles}
+              icone={UserPlus}
               dica="Beneficiários com exatamente 1 boleto gerado"
+            />
+            <FiltroChipRapido
+              ativo={filtroClientesAntigos}
+              onClick={() => setFiltroClientesAntigos((prev) => !prev)}
+              label="Clientes antigos"
+              contagem={contagemFiltrosRapidos.clientesAntigos}
+              icone={Users}
+              dica="Beneficiários com mais de 2 boletos gerados"
+            />
+            <FiltroChipRapido
+              ativo={filtroPagos}
+              onClick={() => setFiltroPagos((prev) => !prev)}
+              label="Pagos"
+              contagem={contagemFiltrosRapidos.pagos}
+              icone={CheckCircle}
+              dica="Última fatura (vencimento mais recente) com status pago"
             />
             {filtrosRapidosAtivos && (
               <button
@@ -1164,6 +1230,8 @@ export default function DetalhesGrupoPage() {
                   setFiltroSemCorretor(false)
                   setFiltroSemMatricula(false)
                   setFiltroClientesNovos(false)
+                  setFiltroClientesAntigos(false)
+                  setFiltroPagos(false)
                 }}
                 className="inline-flex items-center gap-1 h-8 px-2.5 rounded-full text-xs text-gray-500 hover:text-gray-800 hover:bg-gray-100 transition-colors"
               >
