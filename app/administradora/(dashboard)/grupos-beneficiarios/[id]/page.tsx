@@ -25,13 +25,12 @@ import {
   UserMinus,
   CreditCard,
   X,
+  Sparkles,
   type LucideIcon,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 type ModoListaGrupo = "ativos" | "cancelados"
-
-const FILTRO_SEM_CORRETOR = "__sem_corretor__"
 
 type FiltroChipRapidoProps = {
   ativo: boolean
@@ -39,16 +38,17 @@ type FiltroChipRapidoProps = {
   label: string
   contagem: number
   icone: LucideIcon
+  dica?: string
 }
 
-function FiltroChipRapido({ ativo, onClick, label, contagem, icone: Icone }: FiltroChipRapidoProps) {
+function FiltroChipRapido({ ativo, onClick, label, contagem, icone: Icone, dica }: FiltroChipRapidoProps) {
   const desabilitado = contagem === 0 && !ativo
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={desabilitado}
-      title={desabilitado ? "Nenhum beneficiário nesta situação" : undefined}
+      title={dica || (desabilitado ? "Nenhum beneficiário nesta situação" : undefined)}
       className={cn(
         "inline-flex items-center gap-1.5 h-8 pl-2.5 pr-2 rounded-full border text-xs font-medium transition-all",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1",
@@ -149,6 +149,22 @@ function itemTemMatricula(item: any): boolean {
   return m !== "—" && m.trim() !== ""
 }
 
+function obterClienteAdministradoraIdItem(item: any): string | null {
+  if (!item) return null
+  if (item.cliente_tipo === "vida_importada") {
+    const ca = String((item._vida as { cliente_administradora_id?: string })?.cliente_administradora_id || "").trim()
+    return ca || null
+  }
+  if (item.cliente_tipo === "cliente_administradora") {
+    return String(item.cliente_id || item.cliente?.id || "").trim() || null
+  }
+  return String(item.cliente_id || item.cliente?.id || "").trim() || null
+}
+
+function itemEhClienteNovo(item: any): boolean {
+  return Number(item?._qtdBoletos ?? 0) === 1
+}
+
 async function enriquecerMatriculaContrato(itens: any[], supabaseClient: { from: (t: string) => any }): Promise<any[]> {
   const caIds = [
     ...new Set(
@@ -183,6 +199,38 @@ async function enriquecerMatriculaContrato(itens: any[], supabaseClient: { from:
         numero_carteirinha: String(item.cliente?.numero_carteirinha || "").trim() || doContrato,
       },
     }
+  })
+}
+
+/** Conta faturas/boletos por contrato para filtro "clientes novos" (exatamente 1 boleto). */
+async function enriquecerQtdBoletos(
+  itens: any[],
+  supabaseClient: { from: (t: string) => any },
+  administradoraId: string
+): Promise<any[]> {
+  const caIds = [
+    ...new Set(itens.map((i) => obterClienteAdministradoraIdItem(i)).filter((id): id is string => Boolean(id))),
+  ]
+  if (caIds.length === 0) return itens.map((item) => ({ ...item, _qtdBoletos: 0 }))
+
+  const contagemPorCa = new Map<string, number>()
+  for (let i = 0; i < caIds.length; i += 100) {
+    const chunk = caIds.slice(i, i + 100)
+    const { data } = await supabaseClient
+      .from("faturas")
+      .select("cliente_administradora_id")
+      .in("cliente_administradora_id", chunk)
+      .eq("administradora_id", administradoraId)
+    for (const row of data || []) {
+      const ca = String((row as { cliente_administradora_id?: string }).cliente_administradora_id || "").trim()
+      if (ca) contagemPorCa.set(ca, (contagemPorCa.get(ca) || 0) + 1)
+    }
+  }
+
+  return itens.map((item) => {
+    const caId = obterClienteAdministradoraIdItem(item)
+    const qtd = caId ? contagemPorCa.get(caId) || 0 : 0
+    return { ...item, _qtdBoletos: qtd }
   })
 }
 
@@ -247,7 +295,9 @@ export default function DetalhesGrupoPage() {
   const [filtro, setFiltro] = useState("")
   const [filtroTipo, setFiltroTipo] = useState<"titular" | "todos">("titular")
   const [filtroCorretora, setFiltroCorretora] = useState<string>("todas")
+  const [filtroSemCorretor, setFiltroSemCorretor] = useState(false)
   const [filtroSemMatricula, setFiltroSemMatricula] = useState(false)
+  const [filtroClientesNovos, setFiltroClientesNovos] = useState(false)
   const [paginaAtual, setPaginaAtual] = useState(1)
   const [itensPorPagina, setItensPorPagina] = useState(25)
   const [confirmSolicitarCancelamentoOpen, setConfirmSolicitarCancelamentoOpen] = useState(false)
@@ -451,6 +501,8 @@ export default function DetalhesGrupoPage() {
         ativos = await enriquecerCorretorContrato(ativos, supabase)
         cancelados = await enriquecerCorretorContrato(cancelados, supabase)
         if (admId) {
+          ativos = await enriquecerQtdBoletos(ativos, supabase, admId)
+          cancelados = await enriquecerQtdBoletos(cancelados, supabase, admId)
           cancelados = await enriquecerComCancelamentos(cancelados, cancelamentosGrupo)
         }
         setClientes(ativos)
@@ -555,6 +607,8 @@ export default function DetalhesGrupoPage() {
       ativos = await enriquecerCorretorContrato(ativos, supabase)
       cancelados = await enriquecerCorretorContrato(cancelados, supabase)
       if (admId) {
+        ativos = await enriquecerQtdBoletos(ativos, supabase, admId)
+        cancelados = await enriquecerQtdBoletos(cancelados, supabase, admId)
         cancelados = await enriquecerComCancelamentos(cancelados, cancelamentosGrupo)
       }
       setClientes(ativos)
@@ -861,21 +915,22 @@ export default function DetalhesGrupoPage() {
     () => ({
       semCorretor: listaBaseContagemFiltros.filter((c) => !itemTemCorretor(c)).length,
       semMatricula: listaBaseContagemFiltros.filter((c) => !itemTemMatricula(c)).length,
+      clientesNovos: listaBaseContagemFiltros.filter((c) => itemEhClienteNovo(c)).length,
     }),
     [listaBaseContagemFiltros, corretores]
   )
 
-  const filtrosRapidosAtivos = filtroCorretora === FILTRO_SEM_CORRETOR || filtroSemMatricula
+  const filtrosRapidosAtivos = filtroSemCorretor || filtroSemMatricula || filtroClientesNovos
 
   const clientesFiltrados = listaBaseModo.filter((item) => {
     if (filtroTipo === "titular" && getTipoItem(item) !== "titular") return false
-    if (filtroCorretora === FILTRO_SEM_CORRETOR) {
-      if (itemTemCorretor(item)) return false
-    } else if (filtroCorretora !== "todas") {
+    if (filtroSemCorretor && itemTemCorretor(item)) return false
+    if (filtroCorretora !== "todas") {
       const corretorId = obterCorretorIdItem(item)
       if ((corretorId || "") !== filtroCorretora) return false
     }
     if (filtroSemMatricula && itemTemMatricula(item)) return false
+    if (filtroClientesNovos && !itemEhClienteNovo(item)) return false
     if (!filtro.trim()) return true
     const termoNome = filtro.toLowerCase().trim()
     const termoDigitos = termoNome.replace(/\D/g, "")
@@ -901,7 +956,7 @@ export default function DetalhesGrupoPage() {
 
   useEffect(() => {
     setPaginaAtual(1)
-  }, [filtro, filtroTipo, filtroCorretora, filtroSemMatricula, modoLista])
+  }, [filtro, filtroTipo, filtroCorretora, filtroSemCorretor, filtroSemMatricula, filtroClientesNovos, modoLista])
 
   useEffect(() => {
     if (modoLista === "cancelados") {
@@ -1027,10 +1082,7 @@ export default function DetalhesGrupoPage() {
           <div className="flex flex-col sm:flex-row gap-2 items-center flex-wrap">
             <div className="flex items-center gap-2 flex-wrap">
               <Label className="text-xs text-gray-600 whitespace-nowrap">Corretora:</Label>
-              <Select
-                value={filtroCorretora === FILTRO_SEM_CORRETOR ? "todas" : filtroCorretora}
-                onValueChange={setFiltroCorretora}
-              >
+              <Select value={filtroCorretora} onValueChange={setFiltroCorretora}>
                 <SelectTrigger className="h-10 w-[200px] rounded-md border border-gray-300 bg-background px-3 py-2 text-sm">
                   <SelectValue placeholder="Todas as corretoras" />
                 </SelectTrigger>
@@ -1071,7 +1123,10 @@ export default function DetalhesGrupoPage() {
             </Button>
           </div>
         </div>
-        {(contagemFiltrosRapidos.semCorretor > 0 || contagemFiltrosRapidos.semMatricula > 0 || filtrosRapidosAtivos) && (
+        {(contagemFiltrosRapidos.semCorretor > 0 ||
+          contagemFiltrosRapidos.semMatricula > 0 ||
+          contagemFiltrosRapidos.clientesNovos > 0 ||
+          filtrosRapidosAtivos) && (
           <div className="mt-4 pt-4 border-t border-gray-100 flex flex-wrap items-center gap-2">
             <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mr-0.5">
               Filtros rápidos
@@ -1081,10 +1136,8 @@ export default function DetalhesGrupoPage() {
               {filtroTipo === "titular" ? ", titulares" : ""}
             </span>
             <FiltroChipRapido
-              ativo={filtroCorretora === FILTRO_SEM_CORRETOR}
-              onClick={() =>
-                setFiltroCorretora((prev) => (prev === FILTRO_SEM_CORRETOR ? "todas" : FILTRO_SEM_CORRETOR))
-              }
+              ativo={filtroSemCorretor}
+              onClick={() => setFiltroSemCorretor((prev) => !prev)}
               label="Sem corretor"
               contagem={contagemFiltrosRapidos.semCorretor}
               icone={UserX}
@@ -1096,12 +1149,21 @@ export default function DetalhesGrupoPage() {
               contagem={contagemFiltrosRapidos.semMatricula}
               icone={CreditCard}
             />
+            <FiltroChipRapido
+              ativo={filtroClientesNovos}
+              onClick={() => setFiltroClientesNovos((prev) => !prev)}
+              label="Clientes novos"
+              contagem={contagemFiltrosRapidos.clientesNovos}
+              icone={Sparkles}
+              dica="Beneficiários com exatamente 1 boleto gerado"
+            />
             {filtrosRapidosAtivos && (
               <button
                 type="button"
                 onClick={() => {
-                  setFiltroCorretora("todas")
+                  setFiltroSemCorretor(false)
                   setFiltroSemMatricula(false)
+                  setFiltroClientesNovos(false)
                 }}
                 className="inline-flex items-center gap-1 h-8 px-2.5 rounded-full text-xs text-gray-500 hover:text-gray-800 hover:bg-gray-100 transition-colors"
               >
@@ -1258,15 +1320,17 @@ export default function DetalhesGrupoPage() {
         ) : clientesFiltrados.length === 0 ? (
           <div className="text-center py-8 text-gray-500">
             {modoLista === "cancelados"
-              ? filtro.trim() || filtroTipo !== "titular" || filtroCorretora !== "todas" || filtroSemMatricula
+              ? filtro.trim() ||
+                  filtroTipo !== "titular" ||
+                  filtroCorretora !== "todas" ||
+                  filtrosRapidosAtivos
                 ? "Nenhum cancelado encontrado com os filtros aplicados"
                 : "Nenhum beneficiário cancelado neste grupo"
-              : filtro.trim() || filtroTipo !== "titular" || filtroCorretora !== "todas" || filtroSemMatricula
-                ? filtroCorretora === FILTRO_SEM_CORRETOR && !filtroSemMatricula
-                  ? "Nenhum beneficiário sem corretor neste grupo"
-                  : filtroSemMatricula && filtroCorretora !== FILTRO_SEM_CORRETOR
-                    ? "Nenhum beneficiário sem matrícula neste grupo"
-                    : "Nenhum cliente encontrado com os filtros aplicados"
+              : filtro.trim() ||
+                  filtroTipo !== "titular" ||
+                  filtroCorretora !== "todas" ||
+                  filtrosRapidosAtivos
+                ? "Nenhum cliente encontrado com os filtros aplicados"
                 : "Nenhum cliente ativo vinculado a este grupo"}
           </div>
         ) : modoLista === "cancelados" ? (
