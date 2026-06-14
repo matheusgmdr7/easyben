@@ -50,6 +50,31 @@ export default function BeneficiariosTitularPage() {
     return String(cpf)
   }
 
+  function chunkArray<T>(arr: T[], size: number): T[][] {
+    const out: T[][] = []
+    for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size))
+    return out
+  }
+
+  async function buscarPorIdsEmLotes<T extends Record<string, unknown>>(
+    tabela: string,
+    colunaId: string,
+    ids: string[],
+    aplicarFiltros: (query: any) => any
+  ): Promise<T[]> {
+    if (ids.length === 0) return []
+    const { supabase } = await import("@/lib/supabase")
+    const resultados: T[] = []
+    for (const lote of chunkArray(ids, 100)) {
+      let query = supabase.from(tabela).select("*").in(colunaId, lote)
+      query = aplicarFiltros(query)
+      const { data, error } = await query
+      if (error) throw error
+      if (data?.length) resultados.push(...(data as T[]))
+    }
+    return resultados
+  }
+
   function idadePorData(data: string | null | undefined): number | null {
     if (!data) return null
     const partes = String(data).slice(0, 10).split("-")
@@ -163,14 +188,24 @@ export default function BeneficiariosTitularPage() {
       setLoading(true)
       const { supabase } = await import("@/lib/supabase")
 
+      const gruposIds = grupos.map((g) => g.id)
+      if (gruposIds.length === 0) {
+        toast.info("Nenhum grupo de beneficiários cadastrado.")
+        return
+      }
+
       const filtros = {
         cpf: cpf.replace(/\D/g, ""),
-        nome: nome.trim().toLowerCase(),
+        nome: nome.trim(),
+        nomeLower: nome.trim().toLowerCase(),
         estado: normalizarEstadoUF(estado),
         cidade: cidade.trim().toLowerCase(),
         idadeDe: idadeDe ? Number(idadeDe) : null,
         idadeAte: idadeAte ? Number(idadeAte) : null,
       }
+
+      const buscaPorIdentificacao = filtros.nome.length > 0 || filtros.cpf.length > 0
+      const escopoTodosGrupos = !grupoId
 
       // 1) Titulares vindos de vidas importadas
       let queryVidas = supabase
@@ -178,48 +213,126 @@ export default function BeneficiariosTitularPage() {
         .select("id, grupo_id, nome, cpf, idade, data_nascimento, cidade, estado, ativo, tipo")
         .eq("administradora_id", administradoraId)
         .eq("tipo", "titular")
-      if (grupoId) queryVidas = queryVidas.eq("grupo_id", grupoId)
+
+      if (grupoId) {
+        queryVidas = queryVidas.eq("grupo_id", grupoId)
+      } else {
+        queryVidas = queryVidas.in("grupo_id", gruposIds)
+      }
+
+      if (buscaPorIdentificacao && escopoTodosGrupos) {
+        if (filtros.nome) queryVidas = queryVidas.ilike("nome", `%${filtros.nome}%`)
+        if (filtros.cpf.length >= 3) queryVidas = queryVidas.ilike("cpf", `%${filtros.cpf}%`)
+      }
+
       const { data: vidas, error: errVidas } = await queryVidas
       if (errVidas) throw errVidas
 
       // 2) Titulares vinculados ao grupo via clientes_grupos
-      let queryVinculos = supabase.from("clientes_grupos").select("id, grupo_id, cliente_id, cliente_tipo")
-      if (grupoId) queryVinculos = queryVinculos.eq("grupo_id", grupoId)
-      const { data: vinculos, error: errVinculos } = await queryVinculos
-      if (errVinculos) throw errVinculos
-
-      const vinculosRelevantes = (vinculos || []).filter((v: any) => v.cliente_tipo === "proposta" || v.cliente_tipo === "cliente_administradora")
-      const idsPropostasDiretas = vinculosRelevantes
-        .filter((v: any) => v.cliente_tipo === "proposta")
-        .map((v: any) => v.cliente_id)
-      const idsClientesAdm = vinculosRelevantes
-        .filter((v: any) => v.cliente_tipo === "cliente_administradora")
-        .map((v: any) => v.cliente_id)
-
-      let clientesAdm: any[] = []
-      if (idsClientesAdm.length > 0) {
-        const { data, error } = await supabase
-          .from("clientes_administradoras")
-          .select("*")
-          .in("id", idsClientesAdm)
-          .eq("administradora_id", administradoraId)
-        if (error) throw error
-        clientesAdm = data || []
-      }
-
-      const proposalIds = Array.from(new Set([
-        ...idsPropostasDiretas,
-        ...clientesAdm.map((c: any) => c.proposta_id).filter(Boolean),
-      ]))
-
+      let vinculosRelevantes: any[] = []
       let propostas: any[] = []
-      if (proposalIds.length > 0) {
-        const { data, error } = await supabase
-          .from("propostas")
-          .select("*")
-          .in("id", proposalIds)
-        if (error) throw error
-        propostas = data || []
+      let clientesAdm: any[] = []
+
+      if (buscaPorIdentificacao && escopoTodosGrupos) {
+        const propostaIdsEncontrados = new Set<string>()
+        const clientesAdmIdsEncontrados = new Set<string>()
+
+        let queryPropostas = supabase.from("propostas").select("id")
+        if (filtros.nome) queryPropostas = queryPropostas.ilike("nome", `%${filtros.nome}%`)
+        if (filtros.cpf.length >= 3) queryPropostas = queryPropostas.ilike("cpf", `%${filtros.cpf}%`)
+        const { data: propostasMatch, error: errPropMatch } = await queryPropostas.limit(500)
+        if (errPropMatch) throw errPropMatch
+        for (const p of propostasMatch || []) propostaIdsEncontrados.add(String((p as any).id))
+
+        if (propostaIdsEncontrados.size > 0) {
+          const { data: clientesAdmMatch, error: errCaMatch } = await supabase
+            .from("clientes_administradoras")
+            .select("id, proposta_id")
+            .eq("administradora_id", administradoraId)
+            .in("proposta_id", [...propostaIdsEncontrados])
+          if (errCaMatch) throw errCaMatch
+          for (const c of clientesAdmMatch || []) clientesAdmIdsEncontrados.add(String((c as any).id))
+        }
+
+        const vinculosPorProposta = await buscarPorIdsEmLotes<any>(
+          "clientes_grupos",
+          "cliente_id",
+          [...propostaIdsEncontrados],
+          (q) => q.eq("cliente_tipo", "proposta").in("grupo_id", gruposIds)
+        )
+        const vinculosPorClienteAdm = await buscarPorIdsEmLotes<any>(
+          "clientes_grupos",
+          "cliente_id",
+          [...clientesAdmIdsEncontrados],
+          (q) => q.eq("cliente_tipo", "cliente_administradora").in("grupo_id", gruposIds)
+        )
+
+        const vinculosMap = new Map<string, any>()
+        for (const v of [...vinculosPorProposta, ...vinculosPorClienteAdm]) {
+          vinculosMap.set(String(v.id), v)
+        }
+        vinculosRelevantes = [...vinculosMap.values()].filter(
+          (v) => v.cliente_tipo === "proposta" || v.cliente_tipo === "cliente_administradora"
+        )
+
+        const idsPropostasVinculo = vinculosRelevantes
+          .filter((v) => v.cliente_tipo === "proposta")
+          .map((v) => String(v.cliente_id))
+        const idsClientesAdmVinculo = vinculosRelevantes
+          .filter((v) => v.cliente_tipo === "cliente_administradora")
+          .map((v) => String(v.cliente_id))
+
+        propostas = await buscarPorIdsEmLotes<any>("propostas", "id", idsPropostasVinculo, (q) => q)
+        clientesAdm = await buscarPorIdsEmLotes<any>(
+          "clientes_administradoras",
+          "id",
+          idsClientesAdmVinculo,
+          (q) => q.eq("administradora_id", administradoraId)
+        )
+
+        const proposalIdsExtras = clientesAdm.map((c: any) => c.proposta_id).filter(Boolean) as string[]
+        const idsPropostasJaCarregadas = new Set(propostas.map((p: any) => String(p.id)))
+        const idsPropostasFaltantes = proposalIdsExtras.filter((id) => !idsPropostasJaCarregadas.has(String(id)))
+        if (idsPropostasFaltantes.length > 0) {
+          const extras = await buscarPorIdsEmLotes<any>("propostas", "id", idsPropostasFaltantes, (q) => q)
+          propostas = [...propostas, ...extras]
+        }
+      } else {
+        let queryVinculos = supabase.from("clientes_grupos").select("id, grupo_id, cliente_id, cliente_tipo")
+        if (grupoId) {
+          queryVinculos = queryVinculos.eq("grupo_id", grupoId)
+        } else {
+          queryVinculos = queryVinculos.in("grupo_id", gruposIds)
+        }
+        const { data: vinculos, error: errVinculos } = await queryVinculos
+        if (errVinculos) throw errVinculos
+
+        vinculosRelevantes = (vinculos || []).filter(
+          (v: any) => v.cliente_tipo === "proposta" || v.cliente_tipo === "cliente_administradora"
+        )
+
+        const idsPropostasDiretas = vinculosRelevantes
+          .filter((v: any) => v.cliente_tipo === "proposta")
+          .map((v: any) => String(v.cliente_id))
+        const idsClientesAdm = vinculosRelevantes
+          .filter((v: any) => v.cliente_tipo === "cliente_administradora")
+          .map((v: any) => String(v.cliente_id))
+
+        clientesAdm = await buscarPorIdsEmLotes<any>(
+          "clientes_administradoras",
+          "id",
+          idsClientesAdm,
+          (q) => q.eq("administradora_id", administradoraId)
+        )
+
+        const proposalIds = Array.from(
+          new Set([
+            ...idsPropostasDiretas,
+            ...clientesAdm.map((c: any) => c.proposta_id).filter(Boolean).map(String),
+          ])
+        )
+
+        propostas = await buscarPorIdsEmLotes<any>("propostas", "id", proposalIds, (q) => q)
       }
 
       const gruposMap = new Map(grupos.map((g) => [g.id, g.nome]))
@@ -275,7 +388,7 @@ export default function BeneficiariosTitularPage() {
             origem: "cliente_administradora",
             grupo_id: v.grupo_id,
             grupo_nome: gruposMap.get(v.grupo_id) || "-",
-            nome: p?.nome || ca.nome || `Cliente ${ca.numero_contrato || ""}`.trim(),
+            nome: p?.nome || `Cliente ${ca.numero_contrato || ""}`.trim(),
             cpf: p?.cpf || "",
             estado: normalizarEstadoUF(valorCampo(p, ["estado", "uf", "estado_cliente"]) || valorCampo(ca, ["estado", "uf", "estado_cliente"])),
             cidade: valorCampo(p, ["cidade", "cidade_cliente"]),
@@ -295,7 +408,7 @@ export default function BeneficiariosTitularPage() {
 
         if (grupoId && r.grupo_id !== grupoId) return false
         if (filtros.cpf && !cpfDigitos.includes(filtros.cpf)) return false
-        if (filtros.nome && !nomeLower.includes(filtros.nome)) return false
+        if (filtros.nomeLower && !nomeLower.includes(filtros.nomeLower)) return false
         if (filtros.estado && estadoUpper !== filtros.estado) return false
         if (filtros.cidade && !cidadeLower.includes(filtros.cidade)) return false
         if (filtros.idadeDe != null && (r.idade == null || Number(r.idade) < filtros.idadeDe)) return false
@@ -488,11 +601,15 @@ export default function BeneficiariosTitularPage() {
           </div>
           <div>
             <label className="block text-xs text-gray-600 mb-1">Grupo de beneficiários</label>
-            <Select value={grupoId} onValueChange={setGrupoId}>
+            <Select
+              value={grupoId || "__todos__"}
+              onValueChange={(v) => setGrupoId(v === "__todos__" ? "" : v)}
+            >
               <SelectTrigger className="h-10 w-full rounded-md border border-gray-300 bg-background px-3 py-2 text-sm">
-                <SelectValue placeholder="Selecione" />
+                <SelectValue placeholder="Todos os grupos" />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value="__todos__">Todos os grupos</SelectItem>
                 {grupos.map((g) => (
                   <SelectItem key={g.id} value={g.id}>{g.nome}</SelectItem>
                 ))}
