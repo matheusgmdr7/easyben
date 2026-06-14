@@ -287,8 +287,73 @@ const ROTAS_PERMISSAO: Array<{ prefixo: string; permissao: string }> = [
   { prefixo: "/administradora/corretores", permissao: "corretores" },
 ].sort((a, b) => b.prefixo.length - a.prefixo.length)
 
-export function moduloParaRotaAdministradora(pathname: string): string | null {
+const ROTAS_PORTAL_ADMINISTRADORA = new Set([
+  "admin",
+  "administradora",
+  "analista",
+  "corretor",
+  "gestor",
+  "easyben-admin",
+])
+
+/** Remove prefixo de tenant do pathname (ex.: /benefit/administradora/x → /administradora/x). */
+export function normalizarPathAdministradora(pathname: string): string {
   const path = String(pathname || "").split("?")[0]
+  const segmentos = path.split("/").filter(Boolean)
+  if (segmentos.length < 2) return path.startsWith("/") ? path : `/${path}`
+
+  const primeiro = segmentos[0].toLowerCase()
+  const segundo = segmentos[1].toLowerCase()
+  if (!ROTAS_PORTAL_ADMINISTRADORA.has(primeiro) && ROTAS_PORTAL_ADMINISTRADORA.has(segundo)) {
+    return `/${segmentos.slice(1).join("/")}`
+  }
+  return path.startsWith("/") ? path : `/${path}`
+}
+
+/** Mantém o prefixo de tenant ao redirecionar (ex.: /benefit + /administradora/x). */
+export function aplicarPrefixoTenantNaRota(pathnameAtual: string, rotaPortal: string): string {
+  const path = String(pathnameAtual || "").split("?")[0]
+  const segmentos = path.split("/").filter(Boolean)
+  if (segmentos.length < 2) return rotaPortal
+
+  const primeiro = segmentos[0].toLowerCase()
+  const segundo = segmentos[1].toLowerCase()
+  if (!ROTAS_PORTAL_ADMINISTRADORA.has(primeiro) && ROTAS_PORTAL_ADMINISTRADORA.has(segundo)) {
+    return `/${primeiro}${rotaPortal}`
+  }
+  return rotaPortal
+}
+
+function coletarItensMenuEmOrdem(itens: ItemMenuAdministradora[]): Array<{ id: string; path: string }> {
+  const out: Array<{ id: string; path: string }> = []
+  for (const item of itens) {
+    if (item.children?.length) {
+      for (const filho of item.children) {
+        if (filho.path) out.push({ id: filho.id, path: filho.path })
+      }
+    } else if (item.path) {
+      out.push({ id: item.id, path: item.path })
+    }
+  }
+  return out
+}
+
+/** Primeira rota do menu lateral que o usuário pode acessar (ordem do sidebar). */
+export function primeiraRotaDisponivelAdministradora(
+  permissoes: string[] | unknown,
+  isMaster?: boolean
+): string {
+  if (isMaster) return "/administradora/dashboard"
+
+  for (const { id, path } of coletarItensMenuEmOrdem(MENU_ADMINISTRADORA)) {
+    if (usuarioAdministradoraTemPermissao(permissoes, id, false)) return path
+  }
+
+  return "/administradora/dashboard"
+}
+
+export function moduloParaRotaAdministradora(pathname: string): string | null {
+  const path = normalizarPathAdministradora(pathname)
   for (const { prefixo, permissao } of ROTAS_PERMISSAO) {
     if (path === prefixo || path.startsWith(prefixo + "/")) return permissao
   }

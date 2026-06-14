@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, usePathname } from "next/navigation"
 import { toast } from "sonner"
 import {
   Plus,
@@ -60,7 +60,8 @@ const FORM_VAZIO: FormUsuario = {
 
 export default function GerenciarAcessoAdministradoraPage() {
   const router = useRouter()
-  const { podeGerenciarAcesso, usuario: usuarioLogado } = useAdministradoraPermissions()
+  const pathname = usePathname()
+  const { podeGerenciarAcesso, usuario: usuarioLogado, rotaInicial } = useAdministradoraPermissions()
   const adm = getAdministradoraLogada()
 
   const [usuarios, setUsuarios] = useState<UsuarioAdministradora[]>([])
@@ -74,7 +75,7 @@ export default function GerenciarAcessoAdministradoraPage() {
   useEffect(() => {
     if (!podeGerenciarAcesso) {
       toast.error("Você não tem permissão para gerenciar acesso")
-      router.replace("/administradora/dashboard")
+      router.replace(rotaInicial(pathname || ""))
       return
     }
     void carregar()

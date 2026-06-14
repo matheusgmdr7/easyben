@@ -4,6 +4,7 @@ import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Building, Clock, CheckCircle, XCircle } from "lucide-react"
 import { getAdministradoraLogada } from "@/services/auth-administradoras-service"
+import { primeiraRotaDisponivelAdministradora, aplicarPrefixoTenantNaRota } from "@/lib/administradora-permissoes"
 import { supabase } from "@/lib/supabase"
 
 export default function AguardandoAprovacaoPage() {
@@ -39,8 +40,10 @@ export default function AguardandoAprovacaoPage() {
           }
           localStorage.setItem("administradoraLogada", JSON.stringify(administradoraAtualizada))
           
-          // Redirecionar para dashboard
-          router.push("/administradora/dashboard")
+          // Redirecionar para a primeira página disponível do menu
+          const usuario = administradoraLogada.usuario
+          const rota = primeiraRotaDisponivelAdministradora(usuario?.permissoes, usuario?.is_master)
+          router.push(aplicarPrefixoTenantNaRota(window.location.pathname, rota))
         }
       } catch (error) {
         console.error("Erro ao verificar status:", error)

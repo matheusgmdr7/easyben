@@ -7,6 +7,8 @@ import {
   type ModuloAdministradora,
   usuarioAdministradoraTemPermissao,
   moduloParaRotaAdministradora,
+  primeiraRotaDisponivelAdministradora,
+  aplicarPrefixoTenantNaRota,
 } from "@/lib/administradora-permissoes"
 import {
   type UsuarioAdministradoraSessao,
@@ -38,6 +40,11 @@ export function useAdministradoraPermissions() {
 
   const isMaster = usuario.is_master === true
 
+  const rotaInicialPortal = useMemo(
+    () => primeiraRotaDisponivelAdministradora(usuario.permissoes, isMaster),
+    [usuario.permissoes, isMaster]
+  )
+
   function podeAcessar(modulo: ModuloAdministradora): boolean {
     return usuarioAdministradoraTemPermissao(usuario.permissoes, modulo, isMaster)
   }
@@ -53,6 +60,11 @@ export function useAdministradoraPermissions() {
     return podeAcessar(modulo)
   }
 
+  function rotaInicial(pathname?: string): string {
+    if (pathname) return aplicarPrefixoTenantNaRota(pathname, rotaInicialPortal)
+    return rotaInicialPortal
+  }
+
   return {
     usuario,
     isMaster,
@@ -60,6 +72,7 @@ export function useAdministradoraPermissions() {
     podeAcessar,
     podeAcessarItem,
     podeAcessarRota,
+    rotaInicial,
     podeGerenciarAcesso: isMaster || podeAcessar("gerenciar_acesso"),
   }
 }

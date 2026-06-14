@@ -5,6 +5,7 @@ import { useEffect, useState } from "react"
 import { usePathname, useRouter } from "next/navigation"
 import Link from "next/link"
 import { autenticarAdministradora } from "@/services/auth-administradoras-service"
+import { primeiraRotaDisponivelAdministradora } from "@/lib/administradora-permissoes"
 import { Spinner } from "@/components/ui/spinner"
 import { Eye, EyeOff } from "lucide-react"
 import { toast } from "sonner"
@@ -80,8 +81,12 @@ export default function AdministradoraLoginPage() {
         
         // Redirecionar com base no status de login
         if (result.administradora?.status_login === "ativo") {
-          console.log("✅ Administradora ativa, redirecionando para dashboard")
-          router.push(montarRotaPortal("/administradora/dashboard"))
+          const rotaInicial = primeiraRotaDisponivelAdministradora(
+            result.usuario?.permissoes,
+            result.usuario?.is_master
+          )
+          console.log("✅ Administradora ativa, redirecionando para:", rotaInicial)
+          router.push(montarRotaPortal(rotaInicial))
         } else {
           console.log("⚠️ Administradora não ativa, redirecionando para aguardando aprovação")
           router.push(montarRotaPortal("/administradora/aguardando-aprovacao"))
