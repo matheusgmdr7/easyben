@@ -22,9 +22,18 @@ CREATE INDEX IF NOT EXISTS idx_usuarios_administradora_email ON usuarios_adminis
 CREATE INDEX IF NOT EXISTS idx_usuarios_administradora_status ON usuarios_administradora(status);
 
 DROP TRIGGER IF EXISTS update_usuarios_administradora_updated_at ON usuarios_administradora;
+
+CREATE OR REPLACE FUNCTION update_usuarios_administradora_atualizado_em()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.atualizado_em = NOW();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
 CREATE TRIGGER update_usuarios_administradora_updated_at
   BEFORE UPDATE ON usuarios_administradora
   FOR EACH ROW
-  EXECUTE FUNCTION update_updated_at_column();
+  EXECUTE FUNCTION update_usuarios_administradora_atualizado_em();
 
 COMMENT ON TABLE usuarios_administradora IS 'Sub-usuários do portal administradora com permissões por módulo';

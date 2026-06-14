@@ -1058,6 +1058,26 @@ export default function AdministradoraSidebar() {
                 </Link>
               </li>
               )}
+              {podeAcessar("chamados") && (
+              <li>
+                <Link
+                  href="/administradora/chamados"
+                  className={cn(
+                    "flex items-center justify-between px-3 sm:px-4 py-2.5 sm:py-3 transition-all duration-300 ease-in-out font-medium text-xs sm:text-sm rounded-md",
+                    isActive("/administradora/chamados")
+                      ? "bg-[#1E293B] text-white shadow-md active-item"
+                      : "text-gray-300 hover:bg-[#1E293B] hover:text-white hover:scale-[1.02] hover:shadow-md",
+                    isMenuExpanded && !isActive("/administradora/chamados") && "hover:translate-x-1",
+                    !isMenuExpanded && "justify-center px-2"
+                  )}
+                  onClick={closeSidebar}
+                  title={!isMenuExpanded ? "Chamados" : ""}
+                >
+                  {isMenuExpanded && <span className="truncate flex-1">Chamados</span>}
+                  <ChatBubbleLeftRightIcon className="h-5 w-5 flex-shrink-0" />
+                </Link>
+              </li>
+              )}
               {(podeAcessar("configuracoes") || podeGerenciarAcesso) && (
               <li>
                 <button

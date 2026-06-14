@@ -10,6 +10,15 @@ import { obterPermissoesDoPerfil } from "@/services/usuarios-administradora-serv
 
 type RouteContext = { params: { id: string } }
 
+function mensagemErroApi(e: unknown, fallback: string): string {
+  if (e instanceof Error && e.message) return e.message
+  if (e && typeof e === "object" && "message" in e) {
+    const msg = String((e as { message?: unknown }).message || "").trim()
+    if (msg) return msg
+  }
+  return fallback
+}
+
 export async function PUT(request: NextRequest, { params }: RouteContext) {
   try {
     const id = String(params.id || "").trim()
@@ -60,6 +69,12 @@ export async function PUT(request: NextRequest, { params }: RouteContext) {
       update.senha_hash = await bcrypt.hash(senha, 10)
     }
 
+    if (Object.keys(update).length === 0) {
+      return NextResponse.json({ error: "Nenhum campo para atualizar" }, { status: 400 })
+    }
+
+    update.atualizado_em = new Date().toISOString()
+
     const { data, error } = await supabaseAdmin
       .from("usuarios_administradora")
       .update(update)
@@ -73,7 +88,7 @@ export async function PUT(request: NextRequest, { params }: RouteContext) {
     if (error) throw error
     return NextResponse.json(mapUsuarioAdministradoraRow(data as Record<string, unknown>))
   } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : "Erro ao atualizar usuário"
+    const msg = mensagemErroApi(e, "Erro ao atualizar usuário")
     const status = msg.includes("permissão") || msg.includes("autorizado") || msg.includes("Sessão") ? 403 : 500
     return NextResponse.json({ error: msg }, { status })
   }
@@ -116,7 +131,7 @@ export async function DELETE(request: NextRequest, { params }: RouteContext) {
     if (error) throw error
     return NextResponse.json({ success: true })
   } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : "Erro ao excluir usuário"
+    const msg = mensagemErroApi(e, "Erro ao excluir usuário")
     const status = msg.includes("permissão") || msg.includes("autorizado") || msg.includes("Sessão") ? 403 : 500
     return NextResponse.json({ error: msg }, { status })
   }

@@ -88,6 +88,7 @@ export const MENU_ADMINISTRADORA: ItemMenuAdministradora[] = [
   },
   { id: "propostas", label: "Propostas", path: "/administradora/propostas" },
   { id: "corretores", label: "Corretores", path: "/administradora/corretores" },
+  { id: "chamados", label: "Chamados", path: "/administradora/chamados" },
   {
     id: "configuracoes",
     label: "Configurações",
@@ -169,6 +170,7 @@ export const PERFIS_ADMINISTRADORA: Record<
       "beneficiarios",
       "propostas",
       "corretores",
+      "chamados",
     ]),
   },
   financeiro: {
@@ -285,6 +287,8 @@ const ROTAS_PERMISSAO: Array<{ prefixo: string; permissao: string }> = [
   { prefixo: "/administradora/contrato", permissao: "contrato_pesquisar" },
   { prefixo: "/administradora/propostas", permissao: "propostas" },
   { prefixo: "/administradora/corretores", permissao: "corretores" },
+  { prefixo: "/administradora/chamados/novo", permissao: "chamados" },
+  { prefixo: "/administradora/chamados", permissao: "chamados" },
 ].sort((a, b) => b.prefixo.length - a.prefixo.length)
 
 const ROTAS_PORTAL_ADMINISTRADORA = new Set([
