@@ -62,13 +62,20 @@ export default function CobrancasFinanceiroPage() {
           `/api/administradora/financeiras?administradora_id=${encodeURIComponent(adm.id)}`,
           { cache: "no-store" }
         )
-        const finPayload = await finRes.json().catch(() => ({}))
-        if (finRes.ok && Array.isArray(finPayload?.financeiras)) {
+        const finPayload = await finRes.json().catch(() => [])
+        const listaFin = Array.isArray(finPayload)
+          ? finPayload
+          : Array.isArray(finPayload?.financeiras)
+            ? finPayload.financeiras
+            : []
+        if (finRes.ok) {
           setFinanceiras(
-            finPayload.financeiras.map((f: { id: string; nome: string }) => ({
-              id: String(f.id),
-              nome: String(f.nome || "Financeira"),
-            }))
+            listaFin
+              .map((f: { id?: string; nome?: string }) => ({
+                id: String(f.id || ""),
+                nome: String(f.nome || "Financeira"),
+              }))
+              .filter((f: FinanceiraOpcao) => f.id)
           )
         }
 
@@ -113,10 +120,6 @@ export default function CobrancasFinanceiroPage() {
     <div className="min-h-screen bg-gray-50">
       <div className="bg-white border-b border-gray-200 px-6 py-4">
         <h1 className="text-xl font-semibold text-gray-800">Cobranças</h1>
-        <p className="text-sm text-gray-500 mt-0.5 max-w-3xl">
-          Envio de faturas em aberto por WhatsApp com mensagem e link do boleto. Use o WhatsApp Business ou Web
-          logado com o número da empresa para concluir o envio ao cliente.
-        </p>
       </div>
 
       <div className="px-6 py-6 space-y-6 max-w-[min(100%,80rem)]">

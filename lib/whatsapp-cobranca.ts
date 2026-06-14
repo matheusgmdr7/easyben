@@ -31,9 +31,8 @@ export function montarMensagemCobrancaFatura(dados: DadosMensagemCobranca): stri
       ? formatarMoeda(Number(dados.valor))
       : null
   const numero = String(dados.numeroFatura || "").trim()
-  const financeira = String(dados.financeiraNome || "").trim()
 
-  const linhas = [
+  const linhas: Array<string | null> = [
     `Olá, ${nome}!`,
     "",
     "Identificamos uma fatura em aberto referente ao seu plano de saúde.",
@@ -48,11 +47,13 @@ export function montarMensagemCobrancaFatura(dados: DadosMensagemCobranca): stri
     "https://easyben.com.br/benefit/cliente",
     "Acesse com o seu CPF.",
     "",
-    "Em caso de dúvidas, responda esta mensagem.",
-    financeira ? `\n${financeira}` : null,
-  ].filter((l): l is string => l != null && l !== "")
+    "Precisa de ajuda?",
+    "Fale conosco pelo WhatsApp",
+    "",
+    "*CLIQUE AQUI* ➡️ https://wa.me/5521980553681",
+  ]
 
-  return linhas.join("\n")
+  return linhas.filter((l): l is string => l != null).join("\n")
 }
 
 export function montarUrlWhatsAppCobranca(
