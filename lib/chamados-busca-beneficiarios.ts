@@ -5,6 +5,12 @@ import type { BeneficiarioChamadoBusca } from "@/services/chamados-administrador
 const STATUS_PROPOSTA_ATIVA = ["aprovada", "assinada", "finalizada"] as const
 const LIMITE_PADRAO = 40
 
+const SELECTS_VIDAS_IMPORTADAS = [
+  "id, grupo_id, nome, cpf, tipo, ativo, emails, telefones, dados_adicionais, cliente_administradora_id",
+  "id, grupo_id, nome, cpf, tipo, ativo, emails, dados_adicionais, cliente_administradora_id",
+  "id, grupo_id, nome, cpf, tipo, ativo, dados_adicionais, cliente_administradora_id",
+] as const
+
 type Registro = Record<string, unknown>
 
 async function buscarPorIdsEmLotes<T extends Registro>(
@@ -59,6 +65,98 @@ function cpfDigitos(cpf: unknown): string {
   return String(cpf || "").replace(/\D/g, "")
 }
 
+async function listarGruposAdministradora(
+  administradoraId: string,
+  tenantId: string,
+  grupoId?: string
+): Promise<Array<{ id: string; nome: string | null }>> {
+  async function consultar(comTenant: boolean) {
+    let query = supabaseAdmin
+      .from("grupos_beneficiarios")
+      .select("id, nome")
+      .eq("administradora_id", administradoraId)
+    if (comTenant && tenantId) query = query.eq("tenant_id", tenantId)
+    if (grupoId) query = query.eq("id", grupoId)
+    return query
+  }
+
+  let { data, error } = await consultar(true)
+  if (error) throw error
+  if (!data?.length && tenantId) {
+    const fb = await consultar(false)
+    if (fb.error) throw fb.error
+    data = fb.data
+  }
+  return data || []
+}
+
+async function buscarVidasImportadasAtivas(params: {
+  administradoraId: string
+  gruposIds: string[]
+  grupoId?: string
+  q: string
+  limite: number
+}): Promise<Array<Registro>> {
+  const { administradoraId, gruposIds, grupoId, q, limite } = params
+  if (!gruposIds.length) return []
+
+  let ultimoErro: unknown = null
+
+  for (const cols of SELECTS_VIDAS_IMPORTADAS) {
+    let query = supabaseAdmin
+      .from("vidas_importadas")
+      .select(cols)
+      .eq("administradora_id", administradoraId)
+      .neq("ativo", false)
+
+    if (grupoId) query = query.eq("grupo_id", grupoId)
+    else query = query.in("grupo_id", gruposIds)
+
+    if (q.length >= 2) {
+      const cpfQ = q.replace(/\D/g, "")
+      if (cpfQ.length >= 3) query = query.ilike("cpf", `%${cpfQ}%`)
+      else query = query.ilike("nome", `%${q}%`)
+    }
+
+    const { data, error } = await query.order("nome", { ascending: true }).limit(limite)
+    if (!error) return (data || []) as Array<Registro>
+    ultimoErro = error
+  }
+
+  if (ultimoErro) throw ultimoErro
+  return []
+}
+
+async function listarVinculosGrupos(
+  gruposIds: string[],
+  tenantId: string
+): Promise<Array<{ id: string; grupo_id: string; cliente_id: string; cliente_tipo: string }>> {
+  if (!gruposIds.length) return []
+
+  async function consultar(comTenant: boolean) {
+    let query = supabaseAdmin
+      .from("clientes_grupos")
+      .select("id, grupo_id, cliente_id, cliente_tipo")
+      .in("grupo_id", gruposIds)
+    if (comTenant && tenantId) query = query.eq("tenant_id", tenantId)
+    return query
+  }
+
+  let { data, error } = await consultar(true)
+  if (error) throw error
+  if (!data?.length && tenantId) {
+    const fb = await consultar(false)
+    if (fb.error) throw fb.error
+    data = fb.data
+  }
+  return (data || []) as Array<{
+    id: string
+    grupo_id: string
+    cliente_id: string
+    cliente_tipo: string
+  }>
+}
+
 export async function buscarBeneficiariosAtivosParaChamado(params: {
   administradoraId: string
   grupoId?: string
@@ -75,17 +173,8 @@ export async function buscarBeneficiariosAtivosParaChamado(params: {
 
   const tenantId = await resolveTenantIdForAdministradora(administradoraId)
 
-  let queryGrupos = supabaseAdmin
-    .from("grupos_beneficiarios")
-    .select("id, nome")
-    .eq("administradora_id", administradoraId)
-
-  if (tenantId) queryGrupos = queryGrupos.eq("tenant_id", tenantId)
-  if (grupoId) queryGrupos = queryGrupos.eq("id", grupoId)
-
-  const { data: grupos, error: errGrupos } = await queryGrupos
-  if (errGrupos) throw errGrupos
-  if (!grupos?.length) return []
+  const grupos = await listarGruposAdministradora(administradoraId, tenantId, grupoId)
+  if (!grupos.length) return []
 
   const gruposMap = new Map(grupos.map((g) => [String(g.id), String(g.nome || "Grupo")]))
   const gruposIds = [...gruposMap.keys()]
@@ -104,33 +193,15 @@ export async function buscarBeneficiariosAtivosParaChamado(params: {
     }
   }
 
-  // 1) Vidas importadas ativas
-  let queryVidas = supabaseAdmin
-    .from("vidas_importadas")
-    .select(
-      "id, grupo_id, nome, cpf, tipo, ativo, emails, telefones, telefone, email, dados_adicionais, cliente_administradora_id"
-    )
-    .eq("administradora_id", administradoraId)
-    .neq("ativo", false)
+  const vidas = await buscarVidasImportadasAtivas({
+    administradoraId,
+    gruposIds,
+    grupoId,
+    q,
+    limite,
+  })
 
-  if (grupoId) queryVidas = queryVidas.eq("grupo_id", grupoId)
-  else queryVidas = queryVidas.in("grupo_id", gruposIds)
-
-  if (q.length >= 2) {
-    const cpfQ = q.replace(/\D/g, "")
-    if (cpfQ.length >= 3) {
-      queryVidas = queryVidas.ilike("cpf", `%${cpfQ}%`)
-    } else {
-      queryVidas = queryVidas.ilike("nome", `%${q}%`)
-    }
-  }
-
-  queryVidas = queryVidas.order("nome", { ascending: true }).limit(limite)
-
-  const { data: vidas, error: errVidas } = await queryVidas
-  if (errVidas) throw errVidas
-
-  for (const v of vidas || []) {
+  for (const v of vidas) {
     const grupo_id = String(v.grupo_id || "")
     if (!gruposMap.has(grupo_id)) continue
     const contato = extrairContatoVida(v as Registro)
@@ -151,19 +222,10 @@ export async function buscarBeneficiariosAtivosParaChamado(params: {
     })
   }
 
-  // 2) Vínculos clientes_grupos (clientes ativos / propostas ativas)
   if (resultados.size < limite) {
-    let queryVinculos = supabaseAdmin
-      .from("clientes_grupos")
-      .select("id, grupo_id, cliente_id, cliente_tipo")
-      .in("grupo_id", gruposIds)
+    const vinculos = await listarVinculosGrupos(gruposIds, tenantId)
 
-    if (tenantId) queryVinculos = queryVinculos.eq("tenant_id", tenantId)
-
-    const { data: vinculos, error: errVinculos } = await queryVinculos
-    if (errVinculos) throw errVinculos
-
-    const vinculosRelevantes = (vinculos || []).filter(
+    const vinculosRelevantes = vinculos.filter(
       (v) => v.cliente_tipo === "cliente_administradora" || v.cliente_tipo === "proposta"
     )
 
