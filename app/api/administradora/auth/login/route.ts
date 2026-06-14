@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase-admin"
 import bcrypt from "bcryptjs"
+import { montarUsuarioMasterSessao, montarUsuarioSessaoFromRow } from "@/services/usuarios-administradora-service"
 
 /**
  * Handler para OPTIONS (CORS preflight)
@@ -90,7 +91,92 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    console.log("🔍 Executando query no Supabase...")
+    console.log("🔍 API Route - Buscando usuário do portal administradora por email:", email)
+    const emailNorm = email.toLowerCase().trim()
+
+    // 1) Sub-usuário (usuarios_administradora)
+    const { data: usuariosPortal, error: errUsuarios } = await supabaseAdmin
+      .from("usuarios_administradora")
+      .select("id, administradora_id, tenant_id, nome, email, senha_hash, perfil, is_master, status, permissoes")
+      .ilike("email", emailNorm)
+
+    if (errUsuarios && !String(errUsuarios.message || "").includes("usuarios_administradora")) {
+      console.error("❌ Erro ao buscar usuarios_administradora:", errUsuarios)
+      return NextResponse.json(
+        { success: false, error: "Erro ao buscar usuário", details: errUsuarios.message },
+        { status: 500 }
+      )
+    }
+
+    if (usuariosPortal && usuariosPortal.length > 0) {
+      const row = usuariosPortal[0] as Record<string, unknown>
+
+      const { data: administradora, error: errAdm } = await supabaseAdmin
+        .from("administradoras")
+        .select("*")
+        .eq("id", String(row.administradora_id || ""))
+        .maybeSingle()
+
+      if (errAdm) {
+        return NextResponse.json({ success: false, error: errAdm.message }, { status: 500 })
+      }
+      if (!administradora?.id) {
+        return NextResponse.json({ success: false, error: "Administradora vinculada não encontrada" }, { status: 404 })
+      }
+      if (String(row.status) !== "ativo") {
+        return NextResponse.json(
+          { success: false, error: "Usuário inativo", message: "Seu usuário está inativo. Contate o administrador." },
+          { status: 403 }
+        )
+      }
+      if (String(administradora.status) !== "ativa") {
+        return NextResponse.json(
+          { success: false, error: "Conta inativa", message: "A administradora está inativa." },
+          { status: 403 }
+        )
+      }
+      if (String(administradora.status_login) !== "ativo") {
+        return NextResponse.json(
+          {
+            success: false,
+            error: "Conta pendente",
+            message: "A administradora ainda não foi ativada.",
+          },
+          { status: 403 }
+        )
+      }
+
+      const senhaHash = String(row.senha_hash || "")
+      if (!senhaHash || !(await bcrypt.compare(senha, senhaHash))) {
+        return NextResponse.json(
+          { success: false, error: "Senha incorreta", message: "Senha incorreta. Tente novamente." },
+          { status: 401 }
+        )
+      }
+
+      void supabaseAdmin
+        .from("usuarios_administradora")
+        .update({ ultimo_acesso: new Date().toISOString() })
+        .eq("id", row.id)
+
+      const administradoraRetorno = { ...administradora, senha_hash: undefined } as Record<string, unknown>
+      const usuario = montarUsuarioSessaoFromRow({
+        id: String(row.id),
+        nome: String(row.nome || ""),
+        email: String(row.email || ""),
+        is_master: row.is_master === true,
+        perfil: String(row.perfil || "customizado"),
+        permissoes: row.permissoes,
+      })
+
+      return NextResponse.json({
+        success: true,
+        administradora: administradoraRetorno,
+        usuario,
+      })
+    }
+
+    console.log("🔍 Executando query no Supabase (conta master)...")
     console.log("📋 TABELA CONSULTADA: administradoras")
     
     // Buscar administradora na tabela administradoras usando supabaseAdmin (bypassa RLS)
@@ -215,6 +301,7 @@ export async function POST(request: NextRequest) {
     const response = NextResponse.json({
       success: true,
       administradora: administradoraRetorno,
+      usuario: montarUsuarioMasterSessao(administradoraRetorno),
     }, { status: 200 })
 
     // Adicionar headers CORS se necessário

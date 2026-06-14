@@ -29,6 +29,8 @@ import {
   ChatBubbleLeftRightIcon,
 } from "@heroicons/react/24/outline"
 import { supabase } from "@/lib/supabase-auth"
+import { useAdministradoraPermissions } from "@/hooks/use-administradora-permissions"
+import { ShieldCheckIcon } from "@heroicons/react/24/outline"
 
 export default function AdministradoraSidebar() {
   const pathname = usePathname()
@@ -43,6 +45,8 @@ export default function AdministradoraSidebar() {
   const [contratoMenuOpen, setContratoMenuOpen] = useState(false)
   const [beneficiariosMenuOpen, setBeneficiariosMenuOpen] = useState(false)
   const [auditoriaMenuOpen, setAuditoriaMenuOpen] = useState(false)
+  const [configuracoesMenuOpen, setConfiguracoesMenuOpen] = useState(false)
+  const { podeAcessar, podeAcessarItem, podeGerenciarAcesso } = useAdministradoraPermissions()
   
   // Estado para hover (auto-colapsar)
   const [isHovered, setIsHovered] = useState(false)
@@ -258,6 +262,12 @@ export default function AdministradoraSidebar() {
     if (pathname?.startsWith('/administradora/auditoria')) {
       setAuditoriaMenuOpen(true)
     }
+    if (
+      pathname?.startsWith('/administradora/configuracoes') ||
+      pathname?.startsWith('/administradora/gerenciar-acesso')
+    ) {
+      setConfiguracoesMenuOpen(true)
+    }
   }, [pathname])
   
   // Função helper para classes do menu item
@@ -428,6 +438,7 @@ export default function AdministradoraSidebar() {
             `}</style>
             <ul className="space-y-0.5 px-2">
               {/* Dashboard - Primeiro item */}
+              {podeAcessar("dashboard") && (
               <li>
                 <Link
                   href="/administradora/dashboard"
@@ -439,6 +450,8 @@ export default function AdministradoraSidebar() {
                   <HomeIcon className="h-5 w-5 flex-shrink-0" />
                 </Link>
               </li>
+              )}
+              {podeAcessar("relatorios") && (
               <li>
                 <button
                   onClick={() => setRelatoriosMenuOpen(!relatoriosMenuOpen)}
@@ -468,6 +481,7 @@ export default function AdministradoraSidebar() {
                 </button>
                 {isMenuExpanded && relatoriosMenuOpen && (
                   <ul className="ml-4 mt-1 space-y-0.5">
+                    {podeAcessarItem("relatorios_faturamento") && (
                     <li>
                       <Link
                         href="/administradora/faturamento"
@@ -483,6 +497,8 @@ export default function AdministradoraSidebar() {
                         <span>Relatório de faturamento</span>
                       </Link>
                     </li>
+                    )}
+                    {podeAcessarItem("relatorios_geral") && (
                     <li>
                       <Link
                         href="/administradora/relatorios"
@@ -498,6 +514,8 @@ export default function AdministradoraSidebar() {
                         <span>Relatório Layout</span>
                       </Link>
                     </li>
+                    )}
+                    {podeAcessarItem("relatorios_comissao") && (
                     <li>
                       <Link
                         href="/administradora/relatorios/comissao"
@@ -513,6 +531,8 @@ export default function AdministradoraSidebar() {
                         <span>Relatório de comissão</span>
                       </Link>
                     </li>
+                    )}
+                    {podeAcessarItem("relatorios_devedores") && (
                     <li>
                       <Link
                         href="/administradora/fatura/devedores"
@@ -528,9 +548,12 @@ export default function AdministradoraSidebar() {
                         <span>Devedores</span>
                       </Link>
                     </li>
+                    )}
                   </ul>
                 )}
               </li>
+              )}
+              {podeAcessar("auditoria") && (
               <li>
                 <button
                   onClick={() => setAuditoriaMenuOpen(!auditoriaMenuOpen)}
@@ -558,6 +581,7 @@ export default function AdministradoraSidebar() {
                 </button>
                 {isMenuExpanded && auditoriaMenuOpen && (
                   <ul className="ml-4 mt-1 space-y-0.5">
+                    {podeAcessarItem("auditoria_faturas") && (
                     <li>
                       <Link
                         href="/administradora/auditoria/faturas"
@@ -573,10 +597,12 @@ export default function AdministradoraSidebar() {
                         <span>Auditar faturas</span>
                       </Link>
                     </li>
+                    )}
                   </ul>
                 )}
               </li>
-              {/* Grupo de Beneficiários */}
+              )}
+              {podeAcessar("grupos_beneficiarios") && (
               <li>
                 <Link
                   href="/administradora/grupos-beneficiarios"
@@ -595,7 +621,8 @@ export default function AdministradoraSidebar() {
                   <UserGroupIcon className="h-5 w-5 flex-shrink-0" />
                 </Link>
               </li>
-              {/* Item Beneficiários com Submenu */}
+              )}
+              {podeAcessar("beneficiarios") && (
               <li>
                 <button
                   onClick={() => setBeneficiariosMenuOpen(!beneficiariosMenuOpen)}
@@ -623,6 +650,7 @@ export default function AdministradoraSidebar() {
                 </button>
                 {isMenuExpanded && beneficiariosMenuOpen && (
                   <ul className="ml-4 mt-1 space-y-0.5">
+                    {podeAcessarItem("beneficiarios_titular") && (
                     <li>
                       <Link
                         href="/administradora/beneficiarios/titular"
@@ -638,6 +666,8 @@ export default function AdministradoraSidebar() {
                         <span>Titular</span>
                       </Link>
                     </li>
+                    )}
+                    {podeAcessarItem("beneficiarios_dependentes") && (
                     <li>
                       <Link
                         href="/administradora/beneficiarios/dependentes"
@@ -653,6 +683,8 @@ export default function AdministradoraSidebar() {
                         <span>Dependentes</span>
                       </Link>
                     </li>
+                    )}
+                    {podeAcessarItem("beneficiarios_contrato") && (
                     <li>
                       <Link
                         href="/administradora/beneficiarios/contrato"
@@ -668,6 +700,8 @@ export default function AdministradoraSidebar() {
                         <span>Contrato</span>
                       </Link>
                     </li>
+                    )}
+                    {podeAcessarItem("beneficiarios_cancelamento_grupo") && (
                     <li>
                       <Link
                         href="/administradora/beneficiarios/cancelamento-em-grupo"
@@ -683,6 +717,8 @@ export default function AdministradoraSidebar() {
                         <span>Cancelamento em grupo</span>
                       </Link>
                     </li>
+                    )}
+                    {podeAcessarItem("beneficiarios_cancelados") && (
                     <li>
                       <Link
                         href="/administradora/beneficiarios/cancelados"
@@ -698,6 +734,8 @@ export default function AdministradoraSidebar() {
                         <span>Cancelados</span>
                       </Link>
                     </li>
+                    )}
+                    {podeAcessarItem("beneficiarios_importacao_vidas") && (
                     <li>
                       <Link
                         href="/administradora/beneficiarios/importacao-vidas"
@@ -713,6 +751,8 @@ export default function AdministradoraSidebar() {
                         <span>Importação de vidas</span>
                       </Link>
                     </li>
+                    )}
+                    {podeAcessarItem("beneficiarios_importacao_matriculas") && (
                     <li>
                       <Link
                         href="/administradora/beneficiarios/importacao-matriculas"
@@ -728,6 +768,8 @@ export default function AdministradoraSidebar() {
                         <span>Importação de matrículas</span>
                       </Link>
                     </li>
+                    )}
+                    {podeAcessarItem("beneficiarios_comparacao_planilhas") && (
                     <li>
                       <Link
                         href="/administradora/beneficiarios/comparacao-planilhas"
@@ -743,10 +785,12 @@ export default function AdministradoraSidebar() {
                         <span>Comparação de planilhas</span>
                       </Link>
                     </li>
+                    )}
                   </ul>
                 )}
               </li>
-              {/* Item Fatura com Submenu */}
+              )}
+              {podeAcessar("fatura") && (
               <li>
                 <button
                   onClick={() => setFaturaMenuOpen(!faturaMenuOpen)}
@@ -774,6 +818,7 @@ export default function AdministradoraSidebar() {
                 </button>
                 {isMenuExpanded && faturaMenuOpen && (
                   <ul className="ml-4 mt-1 space-y-0.5">
+                    {podeAcessarItem("fatura_gerar") && (
                     <li>
                       <Link
                         href="/administradora/fatura/gerar"
@@ -789,6 +834,8 @@ export default function AdministradoraSidebar() {
                         <span>Gerar</span>
                       </Link>
                     </li>
+                    )}
+                    {podeAcessarItem("fatura_pesquisar") && (
                     <li>
                       <Link
                         href="/administradora/fatura"
@@ -804,10 +851,12 @@ export default function AdministradoraSidebar() {
                         <span>Pesquisar</span>
                       </Link>
                     </li>
+                    )}
                   </ul>
                 )}
               </li>
-              {/* Empresas financeiras */}
+              )}
+              {podeAcessar("financeiras") && (
               <li>
                 <Link
                   href="/administradora/financeiras"
@@ -819,7 +868,8 @@ export default function AdministradoraSidebar() {
                   <BuildingOffice2Icon className="h-5 w-5 flex-shrink-0" />
                 </Link>
               </li>
-              {/* Item Financeiro com Submenu - Acima de Grupo de Beneficiários */}
+              )}
+              {podeAcessar("financeiro") && (
               <li>
                 <button
                   onClick={() => setFinanceiroMenuOpen(!financeiroMenuOpen)}
@@ -847,6 +897,7 @@ export default function AdministradoraSidebar() {
                 </button>
                 {isMenuExpanded && financeiroMenuOpen && (
                   <ul className="ml-4 mt-1 space-y-0.5">
+                    {podeAcessarItem("financeiro_cobrancas") && (
                     <li>
                       <Link
                         href="/administradora/financeiro/cobrancas"
@@ -862,6 +913,8 @@ export default function AdministradoraSidebar() {
                         <span>Cobranças</span>
                       </Link>
                     </li>
+                    )}
+                    {podeAcessarItem("financeiro_inadimplencia") && (
                     <li>
                       <Link
                         href="/administradora/financeiro/inadimplencia"
@@ -877,6 +930,8 @@ export default function AdministradoraSidebar() {
                         <span>Inadimplência</span>
                       </Link>
                     </li>
+                    )}
+                    {podeAcessarItem("financeiro_pesquisar") && (
                     <li>
                       <Link
                         href="/administradora/financeiro/pesquisar"
@@ -892,10 +947,12 @@ export default function AdministradoraSidebar() {
                         <span>Pesquisar</span>
                       </Link>
                     </li>
+                    )}
                   </ul>
                 )}
               </li>
-              {/* Item Contrato com Submenu - Abaixo de Financeiro */}
+              )}
+              {podeAcessar("contrato") && (
               <li>
                 <button
                   onClick={() => setContratoMenuOpen(!contratoMenuOpen)}
@@ -923,6 +980,7 @@ export default function AdministradoraSidebar() {
                 </button>
                 {isMenuExpanded && contratoMenuOpen && (
                   <ul className="ml-4 mt-1 space-y-0.5">
+                    {podeAcessarItem("contrato_pesquisar") && (
                     <li>
                       <Link
                         href="/administradora/contrato/pesquisar"
@@ -938,6 +996,8 @@ export default function AdministradoraSidebar() {
                         <span>Pesquisar</span>
                       </Link>
                     </li>
+                    )}
+                    {podeAcessarItem("contrato_novo") && (
                     <li>
                       <Link
                         href="/administradora/contrato/novo"
@@ -953,9 +1013,12 @@ export default function AdministradoraSidebar() {
                         <span>Novo</span>
                       </Link>
                     </li>
+                    )}
                   </ul>
                 )}
               </li>
+              )}
+              {podeAcessar("propostas") && (
               <li>
                 <Link
                   href="/administradora/propostas"
@@ -974,6 +1037,8 @@ export default function AdministradoraSidebar() {
                   <DocumentTextIcon className="h-5 w-5 flex-shrink-0" />
                 </Link>
               </li>
+              )}
+              {podeAcessar("corretores") && (
               <li>
                 <Link
                   href="/administradora/corretores"
@@ -992,24 +1057,75 @@ export default function AdministradoraSidebar() {
                   <BriefcaseIcon className="h-5 w-5 flex-shrink-0" />
                 </Link>
               </li>
+              )}
+              {(podeAcessar("configuracoes") || podeGerenciarAcesso) && (
               <li>
-                <Link
-                  href="/administradora/configuracoes"
+                <button
+                  onClick={() => setConfiguracoesMenuOpen(!configuracoesMenuOpen)}
                   className={cn(
-                    "flex items-center justify-between px-3 sm:px-4 py-2.5 sm:py-3 transition-all duration-300 ease-in-out font-medium text-xs sm:text-sm rounded-md",
-                    isActive("/administradora/configuracoes") 
-                      ? "bg-[#1E293B] text-white shadow-md active-item" 
+                    "flex items-center justify-between w-full px-3 sm:px-4 py-2.5 sm:py-3 transition-all duration-300 ease-in-out font-medium text-xs sm:text-sm rounded-md",
+                    isActive("/administradora/configuracoes") || isActive("/administradora/gerenciar-acesso")
+                      ? "bg-[#1E293B] text-white shadow-md active-item"
                       : "text-gray-300 hover:bg-[#1E293B] hover:text-white hover:scale-[1.02] hover:shadow-md",
-                    isMenuExpanded && !isActive("/administradora/configuracoes") && "hover:translate-x-1",
+                    isMenuExpanded &&
+                      !(isActive("/administradora/configuracoes") || isActive("/administradora/gerenciar-acesso")) &&
+                      "hover:translate-x-1",
                     !isMenuExpanded && "justify-center px-2"
                   )}
-                  onClick={closeSidebar}
                   title={!isMenuExpanded ? "Configurações" : ""}
                 >
-                  {isMenuExpanded && <span className="truncate flex-1">Configurações</span>}
-                  <Cog6ToothIcon className="h-5 w-5 flex-shrink-0" />
-                </Link>
+                  {isMenuExpanded && <span className="truncate flex-1 text-left">Configurações</span>}
+                  <div className="flex items-center gap-2">
+                    <Cog6ToothIcon className="h-5 w-5 flex-shrink-0" />
+                    {isMenuExpanded && (
+                      configuracoesMenuOpen ? (
+                        <ChevronDownIcon className="h-4 w-4 flex-shrink-0" />
+                      ) : (
+                        <ChevronRightIcon className="h-4 w-4 flex-shrink-0" />
+                      )
+                    )}
+                  </div>
+                </button>
+                {isMenuExpanded && configuracoesMenuOpen && (
+                  <ul className="ml-4 mt-1 space-y-0.5">
+                    {podeGerenciarAcesso && (
+                      <li>
+                        <Link
+                          href="/administradora/gerenciar-acesso"
+                          className={cn(
+                            "flex items-center gap-2 px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm rounded-md transition-all duration-300",
+                            isActive("/administradora/gerenciar-acesso")
+                              ? "bg-[#1E293B]/80 text-white"
+                              : "text-gray-300 hover:bg-[#1E293B]/50 hover:text-white"
+                          )}
+                          onClick={closeSidebar}
+                        >
+                          <ShieldCheckIcon className="h-4 w-4" />
+                          <span>Gerenciar acesso</span>
+                        </Link>
+                      </li>
+                    )}
+                    {podeAcessarItem("configuracoes_preferencias") && (
+                      <li>
+                        <Link
+                          href="/administradora/configuracoes"
+                          className={cn(
+                            "flex items-center gap-2 px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm rounded-md transition-all duration-300",
+                            isActive("/administradora/configuracoes")
+                              ? "bg-[#1E293B]/80 text-white"
+                              : "text-gray-300 hover:bg-[#1E293B]/50 hover:text-white"
+                          )}
+                          onClick={closeSidebar}
+                        >
+                          <Cog6ToothIcon className="h-4 w-4" />
+                          <span>Preferências</span>
+                        </Link>
+                      </li>
+                    )}
+                  </ul>
+                )}
               </li>
+              )}
             </ul>
           </nav>
         </div>

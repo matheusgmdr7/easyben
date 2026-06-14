@@ -7,6 +7,7 @@ import { verificarAutenticacaoAdministradora, getAdministradoraLogada } from "@/
 import AdministradoraSidebar from "@/components/administradora/administradora-sidebar"
 import AdministradoraHeader from "@/components/administradora/administradora-header"
 import { RecursoGuard } from "@/components/tenant/recurso-guard"
+import { AdministradoraPermissaoGuard } from "@/components/administradora/administradora-permissao-guard"
 
 export default function AdministradoraLayout({
   children,
@@ -116,7 +117,7 @@ export default function AdministradoraLayout({
         <AdministradoraHeader sidebarCollapsed={isVisuallyCollapsed} />
         <main className="flex-1 overflow-x-auto bg-gray-100 transition-all duration-300 ease-in-out" style={{ paddingTop: '5.5rem', paddingLeft: '1rem', paddingRight: '1rem', paddingBottom: '2rem' }}>
           <div className="max-w-full md:px-2 lg:px-4">
-            {children}
+            <AdministradoraPermissaoGuard>{children}</AdministradoraPermissaoGuard>
           </div>
         </main>
       </div>

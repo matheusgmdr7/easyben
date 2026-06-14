@@ -1,5 +1,16 @@
 import { supabase } from "@/lib/supabase"
 import type { Administradora } from "@/services/administradoras-service"
+import type { UsuarioAdministradoraSessao } from "@/services/usuarios-administradora-service"
+import { montarUsuarioMasterSessao } from "@/services/usuarios-administradora-service"
+
+export type AdministradoraLogada = Administradora & {
+  usuario?: UsuarioAdministradoraSessao
+  session?: {
+    access_token: string
+    expires_at: number
+    refresh_token: string
+  }
+}
 
 // Interface para dados de login
 export interface LoginAdministradoraData {
@@ -12,6 +23,29 @@ export interface AuthAdministradoraResult {
   success: boolean
   message: string
   administradora?: Administradora
+  usuario?: UsuarioAdministradoraSessao
+}
+
+function montarSessaoLocal(administradora: Administradora, usuario?: UsuarioAdministradoraSessao) {
+  const usuarioSessao =
+    usuario ||
+    (administradora as AdministradoraLogada).usuario ||
+    montarUsuarioMasterSessao(administradora)
+
+  return {
+    ...administradora,
+    usuario: usuarioSessao,
+    session: {
+      access_token: `token_${administradora.id}`,
+      expires_at: Date.now() + 86400000,
+      refresh_token: `refresh_${administradora.id}`,
+    },
+  } satisfies AdministradoraLogada
+}
+
+function salvarSessaoLocal(administradora: Administradora, usuario?: UsuarioAdministradoraSessao) {
+  if (typeof window === "undefined") return
+  localStorage.setItem("administradoraLogada", JSON.stringify(montarSessaoLocal(administradora, usuario)))
 }
 
 /**
@@ -60,6 +94,7 @@ export async function autenticarAdministradora(
 
       if (response.ok && data.success && data.administradora) {
         const administradora = data.administradora
+        const usuario = data.usuario as UsuarioAdministradoraSessao | undefined
         console.log("✅ [LOGIN ADMINISTRADORA] Administradora encontrada:", {
           id: administradora.id,
           nome: administradora.nome,
@@ -70,50 +105,26 @@ export async function autenticarAdministradora(
 
         // Verificar status de login
         if (administradora.status_login !== "ativo") {
-          // Salvar no localStorage mesmo se não estiver ativo
-          if (typeof window !== "undefined") {
-            localStorage.setItem(
-              "administradoraLogada",
-              JSON.stringify({
-                ...administradora,
-                session: {
-                  access_token: `token_${administradora.id}`,
-                  expires_at: Date.now() + 86400000,
-                  refresh_token: `refresh_${administradora.id}`,
-                },
-              }),
-            )
-          }
+          salvarSessaoLocal(administradora, usuario)
 
           return {
             success: true,
             message: "Login realizado com sucesso, aguardando ativação.",
             administradora,
+            usuario,
           }
         }
 
         // Login bem-sucedido - administradora ativa
         console.log("✅ [LOGIN ADMINISTRADORA] Login bem-sucedido para:", administradora.nome)
 
-        // Salvar dados no localStorage
-        if (typeof window !== "undefined") {
-          localStorage.setItem(
-            "administradoraLogada",
-            JSON.stringify({
-              ...administradora,
-              session: {
-                access_token: `token_${administradora.id}`,
-                expires_at: Date.now() + 86400000, // 24 horas
-                refresh_token: `refresh_${administradora.id}`,
-              },
-            }),
-          )
-        }
+        salvarSessaoLocal(administradora, usuario)
 
         return {
           success: true,
           message: "Login realizado com sucesso!",
           administradora,
+          usuario,
         }
       } else {
         // API retornou erro
@@ -191,7 +202,7 @@ export function verificarAutenticacaoAdministradora(): {
 /**
  * Função para obter a administradora logada do localStorage
  */
-export function getAdministradoraLogada(): Administradora | null {
+export function getAdministradoraLogada(): AdministradoraLogada | null {
   try {
     if (typeof window === "undefined") {
       return null
@@ -202,9 +213,13 @@ export function getAdministradoraLogada(): Administradora | null {
       return null
     }
 
-    const administradoraLogada = JSON.parse(administradoraLogadaStr)
+    const administradoraLogada = JSON.parse(administradoraLogadaStr) as AdministradoraLogada
     if (!administradoraLogada || !administradoraLogada.id) {
       return null
+    }
+
+    if (!administradoraLogada.usuario) {
+      administradoraLogada.usuario = montarUsuarioMasterSessao(administradoraLogada)
     }
 
     return administradoraLogada
@@ -212,6 +227,11 @@ export function getAdministradoraLogada(): Administradora | null {
     console.error("Erro ao obter administradora logada:", error)
     return null
   }
+}
+
+export function getUsuarioAdministradoraLogado(): UsuarioAdministradoraSessao | null {
+  const adm = getAdministradoraLogada()
+  return adm?.usuario || null
 }
 
 /**
