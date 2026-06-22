@@ -1,0 +1,26 @@
+{
+  "modeloArquivo": "public/modelos/ficha-admissao-apti.pdf",
+  "fontSizePadrao": 8,
+  "campos": {
+    "nome": { "page": 0, "x": 68, "y": 606.4, "size": 8, "maxWidth": 335, "ajustarTamanho": true },
+    "data_nascimento": { "page": 0, "x": 142, "y": 592.6, "size": 8, "maxWidth": 115 },
+    "local_nascimento": { "page": 0, "x": 392, "y": 592.6, "size": 8, "maxWidth": 100 },
+    "uf_nascimento": { "page": 0, "x": 510, "y": 592.6, "size": 8, "maxWidth": 35 },
+    "carteira_trabalho_digital": { "page": 0, "x": 180, "y": 578.8, "size": 8, "maxWidth": 130 },
+    "cpf": { "page": 0, "x": 61, "y": 565, "size": 8, "maxWidth": 105 },
+    "rg": { "page": 0, "x": 307, "y": 565, "size": 8, "maxWidth": 95 },
+    "orgao_emissor": { "page": 0, "x": 490, "y": 565, "size": 8, "maxWidth": 70 },
+    "data_admissao": { "page": 0, "x": 141, "y": 537.4, "size": 8, "maxWidth": 105 },
+    "funcao": { "page": 0, "x": 315, "y": 537.4, "size": 8, "maxWidth": 240 },
+    "salario": { "page": 0, "x": 74, "y": 523.6, "size": 8, "maxWidth": 120 },
+    "horario_trabalho": { "page": 0, "x": 331, "y": 523.6, "size": 8, "maxWidth": 145 },
+    "horas_almoco": { "page": 0, "x": 128, "y": 509.8, "size": 8, "maxWidth": 70 },
+    "estado_civil": { "page": 0, "x": 100, "y": 496, "size": 8, "maxWidth": 100 },
+    "grau_instrucao": { "page": 0, "x": 365, "y": 496, "size": 8, "maxWidth": 190 },
+    "endereco_completo": { "page": 0, "x": 30, "y": 440.9, "size": 7.5, "maxWidth": 535, "lineHeight": 10 }
+  },
+  "checkboxes": {
+    "contrato_experiencia_sim": { "page": 0, "x": 178, "y": 372.9, "size": 7 },
+    "contrato_experiencia_nao": { "page": 0, "x": 251, "y": 372.9, "size": 7 }
+  }
+}

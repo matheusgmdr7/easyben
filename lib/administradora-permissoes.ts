@@ -58,6 +58,11 @@ export const MENU_ADMINISTRADORA: ItemMenuAdministradora[] = [
         label: "Comparação de planilhas",
         path: "/administradora/beneficiarios/comparacao-planilhas",
       },
+      {
+        id: "beneficiarios_vinculos",
+        label: "Vínculos",
+        path: "/administradora/beneficiarios/vinculos",
+      },
     ],
   },
   {
@@ -117,6 +122,7 @@ const LEGADO_PARA_GRANULAR: Record<string, string[]> = {
     "beneficiarios_importacao_vidas",
     "beneficiarios_importacao_matriculas",
     "beneficiarios_comparacao_planilhas",
+    "beneficiarios_vinculos",
   ],
   fatura: ["fatura_gerar", "fatura_pesquisar"],
   financeiro: ["financeiro_cobrancas", "financeiro_inadimplencia", "financeiro_pesquisar"],
@@ -274,6 +280,7 @@ const ROTAS_PERMISSAO: Array<{ prefixo: string; permissao: string }> = [
     prefixo: "/administradora/beneficiarios/comparacao-planilhas",
     permissao: "beneficiarios_comparacao_planilhas",
   },
+  { prefixo: "/administradora/beneficiarios/vinculos", permissao: "beneficiarios_vinculos" },
   { prefixo: "/administradora/beneficiarios", permissao: "beneficiarios_titular" },
   { prefixo: "/administradora/fatura/gerar", permissao: "fatura_gerar" },
   { prefixo: "/administradora/fatura", permissao: "fatura_pesquisar" },

@@ -701,6 +701,23 @@ export default function AdministradoraSidebar() {
                       </Link>
                     </li>
                     )}
+                    {podeAcessarItem("beneficiarios_vinculos") && (
+                    <li>
+                      <Link
+                        href="/administradora/beneficiarios/vinculos"
+                        className={cn(
+                          "flex items-center gap-2 px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm rounded-md transition-all duration-300",
+                          isActive("/administradora/beneficiarios/vinculos")
+                            ? "bg-[#1E293B]/80 text-white"
+                            : "text-gray-300 hover:bg-[#1E293B]/50 hover:text-white"
+                        )}
+                        onClick={closeSidebar}
+                      >
+                        <DocumentTextIcon className="h-4 w-4" />
+                        <span>Vínculos</span>
+                      </Link>
+                    </li>
+                    )}
                     {podeAcessarItem("beneficiarios_cancelamento_grupo") && (
                     <li>
                       <Link
