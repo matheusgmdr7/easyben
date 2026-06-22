@@ -484,6 +484,8 @@ export async function gerarBoletoAdministradora(body: Record<string, unknown>): 
 
     AsaasServiceInstance.setApiKey(financeira.api_key, financeira.ambiente || "producao")
 
+    const cpfApenasDigitos = (cpf || "").replace(/\D/g, "")
+
     // Verificar se já existe asaas_customer_id no cliente
     const { data: caCompleto } = await supabaseAdmin
       .from("clientes_administradoras")
@@ -491,17 +493,43 @@ export async function gerarBoletoAdministradora(body: Record<string, unknown>): 
       .eq("id", idParaFatura)
       .single()
 
-    let customerId = (caCompleto as any)?.asaas_customer_id
+    let customerId = (caCompleto as any)?.asaas_customer_id as string | null | undefined
     log("Cliente para fatura", {
       idParaFatura,
       nome,
       tem_cpf: !!cpf,
+      cpf_digitos: cpfApenasDigitos ? `${cpfApenasDigitos.slice(0, 3)}***${cpfApenasDigitos.slice(-2)}` : null,
       tem_email: !!email,
       tem_telefone: !!String(telefone || "").trim(),
       asaas_customer_id_existente: customerId ?? null,
+      financeira: financeira.nome,
     })
+
+    // ID salvo pode ser de outra financeira/conta Asaas — validar na conta atual antes de reutilizar
+    if (customerId) {
+      try {
+        await AsaasServiceInstance.getCustomer(String(customerId))
+        log("asaas_customer_id válido na conta Asaas desta financeira", { customerId })
+      } catch {
+        log("asaas_customer_id ignorado (não existe na conta Asaas desta financeira)", { customerId })
+        customerId = null
+      }
+    }
+
+    // Buscar cliente já cadastrado nesta conta Asaas pelo CPF
+    if (!customerId && cpfApenasDigitos.length === 11) {
+      try {
+        const existente = await AsaasServiceInstance.getCustomerByCpfCnpj(cpfApenasDigitos)
+        if (existente?.id) {
+          customerId = existente.id
+          log("Cliente encontrado no Asaas por CPF", { customerId })
+        }
+      } catch (buscaErr) {
+        log("AVISO: falha ao buscar cliente por CPF no Asaas (seguindo para criação)", buscaErr)
+      }
+    }
+
     if (!customerId) {
-      const cpfApenasDigitos = (cpf || "").replace(/\D/g, "")
       if (cpfApenasDigitos.length !== 11) {
         return NextResponse.json(
           {
@@ -534,11 +562,6 @@ export async function gerarBoletoAdministradora(body: Record<string, unknown>): 
       const customer = await AsaasServiceInstance.createCustomer(asaasCustomer)
       customerId = customer.id
       log("Cliente Asaas criado", { customerId, telefone_enviado_gateway: !!telPatch })
-      await supabaseAdmin
-        .from("clientes_administradoras")
-        .update({ asaas_customer_id: customerId })
-        .eq("id", idParaFatura)
-        .eq("tenant_id", tenantId)
     } else {
       const telPatch = patchTelefoneAsaas(String(telefone || ""))
       if (telPatch) {
@@ -549,6 +572,14 @@ export async function gerarBoletoAdministradora(body: Record<string, unknown>): 
           log("AVISO: não foi possível atualizar telefone do cliente no Asaas (cobrança segue normalmente)", syncErr)
         }
       }
+    }
+
+    if (customerId) {
+      await supabaseAdmin
+        .from("clientes_administradoras")
+        .update({ asaas_customer_id: customerId })
+        .eq("id", idParaFatura)
+        .eq("tenant_id", tenantId)
     }
 
     // Texto enviado ao Asaas na cobrança (aparece na fatura/boleto do gateway): apenas dados comerciais.
@@ -644,11 +675,14 @@ export async function gerarBoletoAdministradora(body: Record<string, unknown>): 
       console.error("[gerar-boleto] message:", e.message)
       console.error("[gerar-boleto] stack:", e.stack)
     }
-    const isCpfAsaas = /cpf|cnpj|inválido|invalid_object/i.test(msg)
+    const isCpfAsaas = /cpf|cnpj|inválido|invalid_object|customer/i.test(msg)
+    const detalheAsaas =
+      msg.startsWith("Erro na requisição Asaas:") ? msg.replace(/^Erro na requisição Asaas:\s*/, "") : msg
     return NextResponse.json(
       {
         error: isCpfAsaas
-          ? "O Asaas rejeitou o CPF/CNPJ do beneficiário. Confirme que o CPF no cadastro está correto (11 dígitos, apenas números) e que o CPF é válido. Se o problema continuar, o mesmo CPF pode já estar em uso no Asaas ou a financeira pode ter restrições adicionais."
+          ? "O Asaas rejeitou a operação relacionada ao cliente (CPF/CNPJ ou cadastro no gateway). Confirme o CPF no cadastro (11 dígitos válidos). Se o beneficiário já teve boleto em outra financeira, o sistema agora busca o cliente na conta Asaas atual; tente gerar novamente. Detalhe: " +
+            detalheAsaas
           : msg,
       },
       { status: isCpfAsaas ? 400 : 500 }
