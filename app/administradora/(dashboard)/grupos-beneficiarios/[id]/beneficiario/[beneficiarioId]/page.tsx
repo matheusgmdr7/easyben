@@ -368,9 +368,9 @@ export default function BeneficiarioDetalhesPage() {
               (r) => r.json().catch(() => [])
             ),
         vidaIdDireto
-          ? fetch(`/api/administradora/vidas-importadas/${encodeURIComponent(vidaIdDireto)}`).then((r) =>
-              r.ok ? r.json().catch(() => null) : null
-            )
+          ? fetch(
+              `/api/administradora/vidas-importadas/${encodeURIComponent(vidaIdDireto)}?administradora_id=${encodeURIComponent(adm.id)}`
+            ).then((r) => (r.ok ? r.json().catch(() => null) : null))
           : Promise.resolve(null),
         supabase
           .from("vidas_importadas")
@@ -551,7 +551,9 @@ export default function BeneficiarioDetalhesPage() {
           }
           if (pRes && !pRes.error) setProdutoCliente(pRes)
         }
-        const histRes = await fetch(`/api/administradora/vidas-importadas/${item.id}/historico`)
+        const histRes = await fetch(
+          `/api/administradora/vidas-importadas/${item.id}/historico?administradora_id=${encodeURIComponent(adm.id)}`
+        )
         const hist = await histRes.json().catch(() => [])
         setHistorico(Array.isArray(hist) ? hist : [])
 

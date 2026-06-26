@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase-admin"
 import { getCurrentTenantId } from "@/lib/tenant-query-helper"
+import { resolveTenantIdForAdministradora } from "@/lib/resolve-tenant-administradora"
 
 /**
  * GET /api/administradora/vidas-importadas/[id]/historico
@@ -14,13 +15,18 @@ export async function GET(
     const { id } = await params
     if (!id) return NextResponse.json({ error: "ID é obrigatório" }, { status: 400 })
 
-    const tenantId = await getCurrentTenantId()
+    const administradoraId = request.nextUrl.searchParams.get("administradora_id")?.trim() || ""
+    const tenantId = administradoraId
+      ? await resolveTenantIdForAdministradora(administradoraId)
+      : await getCurrentTenantId()
 
-    const { data, error } = await supabaseAdmin
+    let query = supabaseAdmin
       .from("vidas_importadas_historico")
       .select("id, alteracoes, created_at")
       .eq("vida_id", id)
-      .eq("tenant_id", tenantId)
+    if (tenantId) query = query.eq("tenant_id", tenantId)
+
+    const { data, error } = await query
       .order("created_at", { ascending: false })
       .limit(50)
 

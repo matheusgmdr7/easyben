@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase-admin"
 import { getCurrentTenantId } from "@/lib/tenant-query-helper"
+import { resolveTenantIdForAdministradora } from "@/lib/resolve-tenant-administradora"
 import { obterValorProdutoPorIdade, calcularIdade } from "@/lib/calcular-valor-produto"
 import {
   normalizarCorretorIdVinculo,
@@ -26,14 +27,28 @@ export async function GET(
     const { id } = await params
     if (!id) return NextResponse.json({ error: "ID é obrigatório" }, { status: 400 })
 
-    const tenantId = await getCurrentTenantId()
+    const administradoraId = request.nextUrl.searchParams.get("administradora_id")?.trim() || ""
+    const tenantId = administradoraId
+      ? await resolveTenantIdForAdministradora(administradoraId)
+      : await getCurrentTenantId()
 
-    const { data, error } = await supabaseAdmin
-      .from("vidas_importadas")
-      .select("*")
-      .eq("id", id)
-      .eq("tenant_id", tenantId)
-      .maybeSingle()
+    let query = supabaseAdmin.from("vidas_importadas").select("*").eq("id", id)
+    if (tenantId) query = query.eq("tenant_id", tenantId)
+    if (administradoraId) query = query.eq("administradora_id", administradoraId)
+
+    let { data, error } = await query.maybeSingle()
+
+    // Fallback para registros legados com tenant_id inconsistente
+    if (!data && administradoraId) {
+      const legado = await supabaseAdmin
+        .from("vidas_importadas")
+        .select("*")
+        .eq("id", id)
+        .eq("administradora_id", administradoraId)
+        .maybeSingle()
+      data = legado.data
+      error = legado.error
+    }
 
     if (error) {
       console.error("Erro ao buscar vida importada:", error)
