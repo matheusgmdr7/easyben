@@ -16,6 +16,11 @@ import {
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Download, Loader2 } from "lucide-react"
 import { VINCULOS_LOTE_MAX_PDFS } from "@/lib/vinculos-constants"
+import {
+  limparGeradosVinculosLocal,
+  listarGeradosVinculosLocal,
+  marcarGeradosVinculosLocal,
+} from "@/lib/vinculos-gerados-local"
 import { VinculosGeracaoProgresso } from "@/components/administradora/vinculos-geracao-progresso"
 import { VinculosPreenchimentoForm } from "@/components/administradora/vinculos-preenchimento-form"
 import type { ConfigPreenchimentoSintetico } from "@/lib/vinculos-dados-sinteticos"
@@ -72,6 +77,8 @@ export function VinculosLotePanel({
   const [carregandoGrupos, setCarregandoGrupos] = useState(true)
   const [carregandoVidas, setCarregandoVidas] = useState(false)
   const [gerando, setGerando] = useState(false)
+  const [geradosLocal, setGeradosLocal] = useState<Set<string>>(new Set())
+  const [somentePendentes, setSomentePendentes] = useState(false)
   const [ultimoRelatorio, setUltimoRelatorio] = useState<{
     gerados: number
     falhas: Array<{ nome: string; motivo: string }>
@@ -117,8 +124,21 @@ export function VinculosLotePanel({
         const data = await res.json().catch(() => [])
         if (!res.ok) throw new Error(data?.error || "Erro ao carregar beneficiários")
         const lista = Array.isArray(data) ? data : []
+        const gerados = listarGeradosVinculosLocal(administradoraId, idGrupo)
+        setGeradosLocal(gerados)
         setVidas(lista)
-        setSelecionados(new Set(lista.map((v: VidaGrupoItem) => v.id)))
+
+        const pendentes = lista.filter((v: VidaGrupoItem) => !gerados.has(v.id))
+        const autoSelect = pendentes.slice(0, VINCULOS_LOTE_MAX_PDFS).map((v: VidaGrupoItem) => v.id)
+        setSelecionados(new Set(autoSelect))
+
+        if (lista.length > VINCULOS_LOTE_MAX_PDFS) {
+          toast.info(
+            `Grupo com ${lista.length} beneficiários. Selecionados ${autoSelect.length} pendentes (máx. ${VINCULOS_LOTE_MAX_PDFS} por lote).`
+          )
+        } else if (gerados.size > 0 && autoSelect.length < pendentes.length) {
+          toast.info(`${gerados.size} ficha(s) já gerada(s) neste navegador foram ignoradas na seleção.`)
+        }
       } catch (e: unknown) {
         toast.error(e instanceof Error ? e.message : "Erro ao carregar beneficiários do grupo")
         setVidas([])
@@ -134,21 +154,40 @@ export function VinculosLotePanel({
     if (grupoId) void carregarVidasGrupo(grupoId)
   }, [grupoId, carregarVidasGrupo])
 
-  const todosSelecionados = vidas.length > 0 && selecionados.size === vidas.length
+  const vidasVisiveis = useMemo(() => {
+    if (!somentePendentes) return vidas
+    return vidas.filter((v) => !geradosLocal.has(v.id))
+  }, [vidas, somentePendentes, geradosLocal])
+
+  const pendentes = useMemo(
+    () => vidas.filter((v) => !geradosLocal.has(v.id)),
+    [vidas, geradosLocal]
+  )
+
+  const todosSelecionados =
+    vidasVisiveis.length > 0 && vidasVisiveis.every((v) => selecionados.has(v.id))
   const algunsSelecionados = selecionados.size > 0 && !todosSelecionados
 
-  const comDadosFaltando = useMemo(
-    () => vidas.filter((v) => selecionados.has(v.id) && v.faltando.length > 0),
-    [vidas, selecionados]
-  )
+  function selecionarIds(ids: string[], aviso?: string) {
+    setSelecionados(new Set(ids.slice(0, VINCULOS_LOTE_MAX_PDFS)))
+    if (aviso) toast.info(aviso)
+  }
+
+  function selecionarPendentes(limite = VINCULOS_LOTE_MAX_PDFS, aviso?: string) {
+    const ids = pendentes.slice(0, limite).map((v) => v.id)
+    selecionarIds(ids, aviso)
+  }
 
   function alternarTodos(checked: boolean) {
     if (checked) {
-      const ids = vidas.slice(0, VINCULOS_LOTE_MAX_PDFS).map((v) => v.id)
-      setSelecionados(new Set(ids))
-      if (vidas.length > VINCULOS_LOTE_MAX_PDFS) {
-        toast.info(`Selecionados os primeiros ${VINCULOS_LOTE_MAX_PDFS} (limite do lote)`)
-      }
+      const fonte = somentePendentes ? vidasVisiveis : pendentes.length > 0 ? pendentes : vidas
+      const ids = fonte.slice(0, VINCULOS_LOTE_MAX_PDFS).map((v) => v.id)
+      selecionarIds(
+        ids,
+        fonte.length > VINCULOS_LOTE_MAX_PDFS
+          ? `Selecionados ${ids.length} (limite por lote)`
+          : undefined
+      )
     } else {
       setSelecionados(new Set())
     }
@@ -168,6 +207,18 @@ export function VinculosLotePanel({
       }
       return next
     })
+  }
+
+  const comDadosFaltando = useMemo(
+    () => vidas.filter((v) => selecionados.has(v.id) && v.faltando.length > 0),
+    [vidas, selecionados]
+  )
+
+  function limparMarcacaoGerados() {
+    if (!grupoId) return
+    limparGeradosVinculosLocal(administradoraId, grupoId)
+    setGeradosLocal(new Set())
+    toast.success("Marcação de fichas geradas limpa para este grupo")
   }
 
   async function gerarLote() {
@@ -217,6 +268,20 @@ export function VinculosLotePanel({
       const falhas = Array.isArray(data.falhas) ? data.falhas : []
       setUltimoRelatorio({ gerados: data.gerados ?? 0, falhas })
 
+      const idsGerados = Array.isArray(data.gerados_ids) ? data.gerados_ids : []
+      if (idsGerados.length > 0 && grupoId) {
+        const atualizado = marcarGeradosVinculosLocal(administradoraId, grupoId, idsGerados)
+        setGeradosLocal(atualizado)
+        const restantes = vidas.filter((v) => !atualizado.has(v.id))
+        const proximos = restantes.slice(0, VINCULOS_LOTE_MAX_PDFS).map((v) => v.id)
+        setSelecionados(new Set(proximos))
+        if (restantes.length > 0) {
+          toast.info(
+            `${idsGerados.length} ficha(s) marcada(s) como geradas. ${proximos.length} pendente(s) pré-selecionado(s) para o próximo lote.`
+          )
+        }
+      }
+
       if (falhas.length > 0) {
         toast.warning(
           `ZIP gerado com ${data.gerados} PDF(s). ${falhas.length} beneficiário(s) não incluído(s).`
@@ -234,9 +299,15 @@ export function VinculosLotePanel({
   return (
     <div className="space-y-6">
       <Alert className="border-blue-200 bg-blue-50/80">
-        <AlertDescription className="text-sm text-blue-900">
-          Gere até <strong>{VINCULOS_LOTE_MAX_PDFS} fichas</strong> por vez. O download vem em um arquivo{" "}
-          <strong>ZIP</strong> (link válido por 1 hora). Campos opcionais abaixo valem para todos do lote.
+        <AlertDescription className="text-sm text-blue-900 space-y-1">
+          <p>
+            Gere até <strong>{VINCULOS_LOTE_MAX_PDFS} fichas por lote</strong>. Grupos maiores exigem vários
+            lotes — o sistema marca no navegador quem já foi gerado e pré-seleciona os próximos pendentes.
+          </p>
+          <p className="text-xs text-blue-800">
+            Se enviar mais de {VINCULOS_LOTE_MAX_PDFS} IDs, a API rejeita o pedido. A seleção na tela já respeita
+            esse limite.
+          </p>
         </AlertDescription>
       </Alert>
 
@@ -263,7 +334,7 @@ export function VinculosLotePanel({
 
       {grupoId && (
         <div className="border border-gray-200 rounded-lg overflow-hidden">
-          <div className="flex items-center justify-between gap-3 px-4 py-3 bg-gray-50 border-b border-gray-200">
+          <div className="flex flex-col gap-3 px-4 py-3 bg-gray-50 border-b border-gray-200 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-2">
               <Checkbox
                 id="sel-todos"
@@ -271,12 +342,45 @@ export function VinculosLotePanel({
                 onCheckedChange={(c) => alternarTodos(c === true)}
               />
               <label htmlFor="sel-todos" className="text-sm font-medium text-gray-800 cursor-pointer">
-                Selecionar todos ({vidas.length})
+                Selecionar até {VINCULOS_LOTE_MAX_PDFS} visíveis ({vidasVisiveis.length})
               </label>
             </div>
             <span className="text-xs text-gray-600">
-              {selecionados.size} / {VINCULOS_LOTE_MAX_PDFS} selecionados
+              {selecionados.size} / {VINCULOS_LOTE_MAX_PDFS} no lote · {pendentes.length} pendentes ·{" "}
+              {geradosLocal.size} geradas · {vidas.length} total
             </span>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3 px-4 py-2.5 border-b border-gray-100 bg-white">
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="somente-pendentes"
+                checked={somentePendentes}
+                onCheckedChange={(c) => setSomentePendentes(c === true)}
+              />
+              <label htmlFor="somente-pendentes" className="text-xs text-gray-700 cursor-pointer">
+                Mostrar só pendentes
+              </label>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={() => selecionarPendentes()}
+              disabled={pendentes.length === 0}
+            >
+              Selecionar {Math.min(pendentes.length, VINCULOS_LOTE_MAX_PDFS)} pendentes
+            </Button>
+            {geradosLocal.size > 0 && (
+              <button
+                type="button"
+                onClick={limparMarcacaoGerados}
+                className="text-xs text-gray-500 hover:text-gray-800 underline"
+              >
+                Limpar marcação de geradas
+              </button>
+            )}
           </div>
 
           {carregandoVidas ? (
@@ -286,9 +390,13 @@ export function VinculosLotePanel({
             </p>
           ) : vidas.length === 0 ? (
             <p className="p-4 text-sm text-gray-500">Nenhum beneficiário ativo neste grupo.</p>
+          ) : vidasVisiveis.length === 0 ? (
+            <p className="p-4 text-sm text-gray-500">Todos os beneficiários visíveis já têm ficha gerada neste navegador.</p>
           ) : (
             <ul className="max-h-72 overflow-y-auto divide-y divide-gray-100">
-              {vidas.map((v) => (
+              {vidasVisiveis.map((v) => {
+                const jaGerada = geradosLocal.has(v.id)
+                return (
                 <li key={v.id} className="flex items-start gap-3 px-4 py-2.5 hover:bg-gray-50/80">
                   <Checkbox
                     checked={selecionados.has(v.id)}
@@ -296,7 +404,14 @@ export function VinculosLotePanel({
                     className="mt-0.5"
                   />
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-gray-900 truncate">{v.nome}</p>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <p className="text-sm font-medium text-gray-900 truncate">{v.nome}</p>
+                      {jaGerada && (
+                        <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-green-700 bg-green-50 border border-green-200 px-1.5 py-0.5 rounded">
+                          Gerada
+                        </span>
+                      )}
+                    </div>
                     <p className="text-xs text-gray-600">
                       {formatarCpf(v.cpf)}
                       {v.tipo ? ` · ${v.tipo}` : ""}
@@ -308,7 +423,7 @@ export function VinculosLotePanel({
                     )}
                   </div>
                 </li>
-              ))}
+              )})}
             </ul>
           )}
         </div>

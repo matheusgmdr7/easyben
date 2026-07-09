@@ -26,6 +26,7 @@ export type FalhaLoteVinculos = {
 export type ResultadoLoteVinculos = {
   total_solicitado: number
   gerados: number
+  gerados_ids: string[]
   falhas: FalhaLoteVinculos[]
   download_url: string
   nome_arquivo: string
@@ -65,6 +66,7 @@ export async function gerarLoteFichasVinculosZip(params: {
 
   const zip = new JSZip()
   const falhas: FalhaLoteVinculos[] = []
+  const geradosIds: string[] = []
   let gerados = 0
 
   for (const vidaId of ids) {
@@ -95,6 +97,7 @@ export async function gerarLoteFichasVinculosZip(params: {
 
       const pdfBytes = await gerarFichaAdmissaoAptiPdf(automaticos, opcionais)
       zip.file(nomeArquivoPdf(nome, vidaId), pdfBytes)
+      geradosIds.push(vidaId)
       gerados += 1
     } catch (e: unknown) {
       falhas.push({
@@ -138,6 +141,7 @@ export async function gerarLoteFichasVinculosZip(params: {
   return {
     total_solicitado: ids.length,
     gerados,
+    gerados_ids: geradosIds,
     falhas,
     download_url: downloadUrl,
     nome_arquivo: `fichas-admissao-lote-${stamp}.zip`,
