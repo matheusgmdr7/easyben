@@ -253,41 +253,67 @@ export function VinculosLotePanel({
           preenchimento_sintetico: preenchimentoSintetico,
         }),
       })
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(data?.error || "Erro ao gerar lote")
 
-      if (data.download_url) {
-        const a = document.createElement("a")
-        a.href = data.download_url
-        a.download = data.nome_arquivo || "fichas-admissao-lote.zip"
-        a.target = "_blank"
-        a.rel = "noopener noreferrer"
-        a.click()
+      const contentType = res.headers.get("content-type") || ""
+
+      if (!res.ok) {
+        let mensagem = "Erro ao gerar lote"
+        if (contentType.includes("application/json")) {
+          const err = await res.json().catch(() => ({}))
+          mensagem = err?.error || mensagem
+        } else {
+          const texto = await res.text().catch(() => "")
+          if (texto) mensagem = texto.slice(0, 300)
+        }
+        throw new Error(mensagem)
       }
 
-      const falhas = Array.isArray(data.falhas) ? data.falhas : []
-      setUltimoRelatorio({ gerados: data.gerados ?? 0, falhas })
+      if (!contentType.includes("application/zip")) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data?.error || "Resposta inesperada ao gerar lote")
+      }
 
-      const idsGerados = Array.isArray(data.gerados_ids) ? data.gerados_ids : []
-      if (idsGerados.length > 0 && grupoId) {
-        const atualizado = marcarGeradosVinculosLocal(administradoraId, grupoId, idsGerados)
+      const gerados = Number(res.headers.get("X-Vinculos-Gerados") || 0)
+      const nomeArquivo = res.headers.get("X-Vinculos-Nome-Arquivo") || "fichas-admissao-lote.zip"
+      const geradosIds = JSON.parse(res.headers.get("X-Vinculos-Gerados-Ids") || "[]") as string[]
+      const falhas = JSON.parse(res.headers.get("X-Vinculos-Falhas") || "[]") as Array<{
+        vida_importada_id: string
+        nome: string
+        motivo: string
+      }>
+
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = nomeArquivo
+      a.click()
+      URL.revokeObjectURL(url)
+
+      setUltimoRelatorio({
+        gerados,
+        falhas: falhas.map((f) => ({ nome: f.nome, motivo: f.motivo })),
+      })
+
+      if (geradosIds.length > 0 && grupoId) {
+        const atualizado = marcarGeradosVinculosLocal(administradoraId, grupoId, geradosIds)
         setGeradosLocal(atualizado)
         const restantes = vidas.filter((v) => !atualizado.has(v.id))
         const proximos = restantes.slice(0, VINCULOS_LOTE_MAX_PDFS).map((v) => v.id)
         setSelecionados(new Set(proximos))
         if (restantes.length > 0) {
           toast.info(
-            `${idsGerados.length} ficha(s) marcada(s) como geradas. ${proximos.length} pendente(s) pré-selecionado(s) para o próximo lote.`
+            `${geradosIds.length} ficha(s) marcada(s) como geradas. ${proximos.length} pendente(s) pré-selecionado(s) para o próximo lote.`
           )
         }
       }
 
       if (falhas.length > 0) {
         toast.warning(
-          `ZIP gerado com ${data.gerados} PDF(s). ${falhas.length} beneficiário(s) não incluído(s).`
+          `ZIP gerado com ${gerados} PDF(s). ${falhas.length} beneficiário(s) não incluído(s).`
         )
       } else {
-        toast.success(`${data.gerados} PDF(s) gerados e baixados em ZIP`)
+        toast.success(`${gerados} PDF(s) gerados e baixados em ZIP`)
       }
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Erro ao gerar lote")

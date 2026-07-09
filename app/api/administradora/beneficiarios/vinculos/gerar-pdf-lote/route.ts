@@ -11,6 +11,7 @@ export const maxDuration = 300
 /**
  * POST /api/administradora/beneficiarios/vinculos/gerar-pdf-lote
  * Body: { administradora_id, vida_importada_ids[], ...opcionais globais }
+ * Retorna ZIP direto com metadados nos headers X-Vinculos-*.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -49,7 +50,18 @@ export async function POST(request: NextRequest) {
       preenchimentoSintetico: parseConfigPreenchimentoSintetico(body),
     })
 
-    return NextResponse.json({ success: true, ...resultado })
+    return new NextResponse(resultado.zip_buffer, {
+      status: 200,
+      headers: {
+        "Content-Type": "application/zip",
+        "Content-Disposition": `attachment; filename="${resultado.nome_arquivo}"`,
+        "X-Vinculos-Gerados": String(resultado.gerados),
+        "X-Vinculos-Total": String(resultado.total_solicitado),
+        "X-Vinculos-Nome-Arquivo": resultado.nome_arquivo,
+        "X-Vinculos-Gerados-Ids": JSON.stringify(resultado.gerados_ids),
+        "X-Vinculos-Falhas": JSON.stringify(resultado.falhas),
+      },
+    })
   } catch (e: unknown) {
     console.error("Erro ao gerar lote de PDFs vínculos:", e)
     const msg = e instanceof Error ? e.message : "Erro ao gerar lote"

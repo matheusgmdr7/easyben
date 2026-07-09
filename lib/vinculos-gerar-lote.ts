@@ -1,5 +1,4 @@
 import JSZip from "jszip"
-import { supabaseAdmin } from "@/lib/supabase-admin"
 import { validarCPF } from "@/utils/validacoes"
 import { gerarFichaAdmissaoAptiPdf } from "@/lib/ficha-admissao-apti-pdf"
 import {
@@ -14,8 +13,6 @@ import {
 import { VINCULOS_LOTE_MAX_PDFS } from "@/lib/vinculos-constants"
 
 export { VINCULOS_LOTE_MAX_PDFS }
-const STORAGE_BUCKET = "arquivos"
-const STORAGE_PREFIX = "vinculos-lote"
 
 export type FalhaLoteVinculos = {
   vida_importada_id: string
@@ -28,9 +25,8 @@ export type ResultadoLoteVinculos = {
   gerados: number
   gerados_ids: string[]
   falhas: FalhaLoteVinculos[]
-  download_url: string
   nome_arquivo: string
-  expires_in_seconds: number
+  zip_buffer: Buffer
 }
 
 function nomeArquivoPdf(nome: string, vidaId: string): string {
@@ -118,33 +114,13 @@ export async function gerarLoteFichasVinculosZip(params: {
 
   const zipBuffer = await zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE" })
   const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19)
-  const storagePath = `${STORAGE_PREFIX}/${params.administradoraId}/${stamp}-${gerados}pdfs.zip`
-
-  const { error: uploadError } = await supabaseAdmin.storage.from(STORAGE_BUCKET).upload(storagePath, zipBuffer, {
-    contentType: "application/zip",
-    cacheControl: "3600",
-    upsert: false,
-  })
-
-  if (uploadError) {
-    throw new Error(
-      `PDFs gerados (${gerados}), mas falha ao salvar ZIP: ${uploadError.message}. Verifique o bucket '${STORAGE_BUCKET}'.`
-    )
-  }
-
-  const expiresIn = 3600
-  const signed = await supabaseAdmin.storage.from(STORAGE_BUCKET).createSignedUrl(storagePath, expiresIn)
-  const downloadUrl =
-    signed.data?.signedUrl ||
-    supabaseAdmin.storage.from(STORAGE_BUCKET).getPublicUrl(storagePath).data.publicUrl
 
   return {
     total_solicitado: ids.length,
     gerados,
     gerados_ids: geradosIds,
     falhas,
-    download_url: downloadUrl,
     nome_arquivo: `fichas-admissao-lote-${stamp}.zip`,
-    expires_in_seconds: expiresIn,
+    zip_buffer: zipBuffer,
   }
 }
