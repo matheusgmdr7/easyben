@@ -21,7 +21,7 @@ import {
 } from "@/components/administradora/vinculos-preenchimento-form"
 import type { ConfigPreenchimentoSintetico } from "@/lib/vinculos-dados-sinteticos"
 
-type GrupoItem = { id: string; nome: string; status?: string | null }
+type GrupoItem = { id: string; nome: string; ativo?: boolean | null }
 
 type VidaGrupoItem = {
   id: string

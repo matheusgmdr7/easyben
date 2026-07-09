@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
 
     let query = supabaseAdmin
       .from("grupos_beneficiarios")
-      .select("id, nome, status")
+      .select("id, nome, ativo")
       .eq("administradora_id", administradoraId)
       .order("nome", { ascending: true })
 
