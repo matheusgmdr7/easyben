@@ -15,11 +15,19 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Download, FileText, Loader2 } from "lucide-react"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { VinculosLotePanel } from "@/components/administradora/vinculos-lote-panel"
+import {
+  VinculosPreenchimentoForm,
+  PREENCHIMENTO_SINTETICO_VAZIO,
+} from "@/components/administradora/vinculos-preenchimento-form"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 import {
   SeletorBeneficiarioChamado,
   type BeneficiarioSelecionadoChamado,
 } from "@/components/administradora/seletor-beneficiario-chamado"
 import type { DadosAutomaticosFichaAdmissao } from "@/lib/vinculos-beneficiario-dados"
+import type { ConfigPreenchimentoSintetico } from "@/lib/vinculos-dados-sinteticos"
 
 const CAMPOS_AUTO_LABEL: Record<keyof DadosAutomaticosFichaAdmissao, string> = {
   nome: "Nome",
@@ -39,8 +47,11 @@ export default function BeneficiariosVinculosPage() {
 
   const [beneficiario, setBeneficiario] = useState<BeneficiarioSelecionadoChamado | null>(null)
   const [automaticos, setAutomaticos] = useState<DadosAutomaticosFichaAdmissao | null>(null)
+  const [camposFaltando, setCamposFaltando] = useState<string[]>([])
   const [carregandoDados, setCarregandoDados] = useState(false)
   const [gerando, setGerando] = useState(false)
+  const [preenchimentoSintetico, setPreenchimentoSintetico] =
+    useState<ConfigPreenchimentoSintetico>(PREENCHIMENTO_SINTETICO_VAZIO)
 
   const [opcionais, setOpcionais] = useState({
     data_admissao: "",
@@ -56,6 +67,7 @@ export default function BeneficiariosVinculosPage() {
   async function aoSelecionarBeneficiario(b: BeneficiarioSelecionadoChamado | null) {
     setBeneficiario(b)
     setAutomaticos(null)
+    setCamposFaltando([])
     if (!b) return
     if (!b.vida_importada_id) {
       toast.error("Selecione um beneficiário importado (vidas do grupo)")
@@ -75,6 +87,7 @@ export default function BeneficiariosVinculosPage() {
       if (!res.ok) throw new Error(data?.error || "Erro ao carregar dados")
 
       setAutomaticos(data.automaticos)
+      setCamposFaltando(Array.isArray(data.campos_faltando) ? data.campos_faltando : [])
       setOpcionais((prev) => ({
         ...prev,
         estado_civil: data.sugestoes?.estado_civil || prev.estado_civil,
@@ -106,6 +119,16 @@ export default function BeneficiariosVinculosPage() {
       return
     }
 
+    if (preenchimentoSintetico.ativo) {
+      if (!preenchimentoSintetico.endereco_cidade?.trim() || !preenchimentoSintetico.endereco_uf?.trim()) {
+        const precisaEndereco = camposFaltando.includes("endereco") || camposFaltando.includes("local_nascimento")
+        if (precisaEndereco) {
+          toast.error("Informe cidade e UF para o preenchimento automático de endereço")
+          return
+        }
+      }
+    }
+
     try {
       setGerando(true)
       const res = await fetch("/api/administradora/beneficiarios/vinculos/gerar-pdf", {
@@ -115,6 +138,7 @@ export default function BeneficiariosVinculosPage() {
           administradora_id: administradoraId,
           vida_importada_id: beneficiario.vida_importada_id,
           ...opcionais,
+          preenchimento_sintetico: preenchimentoSintetico,
         }),
       })
 
@@ -145,11 +169,18 @@ export default function BeneficiariosVinculosPage() {
       <div className="bg-white border-b border-gray-200 px-6 py-4">
         <h1 className="text-xl font-semibold text-gray-800">Vínculos — Ficha de admissão</h1>
         <p className="text-sm text-gray-500 mt-0.5">
-          Gere a ficha APTI preenchida com os dados do beneficiário e campos opcionais.
+          Gere a ficha APTI individualmente ou em lote por grupo (até 100 PDFs em ZIP).
         </p>
       </div>
 
       <div className="px-6 py-6 max-w-3xl space-y-6">
+        <Tabs defaultValue="individual" className="w-full">
+          <TabsList className="grid w-full grid-cols-2 max-w-md">
+            <TabsTrigger value="individual">Individual</TabsTrigger>
+            <TabsTrigger value="lote">Lote por grupo</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="individual" className="space-y-6 mt-6">
         <Card>
           <CardHeader>
             <CardTitle className="text-lg flex items-center gap-2">
@@ -177,7 +208,16 @@ export default function BeneficiariosVinculosPage() {
             <CardHeader>
               <CardTitle className="text-lg">Dados do cadastro (automáticos)</CardTitle>
             </CardHeader>
-            <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+            <CardContent className="space-y-4">
+              {camposFaltando.length > 0 && (
+                <Alert className="border-amber-200 bg-amber-50/80">
+                  <AlertDescription className="text-sm text-amber-900">
+                    Campos faltando no cadastro: <strong>{camposFaltando.join(", ")}</strong>.
+                    Ative o preenchimento automático abaixo para completar os que forem permitidos.
+                  </AlertDescription>
+                </Alert>
+              )}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
               {(Object.keys(CAMPOS_AUTO_LABEL) as Array<keyof DadosAutomaticosFichaAdmissao>).map(
                 (chave) => (
                   <div key={chave}>
@@ -188,9 +228,22 @@ export default function BeneficiariosVinculosPage() {
                   </div>
                 )
               )}
+            </div>
             </CardContent>
           </Card>
         )}
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Preenchimento automático</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <VinculosPreenchimentoForm
+              value={preenchimentoSintetico}
+              onChange={setPreenchimentoSintetico}
+            />
+          </CardContent>
+        </Card>
 
         <Card>
           <CardHeader>
@@ -290,6 +343,29 @@ export default function BeneficiariosVinculosPage() {
             </>
           )}
         </Button>
+          </TabsContent>
+
+          <TabsContent value="lote" className="mt-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <FileText className="h-5 w-5" />
+                  Geração em lote
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <VinculosLotePanel
+                  administradoraId={administradoraId}
+                  opcionais={opcionais}
+                  onOpcionaisChange={setOpcionais}
+                  onAlterarSalario={aoAlterarSalario}
+                  preenchimentoSintetico={preenchimentoSintetico}
+                  onPreenchimentoSinteticoChange={setPreenchimentoSintetico}
+                />
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
       </div>
     </div>
   )

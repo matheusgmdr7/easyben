@@ -5,6 +5,10 @@ import {
   mapearVidaParaFichaAdmissao,
   type DadosOpcionaisFichaAdmissao,
 } from "@/lib/vinculos-beneficiario-dados"
+import {
+  aplicarPreenchimentoSintetico,
+  parseConfigPreenchimentoSintetico,
+} from "@/lib/vinculos-dados-sinteticos"
 
 export async function POST(request: NextRequest) {
   try {
@@ -20,9 +24,9 @@ export async function POST(request: NextRequest) {
     }
 
     const vida = await carregarVidaParaVinculos(vidaImportadaId, administradoraId)
-    const automaticos = mapearVidaParaFichaAdmissao(vida)
+    let automaticos = mapearVidaParaFichaAdmissao(vida)
 
-    const opcionais: DadosOpcionaisFichaAdmissao = {
+    let opcionais: DadosOpcionaisFichaAdmissao = {
       data_admissao: body.data_admissao,
       funcao: body.funcao,
       salario: body.salario,
@@ -31,6 +35,19 @@ export async function POST(request: NextRequest) {
       estado_civil: body.estado_civil,
       grau_instrucao: body.grau_instrucao,
       contrato_experiencia: body.contrato_experiencia,
+    }
+
+    const preenchimento = parseConfigPreenchimentoSintetico(body)
+    if (preenchimento.ativo) {
+      const seed = String(vida.cpf || vidaImportadaId).replace(/\D/g, "") || vidaImportadaId
+      const aplicado = aplicarPreenchimentoSintetico({
+        automaticos,
+        opcionais,
+        config: preenchimento,
+        seed,
+      })
+      automaticos = aplicado.automaticos
+      opcionais = aplicado.opcionais
     }
 
     const pdfBytes = await gerarFichaAdmissaoAptiPdf(automaticos, opcionais)

@@ -4,6 +4,7 @@ import {
   mapearVidaParaFichaAdmissao,
   sugestoesOpcionaisDaVida,
 } from "@/lib/vinculos-beneficiario-dados"
+import { listarCamposFaltandoFicha } from "@/lib/vinculos-dados-sinteticos"
 
 export async function GET(request: NextRequest) {
   try {
@@ -20,8 +21,9 @@ export async function GET(request: NextRequest) {
     const vida = await carregarVidaParaVinculos(vidaImportadaId, administradoraId)
     const automaticos = mapearVidaParaFichaAdmissao(vida)
     const sugestoes = sugestoesOpcionaisDaVida(vida)
+    const campos_faltando = listarCamposFaltandoFicha(automaticos, sugestoes)
 
-    return NextResponse.json({ automaticos, sugestoes })
+    return NextResponse.json({ automaticos, sugestoes, campos_faltando })
   } catch (e: unknown) {
     console.error("Erro ao carregar dados para vínculos:", e)
     const msg = e instanceof Error ? e.message : "Erro ao carregar dados"

@@ -1,0 +1,1 @@
+export const VINCULOS_LOTE_MAX_PDFS = 100
