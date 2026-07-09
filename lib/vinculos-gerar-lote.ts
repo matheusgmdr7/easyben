@@ -1,4 +1,5 @@
 import JSZip from "jszip"
+import { supabaseAdmin } from "@/lib/supabase-admin"
 import { validarCPF } from "@/utils/validacoes"
 import { gerarFichaAdmissaoAptiPdf } from "@/lib/ficha-admissao-apti-pdf"
 import {
@@ -10,9 +11,15 @@ import {
   aplicarPreenchimentoSintetico,
   type ConfigPreenchimentoSintetico,
 } from "@/lib/vinculos-dados-sinteticos"
-import { VINCULOS_LOTE_MAX_PDFS } from "@/lib/vinculos-constants"
+import {
+  VINCULOS_LOTE_MAX_PDFS,
+  VINCULOS_LOTE_ZIP_DIRECT_MAX_BYTES,
+} from "@/lib/vinculos-constants"
 
 export { VINCULOS_LOTE_MAX_PDFS }
+
+const STORAGE_BUCKET = "arquivos"
+const STORAGE_PREFIX = "vinculos-lote"
 
 export type FalhaLoteVinculos = {
   vida_importada_id: string
@@ -26,7 +33,10 @@ export type ResultadoLoteVinculos = {
   gerados_ids: string[]
   falhas: FalhaLoteVinculos[]
   nome_arquivo: string
-  zip_buffer: Buffer
+  entrega: "direct" | "storage"
+  zip_buffer?: Buffer
+  download_url?: string
+  expires_in_seconds?: number
 }
 
 function nomeArquivoPdf(nome: string, vidaId: string): string {
@@ -46,6 +56,39 @@ function validarAutomaticosParaPdf(automaticos: ReturnType<typeof mapearVidaPara
   if (cpfDigitos.length !== 11) return "CPF ausente ou incompleto"
   if (!validarCPF(cpfDigitos)) return "CPF inválido"
   return null
+}
+
+async function publicarZipNoStorage(params: {
+  administradoraId: string
+  zipBuffer: Buffer
+  nomeArquivo: string
+  gerados: number
+}): Promise<{ download_url: string; expires_in_seconds: number }> {
+  const storagePath = `${STORAGE_PREFIX}/${params.administradoraId}/${params.nomeArquivo}`
+
+  const { error: uploadError } = await supabaseAdmin.storage
+    .from(STORAGE_BUCKET)
+    .upload(storagePath, params.zipBuffer, {
+      contentType: "application/zip",
+      cacheControl: "3600",
+      upsert: true,
+    })
+
+  if (uploadError) {
+    throw new Error(
+      `ZIP gerado (${params.gerados} PDFs, ${Math.round(params.zipBuffer.length / 1024)} KB), mas falha ao salvar no Storage: ${uploadError.message}`
+    )
+  }
+
+  const expiresIn = 3600
+  const signed = await supabaseAdmin.storage.from(STORAGE_BUCKET).createSignedUrl(storagePath, expiresIn)
+  const downloadUrl = signed.data?.signedUrl
+
+  if (!downloadUrl) {
+    throw new Error("ZIP salvo, mas não foi possível gerar o link de download")
+  }
+
+  return { download_url: downloadUrl, expires_in_seconds: expiresIn }
 }
 
 export async function gerarLoteFichasVinculosZip(params: {
@@ -114,13 +157,32 @@ export async function gerarLoteFichasVinculosZip(params: {
 
   const zipBuffer = await zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE" })
   const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19)
+  const nomeArquivo = `fichas-admissao-lote-${stamp}.zip`
 
-  return {
+  const base: ResultadoLoteVinculos = {
     total_solicitado: ids.length,
     gerados,
     gerados_ids: geradosIds,
     falhas,
-    nome_arquivo: `fichas-admissao-lote-${stamp}.zip`,
-    zip_buffer: zipBuffer,
+    nome_arquivo: nomeArquivo,
+    entrega: "direct",
+  }
+
+  if (zipBuffer.length <= VINCULOS_LOTE_ZIP_DIRECT_MAX_BYTES) {
+    return { ...base, entrega: "direct", zip_buffer: zipBuffer }
+  }
+
+  const publicado = await publicarZipNoStorage({
+    administradoraId: params.administradoraId,
+    zipBuffer,
+    nomeArquivo,
+    gerados,
+  })
+
+  return {
+    ...base,
+    entrega: "storage",
+    download_url: publicado.download_url,
+    expires_in_seconds: publicado.expires_in_seconds,
   }
 }

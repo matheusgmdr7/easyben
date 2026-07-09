@@ -10,8 +10,7 @@ export const maxDuration = 300
 
 /**
  * POST /api/administradora/beneficiarios/vinculos/gerar-pdf-lote
- * Body: { administradora_id, vida_importada_ids[], ...opcionais globais }
- * Retorna ZIP direto com metadados nos headers X-Vinculos-*.
+ * Lotes pequenos: ZIP direto. Lotes grandes: JSON com link do Storage.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -50,17 +49,31 @@ export async function POST(request: NextRequest) {
       preenchimentoSintetico: parseConfigPreenchimentoSintetico(body),
     })
 
-    return new NextResponse(resultado.zip_buffer, {
-      status: 200,
-      headers: {
-        "Content-Type": "application/zip",
-        "Content-Disposition": `attachment; filename="${resultado.nome_arquivo}"`,
-        "X-Vinculos-Gerados": String(resultado.gerados),
-        "X-Vinculos-Total": String(resultado.total_solicitado),
-        "X-Vinculos-Nome-Arquivo": resultado.nome_arquivo,
-        "X-Vinculos-Gerados-Ids": JSON.stringify(resultado.gerados_ids),
-        "X-Vinculos-Falhas": JSON.stringify(resultado.falhas),
-      },
+    if (resultado.entrega === "direct" && resultado.zip_buffer) {
+      return new NextResponse(new Uint8Array(resultado.zip_buffer), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/zip",
+          "Content-Disposition": `attachment; filename="${resultado.nome_arquivo}"`,
+          "X-Vinculos-Gerados": String(resultado.gerados),
+          "X-Vinculos-Total": String(resultado.total_solicitado),
+          "X-Vinculos-Nome-Arquivo": resultado.nome_arquivo,
+          "X-Vinculos-Gerados-Ids": JSON.stringify(resultado.gerados_ids),
+          "X-Vinculos-Falhas": JSON.stringify(resultado.falhas),
+        },
+      })
+    }
+
+    return NextResponse.json({
+      success: true,
+      entrega: "storage",
+      gerados: resultado.gerados,
+      total_solicitado: resultado.total_solicitado,
+      gerados_ids: resultado.gerados_ids,
+      falhas: resultado.falhas,
+      download_url: resultado.download_url,
+      nome_arquivo: resultado.nome_arquivo,
+      expires_in_seconds: resultado.expires_in_seconds,
     })
   } catch (e: unknown) {
     console.error("Erro ao gerar lote de PDFs vínculos:", e)

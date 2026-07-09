@@ -62,6 +62,50 @@ function formatarCpf(cpf: string | null | undefined) {
   return d.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4")
 }
 
+function extrairMensagemErroLote(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object") return null
+  const p = payload as Record<string, unknown>
+  if (typeof p.error === "string" && p.error.trim()) return p.error
+  if (typeof p.errorMessage === "string" && p.errorMessage.trim()) return p.errorMessage
+  if (typeof p.message === "string" && p.message.trim()) return p.message
+  return null
+}
+
+function aplicarPosGeracaoLote(params: {
+  gerados: number
+  geradosIds: string[]
+  falhas: Array<{ nome: string; motivo: string }>
+  grupoId: string
+  administradoraId: string
+  vidas: VidaGrupoItem[]
+  setGeradosLocal: (s: Set<string>) => void
+  setSelecionados: (s: Set<string>) => void
+  setUltimoRelatorio: (r: { gerados: number; falhas: Array<{ nome: string; motivo: string }> }) => void
+}) {
+  params.setUltimoRelatorio({ gerados: params.gerados, falhas: params.falhas })
+
+  if (params.geradosIds.length > 0 && params.grupoId) {
+    const atualizado = marcarGeradosVinculosLocal(params.administradoraId, params.grupoId, params.geradosIds)
+    params.setGeradosLocal(atualizado)
+    const restantes = params.vidas.filter((v) => !atualizado.has(v.id))
+    const proximos = restantes.slice(0, VINCULOS_LOTE_MAX_PDFS).map((v) => v.id)
+    params.setSelecionados(new Set(proximos))
+    if (restantes.length > 0) {
+      toast.info(
+        `${params.geradosIds.length} ficha(s) marcada(s) como geradas. ${proximos.length} pendente(s) pré-selecionado(s) para o próximo lote.`
+      )
+    }
+  }
+
+  if (params.falhas.length > 0) {
+    toast.warning(
+      `ZIP gerado com ${params.gerados} PDF(s). ${params.falhas.length} beneficiário(s) não incluído(s).`
+    )
+  } else {
+    toast.success(`${params.gerados} PDF(s) gerados e baixados em ZIP`)
+  }
+}
+
 export function VinculosLotePanel({
   administradoraId,
   opcionais,
@@ -260,17 +304,57 @@ export function VinculosLotePanel({
         let mensagem = "Erro ao gerar lote"
         if (contentType.includes("application/json")) {
           const err = await res.json().catch(() => ({}))
-          mensagem = err?.error || mensagem
+          mensagem = extrairMensagemErroLote(err) || mensagem
         } else {
           const texto = await res.text().catch(() => "")
-          if (texto) mensagem = texto.slice(0, 300)
+          try {
+            const parsed = texto ? JSON.parse(texto) : null
+            mensagem = extrairMensagemErroLote(parsed) || texto.slice(0, 300) || mensagem
+          } catch {
+            if (texto) mensagem = texto.slice(0, 300)
+          }
         }
         throw new Error(mensagem)
       }
 
+      if (contentType.includes("application/json")) {
+        const data = await res.json().catch(() => ({}))
+        if (!data.download_url) {
+          throw new Error(extrairMensagemErroLote(data) || "Link de download não retornado")
+        }
+
+        const a = document.createElement("a")
+        a.href = data.download_url
+        a.download = data.nome_arquivo || "fichas-admissao-lote.zip"
+        a.target = "_blank"
+        a.rel = "noopener noreferrer"
+        a.click()
+
+        const geradosIds = Array.isArray(data.gerados_ids) ? data.gerados_ids : []
+        const falhas = Array.isArray(data.falhas)
+          ? data.falhas.map((f: { nome: string; motivo: string }) => ({
+              nome: f.nome,
+              motivo: f.motivo,
+            }))
+          : []
+
+        aplicarPosGeracaoLote({
+          gerados: data.gerados ?? 0,
+          geradosIds,
+          falhas,
+          grupoId,
+          administradoraId,
+          vidas,
+          setGeradosLocal,
+          setSelecionados,
+          setUltimoRelatorio,
+        })
+        return
+      }
+
       if (!contentType.includes("application/zip")) {
         const data = await res.json().catch(() => ({}))
-        throw new Error(data?.error || "Resposta inesperada ao gerar lote")
+        throw new Error(extrairMensagemErroLote(data) || "Resposta inesperada ao gerar lote")
       }
 
       const gerados = Number(res.headers.get("X-Vinculos-Gerados") || 0)
@@ -290,31 +374,17 @@ export function VinculosLotePanel({
       a.click()
       URL.revokeObjectURL(url)
 
-      setUltimoRelatorio({
+      aplicarPosGeracaoLote({
         gerados,
+        geradosIds,
         falhas: falhas.map((f) => ({ nome: f.nome, motivo: f.motivo })),
+        grupoId,
+        administradoraId,
+        vidas,
+        setGeradosLocal,
+        setSelecionados,
+        setUltimoRelatorio,
       })
-
-      if (geradosIds.length > 0 && grupoId) {
-        const atualizado = marcarGeradosVinculosLocal(administradoraId, grupoId, geradosIds)
-        setGeradosLocal(atualizado)
-        const restantes = vidas.filter((v) => !atualizado.has(v.id))
-        const proximos = restantes.slice(0, VINCULOS_LOTE_MAX_PDFS).map((v) => v.id)
-        setSelecionados(new Set(proximos))
-        if (restantes.length > 0) {
-          toast.info(
-            `${geradosIds.length} ficha(s) marcada(s) como geradas. ${proximos.length} pendente(s) pré-selecionado(s) para o próximo lote.`
-          )
-        }
-      }
-
-      if (falhas.length > 0) {
-        toast.warning(
-          `ZIP gerado com ${gerados} PDF(s). ${falhas.length} beneficiário(s) não incluído(s).`
-        )
-      } else {
-        toast.success(`${gerados} PDF(s) gerados e baixados em ZIP`)
-      }
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Erro ao gerar lote")
     } finally {
@@ -331,8 +401,8 @@ export function VinculosLotePanel({
             lotes — o sistema marca no navegador quem já foi gerado e pré-seleciona os próximos pendentes.
           </p>
           <p className="text-xs text-blue-800">
-            Se enviar mais de {VINCULOS_LOTE_MAX_PDFS} IDs, a API rejeita o pedido. A seleção na tela já respeita
-            esse limite.
+            Lotes com ZIP grande (&gt;3,5 MB) são salvos no Storage com link de download. A seleção respeita o
+            limite de {VINCULOS_LOTE_MAX_PDFS} por vez.
           </p>
         </AlertDescription>
       </Alert>
