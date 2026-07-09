@@ -1,5 +1,5 @@
 {
-  "modeloArquivo": "public/modelos/ficha-admissao-apti.pdf",
+  "modeloArquivo": "assets/modelos/ficha-admissao-apti.pdf",
   "fontSizePadrao": 8,
   "campos": {
     "nome": { "page": 0, "x": 68, "y": 606.4, "size": 8, "maxWidth": 335, "ajustarTamanho": true },

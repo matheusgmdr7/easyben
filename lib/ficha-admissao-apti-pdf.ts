@@ -1,4 +1,4 @@
-import { readFileSync } from "fs"
+import { existsSync, readFileSync } from "fs"
 import { resolve } from "path"
 import layout from "@/config/ficha-admissao-apti-layout.json"
 import {
@@ -27,6 +27,53 @@ type LayoutConfig = {
 
 const cfg = layout as LayoutConfig
 
+let modeloPdfCache: Uint8Array | null = null
+
+function baseUrlPublica(): string | null {
+  const candidatos = [
+    process.env.NEXT_PUBLIC_SITE_URL,
+    process.env.NEXT_PUBLIC_APP_URL,
+    process.env.URL,
+    process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null,
+  ]
+  for (const base of candidatos) {
+    const limpo = String(base || "").trim().replace(/\/$/, "")
+    if (limpo) return limpo
+  }
+  return null
+}
+
+async function carregarModeloPdf(): Promise<Uint8Array> {
+  if (modeloPdfCache) return modeloPdfCache
+
+  const relativo = cfg.modeloArquivo.replace(/^\.?\//, "")
+  const candidatos = [
+    resolve(process.cwd(), relativo),
+    resolve(process.cwd(), "assets/modelos/ficha-admissao-apti.pdf"),
+    resolve(process.cwd(), "public/modelos/ficha-admissao-apti.pdf"),
+  ]
+
+  for (const caminho of candidatos) {
+    if (existsSync(caminho)) {
+      modeloPdfCache = readFileSync(caminho)
+      return modeloPdfCache
+    }
+  }
+
+  const base = baseUrlPublica()
+  if (base) {
+    const res = await fetch(`${base}/modelos/ficha-admissao-apti.pdf`, { cache: "force-cache" })
+    if (res.ok) {
+      modeloPdfCache = new Uint8Array(await res.arrayBuffer())
+      return modeloPdfCache
+    }
+  }
+
+  throw new Error(
+    "Modelo PDF da ficha APTI não encontrado. Verifique assets/modelos/ficha-admissao-apti.pdf ou public/modelos/ficha-admissao-apti.pdf."
+  )
+}
+
 function textoOpcional(valor?: string): string {
   return String(valor || "").trim()
 }
@@ -50,8 +97,7 @@ export async function gerarFichaAdmissaoAptiPdf(
 ): Promise<Uint8Array> {
   const { PDFDocument, StandardFonts, rgb } = await import("pdf-lib")
 
-  const modeloPath = resolve(process.cwd(), cfg.modeloArquivo)
-  const modeloBytes = readFileSync(modeloPath)
+  const modeloBytes = await carregarModeloPdf()
   const pdfDoc = await PDFDocument.load(modeloBytes)
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica)
   const pages = pdfDoc.getPages()

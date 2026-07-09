@@ -17,6 +17,7 @@ import {
 import { Download, FileText, Loader2 } from "lucide-react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { VinculosLotePanel } from "@/components/administradora/vinculos-lote-panel"
+import { VinculosGeracaoProgresso } from "@/components/administradora/vinculos-geracao-progresso"
 import {
   VinculosPreenchimentoForm,
   PREENCHIMENTO_SINTETICO_VAZIO,
@@ -343,6 +344,8 @@ export default function BeneficiariosVinculosPage() {
             </>
           )}
         </Button>
+
+        {gerando && <VinculosGeracaoProgresso modo="individual" />}
           </TabsContent>
 
           <TabsContent value="lote" className="mt-6">

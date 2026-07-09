@@ -4,6 +4,16 @@ const nextConfig = {
   // Evita WasmHash / "Cannot read properties of undefined (reading 'length')" no webpack em CI (Netlify).
   experimental: {
     webpackBuildWorker: false,
+    outputFileTracingIncludes: {
+      "/api/administradora/beneficiarios/vinculos/gerar-pdf": [
+        "./assets/modelos/ficha-admissao-apti.pdf",
+        "./public/modelos/ficha-admissao-apti.pdf",
+      ],
+      "/api/administradora/beneficiarios/vinculos/gerar-pdf-lote": [
+        "./assets/modelos/ficha-admissao-apti.pdf",
+        "./public/modelos/ficha-admissao-apti.pdf",
+      ],
+    },
   },
   // webpackBuildWorker (experimental) costuma quebrar build em CI (ex.: Netlify) com erros opacos do webpack.
   webpack: (config, { dev }) => {

@@ -16,9 +16,8 @@ import {
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Download, Loader2 } from "lucide-react"
 import { VINCULOS_LOTE_MAX_PDFS } from "@/lib/vinculos-constants"
-import {
-  VinculosPreenchimentoForm,
-} from "@/components/administradora/vinculos-preenchimento-form"
+import { VinculosGeracaoProgresso } from "@/components/administradora/vinculos-geracao-progresso"
+import { VinculosPreenchimentoForm } from "@/components/administradora/vinculos-preenchimento-form"
 import type { ConfigPreenchimentoSintetico } from "@/lib/vinculos-dados-sinteticos"
 
 type GrupoItem = { id: string; nome: string; ativo?: boolean | null }
@@ -450,6 +449,8 @@ export function VinculosLotePanel({
           </>
         )}
       </Button>
+
+      {gerando && <VinculosGeracaoProgresso modo="lote" total={selecionados.size} />}
     </div>
   )
 }
