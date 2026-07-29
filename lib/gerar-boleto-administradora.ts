@@ -8,6 +8,7 @@ import AsaasServiceInstance from "@/services/asaas-service"
 import type { AsaasCustomer, AsaasCharge } from "@/services/asaas-service"
 import { FaturasService } from "@/services/faturas-service"
 import { gatewayAsaasComoNoBanco } from "@/lib/fatura-filtro-financeira"
+import { dispararPrimeiroBoletoGeradoSafe } from "@/lib/whatsapp-billing/trigger-hooks"
 
 /** Telefone em `telefones` (JSONB) ou chaves comuns em `dados_adicionais`. */
 function extrairTelefoneBeneficiario(telefones: unknown, dadosAdicionais: unknown): string {
@@ -655,6 +656,18 @@ export async function gerarBoletoAdministradora(body: Record<string, unknown>): 
       upd.colunasOmitidas.includes("gateway_nome") || upd.colunasOmitidas.includes("financeira_id")
         ? "Execute no Supabase scripts/adicionar-colunas-boleto-faturas.sql e scripts/adicionar-coluna-financeira-id-faturas.sql; sem essas colunas o filtro por financeira no dashboard não enxerga a fatura."
         : undefined
+
+    dispararPrimeiroBoletoGeradoSafe({
+      faturaId: fatura.id,
+      clienteAdministradoraId: idParaFatura,
+      administradoraId: administradora_id,
+      clienteNome: nome || "Cliente",
+      telefone: telefone || "",
+      valor: valorTotalBoleto,
+      vencimento: vencimentoIso,
+      linkBoleto: urlBoleto || undefined,
+      numeroFatura: String(updatePayload.numero_fatura ?? fatura.numero_fatura ?? ""),
+    })
 
     return NextResponse.json({
       success: true,

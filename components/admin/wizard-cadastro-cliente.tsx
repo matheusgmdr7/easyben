@@ -322,6 +322,16 @@ export function WizardCadastroCliente({
       
       console.log("✅ Cliente vinculado com sucesso!")
       console.log("📋 ID do cliente:", clienteVinculado.id)
+
+      void fetch("/api/administradora/whatsapp/disparar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          event_type: "saudacao_boas_vindas",
+          administradora_id: dados.administradora,
+          cliente_administradora_id: clienteVinculado.id,
+        }),
+      }).catch(() => {})
       console.log("📋 ID da administradora:", dados.administradora)
       
       // Salvar IDs para redirecionamento

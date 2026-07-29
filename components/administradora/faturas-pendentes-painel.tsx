@@ -12,6 +12,7 @@ import {
   montarUrlWhatsAppCobranca,
   normalizarTelefoneWhatsApp,
 } from "@/lib/whatsapp-cobranca"
+import { BadgeStatusWhatsAppFatura } from "@/components/administradora/whatsapp-mensagens-historico"
 import {
   carregarEnviosRecentes,
   filtrarEnviosAtivos,
@@ -101,6 +102,10 @@ type FaturasPendentesPainelProps = {
   periodoLabel: string
   /** Exibe coluna e botão de envio via WhatsApp (wa.me). */
   mostrarEnvioWhatsApp?: boolean
+  /** Usa Twilio (API) em vez de wa.me — painel Cobranças. */
+  whatsappModoTwilio?: boolean
+  /** Último status Twilio por fatura_id. */
+  statusWhatsAppPorFatura?: Record<string, { status: string }>
   /** Usado para persistir envios recentes na sessão (página Cobranças). */
   administradoraId?: string
   exportPrefix?: string
@@ -112,12 +117,15 @@ export function FaturasPendentesPainel({
   financeiras = [],
   periodoLabel,
   mostrarEnvioWhatsApp = false,
+  whatsappModoTwilio = false,
+  statusWhatsAppPorFatura = {},
   administradoraId,
   exportPrefix = "faturas-pendentes",
 }: FaturasPendentesPainelProps) {
   const [paginaPendencias, setPaginaPendencias] = useState(1)
   const [filtroPendencias, setFiltroPendencias] = useState<FiltroPendencias>("todos")
   const [exportandoPdf, setExportandoPdf] = useState(false)
+  const [enviandoTwilioId, setEnviandoTwilioId] = useState<string | null>(null)
   const [exportandoExcel, setExportandoExcel] = useState(false)
   const [agoraUi, setAgoraUi] = useState(() => Date.now())
   const [enviosRecentes, setEnviosRecentes] = useState<RegistroEnvioCobranca[]>([])
@@ -213,7 +221,46 @@ export function FaturasPendentesPainel({
     paginaAtual * itensPorPagina
   )
 
+  async function enviarWhatsAppTwilio(item: PendenciaFaturaItem) {
+    if (!administradoraId) {
+      toast.error("Administradora não identificada.")
+      return
+    }
+    if (!item.link_boleto) {
+      toast.error("Esta fatura não possui link de boleto.")
+      return
+    }
+    if (!normalizarTelefoneWhatsApp(item.cliente_telefone)) {
+      toast.error("Telefone do cliente não cadastrado ou inválido.")
+      return
+    }
+
+    setEnviandoTwilioId(item.fatura_id)
+    try {
+      const res = await fetch("/api/administradora/whatsapp/enviar-cobranca", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          administradora_id: administradoraId,
+          fatura_id: item.fatura_id,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || "Erro ao enfileirar envio")
+      marcarEnvioRecente(item)
+      toast.success(data.message || "Cobrança enfileirada para envio via Twilio")
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erro ao enviar cobrança")
+    } finally {
+      setEnviandoTwilioId(null)
+    }
+  }
+
   function enviarWhatsApp(item: PendenciaFaturaItem) {
+    if (whatsappModoTwilio) {
+      void enviarWhatsAppTwilio(item)
+      return
+    }
     if (!item.link_boleto) {
       toast.error("Esta fatura não possui link de boleto.")
       return
@@ -482,6 +529,7 @@ export function FaturasPendentesPainel({
                   !!item.link_boleto &&
                   !!normalizarTelefoneWhatsApp(item.cliente_telefone)
                 const envioRecente = enviosPorFaturaId.get(item.fatura_id)
+                const statusTwilio = statusWhatsAppPorFatura[item.fatura_id]
                 return (
                   <tr
                     key={item.fatura_id}
@@ -494,6 +542,9 @@ export function FaturasPendentesPainel({
                           <span className="text-[10px] font-medium text-emerald-700 tabular-nums">
                             Enviado · {rotuloEnvioRecente(envioRecente.enviado_em, agoraUi)}
                           </span>
+                        ) : null}
+                        {statusTwilio?.status ? (
+                          <BadgeStatusWhatsAppFatura status={statusTwilio.status} />
                         ) : null}
                       </div>
                       {mostrarEnvioWhatsApp && item.cliente_telefone ? (
@@ -569,7 +620,7 @@ export function FaturasPendentesPainel({
                               : "bg-emerald-600 text-white hover:bg-emerald-700 border-0 shadow-none",
                             !podeWhatsApp && "opacity-50"
                           )}
-                          disabled={!podeWhatsApp}
+                          disabled={!podeWhatsApp || enviandoTwilioId === item.fatura_id}
                           title={
                             !item.link_boleto
                               ? "Sem link de boleto"
@@ -577,11 +628,19 @@ export function FaturasPendentesPainel({
                                 ? "Telefone do cliente inválido ou ausente"
                                 : envioRecente
                                   ? `${rotuloEnvioRecente(envioRecente.enviado_em, agoraUi)} — clique para reenviar`
-                                  : "Abrir WhatsApp com mensagem e boleto"
+                                  : whatsappModoTwilio
+                                    ? "Enviar cobrança via Twilio WhatsApp"
+                                    : "Abrir WhatsApp com mensagem e boleto"
                           }
                           onClick={() => enviarWhatsApp(item)}
                         >
-                          {envioRecente ? "Reenviar" : "Enviar fatura"}
+                          {enviandoTwilioId === item.fatura_id
+                            ? "Enviando…"
+                            : envioRecente
+                              ? "Reenviar"
+                              : whatsappModoTwilio
+                                ? "Enviar Twilio"
+                                : "Enviar fatura"}
                         </Button>
                       </td>
                     ) : null}

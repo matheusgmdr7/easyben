@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase-admin"
+import { dispararConfirmacaoPagamentoSafe } from "@/lib/whatsapp-billing/trigger-hooks"
 
 export const maxDuration = 30
 
@@ -52,6 +53,33 @@ function deveBloquearRegressaoStatus(
   if (atual !== "paga") return false
   // Webhook pode chegar fora de ordem. Se já está paga, só aceita paga/cancelada.
   return novoStatus !== "paga" && novoStatus !== "cancelada"
+}
+
+async function atualizarFaturaWebhook(params: {
+  faturaId: string
+  statusAnterior: string
+  statusInterno: string
+  updateData: Record<string, unknown>
+}): Promise<boolean> {
+  const { data, error } = await supabaseAdmin
+    .from("faturas")
+    .update(params.updateData)
+    .eq("id", params.faturaId)
+    .select("id")
+
+  if (error) {
+    console.error("[webhook-asaas] erro ao atualizar fatura", {
+      id: params.faturaId,
+      error: error.message,
+    })
+    return false
+  }
+
+  const ok = (data || []).length > 0
+  if (ok && params.statusInterno === "paga" && params.statusAnterior !== "paga") {
+    dispararConfirmacaoPagamentoSafe(params.faturaId)
+  }
+  return ok
 }
 
 export async function POST(request: NextRequest) {
@@ -131,17 +159,14 @@ export async function POST(request: NextRequest) {
           continue
         }
 
-        const { data, error } = await supabaseAdmin
-          .from("faturas")
-          .update(updateData)
-          .eq("id", (fatura as any).id)
-          .select("id")
-
-        if (error) {
-          console.error("[webhook-asaas] erro ao atualizar fatura", { id: (fatura as any).id, error: error.message })
-          continue
-        }
-        totalAtualizadas += (data || []).length
+        const statusAnterior = normalizarStatusLocal((fatura as any).status)
+        const ok = await atualizarFaturaWebhook({
+          faturaId: String((fatura as any).id),
+          statusAnterior,
+          statusInterno,
+          updateData,
+        })
+        if (ok) totalAtualizadas++
       }
     }
 
@@ -162,12 +187,14 @@ export async function POST(request: NextRequest) {
         } else {
           for (const fatura of candNumero || []) {
             if (deveBloquearRegressaoStatus((fatura as any).status, statusInterno)) continue
-            const { data: upd } = await supabaseAdmin
-              .from("faturas")
-              .update(updateData)
-              .eq("id", (fatura as any).id)
-              .select("id")
-            totalAtualizadas += (upd || []).length
+            const statusAnterior = normalizarStatusLocal((fatura as any).status)
+            const ok = await atualizarFaturaWebhook({
+              faturaId: String((fatura as any).id),
+              statusAnterior,
+              statusInterno,
+              updateData,
+            })
+            if (ok) totalAtualizadas++
           }
         }
       }
@@ -184,12 +211,14 @@ export async function POST(request: NextRequest) {
         } else {
           for (const fatura of candRef || []) {
             if (deveBloquearRegressaoStatus((fatura as any).status, statusInterno)) continue
-            const { data: upd } = await supabaseAdmin
-              .from("faturas")
-              .update(updateData)
-              .eq("id", (fatura as any).id)
-              .select("id")
-            totalAtualizadas += (upd || []).length
+            const statusAnterior = normalizarStatusLocal((fatura as any).status)
+            const ok = await atualizarFaturaWebhook({
+              faturaId: String((fatura as any).id),
+              statusAnterior,
+              statusInterno,
+              updateData,
+            })
+            if (ok) totalAtualizadas++
           }
         }
       }
@@ -210,12 +239,14 @@ export async function POST(request: NextRequest) {
         } else {
           for (const fatura of candLegado || []) {
             if (deveBloquearRegressaoStatus((fatura as any).status, statusInterno)) continue
-            const { data: upd } = await supabaseAdmin
-              .from("faturas")
-              .update(updateData)
-              .eq("id", (fatura as any).id)
-              .select("id")
-            totalAtualizadas += (upd || []).length
+            const statusAnterior = normalizarStatusLocal((fatura as any).status)
+            const ok = await atualizarFaturaWebhook({
+              faturaId: String((fatura as any).id),
+              statusAnterior,
+              statusInterno,
+              updateData,
+            })
+            if (ok) totalAtualizadas++
           }
         }
       }

@@ -155,7 +155,7 @@ export default function CadastradoPage() {
       }
 
       // Vincular cliente à administradora usando o novo service
-      await ClientesAdministradorasService.vincularCliente({
+      const clienteVinculado = await ClientesAdministradorasService.vincularCliente({
         administradora_id: administradora,
         proposta_id: propostaCadastro.id,
         data_vencimento: dataVencimento,
@@ -164,6 +164,16 @@ export default function CadastradoPage() {
         integrar_asaas: integrarAsaas,
         criar_assinatura: criarAssinatura,
       })
+
+      void fetch("/api/administradora/whatsapp/disparar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          event_type: "saudacao_boas_vindas",
+          administradora_id: administradora,
+          cliente_administradora_id: clienteVinculado.id,
+        }),
+      }).catch(() => {})
 
       // Atualizar status da proposta para "transmitida"
       await atualizarStatusProposta(propostaCadastro.id, "transmitida")
