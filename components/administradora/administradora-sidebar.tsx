@@ -532,6 +532,23 @@ export default function AdministradoraSidebar() {
                       </Link>
                     </li>
                     )}
+                    {podeAcessarItem("relatorios_implantacao") && (
+                    <li>
+                      <Link
+                        href="/administradora/relatorios/implantacao"
+                        className={cn(
+                          "flex items-center gap-2 px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm rounded-md transition-all duration-300",
+                          isActive("/administradora/relatorios/implantacao")
+                            ? "bg-[#1E293B]/80 text-white"
+                            : "text-gray-300 hover:bg-[#1E293B]/50 hover:text-white"
+                        )}
+                        onClick={closeSidebar}
+                      >
+                        <ClipboardDocumentListIcon className="h-4 w-4" />
+                        <span>Relatório de Implantação</span>
+                      </Link>
+                    </li>
+                    )}
                     {podeAcessarItem("relatorios_devedores") && (
                     <li>
                       <Link
