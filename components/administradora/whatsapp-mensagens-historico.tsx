@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { formatarData } from "@/utils/formatters"
 import { toast } from "sonner"
+import { StatusEnvioWhatsApp } from "@/components/administradora/whatsapp-status-envio"
 
 type MensagemRow = {
   id: string
@@ -25,27 +26,6 @@ type MensagemRow = {
 }
 
 const btnSquare = "rounded-sm"
-
-function rotuloStatusWhatsApp(status: string) {
-  const s = String(status || "").toLowerCase()
-  if (s === "read") return "Lido"
-  if (s === "delivered") return "Entregue"
-  if (s === "sent") return "Enviado"
-  if (s === "queued") return "Na fila"
-  if (s === "pending") return "Pendente"
-  if (s === "failed" || s === "failed_permanent") return "Falhou"
-  if (s === "undelivered") return "Não entregue"
-  return status || "—"
-}
-
-function corStatusWhatsApp(status: string) {
-  const s = String(status || "").toLowerCase()
-  if (s === "read" || s === "delivered") return "text-emerald-700 bg-emerald-50 border-emerald-200"
-  if (s === "sent" || s === "queued") return "text-sky-700 bg-sky-50 border-sky-200"
-  if (s === "failed" || s === "failed_permanent" || s === "undelivered")
-    return "text-rose-700 bg-rose-50 border-rose-200"
-  return "text-slate-600 bg-slate-50 border-slate-200"
-}
 
 type Props = {
   administradoraId: string
@@ -88,7 +68,9 @@ export function WhatsAppMensagensHistorico({ administradoraId }: Props) {
       <div className="flex flex-col gap-1 border-b border-slate-100 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-base font-semibold text-slate-800">Histórico de envios WhatsApp</h2>
-          <p className="text-sm text-slate-500">{total} mensagem{total !== 1 ? "s" : ""} registrada{total !== 1 ? "s" : ""}</p>
+          <p className="text-sm text-slate-500">
+            {total} mensagem{total !== 1 ? "s" : ""} registrada{total !== 1 ? "s" : ""}
+          </p>
         </div>
         <Button
           type="button"
@@ -142,23 +124,11 @@ export function WhatsAppMensagensHistorico({ administradoraId }: Props) {
                     <td className="px-4 py-2.5 text-slate-700 tabular-nums whitespace-nowrap">
                       {formatarData(String(m.created_at).slice(0, 10))}
                     </td>
-                    <td className="px-4 py-2.5 text-slate-800 font-medium">
-                      {m.cliente_nome || "—"}
-                    </td>
+                    <td className="px-4 py-2.5 text-slate-800 font-medium">{m.cliente_nome || "—"}</td>
                     <td className="px-4 py-2.5 text-slate-600 text-xs">{m.event_label}</td>
-                    <td className="px-4 py-2.5 text-slate-500 tabular-nums text-xs">
-                      {m.telefone_mascara}
-                    </td>
+                    <td className="px-4 py-2.5 text-slate-500 tabular-nums text-xs">{m.telefone_mascara}</td>
                     <td className="px-4 py-2.5">
-                      <span
-                        className={cn(
-                          "inline-flex items-center rounded-sm border px-2 py-0.5 text-[11px] font-medium",
-                          corStatusWhatsApp(m.status)
-                        )}
-                        title={m.error_message || undefined}
-                      >
-                        {rotuloStatusWhatsApp(m.status)}
-                      </span>
+                      <StatusEnvioWhatsApp status={m.status} title={m.error_message || undefined} />
                     </td>
                   </tr>
                 ))
@@ -198,19 +168,3 @@ export function WhatsAppMensagensHistorico({ administradoraId }: Props) {
     </div>
   )
 }
-
-/** Badge compacto para coluna do painel de pendências. */
-export function BadgeStatusWhatsAppFatura({ status }: { status: string }) {
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center rounded-sm border px-1.5 py-0.5 text-[10px] font-medium",
-        corStatusWhatsApp(status)
-      )}
-    >
-      {rotuloStatusWhatsApp(status)}
-    </span>
-  )
-}
-
-export { rotuloStatusWhatsApp, corStatusWhatsApp }

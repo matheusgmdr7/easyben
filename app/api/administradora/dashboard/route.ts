@@ -372,6 +372,7 @@ export async function GET(request: NextRequest) {
       vencimento: string
       status: string
       corretora: string
+      corretor_id?: string | null
       link_boleto: string | null
       financeira_id: string | null
       financeira_nome: string | null
@@ -427,6 +428,7 @@ export async function GET(request: NextRequest) {
           vencimento: String(f.vencimento || "").slice(0, 10),
           status,
           corretora,
+          corretor_id: vidaCtx?.corretor_id || null,
           link_boleto: linkBoletoFatura(f),
           financeira_id: finInfo.financeira_id,
           financeira_nome: finInfo.financeira_nome,

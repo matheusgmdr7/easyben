@@ -12,7 +12,7 @@ import {
   montarUrlWhatsAppCobranca,
   normalizarTelefoneWhatsApp,
 } from "@/lib/whatsapp-cobranca"
-import { BadgeStatusWhatsAppFatura } from "@/components/administradora/whatsapp-mensagens-historico"
+import { StatusEnvioWhatsApp } from "@/components/administradora/whatsapp-status-envio"
 import {
   carregarEnviosRecentes,
   filtrarEnviosAtivos,
@@ -29,6 +29,7 @@ export type PendenciaFaturaItem = {
   vencimento: string
   status: string
   corretora: string
+  corretor_id?: string | null
   link_boleto: string | null
   financeira_id?: string | null
   financeira_nome?: string | null
@@ -105,7 +106,11 @@ type FaturasPendentesPainelProps = {
   /** Usa Twilio (API) em vez de wa.me — painel Cobranças. */
   whatsappModoTwilio?: boolean
   /** Último status Twilio por fatura_id. */
-  statusWhatsAppPorFatura?: Record<string, { status: string }>
+  statusWhatsAppPorFatura?: Record<string, { status: string; error_message?: string }>
+  /** Filtra listagem por corretor (id). */
+  corretorIdFiltro?: string
+  /** Recarrega status WhatsApp após envio. */
+  onEnvioWhatsApp?: (faturaId: string) => void
   /** Usado para persistir envios recentes na sessão (página Cobranças). */
   administradoraId?: string
   exportPrefix?: string
@@ -119,6 +124,8 @@ export function FaturasPendentesPainel({
   mostrarEnvioWhatsApp = false,
   whatsappModoTwilio = false,
   statusWhatsAppPorFatura = {},
+  corretorIdFiltro = "",
+  onEnvioWhatsApp,
   administradoraId,
   exportPrefix = "faturas-pendentes",
 }: FaturasPendentesPainelProps) {
@@ -139,7 +146,7 @@ export function FaturasPendentesPainel({
 
   useEffect(() => {
     setPaginaPendencias(1)
-  }, [filtroPendencias, pendencias.length])
+  }, [filtroPendencias, corretorIdFiltro, pendencias.length])
 
   useEffect(() => {
     if (!mostrarEnvioWhatsApp || !administradoraId?.trim()) {
@@ -175,8 +182,14 @@ export function FaturasPendentesPainel({
   )
 
   const pendenciasFiltradas = useMemo(() => {
-    if (filtroPendencias === "todos") return pendencias
-    return pendencias.filter((item) => {
+    let lista = pendencias
+    if (corretorIdFiltro === "__sem__") {
+      lista = lista.filter((item) => !item.corretor_id)
+    } else if (corretorIdFiltro) {
+      lista = lista.filter((item) => item.corretor_id === corretorIdFiltro)
+    }
+    if (filtroPendencias === "todos") return lista
+    return lista.filter((item) => {
       if (item.status !== "atrasada") return false
       if (filtroPendencias === "um_boleto_novo") return item.segmento_atraso === "um_boleto_novo"
       if (filtroPendencias === "um_boleto_antigo") return item.segmento_atraso === "um_boleto_antigo"
@@ -184,7 +197,7 @@ export function FaturasPendentesPainel({
       if (filtroPendencias === "cancelados_quitacao") return item.cancelado_inadimplencia === true
       return true
     })
-  }, [pendencias, filtroPendencias])
+  }, [pendencias, filtroPendencias, corretorIdFiltro])
 
   const filtrosPendencias: { id: FiltroPendencias; label: string; count: number }[] = useMemo(() => {
     const atrasadas = pendencias.filter((p) => p.status === "atrasada")
@@ -248,6 +261,7 @@ export function FaturasPendentesPainel({
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || "Erro ao enfileirar envio")
       marcarEnvioRecente(item)
+      onEnvioWhatsApp?.(item.fatura_id)
       toast.success(data.message || "Cobrança enfileirada para envio via Twilio")
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Erro ao enviar cobrança")
@@ -417,7 +431,8 @@ export function FaturasPendentesPainel({
     }
   }
 
-  const colSpanBase = (mostrarEnvioWhatsApp ? 7 : 6) + (mostrarColunaValor ? 1 : 0)
+  const colSpanBase =
+    (mostrarEnvioWhatsApp ? 8 : 6) + (mostrarColunaValor ? 1 : 0)
 
   return (
     <div className="rounded-sm border border-slate-200/90 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.06)] overflow-hidden">
@@ -507,9 +522,14 @@ export function FaturasPendentesPainel({
                 Boleto
               </th>
               {mostrarEnvioWhatsApp ? (
-                <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">
-                  Cobrança
-                </th>
+                <>
+                  <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                    Cobrança
+                  </th>
+                  <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                    Envio
+                  </th>
+                </>
               ) : null}
             </tr>
           </thead>
@@ -536,17 +556,7 @@ export function FaturasPendentesPainel({
                     className={idx % 2 === 0 ? "bg-white" : "bg-slate-50/50"}
                   >
                     <td className="px-4 py-2.5 text-slate-800 font-medium">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span>{item.cliente_nome}</span>
-                        {envioRecente ? (
-                          <span className="text-[10px] font-medium text-emerald-700 tabular-nums">
-                            Enviado · {rotuloEnvioRecente(envioRecente.enviado_em, agoraUi)}
-                          </span>
-                        ) : null}
-                        {statusTwilio?.status ? (
-                          <BadgeStatusWhatsAppFatura status={statusTwilio.status} />
-                        ) : null}
-                      </div>
+                      <div>{item.cliente_nome}</div>
                       {mostrarEnvioWhatsApp && item.cliente_telefone ? (
                         <div className="text-[11px] font-normal text-slate-500 mt-0.5">{item.cliente_telefone}</div>
                       ) : null}
@@ -608,8 +618,9 @@ export function FaturasPendentesPainel({
                       )}
                     </td>
                     {mostrarEnvioWhatsApp ? (
-                      <td className="px-4 py-2.5">
-                        <Button
+                      <>
+                        <td className="px-4 py-2.5">
+                          <Button
                           type="button"
                           size="sm"
                           variant={envioRecente ? "outline" : "default"}
@@ -642,7 +653,24 @@ export function FaturasPendentesPainel({
                                 ? "Enviar Twilio"
                                 : "Enviar fatura"}
                         </Button>
-                      </td>
+                        </td>
+                        <td className="px-4 py-2.5 whitespace-nowrap">
+                        {enviandoTwilioId === item.fatura_id ? (
+                          <span className="text-xs text-slate-500">Enviando…</span>
+                        ) : statusTwilio?.status ? (
+                          <StatusEnvioWhatsApp
+                            status={statusTwilio.status}
+                            title={statusTwilio.error_message}
+                          />
+                        ) : envioRecente ? (
+                          <span className="text-xs text-slate-500 tabular-nums">
+                            {rotuloEnvioRecente(envioRecente.enviado_em, agoraUi)}
+                          </span>
+                        ) : (
+                          <StatusEnvioWhatsApp status={null} />
+                        )}
+                        </td>
+                      </>
                     ) : null}
                   </tr>
                 )

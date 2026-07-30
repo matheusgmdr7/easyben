@@ -87,7 +87,7 @@ export async function POST(request: NextRequest) {
 
     const { data, error } = await supabaseAdmin
       .from("whatsapp_messages")
-      .select("fatura_id, status, event_type, created_at, delivered_at, read_at")
+      .select("fatura_id, status, event_type, created_at, delivered_at, read_at, error_message")
       .eq("administradora_id", administradoraId)
       .in("fatura_id", faturaIds.slice(0, 200))
       .order("created_at", { ascending: false })
@@ -98,7 +98,14 @@ export async function POST(request: NextRequest) {
 
     const porFatura: Record<
       string,
-      { status: string; event_type: string; created_at: string; delivered_at?: string | null; read_at?: string | null }
+      {
+        status: string
+        event_type: string
+        created_at: string
+        delivered_at?: string | null
+        read_at?: string | null
+        error_message?: string | null
+      }
     > = {}
 
     for (const row of data || []) {

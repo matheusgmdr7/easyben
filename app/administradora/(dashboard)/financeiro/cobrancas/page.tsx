@@ -16,6 +16,7 @@ import { WhatsAppCobrancasConfig } from "@/components/administradora/whatsapp-co
 import { WhatsAppMensagensHistorico } from "@/components/administradora/whatsapp-mensagens-historico"
 
 type FinanceiraOpcao = { id: string; nome: string }
+type CorretorOpcao = { id: string; nome: string }
 
 const btnSquare = "rounded-sm"
 
@@ -33,11 +34,13 @@ export default function CobrancasFinanceiroPage() {
   const [anoRef, setAnoRef] = useState(String(agora.getFullYear()))
   const [pendencias, setPendencias] = useState<PendenciaFaturaItem[]>([])
   const [financeiras, setFinanceiras] = useState<FinanceiraOpcao[]>([])
+  const [corretores, setCorretores] = useState<CorretorOpcao[]>([])
   const [financeiraId, setFinanceiraId] = useState("")
+  const [corretorId, setCorretorId] = useState("")
   const [alertaFiltroGateway, setAlertaFiltroGateway] = useState(false)
   const [whatsappAutomaticoAtivo, setWhatsappAutomaticoAtivo] = useState(false)
   const [statusWhatsAppPorFatura, setStatusWhatsAppPorFatura] = useState<
-    Record<string, { status: string; event_type?: string; created_at?: string }>
+    Record<string, { status: string; event_type?: string; created_at?: string; error_message?: string | null }>
   >({})
 
   async function carregarStatusWhatsApp(administradoraId: string, faturaIds: string[]) {
@@ -123,6 +126,24 @@ export default function CobrancasFinanceiroPage() {
                 nome: String(f.nome || "Financeira"),
               }))
               .filter((f: FinanceiraOpcao) => f.id)
+          )
+        }
+
+        const corRes = await fetch(
+          `/api/administradora/corretores?administradora_id=${encodeURIComponent(adm.id)}`,
+          { cache: "no-store" }
+        )
+        const corPayload = await corRes.json().catch(() => [])
+        const listaCor = Array.isArray(corPayload) ? corPayload : []
+        if (corRes.ok) {
+          setCorretores(
+            listaCor
+              .map((c: { id?: string; nome?: string }) => ({
+                id: String(c.id || ""),
+                nome: String(c.nome || "Corretor"),
+              }))
+              .filter((c: CorretorOpcao) => c.id)
+              .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"))
           )
         }
 
@@ -239,6 +260,26 @@ export default function CobrancasFinanceiroPage() {
                 ))}
               </select>
             </div>
+            <div className="flex flex-col gap-1 min-w-[12rem] flex-1 max-w-md">
+              <label htmlFor="cobrancas-corretora" className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                Corretora
+              </label>
+              <select
+                id="cobrancas-corretora"
+                value={corretorId}
+                onChange={(e) => setCorretorId(e.target.value)}
+                className={`h-10 w-full ${btnSquare} border border-slate-300 bg-white px-3 text-sm`}
+                disabled={loading}
+              >
+                <option value="">Todas as corretoras</option>
+                <option value="__sem__">Sem corretora</option>
+                {corretores.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.nome}
+                  </option>
+                ))}
+              </select>
+            </div>
             <Button
               type="button"
               className={cn(btnSquare, "h-10 bg-[#0F172A] hover:bg-[#1E293B] text-white")}
@@ -266,6 +307,15 @@ export default function CobrancasFinanceiroPage() {
           mostrarEnvioWhatsApp
           whatsappModoTwilio
           statusWhatsAppPorFatura={statusWhatsAppPorFatura}
+          corretorIdFiltro={corretorId}
+          onEnvioWhatsApp={(faturaId) => {
+            if (administradora?.id) {
+              void carregarStatusWhatsApp(administradora.id, [faturaId])
+              window.setTimeout(() => {
+                void carregarStatusWhatsApp(administradora.id!, [faturaId])
+              }, 4000)
+            }
+          }}
           exportPrefix="cobrancas"
         />
           </TabsContent>
