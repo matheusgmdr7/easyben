@@ -55,7 +55,6 @@ export default function RelatorioImplantacaoPage() {
   const [grupoId, setGrupoId] = useState("todos")
   const [corretorId, setCorretorId] = useState("todos")
   const [somentePrimeiro, setSomentePrimeiro] = useState(true)
-  const [implantadoFiltro, setImplantadoFiltro] = useState("nao")
 
   const [grupos, setGrupos] = useState<GrupoBeneficiarios[]>([])
   const [corretores, setCorretores] = useState<Corretor[]>([])
@@ -133,7 +132,6 @@ export default function RelatorioImplantacaoPage() {
       if (grupoId !== "todos") url.searchParams.set("grupo_id", grupoId)
       if (corretorId !== "todos") url.searchParams.set("corretor_id", corretorId)
       url.searchParams.set("somente_primeiro_boleto", somentePrimeiro ? "1" : "0")
-      url.searchParams.set("implantado", implantadoFiltro)
 
       const res = await fetch(url.toString(), { cache: "no-store" })
       const data = await res.json()
@@ -333,19 +331,6 @@ export default function RelatorioImplantacaoPage() {
                       {c.nome}
                     </SelectItem>
                   ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1">
-              <Label className="text-[10px] uppercase tracking-wide text-slate-500">Implantação</Label>
-              <Select value={implantadoFiltro} onValueChange={setImplantadoFiltro}>
-                <SelectTrigger className={cn(btnSquare, "h-10")}>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="todos">Todos</SelectItem>
-                  <SelectItem value="nao">Aguardando implantação</SelectItem>
-                  <SelectItem value="sim">Já implantados</SelectItem>
                 </SelectContent>
               </Select>
             </div>
