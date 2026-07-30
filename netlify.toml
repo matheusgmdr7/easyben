@@ -14,3 +14,8 @@
 
 [functions]
   node_bundler = "esbuild"
+
+# Cron WhatsApp cobranças — 12:00 UTC = 09:00 BRT (Scheduled Function)
+[functions."whatsapp-billing-reminders"]
+  schedule = "0 12 * * *"
+  timeout = 26

@@ -1,0 +1,18 @@
+# Workers WhatsApp (BullMQ) — deploy no Railway
+# Netlify hospeda o Next.js; esta imagem só roda os processos de fila.
+
+FROM node:20-bookworm-slim
+
+WORKDIR /app
+
+ENV PUPPETEER_SKIP_DOWNLOAD=true
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+ENV NPM_CONFIG_PRODUCTION=false
+
+COPY package.json package-lock.json ./
+
+RUN npm ci --legacy-peer-deps --ignore-scripts
+
+COPY . .
+
+CMD ["npm", "run", "workers:whatsapp:prod"]

@@ -1,0 +1,17 @@
+# Impede Nixpacks de rodar `next build` neste serviço (só workers)
+[phases.setup]
+nixPkgs = ["nodejs_20", "npm-9_x"]
+
+[phases.install]
+cmds = ["npm ci --legacy-peer-deps --ignore-scripts"]
+
+[phases.build]
+cmds = ["echo 'skip next build — workers only'"]
+
+[start]
+cmd = "npm run workers:whatsapp:prod"
+
+[variables]
+PUPPETEER_SKIP_DOWNLOAD = "true"
+PUPPETEER_SKIP_CHROMIUM_DOWNLOAD = "true"
+NPM_CONFIG_PRODUCTION = "false"
