@@ -29,6 +29,22 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "dia inválido" }, { status: 400 })
     }
 
+    const dataInicio = qs.get("data_inicio")?.trim() || null
+    const dataFim = qs.get("data_fim")?.trim() || null
+    const isoData = /^\d{4}-\d{2}-\d{2}$/
+    if (dataInicio && !isoData.test(dataInicio)) {
+      return NextResponse.json({ error: "data_inicio inválida" }, { status: 400 })
+    }
+    if (dataFim && !isoData.test(dataFim)) {
+      return NextResponse.json({ error: "data_fim inválida" }, { status: 400 })
+    }
+    if ((dataInicio && !dataFim) || (!dataInicio && dataFim)) {
+      return NextResponse.json(
+        { error: "data_inicio e data_fim devem ser informadas juntas" },
+        { status: 400 }
+      )
+    }
+
     const { data: administradora } = await supabaseAdmin
       .from("administradoras")
       .select("tenant_id")
@@ -52,6 +68,8 @@ export async function GET(request: NextRequest) {
       ano,
       mes,
       dia,
+      dataInicio,
+      dataFim,
       grupoId,
       corretorId: corretorId && corretorId !== "todos" ? corretorId : null,
       somentePrimeiroBoleto: somentePrimeiro,

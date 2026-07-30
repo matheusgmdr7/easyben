@@ -9,7 +9,12 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
-import { FileSpreadsheet, Loader2, Search } from "lucide-react"
+import { Calendar } from "@/components/ui/calendar"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { CalendarDays, FileSpreadsheet, Loader2, Search, X } from "lucide-react"
+import { format, parse } from "date-fns"
+import { ptBR } from "date-fns/locale"
+import type { DateRange } from "react-day-picker"
 import { formatarData, formatarMoeda } from "@/utils/formatters"
 import { cn } from "@/lib/utils"
 import type { LinhaRelatorioImplantacao } from "@/lib/relatorio-implantacao"
@@ -46,7 +51,7 @@ export default function RelatorioImplantacaoPage() {
 
   const [mesRef, setMesRef] = useState(String(agora.getMonth() + 1).padStart(2, "0"))
   const [anoRef, setAnoRef] = useState(String(agora.getFullYear()))
-  const [diaRef, setDiaRef] = useState("")
+  const [periodoRange, setPeriodoRange] = useState<DateRange | undefined>()
   const [grupoId, setGrupoId] = useState("todos")
   const [corretorId, setCorretorId] = useState("todos")
   const [somentePrimeiro, setSomentePrimeiro] = useState(true)
@@ -54,6 +59,7 @@ export default function RelatorioImplantacaoPage() {
 
   const [grupos, setGrupos] = useState<GrupoBeneficiarios[]>([])
   const [corretores, setCorretores] = useState<Corretor[]>([])
+  const [calendarioAberto, setCalendarioAberto] = useState(false)
 
   useEffect(() => {
     const adm = getAdministradoraLogada()
@@ -66,6 +72,31 @@ export default function RelatorioImplantacaoPage() {
   useEffect(() => {
     setPaginaAtual(1)
   }, [linhas.length])
+
+  useEffect(() => {
+    setPeriodoRange(undefined)
+  }, [mesRef, anoRef])
+
+  const mesCalendario = useMemo(
+    () => parse(`${anoRef}-${mesRef}-01`, "yyyy-MM-dd", new Date()),
+    [anoRef, mesRef]
+  )
+
+  function labelPeriodoSelecionado(range: DateRange | undefined): string {
+    if (!range?.from) return "Todo o mês"
+    const inicio = format(range.from, "dd/MM/yyyy", { locale: ptBR })
+    if (!range.to) return `${inicio} — …`
+    const fim = format(range.to, "dd/MM/yyyy", { locale: ptBR })
+    return inicio === fim ? inicio : `${inicio} — ${fim}`
+  }
+
+  function selecionarPeriodo(range: DateRange | undefined) {
+    setPeriodoRange(range)
+    if (range?.from) {
+      setAnoRef(String(range.from.getFullYear()))
+      setMesRef(String(range.from.getMonth() + 1).padStart(2, "0"))
+    }
+  }
 
   async function carregarFiltros(admId: string) {
     try {
@@ -92,7 +123,13 @@ export default function RelatorioImplantacaoPage() {
       url.searchParams.set("administradora_id", administradoraId)
       url.searchParams.set("ano", anoRef)
       url.searchParams.set("mes", mesRef)
-      if (diaRef.trim()) url.searchParams.set("dia", diaRef.trim())
+      if (periodoRange?.from) {
+        url.searchParams.set("data_inicio", format(periodoRange.from, "yyyy-MM-dd"))
+        url.searchParams.set(
+          "data_fim",
+          format(periodoRange.to ?? periodoRange.from, "yyyy-MM-dd")
+        )
+      }
       if (grupoId !== "todos") url.searchParams.set("grupo_id", grupoId)
       if (corretorId !== "todos") url.searchParams.set("corretor_id", corretorId)
       url.searchParams.set("somente_primeiro_boleto", somentePrimeiro ? "1" : "0")
@@ -149,8 +186,12 @@ export default function RelatorioImplantacaoPage() {
       const ws = XLSX.utils.json_to_sheet(rows)
       const wb = XLSX.utils.book_new()
       XLSX.utils.book_append_sheet(wb, ws, "Implantacao")
-      const sufixoDia = diaRef.trim() ? `-${diaRef.padStart(2, "0")}` : ""
-      XLSX.writeFile(wb, `relatorio-implantacao-${anoRef}-${mesRef}${sufixoDia}.xlsx`)
+      const sufixoPeriodo = periodoRange?.from
+        ? `-${format(periodoRange.from, "yyyy-MM-dd")}${
+            periodoRange.to ? `_a_${format(periodoRange.to, "yyyy-MM-dd")}` : ""
+          }`
+        : ""
+      XLSX.writeFile(wb, `relatorio-implantacao-${anoRef}-${mesRef}${sufixoPeriodo}.xlsx`)
       toast.success("Excel exportado")
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Erro ao exportar")
@@ -170,7 +211,7 @@ export default function RelatorioImplantacaoPage() {
     ? periodo.inicio === periodo.fim
       ? formatarData(periodo.inicio)
       : `${formatarData(periodo.inicio)} — ${formatarData(periodo.fim)}`
-    : `${mesRef}/${anoRef}${diaRef ? ` (dia ${diaRef})` : ""}`
+    : labelPeriodoSelecionado(periodoRange)
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -178,7 +219,7 @@ export default function RelatorioImplantacaoPage() {
         <h1 className="text-xl font-semibold text-gray-800">Relatório de Implantação</h1>
         <p className="text-sm text-gray-500 mt-0.5">
           Clientes com boleto pago — ideal para identificar quem pagou o primeiro boleto e pode ser
-          incluído no plano.
+          incluído no plano. Implantado: carteirinha preenchida ou marcado como implantado no cadastro.
         </p>
       </div>
 
@@ -211,19 +252,57 @@ export default function RelatorioImplantacaoPage() {
                 onChange={(e) => setAnoRef(e.target.value)}
               />
             </div>
-            <div className="space-y-1">
+            <div className="space-y-1 sm:col-span-2">
               <Label className="text-[10px] uppercase tracking-wide text-slate-500">
-                Dia (opcional)
+                Período de pagamento (opcional)
               </Label>
-              <Input
-                type="number"
-                className={cn(btnSquare, "h-10")}
-                placeholder="Todo o mês"
-                min={1}
-                max={31}
-                value={diaRef}
-                onChange={(e) => setDiaRef(e.target.value)}
-              />
+              <Popover open={calendarioAberto} onOpenChange={setCalendarioAberto}>
+                <PopoverTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className={cn(
+                      btnSquare,
+                      "h-10 w-full justify-start px-3 font-normal",
+                      !periodoRange?.from && "text-muted-foreground"
+                    )}
+                  >
+                    <CalendarDays className="mr-2 h-4 w-4 shrink-0 opacity-70" />
+                    {labelPeriodoSelecionado(periodoRange)}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="range"
+                    selected={periodoRange}
+                    onSelect={(range) => {
+                      selecionarPeriodo(range)
+                      if (range?.from && range?.to) setCalendarioAberto(false)
+                    }}
+                    defaultMonth={mesCalendario}
+                    month={mesCalendario}
+                    onMonthChange={(data) => {
+                      setAnoRef(String(data.getFullYear()))
+                      setMesRef(String(data.getMonth() + 1).padStart(2, "0"))
+                    }}
+                    locale={ptBR}
+                    numberOfMonths={1}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
+              {periodoRange?.from ? (
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-800"
+                  onClick={() => setPeriodoRange(undefined)}
+                >
+                  <X className="h-3 w-3" />
+                  Limpar período
+                </button>
+              ) : (
+                <p className="text-xs text-slate-500">Selecione um dia ou intervalo; vazio = mês inteiro.</p>
+              )}
             </div>
             <div className="space-y-1">
               <Label className="text-[10px] uppercase tracking-wide text-slate-500">Grupo</Label>

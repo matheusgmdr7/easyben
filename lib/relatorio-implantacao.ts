@@ -72,6 +72,15 @@ function dataPagamentoIso(raw: unknown): string | null {
   return s.slice(0, 10)
 }
 
+/** Implantado = flag explícita ou número de carteirinha preenchido. */
+export function clienteEstaImplantado(params: {
+  implantado?: boolean | null
+  numero_carteirinha?: string | null
+}): boolean {
+  if (params.implantado === true) return true
+  return Boolean(String(params.numero_carteirinha || "").trim())
+}
+
 /** Cliente já tinha outra fatura paga antes desta data (exclui a fatura atual). */
 function tinhaPagamentoAnterior(
   clienteId: string,
@@ -93,19 +102,31 @@ export async function gerarRelatorioImplantacao(params: {
   tenantId?: string | null
   ano: number
   mes: number
+  /** @deprecated Preferir dataInicio/dataFim */
   dia?: number | null
+  dataInicio?: string | null
+  dataFim?: string | null
   grupoId?: string | null
   corretorId?: string | null
   somentePrimeiroBoleto?: boolean
   implantado?: "todos" | "sim" | "nao"
 }): Promise<ResultadoRelatorioImplantacao> {
   const { administradoraId, tenantId, ano, mes } = params
-  const inicio = params.dia
-    ? `${ano}-${String(mes).padStart(2, "0")}-${String(params.dia).padStart(2, "0")}`
-    : primeiroDiaMes(ano, mes)
-  const fim = params.dia
-    ? inicio
-    : ultimoDiaMes(ano, mes)
+  const inicioInformado = dataPagamentoIso(params.dataInicio)
+  const fimInformado = dataPagamentoIso(params.dataFim)
+
+  let inicio: string
+  let fim: string
+  if (inicioInformado && fimInformado) {
+    inicio = inicioInformado <= fimInformado ? inicioInformado : fimInformado
+    fim = inicioInformado <= fimInformado ? fimInformado : inicioInformado
+  } else if (params.dia) {
+    inicio = `${ano}-${String(mes).padStart(2, "0")}-${String(params.dia).padStart(2, "0")}`
+    fim = inicio
+  } else {
+    inicio = primeiroDiaMes(ano, mes)
+    fim = ultimoDiaMes(ano, mes)
+  }
 
   let query = supabaseAdmin
     .from("faturas")
@@ -292,7 +313,10 @@ export async function gerarRelatorioImplantacao(params: {
     if (params.somentePrimeiroBoleto !== false && !primeiroBoleto) continue
 
     const cliente = clientesMap.get(clienteId)
-    const implantado = cliente?.implantado === true
+    const implantado = clienteEstaImplantado({
+      implantado: cliente?.implantado,
+      numero_carteirinha: cliente?.numero_carteirinha,
+    })
 
     if (params.implantado === "sim" && !implantado) continue
     if (params.implantado === "nao" && implantado) continue
