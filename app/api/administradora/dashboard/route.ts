@@ -11,6 +11,10 @@ import {
   montarResumoAtrasadasNoPeriodo,
   type SegmentoAtraso,
 } from "@/lib/dashboard-pendencias-atrasadas"
+import {
+  primeiroTelefoneDeVida,
+  resolverTelefoneClienteCobranca,
+} from "@/lib/telefone-cliente-cobranca"
 
 type FaturaRow = {
   id: string
@@ -301,12 +305,14 @@ export async function GET(request: NextRequest) {
       new Set(faturas.map((f) => String(f.cliente_administradora_id || "").trim()).filter(Boolean))
     )
     const vidaByClienteAdmId = new Map<string, VidaMap>()
+    const telefoneVidaPorClienteAdm = new Map<string, string>()
+    const telefoneCadastroPorClienteAdm = new Map<string, string>()
     if (clienteAdmIds.length > 0) {
       for (let i = 0; i < clienteAdmIds.length; i += 500) {
         const lote = clienteAdmIds.slice(i, i + 500)
         const { data: vidasLote } = await supabaseAdmin
           .from("vidas_importadas")
-          .select("cliente_administradora_id, grupo_id, corretor_id, tipo")
+          .select("cliente_administradora_id, grupo_id, corretor_id, tipo, telefones, dados_adicionais")
           .eq("administradora_id", administradoraId)
           .eq("tenant_id", tenantId)
           .in("cliente_administradora_id", lote)
@@ -322,11 +328,18 @@ export async function GET(request: NextRequest) {
               corretor_id: (v as any)?.corretor_id || null,
             })
           }
+
+          const telVida = primeiroTelefoneDeVida(v as Record<string, unknown>)
+          if (telVida) {
+            const telAtual = telefoneVidaPorClienteAdm.get(clienteAdmId)
+            if (!telAtual || tipo === "titular") {
+              telefoneVidaPorClienteAdm.set(clienteAdmId, telVida)
+            }
+          }
         }
       }
     }
 
-    const telefonePorClienteAdm = new Map<string, string>()
     if (clienteAdmIds.length > 0) {
       for (let i = 0; i < clienteAdmIds.length; i += 500) {
         const lote = clienteAdmIds.slice(i, i + 500)
@@ -339,7 +352,7 @@ export async function GET(request: NextRequest) {
         for (const c of clientesLote || []) {
           const id = String((c as { id?: string }).id || "").trim()
           const tel = String((c as { cliente_telefone?: string }).cliente_telefone || "").trim()
-          if (id && tel) telefonePorClienteAdm.set(id, tel)
+          if (id && tel) telefoneCadastroPorClienteAdm.set(id, tel)
         }
       }
     }
@@ -401,13 +414,14 @@ export async function GET(request: NextRequest) {
           faturasAtrasadasPeriodo.push({ cliente_administradora_id: clienteAdmId || null })
         }
         const telFatura = String(f.cliente_telefone || "").trim()
-        const telCadastro = clienteAdmId ? telefonePorClienteAdm.get(clienteAdmId) || "" : ""
+        const telVida = clienteAdmId ? telefoneVidaPorClienteAdm.get(clienteAdmId) || "" : ""
+        const telCadastro = clienteAdmId ? telefoneCadastroPorClienteAdm.get(clienteAdmId) || "" : ""
         const finInfo = resolverFinanceiraDaFatura(f, financeirasCadastro)
         pendenciasFaturas.push({
           fatura_id: String(f.id),
           cliente_administradora_id: clienteAdmId || null,
           cliente_nome: String(f.cliente_nome || "Cliente"),
-          cliente_telefone: telFatura || telCadastro || null,
+          cliente_telefone: resolverTelefoneClienteCobranca(telVida, telCadastro, telFatura),
           numero_fatura: f.numero_fatura ? String(f.numero_fatura) : null,
           valor: Number.isFinite(valor) ? valor : null,
           vencimento: String(f.vencimento || "").slice(0, 10),

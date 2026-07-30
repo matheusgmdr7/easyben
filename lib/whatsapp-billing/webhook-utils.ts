@@ -12,20 +12,40 @@ export function parseTwilioFormBody(raw: string): Record<string, string> {
   return body
 }
 
-export function montarWebhookUrl(request: NextRequest, pathname: string): string {
-  const base =
-    process.env.TWILIO_WEBHOOK_BASE_URL?.trim().replace(/\/$/, "") ||
-    process.env.NEXT_PUBLIC_APP_URL?.trim().replace(/\/$/, "") ||
-    process.env.PRODUCTION_URL?.trim().replace(/\/$/, "")
+function urlsCandidatasWebhook(request: NextRequest, pathname: string): string[] {
   const qs = request.nextUrl.search
+  const urls: string[] = []
+  const seen = new Set<string>()
 
-  if (base) {
-    return `${base}${pathname}${qs}`
+  const add = (base: string | undefined | null) => {
+    const b = base?.trim().replace(/\/$/, "")
+    if (!b) return
+    const url = `${b}${pathname}${qs}`
+    if (seen.has(url)) return
+    seen.add(url)
+    urls.push(url)
   }
 
+  // URL explícita (deve bater com statusCallback enviado pelo worker)
+  add(process.env.TWILIO_WEBHOOK_BASE_URL)
+
+  // Host real da requisição (Twilio assina a URL para a qual fez POST)
   const proto = request.headers.get("x-forwarded-proto") || "https"
-  const host = request.headers.get("x-forwarded-host") || request.headers.get("host") || ""
-  return `${proto}://${host}${pathname}${qs}`
+  const host = request.headers.get("x-forwarded-host") || request.headers.get("host")
+  if (host) add(`${proto}://${host}`)
+
+  add(process.env.NEXT_PUBLIC_APP_URL)
+  add(process.env.PRODUCTION_URL)
+
+  return urls
+}
+
+export function montarWebhookUrl(request: NextRequest, pathname: string): string {
+  const urls = urlsCandidatasWebhook(request, pathname)
+  if (urls.length > 0) return urls[0]
+
+  const qs = request.nextUrl.search
+  return `https://localhost${pathname}${qs}`
 }
 
 export function webhookValidationEnabled(): boolean {
@@ -39,11 +59,11 @@ export function validarWebhookTwilio(request: NextRequest, body: Record<string, 
   }
 
   const signature = request.headers.get("x-twilio-signature")
-  const url = montarWebhookUrl(request, pathname)
-  const ok = validarAssinaturaTwilio({ signature, url, body })
+  const urls = urlsCandidatasWebhook(request, pathname)
+  const ok = urls.some((url) => validarAssinaturaTwilio({ signature, url, body }))
 
   if (!ok) {
-    whatsappBillingLog.warn("webhook.invalid_signature", { pathname, url })
+    whatsappBillingLog.warn("webhook.invalid_signature", { pathname, urls })
   }
   return ok
 }

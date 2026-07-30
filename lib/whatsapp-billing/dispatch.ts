@@ -1,5 +1,6 @@
 import { supabaseAdmin } from "@/lib/supabase-admin"
 import { normalizarTelefoneWhatsApp } from "@/lib/whatsapp-cobranca"
+import { carregarTelefoneAtualClienteCobranca } from "@/lib/telefone-cliente-cobranca"
 import { getBoletoLinkFromFatura } from "@/lib/fatura-boleto-link"
 import {
   montarVariaveisInternas,
@@ -227,11 +228,18 @@ export async function dispararConfirmacaoPagamento(faturaId: string): Promise<{ 
       ? String(fatura.pagamento_data).slice(0, 10)
       : referenceDateHoje()
 
+  const telefone =
+    (await carregarTelefoneAtualClienteCobranca({
+      administradoraId: fatura.administradora_id,
+      clienteAdministradoraId: fatura.cliente_administradora_id,
+      telefoneFatura: fatura.cliente_telefone,
+    })) || ""
+
   return dispararNotificacaoWhatsApp({
     eventType: "confirmacao_pagamento",
     administradoraId: fatura.administradora_id,
     clienteAdministradoraId: fatura.cliente_administradora_id,
-    telefone: String(fatura.cliente_telefone || ""),
+    telefone,
     faturaId: fatura.id,
     referenceDate: pagamentoData,
     dados: {
@@ -268,12 +276,19 @@ export async function dispararLembreteFatura(
   const administradoraNome = await carregarNomeAdministradora(fatura.administradora_id)
   const linkBoleto = getBoletoLinkFromFatura(fatura)
 
+  const telefone =
+    (await carregarTelefoneAtualClienteCobranca({
+      administradoraId: fatura.administradora_id,
+      clienteAdministradoraId: fatura.cliente_administradora_id,
+      telefoneFatura: fatura.cliente_telefone,
+    })) || ""
+
   return dispararNotificacaoWhatsApp(
     {
       eventType,
       administradoraId: fatura.administradora_id,
       clienteAdministradoraId: fatura.cliente_administradora_id,
-      telefone: String(fatura.cliente_telefone || ""),
+      telefone,
       faturaId: fatura.id,
       dados: {
         clienteNome: String(fatura.cliente_nome || "Cliente"),
