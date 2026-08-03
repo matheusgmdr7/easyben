@@ -33,7 +33,7 @@ export type ResultadoRelatorioImplantacao = {
 }
 
 const FATURAS_SELECT =
-  "id, cliente_administradora_id, cliente_nome, cliente_telefone, numero_fatura, valor, vencimento, pagamento_data, pagamento_valor, status, created_at"
+  "id, cliente_administradora_id, cliente_nome, cliente_telefone, cliente_id, numero_fatura, valor, vencimento, pagamento_data, pagamento_valor, status, created_at"
 
 function primeiroDiaMes(ano: number, mes: number): string {
   return `${ano}-${String(mes).padStart(2, "0")}-01`
@@ -70,6 +70,37 @@ function dataPagamentoIso(raw: unknown): string | null {
   const s = String(raw || "").trim()
   if (!s) return null
   return s.slice(0, 10)
+}
+
+function normalizarCpf(raw: unknown): string | null {
+  const s = String(raw || "").trim()
+  if (!s) return null
+  const digits = s.replace(/\D/g, "")
+  if (digits.length === 11) return digits
+  if (digits.length > 0) return digits
+  return s
+}
+
+function cpfDeVida(v: Record<string, unknown>): string | null {
+  const direct = normalizarCpf(v.cpf)
+  if (direct) return direct
+
+  const da = v.dados_adicionais
+  if (da && typeof da === "object") {
+    for (const key of ["cpf", "CPF", "cpf_titular", "Cpf"]) {
+      const cpf = normalizarCpf((da as Record<string, unknown>)[key])
+      if (cpf) return cpf
+    }
+  }
+  return null
+}
+
+function resolverCpfCliente(
+  cpfVida: string | null | undefined,
+  cpfProposta: string | null | undefined,
+  clienteIdFatura: unknown
+): string | null {
+  return cpfVida || cpfProposta || normalizarCpf(clienteIdFatura)
 }
 
 /** Implantado = flag explícita ou número de carteirinha preenchido. */
@@ -206,10 +237,11 @@ export async function gerarRelatorioImplantacao(params: {
       if (propostaIds.length > 0) {
         const { data: propostas } = await supabaseAdmin
           .from("propostas")
-          .select("id, cpf")
+          .select("id, cpf, cpf_cliente")
           .in("id", propostaIds)
         for (const p of propostas || []) {
-          if (p.id && p.cpf) cpfPorProposta.set(String(p.id), String(p.cpf))
+          const cpf = normalizarCpf(p.cpf) || normalizarCpf((p as { cpf_cliente?: string }).cpf_cliente)
+          if (p.id && cpf) cpfPorProposta.set(String(p.id), cpf)
         }
       }
 
@@ -227,11 +259,12 @@ export async function gerarRelatorioImplantacao(params: {
   }
 
   const telefoneVidaPorCliente = new Map<string, string>()
+  const cpfVidaPorCliente = new Map<string, string>()
   const grupoNomePorCliente = new Map<string, string>()
   if (clienteIds.length > 0) {
     let qVidas = supabaseAdmin
       .from("vidas_importadas")
-      .select("cliente_administradora_id, telefones, dados_adicionais, tipo, grupo_id")
+      .select("cliente_administradora_id, cpf, telefones, dados_adicionais, tipo, grupo_id")
       .eq("administradora_id", administradoraId)
       .in("cliente_administradora_id", clienteIds)
 
@@ -242,6 +275,12 @@ export async function gerarRelatorioImplantacao(params: {
     for (const v of vidas || []) {
       const cid = String(v.cliente_administradora_id || "").trim()
       if (!cid) continue
+      const cpf = cpfDeVida(v as Record<string, unknown>)
+      if (cpf) {
+        const tipo = String(v.tipo || "").toLowerCase()
+        const atual = cpfVidaPorCliente.get(cid)
+        if (!atual || tipo === "titular") cpfVidaPorCliente.set(cid, cpf)
+      }
       const tel = primeiroTelefoneDeVida(v as Record<string, unknown>)
       if (tel) {
         const tipo = String(v.tipo || "").toLowerCase()
@@ -328,7 +367,11 @@ export async function gerarRelatorioImplantacao(params: {
       fatura_id: String(f.id),
       cliente_administradora_id: clienteId,
       cliente_nome: String(f.cliente_nome || "Cliente"),
-      cpf: cliente?.cpf || null,
+      cpf: resolverCpfCliente(
+        cpfVidaPorCliente.get(clienteId),
+        cliente?.cpf,
+        (f as { cliente_id?: string | null }).cliente_id
+      ),
       telefone: resolverTelefoneClienteCobranca(telVida, null, telFatura),
       grupo_nome: grupoNomePorCliente.get(clienteId) || null,
       corretora: corretorIdCliente ? corretorNomes.get(corretorIdCliente) || "—" : "—",
