@@ -348,7 +348,7 @@ export default function DetalhesGrupoPage() {
   const [itemCorretor, setItemCorretor] = useState<any>(null)
   const [corretorSelecionadoId, setCorretorSelecionadoId] = useState<string>("__nenhum__")
   const [salvandoCorretor, setSalvandoCorretor] = useState(false)
-  const [selecionadosSemCorretor, setSelecionadosSemCorretor] = useState<Set<string>>(new Set())
+  const [selecionadosLote, setSelecionadosLote] = useState<Set<string>>(new Set())
   const [modalCorretorLoteOpen, setModalCorretorLoteOpen] = useState(false)
   const [corretorLoteId, setCorretorLoteId] = useState<string>("")
   const [salvandoCorretorLote, setSalvandoCorretorLote] = useState(false)
@@ -766,10 +766,9 @@ export default function DetalhesGrupoPage() {
     }
   }
 
-  function toggleSelecaoSemCorretor(item: any) {
-    if (itemTemCorretor(item)) return
+  function toggleSelecaoLote(item: any) {
     const key = chaveSelecaoItem(item)
-    setSelecionadosSemCorretor((prev) => {
+    setSelecionadosLote((prev) => {
       const prox = new Set(prev)
       if (prox.has(key)) prox.delete(key)
       else prox.add(key)
@@ -777,22 +776,43 @@ export default function DetalhesGrupoPage() {
     })
   }
 
-  function limparSelecaoSemCorretor() {
-    setSelecionadosSemCorretor(new Set())
+  function limparSelecaoLote() {
+    setSelecionadosLote(new Set())
   }
 
-  function selecionarTodosBeneficiariosDoGrupo() {
-    const ids = clientes
-      .filter((item) => !itemTemCorretor(item))
-      .map((item) => chaveSelecaoItem(item))
-    setSelecionadosSemCorretor(new Set(ids))
+  function selecionarTodosFiltradosLote() {
+    setSelecionadosLote(new Set(clientesFiltrados.map((item) => chaveSelecaoItem(item))))
+  }
+
+  function selecionarPaginaAtualLote() {
+    setSelecionadosLote((prev) => {
+      const prox = new Set(prev)
+      for (const item of clientesPaginados) {
+        prox.add(chaveSelecaoItem(item))
+      }
+      return prox
+    })
+  }
+
+  function alternarSelecaoPaginaAtualLote() {
+    const chavesPagina = clientesPaginados.map((item) => chaveSelecaoItem(item))
+    const todosNaPagina = chavesPagina.length > 0 && chavesPagina.every((k) => selecionadosLote.has(k))
+    if (todosNaPagina) {
+      setSelecionadosLote((prev) => {
+        const prox = new Set(prev)
+        chavesPagina.forEach((k) => prox.delete(k))
+        return prox
+      })
+    } else {
+      selecionarPaginaAtualLote()
+    }
   }
 
   function alternarModoSelecaoCorretorLote() {
     setModoSelecaoCorretorLote((prev) => {
       const proximo = !prev
       if (!proximo) {
-        setSelecionadosSemCorretor(new Set())
+        setSelecionadosLote(new Set())
       }
       return proximo
     })
@@ -804,24 +824,30 @@ export default function DetalhesGrupoPage() {
       toast.error("Selecione um corretor")
       return
     }
-    const itensSelecionados = clientes.filter((item) => {
-      const key = chaveSelecaoItem(item)
-      return selecionadosSemCorretor.has(key) && !itemTemCorretor(item)
-    })
+    const itensSelecionados = clientes.filter((item) => selecionadosLote.has(chaveSelecaoItem(item)))
     if (itensSelecionados.length === 0) {
-      toast.error("Selecione ao menos um beneficiário sem corretor")
+      toast.error("Selecione ao menos um beneficiário")
+      return
+    }
+
+    const itensParaAtualizar = itensSelecionados.filter(
+      (item) => (obterCorretorIdItem(item) || null) !== corretorIdFinal
+    )
+    if (itensParaAtualizar.length === 0) {
+      toast.info("Os beneficiários selecionados já estão vinculados a este corretor.")
       return
     }
 
     try {
       setSalvandoCorretorLote(true)
       const resultados = await Promise.allSettled(
-        itensSelecionados.map((item) => atualizarCorretorDoItem(item, corretorIdFinal))
+        itensParaAtualizar.map((item) => atualizarCorretorDoItem(item, corretorIdFinal))
       )
       const sucesso = resultados.filter((r) => r.status === "fulfilled").length
       const erro = resultados.length - sucesso
       await carregarClientes()
-      setSelecionadosSemCorretor(new Set())
+      setSelecionadosLote(new Set())
+      setModoSelecaoCorretorLote(false)
       setModalCorretorLoteOpen(false)
       setCorretorLoteId("")
       if (erro === 0) {
@@ -997,10 +1023,14 @@ export default function DetalhesGrupoPage() {
   )
   const inicio = (paginaAtualAjustada - 1) * itensPorPagina + 1
   const fim = Math.min(paginaAtualAjustada * itensPorPagina, clientesFiltrados.length)
-  const totalSelecionadosSemCorretor = clientes.filter((item) => {
-    const key = chaveSelecaoItem(item)
-    return selecionadosSemCorretor.has(key) && !itemTemCorretor(item)
-  }).length
+  const totalSelecionadosLote = clientes.filter((item) =>
+    selecionadosLote.has(chaveSelecaoItem(item))
+  ).length
+  const chavesPaginaAtual = clientesPaginados.map((item) => chaveSelecaoItem(item))
+  const paginaInteiraSelecionada =
+    chavesPaginaAtual.length > 0 && chavesPaginaAtual.every((k) => selecionadosLote.has(k))
+  const paginaParcialmenteSelecionada =
+    chavesPaginaAtual.some((k) => selecionadosLote.has(k)) && !paginaInteiraSelecionada
 
   useEffect(() => {
     setPaginaAtual(1)
@@ -1009,23 +1039,19 @@ export default function DetalhesGrupoPage() {
   useEffect(() => {
     if (modoLista === "cancelados") {
       setModoSelecaoCorretorLote(false)
-      setSelecionadosSemCorretor(new Set())
+      setSelecionadosLote(new Set())
     }
   }, [modoLista])
 
   useEffect(() => {
-    setSelecionadosSemCorretor((prev) => {
+    setSelecionadosLote((prev) => {
       if (prev.size === 0) return prev
-      const validos = new Set(
-        clientes
-          .filter((item) => !itemTemCorretor(item))
-          .map((item) => chaveSelecaoItem(item))
-      )
+      const validos = new Set(clientes.map((item) => chaveSelecaoItem(item)))
       const prox = new Set<string>()
       prev.forEach((id) => {
         if (validos.has(id)) prox.add(id)
       })
-      return prox
+      return prox.size === prev.size ? prev : prox
     })
   }, [clientes])
 
@@ -1338,7 +1364,7 @@ export default function DetalhesGrupoPage() {
             </Button>
             {modoLista === "ativos" && modoSelecaoCorretorLote && (
               <p className="text-sm text-gray-600 ml-1">
-                Selecionados: <span className="font-semibold text-gray-900">{totalSelecionadosSemCorretor}</span>
+                Selecionados: <span className="font-semibold text-gray-900">{totalSelecionadosLote}</span>
               </p>
             )}
             {loadingClientes && (
@@ -1358,24 +1384,33 @@ export default function DetalhesGrupoPage() {
             )}
             {modoLista === "ativos" && (
               <>
-                <Button variant="outline" size="sm" onClick={alternarModoSelecaoCorretorLote}>
-                  {modoSelecaoCorretorLote ? "Fechar seleção" : "Selecionar beneficiários"}
+                <Button
+                  variant={modoSelecaoCorretorLote ? "default" : "outline"}
+                  size="sm"
+                  className={modoSelecaoCorretorLote ? "bg-[#0F172A] hover:bg-[#1E293B] text-white" : ""}
+                  onClick={alternarModoSelecaoCorretorLote}
+                >
+                  <Users className="h-3.5 w-3.5 mr-1.5" />
+                  {modoSelecaoCorretorLote ? "Cancelar seleção" : "Vincular corretor em lote"}
                 </Button>
                 {modoSelecaoCorretorLote && (
                   <>
-                    <Button variant="outline" size="sm" onClick={selecionarTodosBeneficiariosDoGrupo}>
-                      Selecionar todos
+                    <Button variant="outline" size="sm" onClick={selecionarPaginaAtualLote}>
+                      Selecionar página
                     </Button>
-                    <Button variant="outline" size="sm" onClick={limparSelecaoSemCorretor}>
+                    <Button variant="outline" size="sm" onClick={selecionarTodosFiltradosLote}>
+                      Selecionar filtrados ({clientesFiltrados.length})
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={limparSelecaoLote}>
                       Limpar seleção
                     </Button>
                     <Button
                       size="sm"
                       className="bg-[#0F172A] hover:bg-[#1E293B] text-white"
-                      disabled={totalSelecionadosSemCorretor === 0}
+                      disabled={totalSelecionadosLote === 0}
                       onClick={() => setModalCorretorLoteOpen(true)}
                     >
-                      Vincular corretor em lote
+                      Confirmar vínculo ({totalSelecionadosLote})
                     </Button>
                   </>
                 )}
@@ -1488,7 +1523,20 @@ export default function DetalhesGrupoPage() {
             <Table>
               <TableHeader>
                 <TableRow className="bg-gray-50">
-                  {modoSelecaoCorretorLote && <TableHead className="font-bold w-[50px]">Sel.</TableHead>}
+                  {modoSelecaoCorretorLote && (
+                    <TableHead className="font-bold w-[50px]">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 accent-[#0F172A] cursor-pointer"
+                        checked={paginaInteiraSelecionada}
+                        ref={(el) => {
+                          if (el) el.indeterminate = paginaParcialmenteSelecionada
+                        }}
+                        onChange={alternarSelecaoPaginaAtualLote}
+                        title="Selecionar todos desta página"
+                      />
+                    </TableHead>
+                  )}
                   <TableHead className="font-bold">Nome</TableHead>
                   <TableHead className="font-bold hidden md:table-cell">Matrícula</TableHead>
                   <TableHead className="font-bold">CPF/CNPJ</TableHead>
@@ -1513,11 +1561,10 @@ export default function DetalhesGrupoPage() {
                       <TableCell>
                         <input
                           type="checkbox"
-                          className="h-4 w-4 accent-[#0F172A] cursor-pointer disabled:cursor-not-allowed"
-                          disabled={itemTemCorretor(item)}
-                          checked={selecionadosSemCorretor.has(chaveSelecaoItem(item))}
-                          onChange={() => toggleSelecaoSemCorretor(item)}
-                          title={itemTemCorretor(item) ? "Beneficiário já possui corretor vinculado" : "Selecionar para vincular corretor"}
+                          className="h-4 w-4 accent-[#0F172A] cursor-pointer"
+                          checked={selecionadosLote.has(chaveSelecaoItem(item))}
+                          onChange={() => toggleSelecaoLote(item)}
+                          title="Selecionar para vincular corretor"
                         />
                       </TableCell>
                     )}
@@ -1587,6 +1634,15 @@ export default function DetalhesGrupoPage() {
                           title="Visualizar"
                         >
                           <FileSearch className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => abrirModalCorretor(item)}
+                          className="h-8 w-8 p-0 border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-800 hover:border-slate-300 rounded-md"
+                          title={obterCorretorIdItem(item) ? "Trocar corretor" : "Vincular corretor"}
+                        >
+                          <UserPlus className="h-4 w-4" />
                         </Button>
                         <Button
                           variant="outline"
@@ -1721,8 +1777,11 @@ export default function DetalhesGrupoPage() {
           </DialogHeader>
           <div className="space-y-3 py-2">
             <p className="text-sm text-gray-600">
-              Beneficiários selecionados (sem corretor):{" "}
-              <span className="font-medium text-gray-900">{totalSelecionadosSemCorretor}</span>
+              Beneficiários selecionados:{" "}
+              <span className="font-medium text-gray-900">{totalSelecionadosLote}</span>
+            </p>
+            <p className="text-xs text-gray-500">
+              O corretor escolhido será aplicado a todos os selecionados (substituindo vínculo anterior, se houver).
             </p>
             <div>
               <Label className="text-sm">Corretor(a)</Label>
