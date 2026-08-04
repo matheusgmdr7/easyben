@@ -27,6 +27,7 @@ const worker = new Worker<WhatsAppOutboundJobPayload>(
   {
     connection: getRedisConnection(),
     concurrency: 5,
+    drainDelay: 2000,
     limiter: {
       max: RATE_LIMIT_MAX,
       duration: RATE_LIMIT_DURATION_MS,

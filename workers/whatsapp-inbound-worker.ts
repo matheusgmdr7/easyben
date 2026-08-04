@@ -22,6 +22,7 @@ const worker = new Worker<WhatsAppInboundJobPayload>(
   {
     connection: getRedisConnection(),
     concurrency: 3,
+    drainDelay: 2000,
   }
 )
 

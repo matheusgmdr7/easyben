@@ -41,9 +41,11 @@ export async function POST(request: NextRequest) {
       message: "Cobrança enfileirada. O envio ocorre em instantes pelo worker WhatsApp.",
     })
   } catch (err: unknown) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Erro ao enviar cobrança" },
-      { status: 500 }
-    )
+    const raw = err instanceof Error ? err.message : "Erro ao enviar cobrança"
+    const error =
+      raw.includes("max requests limit exceeded") || raw.includes("ERR max requests")
+        ? "Serviço de fila temporariamente indisponível: limite mensal do Redis (Upstash) esgotado. Aguarde o reset do ciclo ou contate o suporte para ampliar o plano."
+        : raw
+    return NextResponse.json({ error }, { status: 503 })
   }
 }
