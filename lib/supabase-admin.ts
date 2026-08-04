@@ -10,16 +10,38 @@ type SupabaseAdminClient = ReturnType<typeof createClient<Database>>
 
 let supabaseAdminInstance: SupabaseAdminClient | null = null
 
+/** URL do projeto — workers Railway podem usar SUPABASE_URL sem prefixo NEXT_PUBLIC_. */
+export function resolverSupabaseUrl(): string | undefined {
+  return process.env.NEXT_PUBLIC_SUPABASE_URL?.trim() || process.env.SUPABASE_URL?.trim()
+}
+
+/** Apenas diagnóstico: identifica se a key parece service_role ou anon (JWT payload). */
+export function identificarPapelSupabaseKey(key: string | undefined): string | null {
+  if (!key?.trim()) return null
+  try {
+    const parts = key.trim().split(".")
+    if (parts.length < 2) return null
+    const payload = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8")) as {
+      role?: string
+    }
+    return payload.role ?? null
+  } catch {
+    return null
+  }
+}
+
 function getSupabaseAdmin(): SupabaseAdminClient {
   if (supabaseAdminInstance) {
     return supabaseAdminInstance
   }
 
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  const supabaseUrl = resolverSupabaseUrl()
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
 
   if (!supabaseUrl) {
-    throw new Error("NEXT_PUBLIC_SUPABASE_URL não está definida nas variáveis de ambiente")
+    throw new Error(
+      "Supabase URL não definida: use NEXT_PUBLIC_SUPABASE_URL ou SUPABASE_URL"
+    )
   }
 
   if (!serviceRoleKey) {
@@ -30,6 +52,14 @@ function getSupabaseAdmin(): SupabaseAdminClient {
     throw new Error(
       "SUPABASE_SERVICE_ROLE_KEY não está definida nas variáveis de ambiente. " +
         "Esta chave é necessária apenas no servidor para operações administrativas."
+    )
+  }
+
+  const papel = identificarPapelSupabaseKey(serviceRoleKey)
+  if (papel && papel !== "service_role") {
+    throw new Error(
+      `SUPABASE_SERVICE_ROLE_KEY inválida: JWT com role "${papel}". ` +
+        "Use a chave service_role do Supabase (Project Settings → API), não a anon key."
     )
   }
 

@@ -37,6 +37,13 @@ export async function processarJobOutboundWhatsApp(payload: WhatsAppOutboundJobP
     .maybeSingle()
 
   if (tplErr || !template?.content_sid) {
+    whatsappBillingLog.error("outbound.template_missing", {
+      eventType: payload.eventType,
+      supabaseError: tplErr?.message ?? null,
+      hasRow: Boolean(template),
+      contentSid: template?.content_sid ?? null,
+      supabaseProject: process.env.NEXT_PUBLIC_SUPABASE_URL?.match(/https:\/\/([^.]+)/)?.[1] ?? null,
+    })
     throw new Error(`Template não encontrado para eventType=${payload.eventType}`)
   }
 

@@ -12,6 +12,7 @@ import {
   whatsappBillingLog,
   type WhatsAppOutboundJobPayload,
 } from "../lib/whatsapp-billing"
+import { identificarPapelSupabaseKey, resolverSupabaseUrl } from "../lib/supabase-admin"
 
 const RATE_LIMIT_MAX = 15
 const RATE_LIMIT_DURATION_MS = 1000
@@ -50,7 +51,32 @@ worker.on("error", (err) => {
 whatsappBillingLog.info("worker.outbound.ready", {
   queue: WHATSAPP_QUEUE_OUTBOUND,
   rateLimit: `${RATE_LIMIT_MAX}/s`,
+  supabaseProject: resolverSupabaseUrl()?.match(/https:\/\/([^.]+)/)?.[1] ?? "nao_configurado",
+  supabaseKeyRole: identificarPapelSupabaseKey(process.env.SUPABASE_SERVICE_ROLE_KEY) ?? "desconhecido",
 })
+
+async function verificarSupabaseNoStartup() {
+  try {
+    const { supabaseAdmin } = await import("../lib/supabase-admin")
+    const { data, error } = await supabaseAdmin
+      .from("billing_templates")
+      .select("event_type, content_sid")
+      .eq("event_type", "cobranca_d3")
+      .eq("ativo", true)
+      .maybeSingle()
+    whatsappBillingLog.info("worker.outbound.supabase_check", {
+      ok: !error && Boolean(data?.content_sid),
+      supabaseError: error?.message ?? null,
+      contentSid: data?.content_sid ? `${String(data.content_sid).slice(0, 6)}…` : null,
+    })
+  } catch (err: unknown) {
+    whatsappBillingLog.error("worker.outbound.supabase_check", {
+      message: err instanceof Error ? err.message : String(err),
+    })
+  }
+}
+
+void verificarSupabaseNoStartup()
 
 async function shutdown() {
   whatsappBillingLog.info("worker.outbound.shutdown")
