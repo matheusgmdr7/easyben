@@ -270,11 +270,7 @@ export function FaturasPendentesPainel({
     }
   }
 
-  function enviarWhatsApp(item: PendenciaFaturaItem) {
-    if (whatsappModoTwilio) {
-      void enviarWhatsAppTwilio(item)
-      return
-    }
+  function enviarWhatsAppWeb(item: PendenciaFaturaItem) {
     if (!item.link_boleto) {
       toast.error("Esta fatura não possui link de boleto.")
       return
@@ -303,7 +299,7 @@ export function FaturasPendentesPainel({
     }
     window.open(url, "_blank", "noopener,noreferrer")
     marcarEnvioRecente(item)
-    toast.success("Envio registrado")
+    toast.success("WhatsApp Web aberto com a mensagem de cobrança")
   }
 
   function exportarExcel() {
@@ -620,39 +616,81 @@ export function FaturasPendentesPainel({
                     {mostrarEnvioWhatsApp ? (
                       <>
                         <td className="px-4 py-2.5">
-                          <Button
-                          type="button"
-                          size="sm"
-                          variant={envioRecente ? "outline" : "default"}
-                          className={cn(
-                            "h-8 text-xs font-medium",
-                            envioRecente
-                              ? "border-slate-300 text-slate-700"
-                              : "bg-emerald-600 text-white hover:bg-emerald-700 border-0 shadow-none",
-                            !podeWhatsApp && "opacity-50"
-                          )}
-                          disabled={!podeWhatsApp || enviandoTwilioId === item.fatura_id}
-                          title={
-                            !item.link_boleto
-                              ? "Sem link de boleto"
-                              : !normalizarTelefoneWhatsApp(item.cliente_telefone)
-                                ? "Telefone do cliente inválido ou ausente"
-                                : envioRecente
-                                  ? `${rotuloEnvioRecente(envioRecente.enviado_em, agoraUi)} — clique para reenviar`
-                                  : whatsappModoTwilio
-                                    ? "Enviar cobrança via Twilio WhatsApp"
-                                    : "Abrir WhatsApp com mensagem e boleto"
-                          }
-                          onClick={() => enviarWhatsApp(item)}
-                        >
-                          {enviandoTwilioId === item.fatura_id
-                            ? "Enviando…"
-                            : envioRecente
-                              ? "Reenviar"
-                              : whatsappModoTwilio
-                                ? "Enviar Twilio"
-                                : "Enviar fatura"}
-                        </Button>
+                          <div className="flex flex-col gap-1.5 min-w-[8.5rem]">
+                            {whatsappModoTwilio ? (
+                              <>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant={envioRecente ? "outline" : "default"}
+                                  className={cn(
+                                    "h-8 text-xs font-medium w-full",
+                                    envioRecente
+                                      ? "border-slate-300 text-slate-700"
+                                      : "bg-emerald-600 text-white hover:bg-emerald-700 border-0 shadow-none",
+                                    !podeWhatsApp && "opacity-50"
+                                  )}
+                                  disabled={!podeWhatsApp || enviandoTwilioId === item.fatura_id}
+                                  title={
+                                    !item.link_boleto
+                                      ? "Sem link de boleto"
+                                      : !normalizarTelefoneWhatsApp(item.cliente_telefone)
+                                        ? "Telefone do cliente inválido ou ausente"
+                                        : envioRecente
+                                          ? `${rotuloEnvioRecente(envioRecente.enviado_em, agoraUi)} — clique para reenviar via Twilio`
+                                          : "Enviar cobrança via Twilio WhatsApp"
+                                  }
+                                  onClick={() => void enviarWhatsAppTwilio(item)}
+                                >
+                                  {enviandoTwilioId === item.fatura_id
+                                    ? "Enviando…"
+                                    : envioRecente
+                                      ? "Reenviar Twilio"
+                                      : "Enviar Twilio"}
+                                </Button>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  className={cn(
+                                    "h-8 text-xs font-medium w-full border-emerald-300 text-emerald-800 hover:bg-emerald-50",
+                                    !podeWhatsApp && "opacity-50"
+                                  )}
+                                  disabled={!podeWhatsApp}
+                                  title="Abrir WhatsApp Web com mensagem e link do boleto (envio manual)"
+                                  onClick={() => enviarWhatsAppWeb(item)}
+                                >
+                                  WhatsApp Web
+                                </Button>
+                              </>
+                            ) : (
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant={envioRecente ? "outline" : "default"}
+                                className={cn(
+                                  "h-8 text-xs font-medium w-full",
+                                  envioRecente
+                                    ? "border-slate-300 text-slate-700"
+                                    : "bg-emerald-600 text-white hover:bg-emerald-700 border-0 shadow-none",
+                                  !podeWhatsApp && "opacity-50"
+                                )}
+                                disabled={!podeWhatsApp}
+                                title={
+                                  !item.link_boleto
+                                    ? "Sem link de boleto"
+                                    : !normalizarTelefoneWhatsApp(item.cliente_telefone)
+                                      ? "Telefone do cliente inválido ou ausente"
+                                      : envioRecente
+                                        ? `${rotuloEnvioRecente(envioRecente.enviado_em, agoraUi)} — clique para reenviar`
+                                        : "Abrir WhatsApp com mensagem e boleto"
+                                }
+                                onClick={() => enviarWhatsAppWeb(item)}
+                              >
+                                {envioRecente ? "Reenviar" : "Enviar fatura"}
+                              </Button>
+                            )}
+                          </div>
                         </td>
                         <td className="px-4 py-2.5 whitespace-nowrap">
                         {enviandoTwilioId === item.fatura_id ? (
