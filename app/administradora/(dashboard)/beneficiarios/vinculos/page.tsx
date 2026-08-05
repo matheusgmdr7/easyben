@@ -170,7 +170,7 @@ export default function BeneficiariosVinculosPage() {
       <div className="bg-white border-b border-gray-200 px-6 py-4">
         <h1 className="text-xl font-semibold text-gray-800">Vínculos — Ficha de admissão</h1>
         <p className="text-sm text-gray-500 mt-0.5">
-          Gere a ficha APTI individualmente ou em lote por grupo (até 100 PDFs em ZIP).
+          Gere a ficha APTI individualmente ou em lote por grupo ou planilha (até 100 PDFs em ZIP).
         </p>
       </div>
 
@@ -178,7 +178,7 @@ export default function BeneficiariosVinculosPage() {
         <Tabs defaultValue="individual" className="w-full">
           <TabsList className="grid w-full grid-cols-2 max-w-md">
             <TabsTrigger value="individual">Individual</TabsTrigger>
-            <TabsTrigger value="lote">Lote por grupo</TabsTrigger>
+            <TabsTrigger value="lote">Lote (grupo ou planilha)</TabsTrigger>
           </TabsList>
 
           <TabsContent value="individual" className="space-y-6 mt-6">

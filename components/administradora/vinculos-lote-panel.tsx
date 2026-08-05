@@ -14,7 +14,15 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Download, Loader2 } from "lucide-react"
+import { Download, FileSpreadsheet, Loader2 } from "lucide-react"
+import * as XLSX from "xlsx"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import {
+  detectarColunasPlanilhaVinculos,
+  normalizarLinhasPlanilhaVinculos,
+  VINCULOS_FONTE_PLANILHA_ID,
+  type LinhaPlanilhaVinculos,
+} from "@/lib/vinculos-planilha"
 import { VINCULOS_LOTE_MAX_PDFS } from "@/lib/vinculos-constants"
 import {
   limparGeradosVinculosLocal,
@@ -75,7 +83,7 @@ function aplicarPosGeracaoLote(params: {
   gerados: number
   geradosIds: string[]
   falhas: Array<{ nome: string; motivo: string }>
-  grupoId: string
+  fonteId: string
   administradoraId: string
   vidas: VidaGrupoItem[]
   setGeradosLocal: (s: Set<string>) => void
@@ -84,8 +92,8 @@ function aplicarPosGeracaoLote(params: {
 }) {
   params.setUltimoRelatorio({ gerados: params.gerados, falhas: params.falhas })
 
-  if (params.geradosIds.length > 0 && params.grupoId) {
-    const atualizado = marcarGeradosVinculosLocal(params.administradoraId, params.grupoId, params.geradosIds)
+  if (params.geradosIds.length > 0 && params.fonteId) {
+    const atualizado = marcarGeradosVinculosLocal(params.administradoraId, params.fonteId, params.geradosIds)
     params.setGeradosLocal(atualizado)
     const restantes = params.vidas.filter((v) => !atualizado.has(v.id))
     const proximos = restantes.slice(0, VINCULOS_LOTE_MAX_PDFS).map((v) => v.id)
@@ -127,6 +135,13 @@ export function VinculosLotePanel({
     gerados: number
     falhas: Array<{ nome: string; motivo: string }>
   } | null>(null)
+  const [modoSelecao, setModoSelecao] = useState<"grupo" | "planilha">("grupo")
+  const [planilhaProcessando, setPlanilhaProcessando] = useState(false)
+  const [naoEncontradosPlanilha, setNaoEncontradosPlanilha] = useState<
+    Array<{ linha: number; cpf: string; nome: string }>
+  >([])
+
+  const fonteId = modoSelecao === "grupo" ? grupoId : VINCULOS_FONTE_PLANILHA_ID
 
   useEffect(() => {
     let ativo = true
@@ -195,8 +210,136 @@ export function VinculosLotePanel({
   )
 
   useEffect(() => {
-    if (grupoId) void carregarVidasGrupo(grupoId)
-  }, [grupoId, carregarVidasGrupo])
+    if (modoSelecao === "grupo" && grupoId) void carregarVidasGrupo(grupoId)
+  }, [grupoId, carregarVidasGrupo, modoSelecao])
+
+  function parseArquivoPlanilha(file: File): Promise<{ headers: string[]; rows: LinhaPlanilhaVinculos[] }> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      const isCsv = /\.csv$/i.test(file.name)
+      reader.onload = (e) => {
+        try {
+          const data = e.target?.result
+          if (!data) return reject(new Error("Falha ao ler o arquivo"))
+          let wb: XLSX.WorkBook
+          if (isCsv) {
+            const text = typeof data === "string" ? data : new TextDecoder("utf-8").decode(data as ArrayBuffer)
+            wb = XLSX.read(text, { type: "string", raw: true })
+          } else {
+            wb = XLSX.read(data as ArrayBuffer, { type: "array" })
+          }
+          const sh = wb.SheetNames[0]
+          if (!sh) return reject(new Error("Nenhuma planilha encontrada"))
+          const ws = wb.Sheets[sh]
+          const arr: unknown[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "", raw: false })
+          if (!arr.length) return resolve({ headers: [], rows: [] })
+          const headers = (arr[0] as unknown[]).map((h) => String(h ?? "").trim()).filter((h) => h !== "")
+          const rows = arr.slice(1).map((row) => {
+            const r = Array.isArray(row) ? row : Object.values(row as object)
+            const obj: LinhaPlanilhaVinculos = {}
+            headers.forEach((h, i) => {
+              obj[h] = r[i] != null ? r[i] : ""
+            })
+            return obj
+          })
+          resolve({ headers, rows })
+        } catch (err) {
+          reject(err)
+        }
+      }
+      reader.onerror = () => reject(new Error("Falha ao ler o arquivo"))
+      if (isCsv) reader.readAsText(file, "UTF-8")
+      else reader.readAsArrayBuffer(file)
+    })
+  }
+
+  async function processarPlanilha(file: File) {
+    try {
+      setPlanilhaProcessando(true)
+      setUltimoRelatorio(null)
+      setNaoEncontradosPlanilha([])
+
+      const { headers, rows } = await parseArquivoPlanilha(file)
+      if (!headers.length || !rows.length) {
+        toast.error("Planilha vazia ou sem cabeçalho")
+        return
+      }
+
+      const { colNome, colCpf } = detectarColunasPlanilhaVinculos(headers)
+      if (!colCpf) {
+        toast.error('Coluna "CPF" não encontrada. Use o modelo ou cabeçalhos como CPF / Nome.')
+        return
+      }
+
+      const linhas = normalizarLinhasPlanilhaVinculos(rows, colNome, colCpf)
+      if (linhas.length === 0) {
+        toast.error("Nenhuma linha com CPF válido na planilha")
+        return
+      }
+
+      const res = await fetch("/api/administradora/beneficiarios/vinculos/planilha-vidas", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ administradora_id: administradoraId, linhas }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data?.error || "Erro ao cruzar planilha com cadastro")
+
+      const lista = Array.isArray(data.vidas) ? data.vidas : []
+      const naoEnc = Array.isArray(data.nao_encontrados) ? data.nao_encontrados : []
+      setNaoEncontradosPlanilha(naoEnc)
+
+      const gerados = listarGeradosVinculosLocal(administradoraId, VINCULOS_FONTE_PLANILHA_ID)
+      setGeradosLocal(gerados)
+      setVidas(lista)
+
+      const pendentes = lista.filter((v: VidaGrupoItem) => !gerados.has(v.id))
+      const autoSelect = pendentes.slice(0, VINCULOS_LOTE_MAX_PDFS).map((v: VidaGrupoItem) => v.id)
+      setSelecionados(new Set(autoSelect))
+
+      if (naoEnc.length > 0) {
+        toast.warning(
+          `${lista.length} encontrado(s) no cadastro, ${naoEnc.length} CPF(s) não localizado(s) em vidas importadas.`
+        )
+      } else {
+        toast.success(`${lista.length} beneficiário(s) identificado(s) na planilha`)
+      }
+
+      if (lista.length > VINCULOS_LOTE_MAX_PDFS) {
+        toast.info(`Selecionados ${autoSelect.length} para o primeiro lote (máx. ${VINCULOS_LOTE_MAX_PDFS}).`)
+      }
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Erro ao processar planilha")
+      setVidas([])
+      setSelecionados(new Set())
+    } finally {
+      setPlanilhaProcessando(false)
+    }
+  }
+
+  function baixarModeloPlanilha() {
+    const ws = XLSX.utils.aoa_to_sheet([
+      ["Nome", "CPF"],
+      ["MARIA DA SILVA", "12345678901"],
+      ["JOAO SANTOS", "98765432100"],
+    ])
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, "Beneficiarios")
+    XLSX.writeFile(wb, "modelo-vinculos-fichas.xlsx")
+  }
+
+  function aoMudarModoSelecao(modo: "grupo" | "planilha") {
+    setModoSelecao(modo)
+    setVidas([])
+    setSelecionados(new Set())
+    setUltimoRelatorio(null)
+    setNaoEncontradosPlanilha([])
+    if (modo === "grupo") {
+      setGeradosLocal(grupoId ? listarGeradosVinculosLocal(administradoraId, grupoId) : new Set())
+    } else {
+      setGeradosLocal(listarGeradosVinculosLocal(administradoraId, VINCULOS_FONTE_PLANILHA_ID))
+    }
+  }
 
   const vidasVisiveis = useMemo(() => {
     if (!somentePendentes) return vidas
@@ -259,10 +402,14 @@ export function VinculosLotePanel({
   )
 
   function limparMarcacaoGerados() {
-    if (!grupoId) return
-    limparGeradosVinculosLocal(administradoraId, grupoId)
+    if (!fonteId) return
+    limparGeradosVinculosLocal(administradoraId, fonteId)
     setGeradosLocal(new Set())
-    toast.success("Marcação de fichas geradas limpa para este grupo")
+    toast.success(
+      modoSelecao === "grupo"
+        ? "Marcação de fichas geradas limpa para este grupo"
+        : "Marcação de fichas geradas limpa para esta planilha"
+    )
   }
 
   async function gerarLote() {
@@ -342,7 +489,7 @@ export function VinculosLotePanel({
           gerados: data.gerados ?? 0,
           geradosIds,
           falhas,
-          grupoId,
+          fonteId,
           administradoraId,
           vidas,
           setGeradosLocal,
@@ -378,7 +525,7 @@ export function VinculosLotePanel({
         gerados,
         geradosIds,
         falhas: falhas.map((f) => ({ nome: f.nome, motivo: f.motivo })),
-        grupoId,
+        fonteId,
         administradoraId,
         vidas,
         setGeradosLocal,
@@ -407,28 +554,94 @@ export function VinculosLotePanel({
         </AlertDescription>
       </Alert>
 
-      <div>
-        <Label>Grupo de beneficiários</Label>
-        <Select
-          value={grupoId || "__vazio__"}
-          onValueChange={(v) => setGrupoId(v === "__vazio__" ? "" : v)}
-          disabled={carregandoGrupos}
-        >
-          <SelectTrigger className="mt-1">
-            <SelectValue placeholder={carregandoGrupos ? "Carregando grupos..." : "Selecione o grupo"} />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="__vazio__">Selecione o grupo</SelectItem>
-            {grupos.map((g) => (
-              <SelectItem key={g.id} value={g.id}>
-                {g.nome}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
+      <Tabs value={modoSelecao} onValueChange={(v) => aoMudarModoSelecao(v as "grupo" | "planilha")}>
+        <TabsList className="grid w-full grid-cols-2 max-w-lg">
+          <TabsTrigger value="grupo">Por grupo</TabsTrigger>
+          <TabsTrigger value="planilha">Por planilha</TabsTrigger>
+        </TabsList>
 
-      {grupoId && (
+        <TabsContent value="grupo" className="mt-4 space-y-4">
+          <div>
+            <Label>Grupo de beneficiários</Label>
+            <Select
+              value={grupoId || "__vazio__"}
+              onValueChange={(v) => setGrupoId(v === "__vazio__" ? "" : v)}
+              disabled={carregandoGrupos}
+            >
+              <SelectTrigger className="mt-1">
+                <SelectValue placeholder={carregandoGrupos ? "Carregando grupos..." : "Selecione o grupo"} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__vazio__">Selecione o grupo</SelectItem>
+                {grupos.map((g) => (
+                  <SelectItem key={g.id} value={g.id}>
+                    {g.nome}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="planilha" className="mt-4 space-y-4">
+          <Alert className="border-slate-200 bg-slate-50/80">
+            <AlertDescription className="text-sm text-slate-700 space-y-1">
+              <p>
+                Envie uma planilha Excel ou CSV com colunas <strong>Nome</strong> e <strong>CPF</strong>. Os CPFs
+                serão cruzados com beneficiários já importados (<code>vidas importadas</code>) para gerar as fichas.
+              </p>
+            </AlertDescription>
+          </Alert>
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="flex-1 min-w-[12rem]">
+              <Label htmlFor="vinculos-planilha">Planilha (.xlsx, .xls, .csv)</Label>
+              <Input
+                id="vinculos-planilha"
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                className="mt-1"
+                disabled={planilhaProcessando}
+                onChange={(e) => {
+                  const f = e.target.files?.[0]
+                  if (f) void processarPlanilha(f)
+                  e.target.value = ""
+                }}
+              />
+            </div>
+            <Button type="button" variant="outline" size="sm" onClick={baixarModeloPlanilha}>
+              <FileSpreadsheet className="h-4 w-4 mr-2" />
+              Baixar modelo
+            </Button>
+          </div>
+          {planilhaProcessando && (
+            <p className="text-sm text-gray-500 flex items-center gap-2">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Processando planilha e cruzando CPFs...
+            </p>
+          )}
+          {naoEncontradosPlanilha.length > 0 && (
+            <Alert className="border-amber-200 bg-amber-50/80">
+              <AlertDescription className="text-sm text-amber-900">
+                <p className="font-medium mb-1">
+                  {naoEncontradosPlanilha.length} CPF(s) não encontrado(s) no cadastro importado:
+                </p>
+                <ul className="text-xs space-y-0.5 max-h-24 overflow-y-auto">
+                  {naoEncontradosPlanilha.slice(0, 8).map((n) => (
+                    <li key={`${n.linha}-${n.cpf}`}>
+                      Linha {n.linha}: {n.nome || "—"} — CPF {formatarCpf(n.cpf)}
+                    </li>
+                  ))}
+                  {naoEncontradosPlanilha.length > 8 && (
+                    <li>… e mais {naoEncontradosPlanilha.length - 8}</li>
+                  )}
+                </ul>
+              </AlertDescription>
+            </Alert>
+          )}
+        </TabsContent>
+      </Tabs>
+
+      {fonteId && (modoSelecao === "planilha" || grupoId) && (
         <div className="border border-gray-200 rounded-lg overflow-hidden">
           <div className="flex flex-col gap-3 px-4 py-3 bg-gray-50 border-b border-gray-200 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-2">
@@ -485,7 +698,11 @@ export function VinculosLotePanel({
               Carregando beneficiários...
             </p>
           ) : vidas.length === 0 ? (
-            <p className="p-4 text-sm text-gray-500">Nenhum beneficiário ativo neste grupo.</p>
+            <p className="p-4 text-sm text-gray-500">
+              {modoSelecao === "planilha"
+                ? "Envie uma planilha com CPFs para listar os beneficiários."
+                : "Nenhum beneficiário ativo neste grupo."}
+            </p>
           ) : vidasVisiveis.length === 0 ? (
             <p className="p-4 text-sm text-gray-500">Todos os beneficiários visíveis já têm ficha gerada neste navegador.</p>
           ) : (
@@ -645,7 +862,14 @@ export function VinculosLotePanel({
 
       <Button
         onClick={gerarLote}
-        disabled={!grupoId || selecionados.size === 0 || gerando || carregandoVidas}
+        disabled={
+          !fonteId ||
+          (modoSelecao === "grupo" && !grupoId) ||
+          selecionados.size === 0 ||
+          gerando ||
+          carregandoVidas ||
+          planilhaProcessando
+        }
         className="bg-[#0F172A] hover:bg-[#1E293B] text-white font-bold"
       >
         {gerando ? (
