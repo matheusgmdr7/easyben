@@ -78,6 +78,8 @@ export async function carregarContextoSaudacaoWhatsApp(params: {
   telefone?: string
   clienteNome?: string
   faturaId?: string
+  /** Quando false, permite montar plano/financeira sem telefone (ex.: prévia de teste). */
+  exigirTelefone?: boolean
 }): Promise<ContextoSaudacaoWhatsApp | { erro: string }> {
   let telefone = params.telefone?.trim() || ""
   let clienteNome = params.clienteNome?.trim() || ""
@@ -103,7 +105,24 @@ export async function carregarContextoSaudacaoWhatsApp(params: {
     if (!clienteNome) clienteNome = String(proposta?.nome || "").trim()
   }
 
-  if (!telefone) {
+  if (!clienteNome) {
+    const { data: vw } = await supabaseAdmin
+      .from("vw_clientes_administradoras_completo")
+      .select("cliente_nome, plano_nome, produto_nome, cobertura")
+      .eq("id", params.clienteAdministradoraId)
+      .maybeSingle()
+
+    if (vw?.cliente_nome) clienteNome = String(vw.cliente_nome).trim()
+    if (!proposta && vw) {
+      proposta = {
+        plano_nome: vw.plano_nome,
+        produto_nome: vw.produto_nome,
+        cobertura: vw.cobertura,
+      }
+    }
+  }
+
+  if (!telefone && params.exigirTelefone !== false) {
     return { erro: "telefone_invalido" }
   }
 

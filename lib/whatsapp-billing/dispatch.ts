@@ -149,9 +149,12 @@ export async function dispararSaudacaoBoasVindas(params: {
   clienteNome?: string
   faturaId?: string
 }): Promise<{ enqueued: boolean; reason?: string }> {
-  const ctx = await carregarContextoSaudacaoWhatsApp(params)
+  const ctx = await carregarContextoSaudacaoWhatsApp({ ...params, exigirTelefone: true })
   if ("erro" in ctx) {
     return { enqueued: false, reason: ctx.erro }
+  }
+  if (!ctx.telefone?.trim()) {
+    return { enqueued: false, reason: "telefone_invalido" }
   }
 
   const administradoraNome = await carregarNomeAdministradora(params.administradoraId)

@@ -6,22 +6,41 @@ import {
 import {
   dispararTesteTemplateWhatsApp,
   dispararTodosTemplatesTeste,
+  listarClientesParaTeste,
   listarTemplatesParaTeste,
+  previewDadosTesteWhatsApp,
 } from "@/lib/whatsapp-billing/test-templates"
 
 export const maxDuration = 60
 
 /**
  * GET /api/administradora/whatsapp/test-templates
- * Lista modelos disponíveis para envio de teste.
+ * ?administradora_id= — templates + clientes
+ * ?administradora_id=&cliente_administradora_id= — prévia dos dados do cliente
  */
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    const administradoraId = request.nextUrl.searchParams.get("administradora_id")?.trim()
+    const clienteId = request.nextUrl.searchParams.get("cliente_administradora_id")?.trim()
+
+    if (clienteId && administradoraId) {
+      const preview = await previewDadosTesteWhatsApp({
+        administradoraId,
+        clienteAdministradoraId: clienteId,
+      })
+      if ("erro" in preview) {
+        return NextResponse.json({ error: preview.erro }, { status: 422 })
+      }
+      return NextResponse.json({ preview })
+    }
+
     const templates = await listarTemplatesParaTeste()
-    return NextResponse.json({ templates })
+    const clientes = administradoraId ? await listarClientesParaTeste(administradoraId) : []
+
+    return NextResponse.json({ templates, clientes })
   } catch (err: unknown) {
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Erro ao listar templates" },
+      { error: err instanceof Error ? err.message : "Erro ao carregar dados de teste" },
       { status: 500 }
     )
   }
@@ -29,13 +48,14 @@ export async function GET() {
 
 /**
  * POST /api/administradora/whatsapp/test-templates
- * Body: { administradora_id, telefone, event_type? | enviar_todos?: true }
+ * Body: { administradora_id, telefone, cliente_administradora_id?, event_type? | enviar_todos? }
  */
 export async function POST(request: NextRequest) {
   try {
     const body = (await request.json()) as Record<string, unknown>
     const administradoraId = String(body.administradora_id || "").trim()
     const telefone = String(body.telefone || "").trim()
+    const clienteAdministradoraId = String(body.cliente_administradora_id || "").trim() || undefined
     const enviarTodos = body.enviar_todos === true
 
     if (!administradoraId || !telefone) {
@@ -56,6 +76,7 @@ export async function POST(request: NextRequest) {
       const result = await dispararTodosTemplatesTeste({
         administradoraId,
         telefone,
+        clienteAdministradoraId,
         eventTypes: eventTypes?.length ? eventTypes : undefined,
       })
 
@@ -85,6 +106,7 @@ export async function POST(request: NextRequest) {
       administradoraId,
       telefone,
       eventType,
+      clienteAdministradoraId,
     })
 
     if (!result.enqueued) {
