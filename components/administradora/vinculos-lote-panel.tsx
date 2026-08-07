@@ -18,9 +18,13 @@ import { Download, FileSpreadsheet, Loader2 } from "lucide-react"
 import * as XLSX from "xlsx"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
-  detectarColunasPlanilhaVinculos,
-  normalizarLinhasPlanilhaVinculos,
+  autoMapColunasFichaVinculos,
+  CAMPOS_FICHA_VINCULOS,
+  extrairLinhasFichaPlanilha,
+  getValorPlanilhaMapeado,
+  normalizarCpfPlanilha,
   VINCULOS_FONTE_PLANILHA_ID,
+  type LinhaFichaPlanilha,
   type LinhaPlanilhaVinculos,
 } from "@/lib/vinculos-planilha"
 import { VINCULOS_LOTE_MAX_PDFS } from "@/lib/vinculos-constants"
@@ -136,10 +140,13 @@ export function VinculosLotePanel({
     falhas: Array<{ nome: string; motivo: string }>
   } | null>(null)
   const [modoSelecao, setModoSelecao] = useState<"grupo" | "planilha">("grupo")
+  const [planilhaFile, setPlanilhaFile] = useState<File | null>(null)
+  const [planilhaHeaders, setPlanilhaHeaders] = useState<string[]>([])
+  const [planilhaRows, setPlanilhaRows] = useState<LinhaPlanilhaVinculos[]>([])
+  const [mapColPlanilha, setMapColPlanilha] = useState<Record<string, string>>({})
+  const [linhasFichaPlanilha, setLinhasFichaPlanilha] = useState<LinhaFichaPlanilha[]>([])
+  const [planilhaCarregandoArquivo, setPlanilhaCarregandoArquivo] = useState(false)
   const [planilhaProcessando, setPlanilhaProcessando] = useState(false)
-  const [naoEncontradosPlanilha, setNaoEncontradosPlanilha] = useState<
-    Array<{ linha: number; cpf: string; nome: string }>
-  >([])
 
   const fonteId = modoSelecao === "grupo" ? grupoId : VINCULOS_FONTE_PLANILHA_ID
 
@@ -253,56 +260,135 @@ export function VinculosLotePanel({
     })
   }
 
-  async function processarPlanilha(file: File) {
+  function limparPlanilhaCarregada() {
+    setPlanilhaFile(null)
+    setPlanilhaHeaders([])
+    setPlanilhaRows([])
+    setMapColPlanilha({})
+    setLinhasFichaPlanilha([])
+    setVidas([])
+    setSelecionados(new Set())
+  }
+
+  async function carregarArquivoPlanilha(file: File | null) {
+    if (!file) {
+      limparPlanilhaCarregada()
+      return
+    }
+    const ok = /\.(xlsx|xls|csv)$/i.test(file.name)
+    if (!ok) {
+      toast.error("Use arquivo .xlsx, .xls ou .csv")
+      return
+    }
+
     try {
-      setPlanilhaProcessando(true)
+      setPlanilhaCarregandoArquivo(true)
       setUltimoRelatorio(null)
-      setNaoEncontradosPlanilha([])
+      setLinhasFichaPlanilha([])
+      setVidas([])
+      setSelecionados(new Set())
 
       const { headers, rows } = await parseArquivoPlanilha(file)
       if (!headers.length || !rows.length) {
         toast.error("Planilha vazia ou sem cabeçalho")
+        limparPlanilhaCarregada()
         return
       }
 
-      const { colNome, colCpf } = detectarColunasPlanilhaVinculos(headers)
-      if (!colCpf) {
-        toast.error('Coluna "CPF" não encontrada. Use o modelo ou cabeçalhos como CPF / Nome.')
-        return
+      setPlanilhaFile(file)
+      setPlanilhaHeaders(headers)
+      setPlanilhaRows(rows)
+      setMapColPlanilha(autoMapColunasFichaVinculos(headers))
+      toast.success(`${rows.length} linha(s) e ${headers.length} coluna(s) detectadas`)
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Erro ao ler planilha")
+      limparPlanilhaCarregada()
+    } finally {
+      setPlanilhaCarregandoArquivo(false)
+    }
+  }
+
+  const previewPlanilha = useMemo(() => {
+    return planilhaRows.slice(0, 8).map((row, idx) => {
+      const cpf = normalizarCpfPlanilha(getValorPlanilhaMapeado(row, "cpf", mapColPlanilha))
+      const entrada: Record<string, string> = {
+        linha: String(idx + 2),
+        cpf: cpf ? formatarCpf(cpf) : getValorPlanilhaMapeado(row, "cpf", mapColPlanilha) || "—",
+      }
+      for (const campo of CAMPOS_FICHA_VINCULOS) {
+        if (campo.id === "cpf") continue
+        entrada[campo.id] = getValorPlanilhaMapeado(row, campo.id, mapColPlanilha) || "—"
+      }
+      return entrada
+    })
+  }, [planilhaRows, mapColPlanilha])
+
+  const cpfMapeado = Boolean(mapColPlanilha.cpf?.trim())
+  const nomeMapeado = Boolean(mapColPlanilha.nome?.trim())
+  const mapeamentoPlanilhaOk = cpfMapeado && nomeMapeado
+
+  function linhasFichaParaVidas(lista: LinhaFichaPlanilha[]): VidaGrupoItem[] {
+    return lista.map((item) => ({
+      id: item.id,
+      nome: item.automaticos.nome,
+      cpf: item.automaticos.cpf.replace(/\D/g, ""),
+      tipo: null,
+      ativo: true,
+      faltando: item.faltando,
+    }))
+  }
+
+  async function processarPlanilha() {
+    if (!planilhaRows.length) {
+      toast.error("Carregue uma planilha antes de processar")
+      return
+    }
+    if (!mapeamentoPlanilhaOk) {
+      toast.error('Associe as colunas "Nome" e "CPF" para montar as fichas')
+      return
+    }
+
+    try {
+      setPlanilhaProcessando(true)
+      setUltimoRelatorio(null)
+
+      const opcionaisLote = {
+        data_admissao: opcionais.data_admissao,
+        funcao: opcionais.funcao,
+        salario: opcionais.salario,
+        horario_trabalho: opcionais.horario_trabalho,
+        horas_almoco: opcionais.horas_almoco,
+        estado_civil: opcionais.estado_civil,
+        grau_instrucao: opcionais.grau_instrucao,
+        contrato_experiencia: opcionais.contrato_experiencia || undefined,
       }
 
-      const linhas = normalizarLinhasPlanilhaVinculos(rows, colNome, colCpf)
+      const { linhas, ignoradas } = extrairLinhasFichaPlanilha(
+        planilhaRows,
+        mapColPlanilha,
+        opcionaisLote
+      )
+
       if (linhas.length === 0) {
-        toast.error("Nenhuma linha com CPF válido na planilha")
+        toast.error("Nenhuma linha válida (nome e CPF obrigatórios em cada linha)")
         return
       }
 
-      const res = await fetch("/api/administradora/beneficiarios/vinculos/planilha-vidas", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ administradora_id: administradoraId, linhas }),
-      })
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(data?.error || "Erro ao cruzar planilha com cadastro")
-
-      const lista = Array.isArray(data.vidas) ? data.vidas : []
-      const naoEnc = Array.isArray(data.nao_encontrados) ? data.nao_encontrados : []
-      setNaoEncontradosPlanilha(naoEnc)
+      setLinhasFichaPlanilha(linhas)
+      const lista = linhasFichaParaVidas(linhas)
 
       const gerados = listarGeradosVinculosLocal(administradoraId, VINCULOS_FONTE_PLANILHA_ID)
       setGeradosLocal(gerados)
       setVidas(lista)
 
-      const pendentes = lista.filter((v: VidaGrupoItem) => !gerados.has(v.id))
-      const autoSelect = pendentes.slice(0, VINCULOS_LOTE_MAX_PDFS).map((v: VidaGrupoItem) => v.id)
+      const pendentes = lista.filter((v) => !gerados.has(v.id))
+      const autoSelect = pendentes.slice(0, VINCULOS_LOTE_MAX_PDFS).map((v) => v.id)
       setSelecionados(new Set(autoSelect))
 
-      if (naoEnc.length > 0) {
-        toast.warning(
-          `${lista.length} encontrado(s) no cadastro, ${naoEnc.length} CPF(s) não localizado(s) em vidas importadas.`
-        )
+      if (ignoradas > 0) {
+        toast.warning(`${linhas.length} linha(s) pronta(s). ${ignoradas} ignorada(s) por nome ou CPF ausente.`)
       } else {
-        toast.success(`${lista.length} beneficiário(s) identificado(s) na planilha`)
+        toast.success(`${linhas.length} beneficiário(s) carregado(s) da planilha`)
       }
 
       if (lista.length > VINCULOS_LOTE_MAX_PDFS) {
@@ -310,6 +396,7 @@ export function VinculosLotePanel({
       }
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Erro ao processar planilha")
+      setLinhasFichaPlanilha([])
       setVidas([])
       setSelecionados(new Set())
     } finally {
@@ -319,9 +406,37 @@ export function VinculosLotePanel({
 
   function baixarModeloPlanilha() {
     const ws = XLSX.utils.aoa_to_sheet([
-      ["Nome", "CPF"],
-      ["MARIA DA SILVA", "12345678901"],
-      ["JOAO SANTOS", "98765432100"],
+      [
+        "Nome",
+        "CPF",
+        "Data de nascimento",
+        "Naturalidade",
+        "UF nascimento",
+        "RG",
+        "Órgão emissor",
+        "CEP",
+        "Logradouro",
+        "Número",
+        "Bairro",
+        "Cidade",
+        "UF",
+      ],
+      [
+        "MARIA DA SILVA",
+        "12345678901",
+        "01/01/1990",
+        "São Paulo",
+        "SP",
+        "123456789",
+        "SSP/SP",
+        "01310100",
+        "Av Paulista",
+        "1000",
+        "Bela Vista",
+        "São Paulo",
+        "SP",
+      ],
+      ["JOAO SANTOS", "98765432100", "", "", "", "", "", "", "", "", "", "", ""],
     ])
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, "Beneficiarios")
@@ -333,7 +448,7 @@ export function VinculosLotePanel({
     setVidas([])
     setSelecionados(new Set())
     setUltimoRelatorio(null)
-    setNaoEncontradosPlanilha([])
+    limparPlanilhaCarregada()
     if (modo === "grupo") {
       setGeradosLocal(grupoId ? listarGeradosVinculosLocal(administradoraId, grupoId) : new Set())
     } else {
@@ -434,12 +549,26 @@ export function VinculosLotePanel({
     try {
       setGerando(true)
       setUltimoRelatorio(null)
+
+      const bodyPlanilha =
+        modoSelecao === "planilha"
+          ? {
+              linhas_planilha: linhasFichaPlanilha
+                .filter((l) => selecionados.has(l.id))
+                .map((l) => ({
+                  linha: l.linha,
+                  automaticos: l.automaticos,
+                  opcionais: l.opcionais,
+                })),
+            }
+          : { vida_importada_ids: Array.from(selecionados) }
+
       const res = await fetch("/api/administradora/beneficiarios/vinculos/gerar-pdf-lote", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           administradora_id: administradoraId,
-          vida_importada_ids: Array.from(selecionados),
+          ...bodyPlanilha,
           ...opcionais,
           preenchimento_sintetico: preenchimentoSintetico,
         }),
@@ -561,6 +690,12 @@ export function VinculosLotePanel({
         </TabsList>
 
         <TabsContent value="grupo" className="mt-4 space-y-4">
+          <Alert className="border-blue-200 bg-blue-50/80">
+            <AlertDescription className="text-sm text-blue-900">
+              Use esta opção quando os beneficiários já estão importados no sistema. Selecione o grupo e gere as
+              fichas com os dados do cadastro.
+            </AlertDescription>
+          </Alert>
           <div>
             <Label>Grupo de beneficiários</Label>
             <Select
@@ -585,58 +720,171 @@ export function VinculosLotePanel({
 
         <TabsContent value="planilha" className="mt-4 space-y-4">
           <Alert className="border-slate-200 bg-slate-50/80">
-            <AlertDescription className="text-sm text-slate-700 space-y-1">
+            <AlertDescription className="text-sm text-slate-700 space-y-2">
               <p>
-                Envie uma planilha Excel ou CSV com colunas <strong>Nome</strong> e <strong>CPF</strong>. Os CPFs
-                serão cruzados com beneficiários já importados (<code>vidas importadas</code>) para gerar as fichas.
+                Use esta opção para gerar fichas de beneficiários que <strong>não estão no sistema</strong>. Os dados
+                vêm diretamente da planilha — não há consulta ao banco de dados.
+              </p>
+              <p className="text-xs text-slate-600">
+                Mapeie pelo menos <strong>Nome</strong> e <strong>CPF</strong> por linha. Demais campos (endereço, RG,
+                naturalidade etc.) alimentam o PDF; o preenchimento automático abaixo completa o que faltar.
               </p>
             </AlertDescription>
           </Alert>
-          <div className="flex flex-wrap items-end gap-3">
-            <div className="flex-1 min-w-[12rem]">
-              <Label htmlFor="vinculos-planilha">Planilha (.xlsx, .xls, .csv)</Label>
-              <Input
-                id="vinculos-planilha"
-                type="file"
-                accept=".xlsx,.xls,.csv"
-                className="mt-1"
-                disabled={planilhaProcessando}
-                onChange={(e) => {
-                  const f = e.target.files?.[0]
-                  if (f) void processarPlanilha(f)
-                  e.target.value = ""
-                }}
-              />
+
+          <div className="border border-gray-200 rounded-lg overflow-hidden bg-white">
+            <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
+              <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-gray-700 text-white text-xs font-medium mr-2">
+                1
+              </span>
+              <span className="text-sm font-semibold text-gray-800">Carregar planilha</span>
             </div>
-            <Button type="button" variant="outline" size="sm" onClick={baixarModeloPlanilha}>
-              <FileSpreadsheet className="h-4 w-4 mr-2" />
-              Baixar modelo
-            </Button>
+            <div className="p-4 flex flex-wrap items-end gap-3">
+              <div className="flex-1 min-w-[12rem]">
+                <Label htmlFor="vinculos-planilha">Arquivo (.xlsx, .xls, .csv)</Label>
+                <Input
+                  id="vinculos-planilha"
+                  type="file"
+                  accept=".xlsx,.xls,.csv"
+                  className="mt-1"
+                  disabled={planilhaCarregandoArquivo || planilhaProcessando}
+                  onChange={(e) => {
+                    const f = e.target.files?.[0] || null
+                    void carregarArquivoPlanilha(f)
+                    e.target.value = ""
+                  }}
+                />
+              </div>
+              <Button type="button" variant="outline" size="sm" onClick={baixarModeloPlanilha}>
+                <FileSpreadsheet className="h-4 w-4 mr-2" />
+                Baixar modelo
+              </Button>
+              {planilhaFile && (
+                <Button type="button" variant="ghost" size="sm" onClick={() => limparPlanilhaCarregada()}>
+                  Remover arquivo
+                </Button>
+              )}
+            </div>
+            {planilhaCarregandoArquivo && (
+              <p className="px-4 pb-4 text-sm text-gray-500 flex items-center gap-2">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Lendo planilha...
+              </p>
+            )}
+            {planilhaFile && !planilhaCarregandoArquivo && (
+              <p className="px-4 pb-4 text-xs text-gray-600">
+                {planilhaFile.name} — {planilhaRows.length} linha(s), {planilhaHeaders.length} coluna(s)
+              </p>
+            )}
           </div>
-          {planilhaProcessando && (
-            <p className="text-sm text-gray-500 flex items-center gap-2">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Processando planilha e cruzando CPFs...
-            </p>
-          )}
-          {naoEncontradosPlanilha.length > 0 && (
-            <Alert className="border-amber-200 bg-amber-50/80">
-              <AlertDescription className="text-sm text-amber-900">
-                <p className="font-medium mb-1">
-                  {naoEncontradosPlanilha.length} CPF(s) não encontrado(s) no cadastro importado:
+
+          {planilhaHeaders.length > 0 && (
+            <div className="border border-gray-200 rounded-lg overflow-hidden bg-white">
+              <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
+                <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-gray-700 text-white text-xs font-medium mr-2">
+                  2
+                </span>
+                <span className="text-sm font-semibold text-gray-800">Mapear colunas</span>
+              </div>
+              <div className="p-4 space-y-4">
+                <p className="text-xs text-gray-500">
+                  Associe cada coluna do arquivo ao campo correspondente da ficha. Campos com{" "}
+                  <span className="text-red-500">*</span> são necessários para processar ou gerar o PDF.
                 </p>
-                <ul className="text-xs space-y-0.5 max-h-24 overflow-y-auto">
-                  {naoEncontradosPlanilha.slice(0, 8).map((n) => (
-                    <li key={`${n.linha}-${n.cpf}`}>
-                      Linha {n.linha}: {n.nome || "—"} — CPF {formatarCpf(n.cpf)}
-                    </li>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                  {CAMPOS_FICHA_VINCULOS.map((campo) => (
+                    <div key={campo.id} className="border border-gray-200 rounded-md p-3 bg-white">
+                      <label className="block text-xs font-medium text-gray-700 mb-1">
+                        {campo.label}{" "}
+                        {(campo.obrigatorio || campo.obrigatorioPdf) && (
+                          <span className="text-red-500">*</span>
+                        )}
+                      </label>
+                      {campo.descricao && (
+                        <p className="text-[10px] text-gray-500 mb-1.5 leading-snug">{campo.descricao}</p>
+                      )}
+                      <Select
+                        value={mapColPlanilha[campo.id] || "__nenhum__"}
+                        onValueChange={(v) =>
+                          setMapColPlanilha((p) => ({ ...p, [campo.id]: v === "__nenhum__" ? "" : v }))
+                        }
+                      >
+                        <SelectTrigger className="h-9 w-full text-sm">
+                          <SelectValue placeholder="— Não usar" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__nenhum__">— Não usar</SelectItem>
+                          {planilhaHeaders.map((h, i) => {
+                            const val = h === "" || h == null ? `__vazio_${i}` : String(h)
+                            return (
+                              <SelectItem key={`col-${i}-${val}`} value={val}>
+                                {h || "(vazio)"}
+                              </SelectItem>
+                            )
+                          })}
+                        </SelectContent>
+                      </Select>
+                    </div>
                   ))}
-                  {naoEncontradosPlanilha.length > 8 && (
-                    <li>… e mais {naoEncontradosPlanilha.length - 8}</li>
+                </div>
+
+                {!mapeamentoPlanilhaOk && (
+                  <Alert className="border-red-200 bg-red-50/80">
+                    <AlertDescription className="text-sm text-red-900">
+                      Selecione as colunas <strong>Nome</strong> e <strong>CPF</strong> para continuar.
+                    </AlertDescription>
+                  </Alert>
+                )}
+
+                {previewPlanilha.length > 0 && (
+                  <div>
+                    <p className="text-xs font-medium text-gray-700 mb-2">Prévia (primeiras linhas)</p>
+                    <div className="overflow-x-auto border border-gray-200 rounded-md">
+                      <table className="min-w-full text-xs">
+                        <thead className="bg-gray-50">
+                          <tr>
+                            <th className="px-2 py-1.5 text-left font-medium text-gray-600">Linha</th>
+                            {CAMPOS_FICHA_VINCULOS.filter((c) => mapColPlanilha[c.id]).map((c) => (
+                              <th key={c.id} className="px-2 py-1.5 text-left font-medium text-gray-600 whitespace-nowrap">
+                                {c.label}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {previewPlanilha.map((row) => (
+                            <tr key={row.linha}>
+                              <td className="px-2 py-1.5 text-gray-500">{row.linha}</td>
+                              {CAMPOS_FICHA_VINCULOS.filter((c) => mapColPlanilha[c.id]).map((c) => (
+                                <td key={c.id} className="px-2 py-1.5 text-gray-800 max-w-[10rem] truncate">
+                                  {row[c.id]}
+                                </td>
+                              ))}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                <Button
+                  type="button"
+                  onClick={() => void processarPlanilha()}
+                  disabled={!mapeamentoPlanilhaOk || planilhaProcessando || planilhaCarregandoArquivo}
+                  className="bg-[#0F172A] hover:bg-[#1E293B] text-white"
+                >
+                  {planilhaProcessando ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Montando lista da planilha...
+                    </>
+                  ) : (
+                    "Processar planilha"
                   )}
-                </ul>
-              </AlertDescription>
-            </Alert>
+                </Button>
+              </div>
+            </div>
           )}
         </TabsContent>
       </Tabs>
@@ -700,7 +948,7 @@ export function VinculosLotePanel({
           ) : vidas.length === 0 ? (
             <p className="p-4 text-sm text-gray-500">
               {modoSelecao === "planilha"
-                ? "Envie uma planilha com CPFs para listar os beneficiários."
+                ? "Processe a planilha para listar os beneficiários a gerar."
                 : "Nenhum beneficiário ativo neste grupo."}
             </p>
           ) : vidasVisiveis.length === 0 ? (
@@ -731,7 +979,7 @@ export function VinculosLotePanel({
                     </p>
                     {v.faltando.length > 0 && (
                       <p className="text-xs text-amber-700 mt-0.5">
-                        Faltando no cadastro: {v.faltando.join(", ")}
+                        Faltando na ficha: {v.faltando.join(", ")}
                       </p>
                     )}
                   </div>
@@ -745,7 +993,8 @@ export function VinculosLotePanel({
       {comDadosFaltando.length > 0 && (
         <Alert className="border-amber-200 bg-amber-50/80">
           <AlertDescription className="text-sm text-amber-900">
-            {comDadosFaltando.length} selecionado(s) têm dados incompletos no cadastro.
+            {comDadosFaltando.length} selecionado(s) têm dados incompletos
+            {modoSelecao === "grupo" ? " no cadastro" : " na planilha"}.
             {preenchimentoSintetico.ativo
               ? " O preenchimento automático tentará completar endereço, órgão emissor e opcionais vazios."
               : " O PDF será gerado com os campos disponíveis; ative o preenchimento automático abaixo se necessário."}{" "}

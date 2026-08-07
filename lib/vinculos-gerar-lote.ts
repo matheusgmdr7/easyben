@@ -15,6 +15,7 @@ import {
   VINCULOS_LOTE_MAX_PDFS,
   VINCULOS_LOTE_ZIP_DIRECT_MAX_BYTES,
 } from "@/lib/vinculos-constants"
+import type { EntradaPlanilhaLote } from "@/lib/vinculos-planilha"
 
 export { VINCULOS_LOTE_MAX_PDFS }
 
@@ -22,7 +23,8 @@ const STORAGE_BUCKET = "arquivos"
 const STORAGE_PREFIX = "vinculos-lote"
 
 export type FalhaLoteVinculos = {
-  vida_importada_id: string
+  vida_importada_id?: string
+  linha?: number
   nome: string
   motivo: string
 }
@@ -91,6 +93,133 @@ async function publicarZipNoStorage(params: {
   return { download_url: downloadUrl, expires_in_seconds: expiresIn }
 }
 
+function mesclarOpcionaisLote(
+  lote: DadosOpcionaisFichaAdmissao,
+  linha?: DadosOpcionaisFichaAdmissao
+): DadosOpcionaisFichaAdmissao {
+  const out: DadosOpcionaisFichaAdmissao = { ...lote }
+  if (!linha) return out
+  for (const [k, v] of Object.entries(linha)) {
+    if (v != null && String(v).trim()) {
+      ;(out as Record<string, string>)[k] = String(v).trim()
+    }
+  }
+  return out
+}
+
+async function finalizarZipLote(params: {
+  administradoraId: string
+  zip: JSZip
+  falhas: FalhaLoteVinculos[]
+  geradosIds: string[]
+  gerados: number
+  totalSolicitado: number
+}): Promise<ResultadoLoteVinculos> {
+  if (params.gerados === 0) {
+    throw new Error(
+      params.falhas.length > 0
+        ? `Nenhum PDF gerado. Primeiro erro: ${params.falhas[0].motivo}`
+        : "Nenhum PDF gerado"
+    )
+  }
+
+  const zipBuffer = await params.zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE" })
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19)
+  const nomeArquivo = `fichas-admissao-lote-${stamp}.zip`
+
+  const base: ResultadoLoteVinculos = {
+    total_solicitado: params.totalSolicitado,
+    gerados: params.gerados,
+    gerados_ids: params.geradosIds,
+    falhas: params.falhas,
+    nome_arquivo: nomeArquivo,
+    entrega: "direct",
+  }
+
+  if (zipBuffer.length <= VINCULOS_LOTE_ZIP_DIRECT_MAX_BYTES) {
+    return { ...base, entrega: "direct", zip_buffer: zipBuffer }
+  }
+
+  const publicado = await publicarZipNoStorage({
+    administradoraId: params.administradoraId,
+    zipBuffer,
+    nomeArquivo,
+    gerados: params.gerados,
+  })
+
+  return {
+    ...base,
+    entrega: "storage",
+    download_url: publicado.download_url,
+    expires_in_seconds: publicado.expires_in_seconds,
+  }
+}
+
+export async function gerarLoteFichasVinculosZipFromPlanilha(params: {
+  administradoraId: string
+  entradas: EntradaPlanilhaLote[]
+  opcionaisLote: DadosOpcionaisFichaAdmissao
+  preenchimentoSintetico?: ConfigPreenchimentoSintetico
+}): Promise<ResultadoLoteVinculos> {
+  const entradas = params.entradas
+  if (entradas.length === 0) throw new Error("Selecione ao menos um beneficiário da planilha")
+  if (entradas.length > VINCULOS_LOTE_MAX_PDFS) {
+    throw new Error(`Máximo de ${VINCULOS_LOTE_MAX_PDFS} PDFs por lote`)
+  }
+
+  const zip = new JSZip()
+  const falhas: FalhaLoteVinculos[] = []
+  const geradosIds: string[] = []
+  let gerados = 0
+
+  for (const entrada of entradas) {
+    const nome = String(entrada.automaticos.nome || `Linha ${entrada.linha}`)
+    const refId = `planilha:${entrada.linha}`
+    try {
+      let automaticos = { ...entrada.automaticos }
+      let opcionais = mesclarOpcionaisLote(params.opcionaisLote, entrada.opcionais)
+
+      if (params.preenchimentoSintetico?.ativo) {
+        const seed = String(automaticos.cpf || refId).replace(/\D/g, "") || refId
+        const aplicado = aplicarPreenchimentoSintetico({
+          automaticos,
+          opcionais,
+          config: params.preenchimentoSintetico,
+          seed,
+        })
+        automaticos = aplicado.automaticos
+        opcionais = aplicado.opcionais
+      }
+
+      const erroValidacao = validarAutomaticosParaPdf(automaticos)
+      if (erroValidacao) {
+        falhas.push({ linha: entrada.linha, nome, motivo: erroValidacao })
+        continue
+      }
+
+      const pdfBytes = await gerarFichaAdmissaoAptiPdf(automaticos, opcionais)
+      zip.file(nomeArquivoPdf(nome, refId), pdfBytes)
+      geradosIds.push(refId)
+      gerados += 1
+    } catch (e: unknown) {
+      falhas.push({
+        linha: entrada.linha,
+        nome,
+        motivo: e instanceof Error ? e.message : "Erro ao gerar PDF",
+      })
+    }
+  }
+
+  return finalizarZipLote({
+    administradoraId: params.administradoraId,
+    zip,
+    falhas,
+    geradosIds,
+    gerados,
+    totalSolicitado: entradas.length,
+  })
+}
+
 export async function gerarLoteFichasVinculosZip(params: {
   administradoraId: string
   vidaImportadaIds: string[]
@@ -155,34 +284,12 @@ export async function gerarLoteFichasVinculosZip(params: {
     )
   }
 
-  const zipBuffer = await zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE" })
-  const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19)
-  const nomeArquivo = `fichas-admissao-lote-${stamp}.zip`
-
-  const base: ResultadoLoteVinculos = {
-    total_solicitado: ids.length,
-    gerados,
-    gerados_ids: geradosIds,
-    falhas,
-    nome_arquivo: nomeArquivo,
-    entrega: "direct",
-  }
-
-  if (zipBuffer.length <= VINCULOS_LOTE_ZIP_DIRECT_MAX_BYTES) {
-    return { ...base, entrega: "direct", zip_buffer: zipBuffer }
-  }
-
-  const publicado = await publicarZipNoStorage({
+  return finalizarZipLote({
     administradoraId: params.administradoraId,
-    zipBuffer,
-    nomeArquivo,
+    zip,
+    falhas,
+    geradosIds,
     gerados,
+    totalSolicitado: ids.length,
   })
-
-  return {
-    ...base,
-    entrega: "storage",
-    download_url: publicado.download_url,
-    expires_in_seconds: publicado.expires_in_seconds,
-  }
 }
