@@ -14,6 +14,7 @@ import {
 } from "@/components/administradora/faturas-pendentes-painel"
 import { WhatsAppCobrancasConfig } from "@/components/administradora/whatsapp-cobrancas-config"
 import { WhatsAppMensagensHistorico } from "@/components/administradora/whatsapp-mensagens-historico"
+import { WhatsAppTesteTemplates } from "@/components/administradora/whatsapp-teste-templates"
 
 type FinanceiraOpcao = { id: string; nome: string }
 type CorretorOpcao = { id: string; nome: string }
@@ -203,6 +204,9 @@ export default function CobrancasFinanceiroPage() {
             <TabsTrigger value="historico" className={cn(btnSquare, "text-sm px-4 py-2")}>
               Histórico de envios
             </TabsTrigger>
+            <TabsTrigger value="teste-templates" className={cn(btnSquare, "text-sm px-4 py-2")}>
+              Testar modelos
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="pendencias" className="space-y-6 mt-0">
@@ -327,6 +331,9 @@ export default function CobrancasFinanceiroPage() {
               </TabsContent>
               <TabsContent value="historico" className="mt-0">
                 <WhatsAppMensagensHistorico administradoraId={administradora.id} />
+              </TabsContent>
+              <TabsContent value="teste-templates" className="mt-0">
+                <WhatsAppTesteTemplates administradoraId={administradora.id} />
               </TabsContent>
             </>
           ) : null}
