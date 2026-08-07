@@ -1,15 +1,60 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase-admin"
-import { WHATSAPP_BILLING_EVENT_LABELS } from "@/lib/whatsapp-billing/event-types"
+import {
+  WHATSAPP_BILLING_EVENT_LABELS,
+  isWhatsAppBillingEventType,
+} from "@/lib/whatsapp-billing/event-types"
+import { montarPreviewMensagemFromRegistro } from "@/lib/whatsapp-billing/message-preview"
 
 /**
  * GET /api/administradora/whatsapp/messages?administradora_id=&page=1&limit=20&fatura_id=&event_type=
+ * GET /api/administradora/whatsapp/messages?administradora_id=&message_id= — detalhe com mensagem renderizada
  */
 export async function GET(request: NextRequest) {
   const qs = request.nextUrl.searchParams
   const administradoraId = qs.get("administradora_id")?.trim()
   if (!administradoraId) {
     return NextResponse.json({ error: "administradora_id é obrigatório" }, { status: 400 })
+  }
+
+  const messageId = qs.get("message_id")?.trim()
+  if (messageId) {
+    const { data: msg, error } = await supabaseAdmin
+      .from("whatsapp_messages")
+      .select(
+        "id, fatura_id, cliente_administradora_id, event_type, telefone, status, message_sid, reference_date, created_at, sent_at, delivered_at, read_at, failed_at, error_message, content_sid, content_variables"
+      )
+      .eq("administradora_id", administradoraId)
+      .eq("id", messageId)
+      .maybeSingle()
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+    if (!msg) {
+      return NextResponse.json({ error: "Mensagem não encontrada" }, { status: 404 })
+    }
+
+    const contentVariables = (msg.content_variables || {}) as Record<string, string>
+    let preview = null
+    if (isWhatsAppBillingEventType(msg.event_type)) {
+      preview = await montarPreviewMensagemFromRegistro({
+        eventType: msg.event_type,
+        contentSid: String(msg.content_sid || ""),
+        contentVariables,
+      })
+    }
+
+    return NextResponse.json({
+      message: {
+        ...msg,
+        event_label:
+          WHATSAPP_BILLING_EVENT_LABELS[msg.event_type as keyof typeof WHATSAPP_BILLING_EVENT_LABELS] ||
+          msg.event_type,
+        telefone_mascara: String(msg.telefone || "").replace(/\d(?=\d{4})/g, "*"),
+        preview,
+      },
+    })
   }
 
   const page = Math.max(1, Number(qs.get("page")) || 1)
@@ -21,7 +66,7 @@ export async function GET(request: NextRequest) {
   let query = supabaseAdmin
     .from("whatsapp_messages")
     .select(
-      "id, fatura_id, cliente_administradora_id, event_type, telefone, status, message_sid, reference_date, created_at, sent_at, delivered_at, read_at, failed_at, error_message",
+      "id, fatura_id, cliente_administradora_id, event_type, telefone, status, message_sid, reference_date, created_at, sent_at, delivered_at, read_at, failed_at, error_message, content_sid",
       { count: "exact" }
     )
     .eq("administradora_id", administradoraId)

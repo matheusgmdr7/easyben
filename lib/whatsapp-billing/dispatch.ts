@@ -67,7 +67,7 @@ async function carregarVariaveisMap(eventType: WhatsAppBillingEventType) {
 
 export async function dispararNotificacaoWhatsApp(
   params: DispararNotificacaoParams,
-  options?: { ignorarAutomatico?: boolean }
+  options?: { ignorarAutomatico?: boolean; idempotencySuffix?: string }
 ): Promise<{ enqueued: boolean; reason?: string; jobId?: string }> {
   const telefoneDigits = normalizarTelefoneWhatsApp(params.telefone)
   if (!telefoneDigits) {
@@ -92,12 +92,13 @@ export async function dispararNotificacaoWhatsApp(
   })
   const variaveis = mapearParaContentVariablesTwilio(variaveisInternas, variaveisMap)
 
-  const jobId = montarIdempotencyKey({
-    eventType: params.eventType,
-    clienteId: params.clienteAdministradoraId,
-    referenceDate,
-    faturaId: params.faturaId,
-  })
+  const jobId =
+    montarIdempotencyKey({
+      eventType: params.eventType,
+      clienteId: params.clienteAdministradoraId,
+      referenceDate,
+      faturaId: params.faturaId,
+    }) + (options?.idempotencySuffix ? `:${options.idempotencySuffix}` : "")
 
   await enfileirarNotificacaoOutbound(
     {

@@ -10,20 +10,38 @@ import {
   listarTemplatesParaTeste,
   previewDadosTesteWhatsApp,
 } from "@/lib/whatsapp-billing/test-templates"
+import { montarPreviewMensagemWhatsApp } from "@/lib/whatsapp-billing/message-preview"
 
 export const maxDuration = 60
 
 /**
  * GET /api/administradora/whatsapp/test-templates
- * ?administradora_id= — templates + clientes
+ * ?administradora_id= — templates + clientes iniciais
+ * ?administradora_id=&q= — busca clientes (autocomplete)
  * ?administradora_id=&cliente_administradora_id= — prévia dos dados do cliente
+ * ?administradora_id=&cliente_administradora_id=&event_type= — prévia da mensagem exata
  */
 export async function GET(request: NextRequest) {
   try {
-    const administradoraId = request.nextUrl.searchParams.get("administradora_id")?.trim()
-    const clienteId = request.nextUrl.searchParams.get("cliente_administradora_id")?.trim()
+    const qs = request.nextUrl.searchParams
+    const administradoraId = qs.get("administradora_id")?.trim()
+    const clienteId = qs.get("cliente_administradora_id")?.trim()
+    const eventType = qs.get("event_type")?.trim()
+    const busca = qs.get("q")?.trim()
 
-    if (clienteId && administradoraId) {
+    if (administradoraId && eventType && isWhatsAppBillingEventType(eventType)) {
+      const mensagem = await montarPreviewMensagemWhatsApp({
+        administradoraId,
+        eventType,
+        clienteAdministradoraId: clienteId || undefined,
+      })
+      if ("erro" in mensagem) {
+        return NextResponse.json({ error: mensagem.erro }, { status: 422 })
+      }
+      return NextResponse.json({ mensagem })
+    }
+
+    if (clienteId && administradoraId && !busca) {
       const preview = await previewDadosTesteWhatsApp({
         administradoraId,
         clienteAdministradoraId: clienteId,
@@ -32,6 +50,11 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ error: preview.erro }, { status: 422 })
       }
       return NextResponse.json({ preview })
+    }
+
+    if (administradoraId && qs.has("q")) {
+      const clientes = await listarClientesParaTeste(administradoraId, busca)
+      return NextResponse.json({ clientes })
     }
 
     const templates = await listarTemplatesParaTeste()

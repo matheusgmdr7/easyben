@@ -142,15 +142,33 @@ export async function listarTemplatesParaTeste(): Promise<TemplateTesteInfo[]> {
 }
 
 export async function listarClientesParaTeste(
-  administradoraId: string
+  administradoraId: string,
+  busca?: string
 ): Promise<ClienteTesteOpcao[]> {
-  const { data, error } = await supabaseAdmin
+  const termo = busca?.trim() || ""
+  const cpfDigits = termo.replace(/\D/g, "")
+
+  let query = supabaseAdmin
     .from("vw_clientes_administradoras_completo")
     .select("id, cliente_nome, cliente_cpf, cliente_telefone, plano_nome, produto_nome, cobertura")
     .eq("administradora_id", administradoraId)
     .eq("status", "ativo")
     .order("cliente_nome", { ascending: true })
-    .limit(400)
+    .limit(termo ? 50 : 500)
+
+  if (termo) {
+    const filtros = [
+      `cliente_nome.ilike.%${termo}%`,
+      `plano_nome.ilike.%${termo}%`,
+      `produto_nome.ilike.%${termo}%`,
+    ]
+    if (cpfDigits.length >= 3) {
+      filtros.push(`cliente_cpf.ilike.%${cpfDigits}%`)
+    }
+    query = query.or(filtros.join(","))
+  }
+
+  const { data, error } = await query
 
   if (error) {
     throw new Error(error.message)
@@ -298,7 +316,7 @@ export async function previewDadosTesteWhatsApp(params: {
   }
 }
 
-async function resolverDadosEnvioTeste(params: {
+export async function resolverDadosEnvioTeste(params: {
   administradoraId: string
   clienteAdministradoraId?: string
 }): Promise<
@@ -353,10 +371,10 @@ export async function dispararTesteTemplateWhatsApp(params: {
       clienteAdministradoraId: resolvido.clienteId,
       telefone: digits,
       faturaId: resolvido.faturaId,
-      referenceDate: `${referenceDateHoje()}_teste_${stamp}`,
+      referenceDate: referenceDateHoje(),
       dados: resolvido.dados,
     },
-    { ignorarAutomatico: true }
+    { ignorarAutomatico: true, idempotencySuffix: `teste_${stamp}` }
   )
 }
 
