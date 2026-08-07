@@ -83,6 +83,9 @@ export type BillingTemplateRow = {
 export type ContentVariablesInput = {
   cliente_nome: string
   administradora_nome: string
+  financeira_nome?: string
+  plano_descricao?: string
+  cobertura?: string
   valor_fatura?: string
   data_vencimento?: string
   data_pagamento?: string

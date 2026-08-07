@@ -5,6 +5,12 @@ import type { ContentVariablesInput } from "./event-types"
 export type DadosEnvioWhatsApp = {
   clienteNome: string
   administradoraNome: string
+  /** Nome da financeira (conta de cobrança) — template saudação variável 2 */
+  financeiraNome?: string | null
+  /** Descrição do plano — template saudação variável 3 */
+  planoDescricao?: string | null
+  /** Cobertura do plano — template saudação variável 4 */
+  coberturaPlano?: string | null
   telefoneSuporte?: string | null
   urlPortalCliente?: string | null
   valorFatura?: number | null
@@ -28,6 +34,9 @@ export function montarVariaveisInternas(dados: DadosEnvioWhatsApp): ContentVaria
   return {
     cliente_nome: String(dados.clienteNome || "Cliente").trim() || "Cliente",
     administradora_nome: String(dados.administradoraNome || "Administradora").trim() || "Administradora",
+    financeira_nome: dados.financeiraNome?.trim() || undefined,
+    plano_descricao: dados.planoDescricao?.trim() || undefined,
+    cobertura: dados.coberturaPlano?.trim() || undefined,
     valor_fatura:
       dados.valorFatura != null && Number.isFinite(Number(dados.valorFatura))
         ? formatarMoeda(Number(dados.valorFatura))

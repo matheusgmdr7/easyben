@@ -13,6 +13,7 @@ import {
   referenceDateHoje,
 } from "./idempotency"
 import { PRIMEIRO_BOLETO_MENSAGEM_DELAY_MS } from "./event-types"
+import { carregarContextoSaudacaoWhatsApp } from "./saudacao-context"
 import { enfileirarNotificacaoOutbound } from "./queues"
 import { whatsappBillingLog } from "./logger"
 import type { WhatsAppBillingEventType } from "./event-types"
@@ -146,31 +147,11 @@ export async function dispararSaudacaoBoasVindas(params: {
   clienteAdministradoraId: string
   telefone?: string
   clienteNome?: string
+  faturaId?: string
 }): Promise<{ enqueued: boolean; reason?: string }> {
-  let telefone = params.telefone?.trim() || ""
-  let clienteNome = params.clienteNome?.trim() || ""
-
-  if (!telefone || !clienteNome) {
-    const { data: cliente } = await supabaseAdmin
-      .from("clientes_administradoras")
-      .select("proposta_id")
-      .eq("id", params.clienteAdministradoraId)
-      .maybeSingle()
-
-    if (cliente?.proposta_id) {
-      const { data: proposta } = await supabaseAdmin
-        .from("propostas")
-        .select("nome, telefone")
-        .eq("id", cliente.proposta_id)
-        .maybeSingle()
-
-      if (!telefone) telefone = String(proposta?.telefone || "")
-      if (!clienteNome) clienteNome = String(proposta?.nome || "")
-    }
-  }
-
-  if (!telefone) {
-    return { enqueued: false, reason: "telefone_invalido" }
+  const ctx = await carregarContextoSaudacaoWhatsApp(params)
+  if ("erro" in ctx) {
+    return { enqueued: false, reason: ctx.erro }
   }
 
   const administradoraNome = await carregarNomeAdministradora(params.administradoraId)
@@ -179,10 +160,14 @@ export async function dispararSaudacaoBoasVindas(params: {
     eventType: "saudacao_boas_vindas",
     administradoraId: params.administradoraId,
     clienteAdministradoraId: params.clienteAdministradoraId,
-    telefone,
+    telefone: ctx.telefone,
+    faturaId: params.faturaId ?? null,
     dados: {
-      clienteNome: clienteNome || "Cliente",
+      clienteNome: ctx.clienteNome,
       administradoraNome,
+      financeiraNome: ctx.financeiraNome,
+      planoDescricao: ctx.planoDescricao,
+      coberturaPlano: ctx.cobertura,
     },
   })
 }
@@ -219,6 +204,7 @@ export async function dispararPrimeiroBoletoGerado(params: {
     clienteAdministradoraId: params.clienteAdministradoraId,
     telefone: params.telefone,
     clienteNome: params.clienteNome,
+    faturaId: params.faturaId,
   })
 
   const primeiroBoleto = await dispararNotificacaoWhatsApp({
