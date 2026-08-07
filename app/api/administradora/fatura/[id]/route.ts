@@ -3,6 +3,17 @@ import { supabaseAdmin } from "@/lib/supabase-admin"
 import { getCurrentTenantId } from "@/lib/tenant-query-helper"
 import AsaasServiceInstance from "@/services/asaas-service"
 
+async function resolverTenantIdAdministradora(administradoraId: string): Promise<string> {
+  const { data: admRow } = await supabaseAdmin
+    .from("administradoras")
+    .select("tenant_id")
+    .eq("id", administradoraId)
+    .maybeSingle()
+
+  if (admRow?.tenant_id) return String(admRow.tenant_id)
+  return getCurrentTenantId()
+}
+
 /**
  * DELETE /api/administradora/fatura/:id?administradora_id=xxx
  * Exclui fatura/boleto e tenta cancelar a cobrança no Asaas quando possível.
@@ -22,14 +33,14 @@ export async function DELETE(
       )
     }
 
-    const tenantId = await getCurrentTenantId()
+    const tenantId = await resolverTenantIdAdministradora(administradoraId)
 
+    // Autorização pelo vínculo administradora_id (mesmo critério da listagem de faturas).
     const { data: fatura, error: erroFatura } = await supabaseAdmin
       .from("faturas")
       .select("id, asaas_charge_id, gateway_id, administradora_id, tenant_id")
       .eq("id", faturaId)
       .eq("administradora_id", administradoraId)
-      .eq("tenant_id", tenantId)
       .maybeSingle()
 
     if (erroFatura) {
@@ -100,7 +111,6 @@ export async function DELETE(
       .delete()
       .eq("id", faturaId)
       .eq("administradora_id", administradoraId)
-      .eq("tenant_id", tenantId)
 
     if (erroDelete) {
       return NextResponse.json(
