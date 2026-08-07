@@ -7,7 +7,12 @@ import {
   mapearParaContentVariablesTwilio,
   type DadosEnvioWhatsApp,
 } from "./content-variables"
-import { montarIdempotencyKey, referenceDateHoje } from "./idempotency"
+import {
+  montarIdempotencyKey,
+  referenceDateAmanha,
+  referenceDateHoje,
+} from "./idempotency"
+import { PRIMEIRO_BOLETO_MENSAGEM_DELAY_MS } from "./event-types"
 import { enfileirarNotificacaoOutbound } from "./queues"
 import { whatsappBillingLog } from "./logger"
 import type { WhatsAppBillingEventType } from "./event-types"
@@ -28,6 +33,8 @@ export type DispararNotificacaoParams = {
   dados: DadosEnvioWhatsApp
   faturaId?: string | null
   referenceDate?: string
+  /** Atraso BullMQ antes do envio (ex.: primeiro boleto 24h após saudação). */
+  delayMs?: number
 }
 
 async function carregarSettings(administradoraId: string): Promise<BillingSettings | null> {
@@ -101,13 +108,15 @@ export async function dispararNotificacaoWhatsApp(
       referenceDate,
       variaveis,
     },
-    jobId
+    jobId,
+    { delayMs: params.delayMs }
   )
 
   whatsappBillingLog.info("dispatch.enqueued", {
     eventType: params.eventType,
     jobId,
     administradoraId: params.administradoraId,
+    delayMs: params.delayMs ?? 0,
   })
 
   return { enqueued: true, jobId }
@@ -135,22 +144,34 @@ async function carregarNomeAdministradora(administradoraId: string): Promise<str
 export async function dispararSaudacaoBoasVindas(params: {
   administradoraId: string
   clienteAdministradoraId: string
+  telefone?: string
+  clienteNome?: string
 }): Promise<{ enqueued: boolean; reason?: string }> {
-  const { data: cliente } = await supabaseAdmin
-    .from("clientes_administradoras")
-    .select("proposta_id")
-    .eq("id", params.clienteAdministradoraId)
-    .maybeSingle()
+  let telefone = params.telefone?.trim() || ""
+  let clienteNome = params.clienteNome?.trim() || ""
 
-  if (!cliente?.proposta_id) {
-    return { enqueued: false, reason: "proposta_nao_encontrada" }
+  if (!telefone || !clienteNome) {
+    const { data: cliente } = await supabaseAdmin
+      .from("clientes_administradoras")
+      .select("proposta_id")
+      .eq("id", params.clienteAdministradoraId)
+      .maybeSingle()
+
+    if (cliente?.proposta_id) {
+      const { data: proposta } = await supabaseAdmin
+        .from("propostas")
+        .select("nome, telefone")
+        .eq("id", cliente.proposta_id)
+        .maybeSingle()
+
+      if (!telefone) telefone = String(proposta?.telefone || "")
+      if (!clienteNome) clienteNome = String(proposta?.nome || "")
+    }
   }
 
-  const { data: proposta } = await supabaseAdmin
-    .from("propostas")
-    .select("nome, telefone")
-    .eq("id", cliente.proposta_id)
-    .maybeSingle()
+  if (!telefone) {
+    return { enqueued: false, reason: "telefone_invalido" }
+  }
 
   const administradoraNome = await carregarNomeAdministradora(params.administradoraId)
 
@@ -158,9 +179,9 @@ export async function dispararSaudacaoBoasVindas(params: {
     eventType: "saudacao_boas_vindas",
     administradoraId: params.administradoraId,
     clienteAdministradoraId: params.clienteAdministradoraId,
-    telefone: String(proposta?.telefone || ""),
+    telefone,
     dados: {
-      clienteNome: String(proposta?.nome || "Cliente"),
+      clienteNome: clienteNome || "Cliente",
       administradoraNome,
     },
   })
@@ -176,7 +197,12 @@ export async function dispararPrimeiroBoletoGerado(params: {
   vencimento: string
   linkBoleto?: string | null
   numeroFatura?: string | null
-}): Promise<{ enqueued: boolean; reason?: string }> {
+}): Promise<{
+  enqueued: boolean
+  reason?: string
+  saudacao?: { enqueued: boolean; reason?: string }
+  primeiroBoleto?: { enqueued: boolean; reason?: string; jobId?: string }
+}> {
   const { count } = await supabaseAdmin
     .from("faturas")
     .select("id", { count: "exact", head: true })
@@ -188,12 +214,21 @@ export async function dispararPrimeiroBoletoGerado(params: {
 
   const administradoraNome = await carregarNomeAdministradora(params.administradoraId)
 
-  return dispararNotificacaoWhatsApp({
+  const saudacao = await dispararSaudacaoBoasVindas({
+    administradoraId: params.administradoraId,
+    clienteAdministradoraId: params.clienteAdministradoraId,
+    telefone: params.telefone,
+    clienteNome: params.clienteNome,
+  })
+
+  const primeiroBoleto = await dispararNotificacaoWhatsApp({
     eventType: "primeiro_boleto_gerado",
     administradoraId: params.administradoraId,
     clienteAdministradoraId: params.clienteAdministradoraId,
     telefone: params.telefone,
     faturaId: params.faturaId,
+    referenceDate: referenceDateAmanha(),
+    delayMs: PRIMEIRO_BOLETO_MENSAGEM_DELAY_MS,
     dados: {
       clienteNome: params.clienteNome,
       administradoraNome,
@@ -203,6 +238,22 @@ export async function dispararPrimeiroBoletoGerado(params: {
       numeroFatura: params.numeroFatura,
     },
   })
+
+  whatsappBillingLog.info("dispatch.primeiro_boleto_fluxo", {
+    faturaId: params.faturaId,
+    saudacaoEnqueued: saudacao.enqueued,
+    primeiroBoletoEnqueued: primeiroBoleto.enqueued,
+    delayMs: PRIMEIRO_BOLETO_MENSAGEM_DELAY_MS,
+  })
+
+  const enqueued = saudacao.enqueued || primeiroBoleto.enqueued
+
+  return {
+    enqueued,
+    reason: enqueued ? undefined : saudacao.reason || primeiroBoleto.reason,
+    saudacao,
+    primeiroBoleto,
+  }
 }
 
 export async function dispararConfirmacaoPagamento(faturaId: string): Promise<{ enqueued: boolean; reason?: string }> {

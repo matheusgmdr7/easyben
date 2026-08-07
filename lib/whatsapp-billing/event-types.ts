@@ -40,6 +40,9 @@ export const WHATSAPP_QUEUE_INBOUND = "whatsapp-inbound-processing"
 
 export const TWILIO_REQUEST_TIMEOUT_MS = 10_000
 
+/** Atraso entre saudação e mensagem do primeiro boleto (24 horas). */
+export const PRIMEIRO_BOLETO_MENSAGEM_DELAY_MS = 24 * 60 * 60 * 1000
+
 /** Status outbound persistidos em whatsapp_messages */
 export type WhatsAppMessageStatus =
   | "pending"

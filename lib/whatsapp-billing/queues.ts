@@ -47,13 +47,15 @@ export function sanitizarJobIdBullMQ(id: string): string {
 
 export async function enfileirarNotificacaoOutbound(
   payload: WhatsAppOutboundJobPayload,
-  jobId?: string
+  jobId?: string,
+  options?: { delayMs?: number }
 ) {
   const queue = getOutboundQueue()
   return queue.add("send", payload, {
     jobId: jobId ? sanitizarJobIdBullMQ(jobId) : undefined,
     attempts: 3,
     backoff: { type: "exponential", delay: 5000 },
+    ...(options?.delayMs && options.delayMs > 0 ? { delay: options.delayMs } : {}),
   })
 }
 
