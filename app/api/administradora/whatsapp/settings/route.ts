@@ -12,10 +12,16 @@ const DEFAULT_EVENTOS: Record<string, boolean> = Object.fromEntries(
 
 function normalizarSettings(row: Record<string, unknown> | null, administradoraId: string) {
   const eventos = (row?.eventos_ativos as Record<string, boolean>) || DEFAULT_EVENTOS
+  const tardeRaw = row?.horario_envio_tarde
+  const horarioTarde =
+    tardeRaw == null || String(tardeRaw).trim() === ""
+      ? null
+      : String(tardeRaw).slice(0, 8)
   return {
     administradora_id: administradoraId,
     whatsapp_automatico_ativo: Boolean(row?.whatsapp_automatico_ativo),
     horario_envio: String(row?.horario_envio || "09:00:00").slice(0, 8),
+    horario_envio_tarde: horarioTarde,
     eventos_ativos: { ...DEFAULT_EVENTOS, ...eventos },
     telefone_suporte_whatsapp: row?.telefone_suporte_whatsapp ?? null,
     url_portal_cliente: row?.url_portal_cliente ?? null,
@@ -71,6 +77,15 @@ export async function PATCH(request: NextRequest) {
       const h = String(body.horario_envio).trim()
       payload.horario_envio = h.length === 5 ? `${h}:00` : h
     }
+    if (body.horario_envio_tarde !== undefined) {
+      const raw = body.horario_envio_tarde
+      if (raw == null || String(raw).trim() === "") {
+        payload.horario_envio_tarde = null
+      } else {
+        const h = String(raw).trim()
+        payload.horario_envio_tarde = h.length === 5 ? `${h}:00` : h
+      }
+    }
     if (body.eventos_ativos !== undefined && typeof body.eventos_ativos === "object") {
       payload.eventos_ativos = body.eventos_ativos
     }
@@ -104,6 +119,7 @@ export async function PATCH(request: NextRequest) {
           ...payload,
           whatsapp_automatico_ativo: payload.whatsapp_automatico_ativo ?? false,
           horario_envio: payload.horario_envio ?? "09:00:00",
+          horario_envio_tarde: payload.horario_envio_tarde ?? "15:00:00",
           eventos_ativos: payload.eventos_ativos ?? DEFAULT_EVENTOS,
         })
         .select("*")

@@ -12,7 +12,8 @@ function autorizadoCron(request: NextRequest): boolean {
 
 /**
  * Cron diário: lembretes D-5, D-1, D0, D+3, D+7, D+15, D+25.
- * Agende 1x/dia (ex.: 12:00 UTC = 09:00 BRT) com Authorization: Bearer CRON_SECRET.
+ * Agende manhã (12:00 UTC = 09:00 BRT) e tarde (18:00 UTC = 15:00 BRT).
+ * Query: janela=manha|tarde, ignorar_horario=1
  */
 export async function GET(request: NextRequest) {
   return executarJob(request)
@@ -29,7 +30,9 @@ async function executarJob(request: NextRequest) {
 
   try {
     const ignorarHorario = request.nextUrl.searchParams.get("ignorar_horario") === "1"
-    const resultado = await executarCronLembretesWhatsApp({ ignorarHorario })
+    const janelaParam = request.nextUrl.searchParams.get("janela")?.trim()
+    const janela = janelaParam === "tarde" ? "tarde" : "manha"
+    const resultado = await executarCronLembretesWhatsApp({ ignorarHorario, janela })
     return NextResponse.json(resultado)
   } catch (err: unknown) {
     return NextResponse.json(

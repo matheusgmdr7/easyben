@@ -66,9 +66,16 @@ async function carregarVariaveisMap(eventType: WhatsAppBillingEventType) {
   return (data?.variaveis_map || null) as Record<string, string> | null
 }
 
+const STATUS_SUCESSO_ENVIO = new Set(["queued", "sent", "delivered", "read"])
+
 export async function dispararNotificacaoWhatsApp(
   params: DispararNotificacaoParams,
-  options?: { ignorarAutomatico?: boolean; idempotencySuffix?: string }
+  options?: {
+    ignorarAutomatico?: boolean
+    idempotencySuffix?: string
+    /** Na janela da tarde: só reenvia se a manhã falhou ou não registrou envio. */
+    somenteRetentativa?: boolean
+  }
 ): Promise<{ enqueued: boolean; reason?: string; jobId?: string }> {
   const telefoneDigits = normalizarTelefoneWhatsApp(params.telefone)
   if (!telefoneDigits) {
@@ -86,6 +93,25 @@ export async function dispararNotificacaoWhatsApp(
   }
 
   const referenceDate = params.referenceDate || referenceDateHoje()
+  const idempotencyKeyBase = montarIdempotencyKey({
+    eventType: params.eventType,
+    clienteId: params.clienteAdministradoraId,
+    referenceDate,
+    faturaId: params.faturaId,
+  })
+
+  if (options?.somenteRetentativa) {
+    const { data: existente } = await supabaseAdmin
+      .from("whatsapp_messages")
+      .select("status")
+      .eq("idempotency_key", idempotencyKeyBase)
+      .maybeSingle()
+
+    if (existente && STATUS_SUCESSO_ENVIO.has(String(existente.status))) {
+      return { enqueued: false, reason: "ja_enviado" }
+    }
+  }
+
   const variaveisInternas = montarVariaveisInternas({
     ...params.dados,
     telefoneSuporte: params.dados.telefoneSuporte ?? settings?.telefone_suporte_whatsapp,
@@ -93,13 +119,10 @@ export async function dispararNotificacaoWhatsApp(
   })
   const variaveis = mapearParaContentVariablesTwilio(variaveisInternas, variaveisMap)
 
-  const jobId =
-    montarIdempotencyKey({
-      eventType: params.eventType,
-      clienteId: params.clienteAdministradoraId,
-      referenceDate,
-      faturaId: params.faturaId,
-    }) + (options?.idempotencySuffix ? `:${options.idempotencySuffix}` : "")
+  const suffix =
+    options?.idempotencySuffix ||
+    (options?.somenteRetentativa ? "tarde" : undefined)
+  const jobId = idempotencyKeyBase + (suffix ? `:${suffix}` : "")
 
   await enfileirarNotificacaoOutbound(
     {
@@ -312,7 +335,11 @@ export type FaturaLembreteRow = {
 export async function dispararLembreteFatura(
   fatura: FaturaLembreteRow,
   eventType: WhatsAppBillingEventType,
-  options?: { ignorarAutomatico?: boolean; delayMs?: number }
+  options?: {
+    ignorarAutomatico?: boolean
+    delayMs?: number
+    somenteRetentativa?: boolean
+  }
 ): Promise<{ enqueued: boolean; reason?: string }> {
   const administradoraNome = await carregarNomeAdministradora(fatura.administradora_id)
   const linkBoleto = getBoletoLinkFromFatura(fatura)
@@ -343,7 +370,10 @@ export async function dispararLembreteFatura(
         numeroFatura: fatura.numero_fatura,
       },
     },
-    options?.ignorarAutomatico ? { ignorarAutomatico: true } : undefined
+    {
+      ...(options?.ignorarAutomatico ? { ignorarAutomatico: true } : {}),
+      ...(options?.somenteRetentativa ? { somenteRetentativa: true } : {}),
+    }
   )
 }
 

@@ -15,6 +15,7 @@ import {
 import { WhatsAppCobrancasConfig } from "@/components/administradora/whatsapp-cobrancas-config"
 import { WhatsAppMensagensHistorico } from "@/components/administradora/whatsapp-mensagens-historico"
 import { WhatsAppTesteTemplates } from "@/components/administradora/whatsapp-teste-templates"
+import { WhatsAppRelatorioEnvios } from "@/components/administradora/whatsapp-relatorio-envios"
 
 type FinanceiraOpcao = { id: string; nome: string }
 type CorretorOpcao = { id: string; nome: string }
@@ -204,6 +205,9 @@ export default function CobrancasFinanceiroPage() {
             <TabsTrigger value="historico" className={cn(btnSquare, "text-sm px-4 py-2")}>
               Histórico de envios
             </TabsTrigger>
+            <TabsTrigger value="relatorio" className={cn(btnSquare, "text-sm px-4 py-2")}>
+              Relatório de envios
+            </TabsTrigger>
             <TabsTrigger value="teste-templates" className={cn(btnSquare, "text-sm px-4 py-2")}>
               Testar modelos
             </TabsTrigger>
@@ -331,6 +335,9 @@ export default function CobrancasFinanceiroPage() {
               </TabsContent>
               <TabsContent value="historico" className="mt-0">
                 <WhatsAppMensagensHistorico administradoraId={administradora.id} />
+              </TabsContent>
+              <TabsContent value="relatorio" className="mt-0">
+                <WhatsAppRelatorioEnvios administradoraId={administradora.id} />
               </TabsContent>
               <TabsContent value="teste-templates" className="mt-0">
                 <WhatsAppTesteTemplates administradoraId={administradora.id} />

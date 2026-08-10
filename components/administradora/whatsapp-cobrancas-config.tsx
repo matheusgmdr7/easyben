@@ -15,6 +15,7 @@ type Settings = {
   administradora_id: string
   whatsapp_automatico_ativo: boolean
   horario_envio: string
+  horario_envio_tarde: string | null
   eventos_ativos: Record<string, boolean>
   telefone_suporte_whatsapp: string | null
   url_portal_cliente: string | null
@@ -89,6 +90,8 @@ export function WhatsAppCobrancasConfig({ administradoraId }: Props) {
   if (!settings) return null
 
   const horarioInput = settings.horario_envio.slice(0, 5)
+  const horarioTardeInput = settings.horario_envio_tarde?.slice(0, 5) || "15:00"
+  const retentativaTardeAtiva = settings.horario_envio_tarde != null
 
   return (
     <div className="rounded-sm border border-slate-200 bg-white shadow-sm divide-y divide-slate-100">
@@ -118,7 +121,7 @@ export function WhatsAppCobrancasConfig({ administradoraId }: Props) {
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <div className="space-y-1.5">
             <Label htmlFor="wa-horario" className="text-xs uppercase tracking-wide text-slate-500">
-              Horário diário (BRT)
+              Horário manhã (BRT)
             </Label>
             <Input
               id="wa-horario"
@@ -131,6 +134,42 @@ export function WhatsAppCobrancasConfig({ administradoraId }: Props) {
               }
               onBlur={() => void salvar({ horario_envio: settings.horario_envio })}
             />
+          </div>
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <Label htmlFor="wa-horario-tarde" className="text-xs uppercase tracking-wide text-slate-500">
+                Retentativa tarde (BRT)
+              </Label>
+              <Switch
+                checked={retentativaTardeAtiva}
+                disabled={saving || !settings.whatsapp_automatico_ativo}
+                onCheckedChange={(checked) => {
+                  const horario_envio_tarde = checked ? `${horarioTardeInput}:00` : null
+                  setSettings((s) => (s ? { ...s, horario_envio_tarde } : s))
+                  void salvar({ horario_envio_tarde })
+                }}
+              />
+            </div>
+            <Input
+              id="wa-horario-tarde"
+              type="time"
+              className={cn(btnSquare, "h-10")}
+              value={horarioTardeInput}
+              disabled={saving || !retentativaTardeAtiva}
+              onChange={(e) =>
+                setSettings((s) =>
+                  s ? { ...s, horario_envio_tarde: `${e.target.value}:00` } : s
+                )
+              }
+              onBlur={() => {
+                if (retentativaTardeAtiva) {
+                  void salvar({ horario_envio_tarde: settings.horario_envio_tarde })
+                }
+              }}
+            />
+            <p className="text-[11px] text-slate-500 leading-snug">
+              Reenvia lembretes que falharam na manhã, sem duplicar envios já entregues.
+            </p>
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="wa-suporte" className="text-xs uppercase tracking-wide text-slate-500">

@@ -19,3 +19,8 @@
 [functions."whatsapp-billing-reminders"]
   schedule = "0 12 * * *"
   timeout = 26
+
+# Retentativa tarde — 18:00 UTC = 15:00 BRT
+[functions."whatsapp-billing-reminders-tarde"]
+  schedule = "0 18 * * *"
+  timeout = 26
