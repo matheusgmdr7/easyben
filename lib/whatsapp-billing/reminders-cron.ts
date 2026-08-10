@@ -5,8 +5,9 @@ import {
 } from "./dispatch"
 import {
   REGRAS_LEMBRETE_COBRANCA,
+  STATUS_FATURA_LEMBRETE,
+  calcularDelayAteHorarioEnvio,
   faturaElegivelLembrete,
-  horarioEnvioPermitido,
   vencimentoAlvoParaEvento,
 } from "./reminder-rules"
 import { referenceDateHoje } from "./idempotency"
@@ -28,6 +29,7 @@ type ResumoEvento = {
   vencimento_alvo: string
   enfileirados: number
   ignorados: number
+  motivos_ignorados: Record<string, number>
 }
 
 export type ResultadoCronLembretes = {
@@ -36,8 +38,17 @@ export type ResultadoCronLembretes = {
   total_enfileirados: number
   total_ignorados: number
   total_erros: number
+  motivos_ignorados: Record<string, number>
   por_evento: ResumoEvento[]
   por_administradora: ResumoAdministradora[]
+}
+
+function registrarIgnorado(
+  motivos: Record<string, number>,
+  reason: string | undefined
+): void {
+  const key = reason || "desconhecido"
+  motivos[key] = (motivos[key] || 0) + 1
 }
 
 function eventoAtivo(settings: { eventos_ativos?: Record<string, boolean> } | null, eventType: string) {
@@ -52,6 +63,7 @@ export async function executarCronLembretesWhatsApp(options?: {
   const hoje = options?.hoje || referenceDateHoje()
   const porEvento: ResumoEvento[] = []
   const porAdministradora = new Map<string, ResumoAdministradora>()
+  const motivosIgnoradosGlobal: Record<string, number> = {}
 
   let totalEnfileirados = 0
   let totalIgnorados = 0
@@ -75,29 +87,30 @@ export async function executarCronLembretesWhatsApp(options?: {
       vencimento_alvo: vencimentoAlvo,
       enfileirados: 0,
       ignorados: 0,
+      motivos_ignorados: {},
     }
 
     for (const settings of administradorasAtivas) {
       const admId = String(settings.administradora_id)
 
       if (!eventoAtivo(settings, regra.eventType)) {
+        registrarIgnorado(resumoEvento.motivos_ignorados, "evento_desativado")
+        registrarIgnorado(motivosIgnoradosGlobal, "evento_desativado")
         resumoEvento.ignorados++
         totalIgnorados++
         continue
       }
 
-      if (!options?.ignorarHorario && !horarioEnvioPermitido(settings.horario_envio)) {
-        resumoEvento.ignorados++
-        totalIgnorados++
-        continue
-      }
+      const delayMs = options?.ignorarHorario
+        ? 0
+        : calcularDelayAteHorarioEnvio(settings.horario_envio)
 
       const { data: faturas, error: fatErr } = await supabaseAdmin
         .from("faturas")
         .select(FATURA_SELECT)
         .eq("administradora_id", admId)
         .eq("vencimento", vencimentoAlvo)
-        .in("status", ["pendente", "atrasada"])
+        .in("status", [...STATUS_FATURA_LEMBRETE])
 
       if (fatErr) {
         whatsappBillingLog.error("cron.lembretes.query_error", {
@@ -111,13 +124,25 @@ export async function executarCronLembretesWhatsApp(options?: {
 
       for (const row of faturas || []) {
         if (!faturaElegivelLembrete(row.status)) {
+          registrarIgnorado(resumoEvento.motivos_ignorados, "status_nao_elegivel")
+          registrarIgnorado(motivosIgnoradosGlobal, "status_nao_elegivel")
+          resumoEvento.ignorados++
+          totalIgnorados++
+          continue
+        }
+
+        if (!row.cliente_administradora_id) {
+          registrarIgnorado(resumoEvento.motivos_ignorados, "sem_cliente_vinculado")
+          registrarIgnorado(motivosIgnoradosGlobal, "sem_cliente_vinculado")
           resumoEvento.ignorados++
           totalIgnorados++
           continue
         }
 
         try {
-          const result = await dispararLembreteFatura(row as FaturaLembreteRow, regra.eventType)
+          const result = await dispararLembreteFatura(row as FaturaLembreteRow, regra.eventType, {
+            delayMs,
+          })
           const admResumo = porAdministradora.get(admId) || {
             administradora_id: admId,
             enfileirados: 0,
@@ -130,9 +155,16 @@ export async function executarCronLembretesWhatsApp(options?: {
             totalEnfileirados++
             admResumo.enfileirados++
           } else {
+            registrarIgnorado(resumoEvento.motivos_ignorados, result.reason)
+            registrarIgnorado(motivosIgnoradosGlobal, result.reason)
             resumoEvento.ignorados++
             totalIgnorados++
             admResumo.ignorados++
+            whatsappBillingLog.info("cron.lembretes.ignorado", {
+              faturaId: row.id,
+              eventType: regra.eventType,
+              reason: result.reason,
+            })
           }
 
           porAdministradora.set(admId, admResumo)
@@ -164,6 +196,7 @@ export async function executarCronLembretesWhatsApp(options?: {
     total_enfileirados: totalEnfileirados,
     total_ignorados: totalIgnorados,
     total_erros: totalErros,
+    motivos_ignorados: motivosIgnoradosGlobal,
     por_evento: porEvento,
     por_administradora: Array.from(porAdministradora.values()),
   }

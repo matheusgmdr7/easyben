@@ -1,10 +1,10 @@
--- Corrige mapeamento das variáveis do template de saudação (Twilio Content)
--- {1} cliente · {2} financeira · {3} plano · {4} cobertura · {5} portal do cliente
--- Execute no Supabase SQL Editor (produção).
+-- Mapeamento do template de saudação (Twilio Content) — v2
+-- {1} cliente · {2} financeira · {3} plano · {4} portal · {5} telefone suporte
+-- Para novo Content SID após duplicar na Twilio, use scripts/atualizar-template-saudacao-v2.sql
 
 UPDATE billing_templates
 SET
-  variaveis_map = '{"1":"cliente_nome","2":"financeira_nome","3":"plano_descricao","4":"cobertura","5":"url_portal_cliente"}'::jsonb,
+  variaveis_map = '{"1":"cliente_nome","2":"financeira_nome","3":"plano_descricao","4":"url_portal_cliente","5":"telefone_suporte"}'::jsonb,
   updated_at = NOW()
 WHERE event_type = 'saudacao_boas_vindas';
 

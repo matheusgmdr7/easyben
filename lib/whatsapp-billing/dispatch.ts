@@ -2,6 +2,7 @@ import { supabaseAdmin } from "@/lib/supabase-admin"
 import { normalizarTelefoneWhatsApp } from "@/lib/whatsapp-cobranca"
 import { carregarTelefoneAtualClienteCobranca } from "@/lib/telefone-cliente-cobranca"
 import { getBoletoLinkFromFatura } from "@/lib/fatura-boleto-link"
+import { resolveTenantIdForAdministradora } from "@/lib/resolve-tenant-administradora"
 import {
   montarVariaveisInternas,
   mapearParaContentVariablesTwilio,
@@ -171,7 +172,6 @@ export async function dispararSaudacaoBoasVindas(params: {
       administradoraNome,
       financeiraNome: ctx.financeiraNome,
       planoDescricao: ctx.planoDescricao,
-      coberturaPlano: ctx.cobertura,
     },
   })
 }
@@ -312,16 +312,18 @@ export type FaturaLembreteRow = {
 export async function dispararLembreteFatura(
   fatura: FaturaLembreteRow,
   eventType: WhatsAppBillingEventType,
-  options?: { ignorarAutomatico?: boolean }
+  options?: { ignorarAutomatico?: boolean; delayMs?: number }
 ): Promise<{ enqueued: boolean; reason?: string }> {
   const administradoraNome = await carregarNomeAdministradora(fatura.administradora_id)
   const linkBoleto = getBoletoLinkFromFatura(fatura)
 
+  const tenantId = await resolveTenantIdForAdministradora(fatura.administradora_id)
   const telefone =
     (await carregarTelefoneAtualClienteCobranca({
       administradoraId: fatura.administradora_id,
       clienteAdministradoraId: fatura.cliente_administradora_id,
       telefoneFatura: fatura.cliente_telefone,
+      tenantId,
     })) || ""
 
   return dispararNotificacaoWhatsApp(
@@ -331,6 +333,7 @@ export async function dispararLembreteFatura(
       clienteAdministradoraId: fatura.cliente_administradora_id,
       telefone,
       faturaId: fatura.id,
+      delayMs: options?.delayMs,
       dados: {
         clienteNome: String(fatura.cliente_nome || "Cliente"),
         administradoraNome,
@@ -340,7 +343,7 @@ export async function dispararLembreteFatura(
         numeroFatura: fatura.numero_fatura,
       },
     },
-    options
+    options?.ignorarAutomatico ? { ignorarAutomatico: true } : undefined
   )
 }
 

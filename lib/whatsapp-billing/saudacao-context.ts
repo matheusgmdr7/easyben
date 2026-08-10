@@ -70,7 +70,7 @@ async function carregarFinanceiraNome(params: {
 
 /**
  * Dados específicos do template de saudação (variáveis 2–5).
- * {2} financeira · {3} plano · {4} cobertura · {5} portal (via settings em dispatch).
+ * {2} financeira · {3} plano · {4} portal · {5} telefone suporte (via settings em dispatch).
  */
 export async function carregarContextoSaudacaoWhatsApp(params: {
   administradoraId: string

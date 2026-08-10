@@ -7,7 +7,7 @@ VALUES
     'saudacao_boas_vindas',
     'HXea17dc298936290a64a64f2c371d7153',
     'Saudação e boas-vindas ao novo cliente',
-    '{"1":"cliente_nome","2":"financeira_nome","3":"plano_descricao","4":"cobertura","5":"url_portal_cliente"}'::jsonb,
+    '{"1":"cliente_nome","2":"financeira_nome","3":"plano_descricao","4":"url_portal_cliente","5":"telefone_suporte"}'::jsonb,
     true
   ),
   (

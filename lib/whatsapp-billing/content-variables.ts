@@ -1,4 +1,4 @@
-import { formatarData, formatarMoeda } from "@/utils/formatters"
+import { formatarData, formatarMoeda, formatarTelefone } from "@/utils/formatters"
 import { normalizarTelefoneWhatsApp } from "@/lib/whatsapp-cobranca"
 import type { ContentVariablesInput } from "./event-types"
 
@@ -46,7 +46,11 @@ export function montarVariaveisInternas(dados: DadosEnvioWhatsApp): ContentVaria
     link_boleto: dados.linkBoleto?.trim() || undefined,
     numero_fatura: dados.numeroFatura?.trim() || undefined,
     url_portal_cliente: dados.urlPortalCliente?.trim() || "https://easyben.com.br/benefit/cliente",
-    telefone_suporte: dados.telefoneSuporte?.trim() || undefined,
+    telefone_suporte: (() => {
+      const raw = dados.telefoneSuporte?.trim()
+      if (!raw) return undefined
+      return formatarTelefone(raw) || raw
+    })(),
   }
 }
 

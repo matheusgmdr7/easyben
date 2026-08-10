@@ -37,7 +37,7 @@ export type PreviewDadosTesteWhatsApp = {
   cliente_nome: string
   financeira_nome: string
   plano_descricao: string
-  cobertura: string
+  telefone_suporte: string | null
   valor_fatura: string | null
   data_vencimento: string | null
   data_pagamento: string | null
@@ -201,7 +201,6 @@ export async function montarDadosExemploEnvioWhatsApp(
     administradoraNome,
     financeiraNome,
     planoDescricao: "Plano Saúde Exemplo — Apartamento",
-    coberturaPlano: "Nacional",
     valorFatura: 350,
     dataVencimento: vencimento,
     dataPagamento: hoje,
@@ -266,7 +265,6 @@ export async function montarDadosEnvioWhatsAppCliente(params: {
       administradoraNome,
       financeiraNome: financeiraNome !== "—" ? financeiraNome : ctx.financeiraNome,
       planoDescricao: ctx.planoDescricao,
-      coberturaPlano: ctx.cobertura,
       valorFatura:
         fatura?.valor != null ? Number(fatura.valor) : undefined,
       dataVencimento: fatura?.vencimento
@@ -298,7 +296,7 @@ export async function previewDadosTesteWhatsApp(params: {
     administradora_nome: d.administradoraNome,
     financeira_nome: d.financeiraNome || "—",
     plano_descricao: d.planoDescricao || "—",
-    cobertura: d.coberturaPlano || "—",
+    telefone_suporte: d.telefoneSuporte || null,
     valor_fatura:
       d.valorFatura != null && Number.isFinite(Number(d.valorFatura))
         ? formatarMoeda(Number(d.valorFatura))

@@ -53,7 +53,7 @@ type PreviewDados = {
   cliente_nome: string
   financeira_nome: string
   plano_descricao: string
-  cobertura: string
+  telefone_suporte: string | null
   valor_fatura: string | null
   data_vencimento: string | null
   link_boleto: string | null
@@ -457,14 +457,14 @@ export function WhatsAppTesteTemplates({ administradoraId }: Props) {
                     <dt className="text-slate-500">Financeira</dt>
                     <dd className="text-slate-800">{preview.financeira_nome}</dd>
                   </div>
-                  <div>
-                    <dt className="text-slate-500">Plano</dt>
-                    <dd className="text-slate-800">{preview.plano_descricao}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-slate-500">Cobertura</dt>
-                    <dd className="text-slate-800">{preview.cobertura}</dd>
-                  </div>
+                <div>
+                  <dt className="text-slate-500">Plano</dt>
+                  <dd className="text-slate-800">{preview.plano_descricao}</dd>
+                </div>
+                <div>
+                  <dt className="text-slate-500">Telefone suporte</dt>
+                  <dd className="text-slate-800">{preview.telefone_suporte || "—"}</dd>
+                </div>
                   <div>
                     <dt className="text-slate-500">Valor fatura</dt>
                     <dd className="text-slate-800">{preview.valor_fatura || "—"}</dd>
