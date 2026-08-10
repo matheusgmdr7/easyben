@@ -66,6 +66,10 @@ function formatarDataHora(iso: string | null) {
   })
 }
 
+function formatarPeriodo(de: string, ate: string) {
+  return `${formatarData(de)} — ${formatarData(ate)}`
+}
+
 export function WhatsAppRelatorioEnvios({ administradoraId }: Props) {
   const [de, setDe] = useState(inicioMesIso)
   const [ate, setAte] = useState(hojeIso)
@@ -124,8 +128,27 @@ export function WhatsAppRelatorioEnvios({ administradoraId }: Props) {
     resumo && resumo.total > 0 ? Math.round((resumo.sucesso / resumo.total) * 100) : 0
 
   return (
-    <div className="space-y-4">
-      <div className="rounded-sm border border-slate-200 bg-white p-4 shadow-sm">
+    <div className="rounded-sm border border-slate-200 bg-white shadow-sm">
+      <div className="flex flex-col gap-1 border-b border-slate-100 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 className="text-base font-semibold text-slate-800">Relatório de envios WhatsApp</h2>
+          <p className="text-sm text-slate-500">
+            Resumo e detalhamento por período — {formatarPeriodo(de, ate)}
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className={cn(btnSquare, "border-slate-300")}
+          disabled={loading}
+          onClick={() => void carregar()}
+        >
+          Atualizar
+        </Button>
+      </div>
+
+      <div className="border-b border-slate-100 px-5 py-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-end">
           <div className="space-y-1.5">
             <Label htmlFor="rel-de" className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
@@ -213,31 +236,33 @@ export function WhatsAppRelatorioEnvios({ administradoraId }: Props) {
       ) : (
         <>
           {resumo ? (
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <div className="rounded-sm border border-slate-200 bg-white p-4 shadow-sm">
-                <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Total</p>
-                <p className="text-2xl font-semibold text-slate-800 mt-1">{resumo.total}</p>
-              </div>
-              <div className="rounded-sm border border-emerald-200 bg-emerald-50/50 p-4 shadow-sm">
-                <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-700">Sucesso</p>
-                <p className="text-2xl font-semibold text-emerald-800 mt-1">
-                  {resumo.sucesso}
-                  <span className="text-sm font-normal text-emerald-600 ml-1">({taxaSucesso}%)</span>
-                </p>
-              </div>
-              <div className="rounded-sm border border-red-200 bg-red-50/50 p-4 shadow-sm">
-                <p className="text-[10px] font-semibold uppercase tracking-wide text-red-700">Falhas</p>
-                <p className="text-2xl font-semibold text-red-800 mt-1">{resumo.falha}</p>
-              </div>
-              <div className="rounded-sm border border-amber-200 bg-amber-50/50 p-4 shadow-sm">
-                <p className="text-[10px] font-semibold uppercase tracking-wide text-amber-700">Pendentes</p>
-                <p className="text-2xl font-semibold text-amber-800 mt-1">{resumo.pendente}</p>
+            <div className="border-b border-slate-100 bg-slate-50/50 px-5 py-3">
+              <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
+                <div>
+                  <span className="text-slate-500">Total: </span>
+                  <span className="font-semibold text-slate-800 tabular-nums">{resumo.total}</span>
+                </div>
+                <div>
+                  <span className="text-slate-500">Sucesso: </span>
+                  <span className="font-semibold text-slate-800 tabular-nums">
+                    {resumo.sucesso}
+                    <span className="font-normal text-slate-500 ml-1">({taxaSucesso}%)</span>
+                  </span>
+                </div>
+                <div>
+                  <span className="text-slate-500">Falhas: </span>
+                  <span className="font-semibold text-slate-800 tabular-nums">{resumo.falha}</span>
+                </div>
+                <div>
+                  <span className="text-slate-500">Pendentes: </span>
+                  <span className="font-semibold text-slate-800 tabular-nums">{resumo.pendente}</span>
+                </div>
               </div>
             </div>
           ) : null}
 
-          <div className="grid gap-4 lg:grid-cols-2">
-            <div className="rounded-sm border border-slate-200 bg-white shadow-sm">
+          <div className="grid gap-0 lg:grid-cols-2 lg:divide-x lg:divide-slate-100 border-b border-slate-100">
+            <div>
               <div className="border-b border-slate-100 px-5 py-3">
                 <h3 className="text-sm font-semibold text-slate-800">Por evento</h3>
               </div>
@@ -248,27 +273,27 @@ export function WhatsAppRelatorioEnvios({ administradoraId }: Props) {
                   <table className="min-w-full text-sm">
                     <thead>
                       <tr className="border-b border-slate-200 bg-slate-50/90">
-                        <th className="px-4 py-2 text-left text-[11px] font-semibold uppercase text-slate-600">
+                        <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">
                           Evento
                         </th>
-                        <th className="px-4 py-2 text-right text-[11px] font-semibold uppercase text-slate-600">
+                        <th className="px-4 py-2.5 text-right text-[11px] font-semibold uppercase tracking-wide text-slate-600">
                           Total
                         </th>
-                        <th className="px-4 py-2 text-right text-[11px] font-semibold uppercase text-slate-600">
+                        <th className="px-4 py-2.5 text-right text-[11px] font-semibold uppercase tracking-wide text-slate-600">
                           OK
                         </th>
-                        <th className="px-4 py-2 text-right text-[11px] font-semibold uppercase text-slate-600">
+                        <th className="px-4 py-2.5 text-right text-[11px] font-semibold uppercase tracking-wide text-slate-600">
                           Falha
                         </th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {porEvento.map((e) => (
-                        <tr key={e.event_type}>
-                          <td className="px-4 py-2 text-slate-700">{e.event_label}</td>
-                          <td className="px-4 py-2 text-right tabular-nums">{e.total}</td>
-                          <td className="px-4 py-2 text-right tabular-nums text-emerald-700">{e.sucesso}</td>
-                          <td className="px-4 py-2 text-right tabular-nums text-red-700">{e.falha}</td>
+                      {porEvento.map((e, idx) => (
+                        <tr key={e.event_type} className={idx % 2 === 0 ? "bg-white" : "bg-slate-50/50"}>
+                          <td className="px-4 py-2.5 text-slate-700">{e.event_label}</td>
+                          <td className="px-4 py-2.5 text-right tabular-nums text-slate-800">{e.total}</td>
+                          <td className="px-4 py-2.5 text-right tabular-nums text-slate-800">{e.sucesso}</td>
+                          <td className="px-4 py-2.5 text-right tabular-nums text-slate-800">{e.falha}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -277,7 +302,7 @@ export function WhatsAppRelatorioEnvios({ administradoraId }: Props) {
               )}
             </div>
 
-            <div className="rounded-sm border border-slate-200 bg-white shadow-sm">
+            <div>
               <div className="border-b border-slate-100 px-5 py-3">
                 <h3 className="text-sm font-semibold text-slate-800">Erros mais frequentes</h3>
               </div>
@@ -288,7 +313,7 @@ export function WhatsAppRelatorioEnvios({ administradoraId }: Props) {
                   {errosFrequentes.map((e) => (
                     <li key={e.mensagem} className="px-5 py-3 flex items-start justify-between gap-3">
                       <span className="text-xs text-slate-700 leading-relaxed">{e.mensagem}</span>
-                      <span className="text-xs font-semibold text-red-700 tabular-nums shrink-0">{e.qtd}x</span>
+                      <span className="text-xs font-semibold text-slate-800 tabular-nums shrink-0">{e.qtd}x</span>
                     </li>
                   ))}
                 </ul>
@@ -296,82 +321,80 @@ export function WhatsAppRelatorioEnvios({ administradoraId }: Props) {
             </div>
           </div>
 
-          <div className="rounded-sm border border-slate-200 bg-white shadow-sm">
-            <div className="border-b border-slate-100 px-5 py-3">
-              <h3 className="text-sm font-semibold text-slate-800">Detalhamento de envios</h3>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-sm">
-                <thead>
-                  <tr className="border-b border-slate-200 bg-slate-50/90">
-                    <th className="px-4 py-2 text-left text-[11px] font-semibold uppercase text-slate-600">
-                      Data/hora
-                    </th>
-                    <th className="px-4 py-2 text-left text-[11px] font-semibold uppercase text-slate-600">
-                      Cliente
-                    </th>
-                    <th className="px-4 py-2 text-left text-[11px] font-semibold uppercase text-slate-600">
-                      Evento
-                    </th>
-                    <th className="px-4 py-2 text-left text-[11px] font-semibold uppercase text-slate-600">
-                      Telefone
-                    </th>
-                    <th className="px-4 py-2 text-left text-[11px] font-semibold uppercase text-slate-600">
-                      Status
-                    </th>
+          <div className="border-b border-slate-100 px-5 py-3">
+            <h3 className="text-sm font-semibold text-slate-800">Detalhamento de envios</h3>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-200 bg-slate-50/90">
+                  <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                    Data/hora
+                  </th>
+                  <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                    Cliente
+                  </th>
+                  <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                    Evento
+                  </th>
+                  <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                    Telefone
+                  </th>
+                  <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                    Status
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {mensagens.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="px-4 py-12 text-center text-slate-500">
+                      Nenhum envio encontrado com os filtros selecionados.
+                    </td>
                   </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {mensagens.length === 0 ? (
-                    <tr>
-                      <td colSpan={5} className="px-4 py-10 text-center text-slate-500">
-                        Nenhum envio encontrado com os filtros selecionados.
+                ) : (
+                  mensagens.map((m, idx) => (
+                    <tr key={m.id} className={idx % 2 === 0 ? "bg-white" : "bg-slate-50/50"}>
+                      <td className="px-4 py-2.5 text-slate-600 text-xs whitespace-nowrap tabular-nums">
+                        {formatarDataHora(m.created_at)}
+                      </td>
+                      <td className="px-4 py-2.5 text-slate-800 font-medium">{m.cliente_nome || "—"}</td>
+                      <td className="px-4 py-2.5 text-slate-600 text-xs">{m.event_label}</td>
+                      <td className="px-4 py-2.5 text-slate-500 text-xs tabular-nums">{m.telefone_mascara}</td>
+                      <td className="px-4 py-2.5">
+                        <StatusEnvioWhatsApp status={m.status} title={m.error_message || undefined} />
                       </td>
                     </tr>
-                  ) : (
-                    mensagens.map((m, idx) => (
-                      <tr key={m.id} className={idx % 2 === 0 ? "bg-white" : "bg-slate-50/50"}>
-                        <td className="px-4 py-2 text-slate-600 text-xs whitespace-nowrap tabular-nums">
-                          {formatarDataHora(m.created_at)}
-                        </td>
-                        <td className="px-4 py-2 text-slate-800 font-medium">{m.cliente_nome || "—"}</td>
-                        <td className="px-4 py-2 text-slate-600 text-xs">{m.event_label}</td>
-                        <td className="px-4 py-2 text-slate-500 text-xs tabular-nums">{m.telefone_mascara}</td>
-                        <td className="px-4 py-2">
-                          <StatusEnvioWhatsApp status={m.status} title={m.error_message || undefined} />
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-            <div className="flex items-center justify-between border-t border-slate-200 bg-slate-50/50 px-5 py-3">
-              <p className="text-xs text-slate-500">
-                Página {page} de {totalPages}
-              </p>
-              <div className="flex gap-2">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className={cn(btnSquare, "border-slate-300")}
-                  disabled={page <= 1 || loading}
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                >
-                  Anterior
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className={cn(btnSquare, "border-slate-300")}
-                  disabled={page >= totalPages || loading}
-                  onClick={() => setPage((p) => p + 1)}
-                >
-                  Próxima
-                </Button>
-              </div>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+          <div className="flex items-center justify-between border-t border-slate-200 bg-slate-50/50 px-5 py-3">
+            <p className="text-xs text-slate-500">
+              Página {page} de {totalPages}
+            </p>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className={cn(btnSquare, "border-slate-300")}
+                disabled={page <= 1 || loading}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+              >
+                Anterior
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className={cn(btnSquare, "border-slate-300")}
+                disabled={page >= totalPages || loading}
+                onClick={() => setPage((p) => p + 1)}
+              >
+                Próxima
+              </Button>
             </div>
           </div>
         </>
