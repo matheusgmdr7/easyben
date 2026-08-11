@@ -209,7 +209,7 @@ export default function CobrancasFinanceiroPage() {
               Relatório de envios
             </TabsTrigger>
             <TabsTrigger value="teste-templates" className={cn(btnSquare, "text-sm px-4 py-2")}>
-              Testar modelos
+              Modelos
             </TabsTrigger>
           </TabsList>
 

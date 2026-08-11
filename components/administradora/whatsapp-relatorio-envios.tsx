@@ -128,142 +128,154 @@ export function WhatsAppRelatorioEnvios({ administradoraId }: Props) {
     resumo && resumo.total > 0 ? Math.round((resumo.sucesso / resumo.total) * 100) : 0
 
   return (
-    <div className="rounded-sm border border-slate-200 bg-white shadow-sm">
-      <div className="flex flex-col gap-1 border-b border-slate-100 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h2 className="text-base font-semibold text-slate-800">Relatório de envios WhatsApp</h2>
-          <p className="text-sm text-slate-500">
-            Resumo e detalhamento por período — {formatarPeriodo(de, ate)}
-          </p>
-        </div>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className={cn(btnSquare, "border-slate-300")}
-          disabled={loading}
-          onClick={() => void carregar()}
-        >
-          Atualizar
-        </Button>
-      </div>
-
-      <div className="border-b border-slate-100 px-5 py-4">
-        <div className="flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-end">
-          <div className="space-y-1.5">
-            <Label htmlFor="rel-de" className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-              De
-            </Label>
-            <Input
-              id="rel-de"
-              type="date"
-              className={cn(btnSquare, "h-10 w-[11rem]")}
-              value={de}
-              onChange={(e) => setDe(e.target.value)}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="rel-ate" className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-              Até
-            </Label>
-            <Input
-              id="rel-ate"
-              type="date"
-              className={cn(btnSquare, "h-10 w-[11rem]")}
-              value={ate}
-              onChange={(e) => setAte(e.target.value)}
-            />
-          </div>
-          <div className="space-y-1.5 min-w-[12rem]">
-            <Label htmlFor="rel-evento" className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-              Evento
-            </Label>
-            <select
-              id="rel-evento"
-              className={cn(btnSquare, "h-10 w-full border border-slate-300 bg-white px-3 text-sm")}
-              value={eventType}
-              onChange={(e) => setEventType(e.target.value)}
-            >
-              <option value="">Todos os eventos</option>
-              <option value="lembrete_d5">Lembrete D-5</option>
-              <option value="aviso_d1">Aviso D-1</option>
-              <option value="aviso_d0">Aviso D0</option>
-              <option value="cobranca_d3">Cobrança D+3</option>
-              <option value="cobranca_d7">Cobrança D+7</option>
-              <option value="cobranca_d15">Cobrança D+15</option>
-              <option value="cobranca_d25">Cobrança D+25</option>
-              <option value="saudacao_boas_vindas">Saudação</option>
-              <option value="primeiro_boleto_gerado">Primeiro boleto</option>
-              <option value="confirmacao_pagamento">Confirmação pagamento</option>
-            </select>
-          </div>
-          <div className="space-y-1.5 min-w-[10rem]">
-            <Label htmlFor="rel-status" className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-              Status
-            </Label>
-            <select
-              id="rel-status"
-              className={cn(btnSquare, "h-10 w-full border border-slate-300 bg-white px-3 text-sm")}
-              value={status}
-              onChange={(e) => setStatus(e.target.value)}
-            >
-              <option value="">Todos</option>
-              <option value="sent">Enviado</option>
-              <option value="delivered">Entregue</option>
-              <option value="read">Lido</option>
-              <option value="failed">Falhou</option>
-              <option value="failed_permanent">Falha permanente</option>
-              <option value="queued">Na fila</option>
-              <option value="pending">Pendente</option>
-            </select>
+    <div className="space-y-4">
+      {/* Cabeçalho */}
+      <div className="rounded-sm border border-slate-200 bg-white shadow-sm">
+        <div className="flex flex-col gap-3 border-b border-slate-100 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-base font-semibold text-slate-800">Relatório de envios WhatsApp</h2>
+            <p className="text-sm text-slate-500 mt-0.5">
+              Período selecionado: {formatarPeriodo(de, ate)}
+            </p>
           </div>
           <Button
             type="button"
-            className={cn(btnSquare, "h-10 bg-[#0F172A] hover:bg-[#1E293B] text-white")}
+            variant="outline"
+            size="sm"
+            className={cn(btnSquare, "border-slate-300 hover:bg-slate-100 hover:text-slate-900")}
             disabled={loading}
-            onClick={() => aplicarFiltro()}
+            onClick={() => void carregar()}
           >
-            Aplicar filtro
+            {loading ? (
+              <>
+                <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                Atualizando…
+              </>
+            ) : (
+              "Atualizar"
+            )}
           </Button>
+        </div>
+
+        {/* Filtros */}
+        <div className="px-5 py-4">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 mb-3">Filtros</p>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-[repeat(4,minmax(0,1fr))_auto] lg:items-end">
+            <div className="space-y-1.5">
+              <Label htmlFor="rel-de" className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                De
+              </Label>
+              <Input
+                id="rel-de"
+                type="date"
+                className={cn(btnSquare, "h-10 w-full")}
+                value={de}
+                onChange={(e) => setDe(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="rel-ate" className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                Até
+              </Label>
+              <Input
+                id="rel-ate"
+                type="date"
+                className={cn(btnSquare, "h-10 w-full")}
+                value={ate}
+                onChange={(e) => setAte(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="rel-evento" className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                Evento
+              </Label>
+              <select
+                id="rel-evento"
+                className={cn(btnSquare, "h-10 w-full border border-slate-300 bg-white px-3 text-sm")}
+                value={eventType}
+                onChange={(e) => setEventType(e.target.value)}
+              >
+                <option value="">Todos os eventos</option>
+                <option value="lembrete_d5">Lembrete D-5</option>
+                <option value="aviso_d1">Aviso D-1</option>
+                <option value="aviso_d0">Aviso D0</option>
+                <option value="cobranca_d3">Cobrança D+3</option>
+                <option value="cobranca_d7">Cobrança D+7</option>
+                <option value="cobranca_d15">Cobrança D+15</option>
+                <option value="cobranca_d25">Cobrança D+25</option>
+                <option value="saudacao_boas_vindas">Saudação</option>
+                <option value="primeiro_boleto_gerado">Primeiro boleto</option>
+                <option value="confirmacao_pagamento">Confirmação pagamento</option>
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="rel-status" className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                Status
+              </Label>
+              <select
+                id="rel-status"
+                className={cn(btnSquare, "h-10 w-full border border-slate-300 bg-white px-3 text-sm")}
+                value={status}
+                onChange={(e) => setStatus(e.target.value)}
+              >
+                <option value="">Todos</option>
+                <option value="sent">Enviado</option>
+                <option value="delivered">Entregue</option>
+                <option value="read">Lido</option>
+                <option value="failed">Falhou</option>
+                <option value="failed_permanent">Falha permanente</option>
+                <option value="queued">Na fila</option>
+                <option value="pending">Pendente</option>
+              </select>
+            </div>
+            <Button
+              type="button"
+              className={cn(btnSquare, "h-10 w-full lg:w-auto bg-[#0F172A] hover:bg-[#1E293B] text-white")}
+              disabled={loading}
+              onClick={() => aplicarFiltro()}
+            >
+              Aplicar filtro
+            </Button>
+          </div>
         </div>
       </div>
 
       {loading && !resumo ? (
-        <div className="flex items-center justify-center py-16 text-slate-500">
+        <div className="rounded-sm border border-slate-200 bg-white shadow-sm flex items-center justify-center py-16 text-slate-500">
           <Loader2 className="h-5 w-5 animate-spin mr-2" />
           Carregando relatório…
         </div>
       ) : (
         <>
           {resumo ? (
-            <div className="border-b border-slate-100 bg-slate-50/50 px-5 py-3">
-              <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
-                <div>
-                  <span className="text-slate-500">Total: </span>
-                  <span className="font-semibold text-slate-800 tabular-nums">{resumo.total}</span>
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+              {[
+                { label: "Total de envios", value: resumo.total, hint: "No período filtrado" },
+                {
+                  label: "Sucesso",
+                  value: resumo.sucesso,
+                  hint: `${taxaSucesso}% do total`,
+                },
+                { label: "Falhas", value: resumo.falha, hint: "Não entregues ou erro" },
+                { label: "Pendentes", value: resumo.pendente, hint: "Na fila ou aguardando" },
+              ].map((card) => (
+                <div
+                  key={card.label}
+                  className="rounded-sm border border-slate-200 bg-white px-4 py-3 shadow-sm"
+                >
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                    {card.label}
+                  </p>
+                  <p className="mt-1 text-2xl font-semibold tabular-nums text-slate-900">{card.value}</p>
+                  <p className="mt-0.5 text-[11px] text-slate-500">{card.hint}</p>
                 </div>
-                <div>
-                  <span className="text-slate-500">Sucesso: </span>
-                  <span className="font-semibold text-slate-800 tabular-nums">
-                    {resumo.sucesso}
-                    <span className="font-normal text-slate-500 ml-1">({taxaSucesso}%)</span>
-                  </span>
-                </div>
-                <div>
-                  <span className="text-slate-500">Falhas: </span>
-                  <span className="font-semibold text-slate-800 tabular-nums">{resumo.falha}</span>
-                </div>
-                <div>
-                  <span className="text-slate-500">Pendentes: </span>
-                  <span className="font-semibold text-slate-800 tabular-nums">{resumo.pendente}</span>
-                </div>
-              </div>
+              ))}
             </div>
           ) : null}
 
-          <div className="grid gap-0 lg:grid-cols-2 lg:divide-x lg:divide-slate-100 border-b border-slate-100">
-            <div>
-              <div className="border-b border-slate-100 px-5 py-3">
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div className="rounded-sm border border-slate-200 bg-white shadow-sm overflow-hidden">
+              <div className="border-b border-slate-100 px-5 py-3 bg-slate-50/80">
                 <h3 className="text-sm font-semibold text-slate-800">Por evento</h3>
               </div>
               {porEvento.length === 0 ? (
@@ -302,8 +314,8 @@ export function WhatsAppRelatorioEnvios({ administradoraId }: Props) {
               )}
             </div>
 
-            <div>
-              <div className="border-b border-slate-100 px-5 py-3">
+            <div className="rounded-sm border border-slate-200 bg-white shadow-sm overflow-hidden">
+              <div className="border-b border-slate-100 px-5 py-3 bg-slate-50/80">
                 <h3 className="text-sm font-semibold text-slate-800">Erros mais frequentes</h3>
               </div>
               {errosFrequentes.length === 0 ? (
@@ -321,7 +333,8 @@ export function WhatsAppRelatorioEnvios({ administradoraId }: Props) {
             </div>
           </div>
 
-          <div className="border-b border-slate-100 px-5 py-3">
+          <div className="rounded-sm border border-slate-200 bg-white shadow-sm overflow-hidden">
+          <div className="border-b border-slate-100 px-5 py-3 bg-slate-50/80">
             <h3 className="text-sm font-semibold text-slate-800">Detalhamento de envios</h3>
           </div>
           <div className="overflow-x-auto">
@@ -396,6 +409,7 @@ export function WhatsAppRelatorioEnvios({ administradoraId }: Props) {
                 Próxima
               </Button>
             </div>
+          </div>
           </div>
         </>
       )}
