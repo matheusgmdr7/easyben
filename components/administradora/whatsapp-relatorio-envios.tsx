@@ -1,8 +1,9 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
-import { Loader2 } from "lucide-react"
+import { ChevronDown, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { cn } from "@/lib/utils"
@@ -116,6 +117,7 @@ export function WhatsAppRelatorioEnvios({ administradoraId }: Props) {
   const [errosFrequentes, setErrosFrequentes] = useState<ErroFrequente[]>([])
   const [falhasRecentes, setFalhasRecentes] = useState<FalhaRecente[]>([])
   const [mensagens, setMensagens] = useState<MensagemRow[]>([])
+  const [analiseErrosAberta, setAnaliseErrosAberta] = useState(false)
 
   const carregar = useCallback(async () => {
     setLoading(true)
@@ -317,196 +319,60 @@ export function WhatsAppRelatorioEnvios({ administradoraId }: Props) {
             </div>
           ) : null}
 
-          <div className="grid gap-4 lg:grid-cols-2">
-            <div className="rounded-sm border border-slate-200 bg-white shadow-sm overflow-hidden">
-              <div className="border-b border-slate-100 px-5 py-3 bg-slate-50/80">
-                <h3 className="text-sm font-semibold text-slate-800">Por evento</h3>
-              </div>
-              {porEvento.length === 0 ? (
-                <p className="px-5 py-8 text-sm text-slate-500 text-center">Nenhum envio no período.</p>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="min-w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-slate-200 bg-slate-50/90">
-                        <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">
-                          Evento
-                        </th>
-                        <th className="px-4 py-2.5 text-right text-[11px] font-semibold uppercase tracking-wide text-slate-600">
-                          Total
-                        </th>
-                        <th className="px-4 py-2.5 text-right text-[11px] font-semibold uppercase tracking-wide text-slate-600">
-                          OK
-                        </th>
-                        <th className="px-4 py-2.5 text-right text-[11px] font-semibold uppercase tracking-wide text-slate-600">
-                          Falha
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {porEvento.map((e, idx) => (
-                        <tr key={e.event_type} className={idx % 2 === 0 ? "bg-white" : "bg-slate-50/50"}>
-                          <td className="px-4 py-2.5 text-slate-700">{e.event_label}</td>
-                          <td className="px-4 py-2.5 text-right tabular-nums text-slate-800">{e.total}</td>
-                          <td className="px-4 py-2.5 text-right tabular-nums text-slate-800">{e.sucesso}</td>
-                          <td className="px-4 py-2.5 text-right tabular-nums text-slate-800">{e.falha}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+          <div className="rounded-sm border border-slate-200 bg-white shadow-sm overflow-hidden">
+            <div className="border-b border-slate-100 px-5 py-3 bg-slate-50/80">
+              <h3 className="text-sm font-semibold text-slate-800">Por evento</h3>
             </div>
-
-            <div className="rounded-sm border border-slate-200 bg-white shadow-sm overflow-hidden lg:col-span-2">
-              <div className="border-b border-slate-100 px-5 py-3 bg-slate-50/80 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <h3 className="text-sm font-semibold text-slate-800">Erros mais frequentes</h3>
-                  {falhasResumo && falhasResumo.total > 0 ? (
-                    <p className="text-[11px] text-slate-500 mt-0.5">
-                      {falhasResumo.com_motivo} com motivo · {falhasResumo.sem_motivo} sem motivo
-                      detalhado
-                    </p>
-                  ) : null}
-                </div>
-                {resumo && resumo.falha > 0 ? (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className={cn(btnSquare, "border-slate-300 text-xs h-8")}
-                    onClick={() => filtrarSoFalhas()}
-                  >
-                    Ver só falhas no detalhamento
-                  </Button>
-                ) : null}
-              </div>
-              {errosFrequentes.length === 0 ? (
-                <p className="px-5 py-8 text-sm text-slate-500 text-center">Nenhum erro no período.</p>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="min-w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-slate-200 bg-slate-50/90">
-                        <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">
-                          Motivo
-                        </th>
-                        <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">
-                          Código
-                        </th>
-                        <th className="px-4 py-2.5 text-right text-[11px] font-semibold uppercase tracking-wide text-slate-600">
-                          Qtd
-                        </th>
-                        <th className="px-4 py-2.5 text-right text-[11px] font-semibold uppercase tracking-wide text-slate-600">
-                          % falhas
-                        </th>
-                        <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">
-                          Eventos
-                        </th>
-                        <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">
-                          Última
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {errosFrequentes.map((e, idx) => (
-                        <tr key={e.chave} className={idx % 2 === 0 ? "bg-white" : "bg-slate-50/50"}>
-                          <td className="px-4 py-2.5 max-w-xs">
-                            <p className="text-xs font-medium text-slate-800">{e.titulo}</p>
-                            {e.mensagem !== e.titulo ? (
-                              <p
-                                className="text-[11px] text-slate-500 mt-0.5 line-clamp-2"
-                                title={e.mensagem}
-                              >
-                                {e.mensagem}
-                              </p>
-                            ) : null}
-                          </td>
-                          <td className="px-4 py-2.5 text-xs text-slate-600 tabular-nums whitespace-nowrap">
-                            {e.error_code || "—"}
-                          </td>
-                          <td className="px-4 py-2.5 text-right tabular-nums text-slate-800 font-medium">
-                            {e.qtd}
-                          </td>
-                          <td className="px-4 py-2.5 text-right tabular-nums text-slate-600">
-                            {e.pct_falhas}%
-                          </td>
-                          <td className="px-4 py-2.5 text-xs text-slate-600">
-                            {e.eventos.length === 0
-                              ? "—"
-                              : e.eventos.map((ev) => `${ev.event_label} (${ev.qtd})`).join(", ")}
-                          </td>
-                          <td className="px-4 py-2.5 text-xs text-slate-500 whitespace-nowrap tabular-nums">
-                            {formatarDataHora(e.ultima_ocorrencia)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {falhasRecentes.length > 0 ? (
-            <div className="rounded-sm border border-slate-200 bg-white shadow-sm overflow-hidden">
-              <div className="border-b border-slate-100 px-5 py-3 bg-slate-50/80">
-                <h3 className="text-sm font-semibold text-slate-800">Últimas falhas</h3>
-                <p className="text-[11px] text-slate-500 mt-0.5">
-                  Amostra recente para investigação rápida
-                </p>
-              </div>
+            {porEvento.length === 0 ? (
+              <p className="px-5 py-8 text-sm text-slate-500 text-center">Nenhum envio no período.</p>
+            ) : (
               <div className="overflow-x-auto">
                 <table className="min-w-full text-sm">
                   <thead>
                     <tr className="border-b border-slate-200 bg-slate-50/90">
                       <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">
-                        Quando
-                      </th>
-                      <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">
-                        Cliente
-                      </th>
-                      <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">
                         Evento
                       </th>
-                      <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">
-                        Motivo
+                      <th className="px-4 py-2.5 text-right text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                        Total
                       </th>
-                      <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">
-                        Código
+                      <th className="px-4 py-2.5 text-right text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                        OK
+                      </th>
+                      <th className="px-4 py-2.5 text-right text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                        Falha
                       </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {falhasRecentes.map((f, idx) => (
-                      <tr key={f.id || `${f.created_at}-${idx}`} className={idx % 2 === 0 ? "bg-white" : "bg-slate-50/50"}>
-                        <td className="px-4 py-2.5 text-xs text-slate-600 whitespace-nowrap tabular-nums">
-                          {formatarDataHora(f.failed_at || f.created_at)}
-                        </td>
-                        <td className="px-4 py-2.5 text-slate-800 text-xs">{f.cliente_nome || "—"}</td>
-                        <td className="px-4 py-2.5 text-slate-600 text-xs">{f.event_label}</td>
-                        <td className="px-4 py-2.5 max-w-xs">
-                          <p className="text-xs text-slate-800">{f.titulo_erro}</p>
-                          {f.mensagem !== f.titulo_erro ? (
-                            <p className="text-[11px] text-slate-500 line-clamp-1" title={f.mensagem}>
-                              {f.mensagem}
-                            </p>
-                          ) : null}
-                        </td>
-                        <td className="px-4 py-2.5 text-xs text-slate-600 tabular-nums">
-                          {f.error_code || "—"}
-                        </td>
+                    {porEvento.map((e, idx) => (
+                      <tr key={e.event_type} className={idx % 2 === 0 ? "bg-white" : "bg-slate-50/50"}>
+                        <td className="px-4 py-2.5 text-slate-700">{e.event_label}</td>
+                        <td className="px-4 py-2.5 text-right tabular-nums text-slate-800">{e.total}</td>
+                        <td className="px-4 py-2.5 text-right tabular-nums text-slate-800">{e.sucesso}</td>
+                        <td className="px-4 py-2.5 text-right tabular-nums text-slate-800">{e.falha}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
-            </div>
-          ) : null}
+            )}
+          </div>
 
           <div className="rounded-sm border border-slate-200 bg-white shadow-sm overflow-hidden">
-          <div className="border-b border-slate-100 px-5 py-3 bg-slate-50/80">
+          <div className="border-b border-slate-100 px-5 py-3 bg-slate-50/80 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <h3 className="text-sm font-semibold text-slate-800">Detalhamento de envios</h3>
+            {resumo && resumo.falha > 0 ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className={cn(btnSquare, "border-slate-300 text-xs h-8")}
+                onClick={() => filtrarSoFalhas()}
+              >
+                Ver só falhas
+              </Button>
+            ) : null}
           </div>
           <div className="overflow-x-auto">
             <table className="min-w-full text-sm">
@@ -605,6 +471,186 @@ export function WhatsAppRelatorioEnvios({ administradoraId }: Props) {
             </div>
           </div>
           </div>
+
+          {(resumo?.falha ?? 0) > 0 || errosFrequentes.length > 0 || falhasRecentes.length > 0 ? (
+            <Collapsible open={analiseErrosAberta} onOpenChange={setAnaliseErrosAberta}>
+              <div className="rounded-sm border border-slate-200 bg-white shadow-sm overflow-hidden">
+                <CollapsibleTrigger asChild>
+                  <button
+                    type="button"
+                    className="flex w-full items-center justify-between gap-3 px-5 py-3 text-left bg-slate-50/80 border-b border-slate-100 hover:bg-slate-100/80 transition-colors"
+                  >
+                    <div className="min-w-0">
+                      <h3 className="text-sm font-semibold text-slate-800">Análise de erros</h3>
+                      <p className="text-[11px] text-slate-500 mt-0.5 truncate">
+                        {resumo?.falha ?? 0} falha{(resumo?.falha ?? 0) !== 1 ? "s" : ""} no período
+                        {errosFrequentes.length > 0
+                          ? ` · ${errosFrequentes.length} tipo${errosFrequentes.length !== 1 ? "s" : ""} de erro`
+                          : ""}
+                        {falhasResumo && falhasResumo.total > 0
+                          ? ` · ${falhasResumo.com_motivo} com motivo`
+                          : ""}
+                        {!analiseErrosAberta ? " · clique para expandir" : ""}
+                      </p>
+                    </div>
+                    <ChevronDown
+                      className={cn(
+                        "h-4 w-4 shrink-0 text-slate-500 transition-transform",
+                        analiseErrosAberta && "rotate-180"
+                      )}
+                    />
+                  </button>
+                </CollapsibleTrigger>
+
+                <CollapsibleContent>
+                  <div className="border-b border-slate-100">
+                    <div className="px-5 py-2.5 bg-white border-b border-slate-100">
+                      <h4 className="text-xs font-semibold text-slate-700">Erros mais frequentes</h4>
+                      {falhasResumo && falhasResumo.total > 0 ? (
+                        <p className="text-[11px] text-slate-500 mt-0.5">
+                          {falhasResumo.com_motivo} com motivo · {falhasResumo.sem_motivo} sem motivo
+                          detalhado
+                        </p>
+                      ) : null}
+                    </div>
+                    {errosFrequentes.length === 0 ? (
+                      <p className="px-5 py-6 text-sm text-slate-500 text-center">
+                        Nenhum erro classificado no período.
+                      </p>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="min-w-full text-sm">
+                          <thead>
+                            <tr className="border-b border-slate-200 bg-slate-50/90">
+                              <th className="px-4 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                                Motivo
+                              </th>
+                              <th className="px-4 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                                Código
+                              </th>
+                              <th className="px-4 py-2 text-right text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                                Qtd
+                              </th>
+                              <th className="px-4 py-2 text-right text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                                % falhas
+                              </th>
+                              <th className="px-4 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                                Eventos
+                              </th>
+                              <th className="px-4 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                                Última
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {errosFrequentes.map((e, idx) => (
+                              <tr
+                                key={e.chave}
+                                className={idx % 2 === 0 ? "bg-white" : "bg-slate-50/50"}
+                              >
+                                <td className="px-4 py-2 max-w-xs">
+                                  <p className="text-xs font-medium text-slate-800">{e.titulo}</p>
+                                  {e.mensagem !== e.titulo ? (
+                                    <p
+                                      className="text-[11px] text-slate-500 mt-0.5 line-clamp-2"
+                                      title={e.mensagem}
+                                    >
+                                      {e.mensagem}
+                                    </p>
+                                  ) : null}
+                                </td>
+                                <td className="px-4 py-2 text-xs text-slate-600 tabular-nums whitespace-nowrap">
+                                  {e.error_code || "—"}
+                                </td>
+                                <td className="px-4 py-2 text-right tabular-nums text-slate-800 font-medium">
+                                  {e.qtd}
+                                </td>
+                                <td className="px-4 py-2 text-right tabular-nums text-slate-600">
+                                  {e.pct_falhas}%
+                                </td>
+                                <td className="px-4 py-2 text-xs text-slate-600">
+                                  {e.eventos.length === 0
+                                    ? "—"
+                                    : e.eventos
+                                        .map((ev) => `${ev.event_label} (${ev.qtd})`)
+                                        .join(", ")}
+                                </td>
+                                <td className="px-4 py-2 text-xs text-slate-500 whitespace-nowrap tabular-nums">
+                                  {formatarDataHora(e.ultima_ocorrencia)}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+
+                  {falhasRecentes.length > 0 ? (
+                    <div>
+                      <div className="px-5 py-2.5 bg-white border-b border-slate-100">
+                        <h4 className="text-xs font-semibold text-slate-700">Últimas falhas</h4>
+                        <p className="text-[11px] text-slate-500 mt-0.5">
+                          Amostra recente para investigação rápida
+                        </p>
+                      </div>
+                      <div className="overflow-x-auto">
+                        <table className="min-w-full text-sm">
+                          <thead>
+                            <tr className="border-b border-slate-200 bg-slate-50/90">
+                              <th className="px-4 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                                Quando
+                              </th>
+                              <th className="px-4 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                                Cliente
+                              </th>
+                              <th className="px-4 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                                Evento
+                              </th>
+                              <th className="px-4 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                                Motivo
+                              </th>
+                              <th className="px-4 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                                Código
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {falhasRecentes.map((f, idx) => (
+                              <tr
+                                key={f.id || `${f.created_at}-${idx}`}
+                                className={idx % 2 === 0 ? "bg-white" : "bg-slate-50/50"}
+                              >
+                                <td className="px-4 py-2 text-xs text-slate-600 whitespace-nowrap tabular-nums">
+                                  {formatarDataHora(f.failed_at || f.created_at)}
+                                </td>
+                                <td className="px-4 py-2 text-slate-800 text-xs">{f.cliente_nome || "—"}</td>
+                                <td className="px-4 py-2 text-slate-600 text-xs">{f.event_label}</td>
+                                <td className="px-4 py-2 max-w-xs">
+                                  <p className="text-xs text-slate-800">{f.titulo_erro}</p>
+                                  {f.mensagem !== f.titulo_erro ? (
+                                    <p
+                                      className="text-[11px] text-slate-500 line-clamp-1"
+                                      title={f.mensagem}
+                                    >
+                                      {f.mensagem}
+                                    </p>
+                                  ) : null}
+                                </td>
+                                <td className="px-4 py-2 text-xs text-slate-600 tabular-nums">
+                                  {f.error_code || "—"}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  ) : null}
+                </CollapsibleContent>
+              </div>
+            </Collapsible>
+          ) : null}
         </>
       )}
     </div>
