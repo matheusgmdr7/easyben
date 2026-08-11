@@ -12,7 +12,7 @@ import {
   montarUrlWhatsAppCobranca,
   normalizarTelefoneWhatsApp,
 } from "@/lib/whatsapp-cobranca"
-import { StatusEnvioWhatsApp } from "@/components/administradora/whatsapp-status-envio"
+import { StatusEnvioWhatsApp, isStatusEnvioEmProgresso } from "@/components/administradora/whatsapp-status-envio"
 import {
   carregarEnviosRecentes,
   filtrarEnviosAtivos,
@@ -262,7 +262,7 @@ export function FaturasPendentesPainel({
       if (!res.ok) throw new Error(data.error || "Erro ao enfileirar envio")
       marcarEnvioRecente(item)
       onEnvioWhatsApp?.(item.fatura_id)
-      toast.success(data.message || "Cobrança enfileirada para envio via Twilio")
+      toast.success(data.message || "Cobrança enfileirada para envio direto")
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Erro ao enviar cobrança")
     } finally {
@@ -622,12 +622,12 @@ export function FaturasPendentesPainel({
                                 <Button
                                   type="button"
                                   size="sm"
-                                  variant={envioRecente ? "outline" : "default"}
+                                  variant="outline"
                                   className={cn(
-                                    "h-8 text-xs font-medium w-full",
+                                    "h-8 text-xs font-medium w-full shadow-none transition-colors",
                                     envioRecente
-                                      ? "border-slate-300 text-slate-700"
-                                      : "bg-emerald-600 text-white hover:bg-emerald-700 border-0 shadow-none",
+                                      ? "border-slate-300 bg-white text-slate-700 hover:bg-slate-100 hover:text-slate-900 hover:border-slate-400"
+                                      : "border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-700 hover:text-white hover:border-emerald-700 active:bg-emerald-800",
                                     !podeWhatsApp && "opacity-50"
                                   )}
                                   disabled={!podeWhatsApp || enviandoTwilioId === item.fatura_id}
@@ -637,23 +637,24 @@ export function FaturasPendentesPainel({
                                       : !normalizarTelefoneWhatsApp(item.cliente_telefone)
                                         ? "Telefone do cliente inválido ou ausente"
                                         : envioRecente
-                                          ? `${rotuloEnvioRecente(envioRecente.enviado_em, agoraUi)} — clique para reenviar via Twilio`
-                                          : "Enviar cobrança via Twilio WhatsApp"
+                                          ? `${rotuloEnvioRecente(envioRecente.enviado_em, agoraUi)} — clique para reenviar`
+                                          : "Enviar cobrança por WhatsApp (envio direto pela plataforma)"
                                   }
                                   onClick={() => void enviarWhatsAppTwilio(item)}
                                 >
                                   {enviandoTwilioId === item.fatura_id
                                     ? "Enviando…"
                                     : envioRecente
-                                      ? "Reenviar Twilio"
-                                      : "Enviar Twilio"}
+                                      ? "Reenviar direto"
+                                      : "Envio direto"}
                                 </Button>
                                 <Button
                                   type="button"
                                   size="sm"
                                   variant="outline"
                                   className={cn(
-                                    "h-8 text-xs font-medium w-full border-emerald-300 text-emerald-800 hover:bg-emerald-50",
+                                    "h-8 text-xs font-medium w-full shadow-none transition-colors",
+                                    "border-emerald-200 bg-white text-emerald-800 hover:bg-emerald-50 hover:text-emerald-900 hover:border-emerald-300 active:bg-emerald-100",
                                     !podeWhatsApp && "opacity-50"
                                   )}
                                   disabled={!podeWhatsApp}
@@ -667,12 +668,12 @@ export function FaturasPendentesPainel({
                               <Button
                                 type="button"
                                 size="sm"
-                                variant={envioRecente ? "outline" : "default"}
+                                variant="outline"
                                 className={cn(
-                                  "h-8 text-xs font-medium w-full",
+                                  "h-8 text-xs font-medium w-full shadow-none transition-colors",
                                   envioRecente
-                                    ? "border-slate-300 text-slate-700"
-                                    : "bg-emerald-600 text-white hover:bg-emerald-700 border-0 shadow-none",
+                                    ? "border-slate-300 bg-white text-slate-700 hover:bg-slate-100 hover:text-slate-900 hover:border-slate-400"
+                                    : "border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-700 hover:text-white hover:border-emerald-700 active:bg-emerald-800",
                                   !podeWhatsApp && "opacity-50"
                                 )}
                                 disabled={!podeWhatsApp}
@@ -694,16 +695,18 @@ export function FaturasPendentesPainel({
                         </td>
                         <td className="px-4 py-2.5 whitespace-nowrap">
                         {enviandoTwilioId === item.fatura_id ? (
-                          <span className="text-xs text-slate-500">Enviando…</span>
+                          <StatusEnvioWhatsApp emProgresso />
                         ) : statusTwilio?.status ? (
                           <StatusEnvioWhatsApp
                             status={statusTwilio.status}
                             title={statusTwilio.error_message}
+                            emProgresso={isStatusEnvioEmProgresso(statusTwilio.status)}
                           />
                         ) : envioRecente ? (
-                          <span className="text-xs text-slate-500 tabular-nums">
-                            {rotuloEnvioRecente(envioRecente.enviado_em, agoraUi)}
-                          </span>
+                          <StatusEnvioWhatsApp
+                            status="sent"
+                            title={rotuloEnvioRecente(envioRecente.enviado_em, agoraUi)}
+                          />
                         ) : (
                           <StatusEnvioWhatsApp status={null} />
                         )}
