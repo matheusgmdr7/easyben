@@ -2,11 +2,11 @@ import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase-admin"
 import { resolveTenantIdForAdministradora } from "@/lib/resolve-tenant-administradora"
 import { getBoletoLinkFromFatura } from "@/lib/fatura-boleto-link"
-import { buscarFaturasPorClienteIdsChunks } from "@/lib/boletos-grupo-faturas"
+import { buscarFaturasPorClienteIdsChunks, limiteMesVencimento } from "@/lib/boletos-grupo-faturas"
 import { listarClienteAdministradoraIdsENomesDoGrupo } from "@/lib/grupo-cliente-administradora-ids"
 
-const MAX_FATURAS_GRUPO = 500
-const FETCH_CAP = 8000
+/** Histórico de vencimentos carregado quando não há filtro de mês (competência na UI). */
+const MESES_HISTORICO_PADRAO = 36
 
 /**
  * Ordenação da lista: mais recente primeiro.
@@ -25,13 +25,14 @@ function timestampOrdenacaoFatura(f: { created_at?: string | null; vencimento?: 
 }
 
 /**
- * GET /api/administradora/fatura/boletos-grupo?grupo_id=xxx&administradora_id=xxx
- * Retorna as faturas/boletos já gerados para os clientes do grupo (para exibir na página Fatura > Gerar).
+ * GET /api/administradora/fatura/boletos-grupo?grupo_id=xxx&administradora_id=xxx&mes_vencimento=YYYY-MM
+ * Retorna faturas/boletos dos clientes do grupo. Sem mes_vencimento, carrega últimos 36 meses (competência na UI).
  */
 export async function GET(request: NextRequest) {
   try {
     const grupoId = request.nextUrl.searchParams.get("grupo_id")
     const administradoraId = request.nextUrl.searchParams.get("administradora_id")
+    const mesVencimento = request.nextUrl.searchParams.get("mes_vencimento")?.trim() || ""
 
     if (!grupoId || !administradoraId) {
       return NextResponse.json(
@@ -77,6 +78,19 @@ export async function GET(request: NextRequest) {
     const selectCols =
       "id, cliente_administradora_id, numero_fatura, valor, status, vencimento, pagamento_data, asaas_boleto_url, boleto_url, gateway_id, asaas_charge_id, created_at"
 
+    const buscaOpts: Parameters<typeof buscarFaturasPorClienteIdsChunks>[4] = {}
+    if (/^\d{4}-\d{2}$/.test(mesVencimento)) {
+      const limites = limiteMesVencimento(mesVencimento)
+      if (limites) {
+        buscaOpts.vencimentoGte = limites.inicio
+        buscaOpts.vencimentoLt = limites.fimExclusivo
+      }
+    } else {
+      const cutoff = new Date()
+      cutoff.setMonth(cutoff.getMonth() - MESES_HISTORICO_PADRAO)
+      buscaOpts.vencimentoGte = cutoff.toISOString().slice(0, 10)
+    }
+
     let faturasRaw: Array<Record<string, unknown>> = []
     try {
       faturasRaw = await buscarFaturasPorClienteIdsChunks(
@@ -84,19 +98,18 @@ export async function GET(request: NextRequest) {
         clienteIds,
         administradoraId,
         selectCols,
-        FETCH_CAP
+        buscaOpts
       )
     } catch (e) {
       console.error("Erro ao buscar faturas do grupo (chunks):", e)
       return NextResponse.json({ error: "Erro ao buscar boletos" }, { status: 500 })
     }
 
-    const faturasOrdenadas = faturasRaw.sort(
+    const faturas = faturasRaw.sort(
       (a, b) =>
         timestampOrdenacaoFatura(b as { created_at?: string | null; vencimento?: string | null }) -
         timestampOrdenacaoFatura(a as { created_at?: string | null; vencimento?: string | null })
     )
-    const faturas = faturasOrdenadas.slice(0, MAX_FATURAS_GRUPO)
 
     const lista = faturas.map((f: Record<string, unknown>) => {
       const ca = String(f.cliente_administradora_id || "")

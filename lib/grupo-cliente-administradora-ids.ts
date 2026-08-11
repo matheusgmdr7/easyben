@@ -1,5 +1,6 @@
 import { supabaseAdmin } from "@/lib/supabase-admin"
 import { CHUNK_IN_CLIENTE_IDS } from "@/lib/boletos-grupo-faturas"
+import { carregarVidasImportadasDoGrupo } from "@/lib/vidas-importadas-grupo"
 
 async function preencherNomesViewEmChunks(
   ids: string[],
@@ -96,23 +97,8 @@ export async function listarClienteAdministradoraIdsENomesDoGrupo(
     }
   }
 
-  let { data: vidasComTenant } = await supabaseAdmin
-    .from("vidas_importadas")
-    .select("id, nome, tipo, cliente_administradora_id")
-    .eq("grupo_id", grupoId)
-    .eq("administradora_id", administradoraId)
-    .eq("tenant_id", tenantId)
-
-  if (!vidasComTenant?.length) {
-    const { data: vidasSemTenant } = await supabaseAdmin
-      .from("vidas_importadas")
-      .select("id, nome, tipo, cliente_administradora_id")
-      .eq("grupo_id", grupoId)
-      .eq("administradora_id", administradoraId)
-    vidasComTenant = vidasSemTenant || []
-  }
-
-  for (const vida of vidasComTenant || []) {
+  const vidasImportadas = await carregarVidasImportadasDoGrupo(grupoId, administradoraId)
+  for (const vida of vidasImportadas) {
     const caId = (vida as { cliente_administradora_id?: string | null }).cliente_administradora_id
     if (caId && String(caId).trim() !== "") {
       const id = String(caId).trim()
