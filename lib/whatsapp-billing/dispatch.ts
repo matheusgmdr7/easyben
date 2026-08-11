@@ -124,19 +124,27 @@ export async function dispararNotificacaoWhatsApp(
     (options?.somenteRetentativa ? "tarde" : undefined)
   const jobId = idempotencyKeyBase + (suffix ? `:${suffix}` : "")
 
-  await enfileirarNotificacaoOutbound(
-    {
-      clienteId: params.clienteAdministradoraId,
-      administradoraId: params.administradoraId,
-      telefone: telefoneDigits,
-      eventType: params.eventType,
-      faturaId: params.faturaId ?? null,
-      referenceDate,
-      variaveis,
-    },
-    jobId,
-    { delayMs: params.delayMs }
-  )
+  try {
+    await enfileirarNotificacaoOutbound(
+      {
+        clienteId: params.clienteAdministradoraId,
+        administradoraId: params.administradoraId,
+        telefone: telefoneDigits,
+        eventType: params.eventType,
+        faturaId: params.faturaId ?? null,
+        referenceDate,
+        variaveis,
+      },
+      jobId,
+      { delayMs: params.delayMs }
+    )
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err)
+    if (message.includes("Redis não configurado") || message.includes("max requests")) {
+      return { enqueued: false, reason: "fila_indisponivel" }
+    }
+    throw err
+  }
 
   whatsappBillingLog.info("dispatch.enqueued", {
     eventType: params.eventType,

@@ -41,7 +41,12 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ mensagem })
     }
 
-    if (clienteId && administradoraId && !busca) {
+    if (administradoraId && qs.has("q")) {
+      const clientes = await listarClientesParaTeste(administradoraId, busca)
+      return NextResponse.json({ clientes })
+    }
+
+    if (clienteId && administradoraId) {
       const preview = await previewDadosTesteWhatsApp({
         administradoraId,
         clienteAdministradoraId: clienteId,
@@ -50,11 +55,6 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ error: preview.erro }, { status: 422 })
       }
       return NextResponse.json({ preview })
-    }
-
-    if (administradoraId && qs.has("q")) {
-      const clientes = await listarClientesParaTeste(administradoraId, busca)
-      return NextResponse.json({ clientes })
     }
 
     const templates = await listarTemplatesParaTeste()
@@ -133,13 +133,21 @@ export async function POST(request: NextRequest) {
     })
 
     if (!result.enqueued) {
+      const reason = result.reason || "desconhecido"
       const msg =
-        result.reason === "telefone_invalido"
+        reason === "telefone_invalido"
           ? "Telefone inválido"
-          : result.reason === "template_indisponivel"
+          :         reason === "template_indisponivel"
             ? "Template não configurado ou inativo"
-            : "Não foi possível enfileirar o teste"
-      return NextResponse.json({ enqueued: false, reason: result.reason, error: msg }, { status: 422 })
+            : reason === "fila_indisponivel"
+              ? "Serviço de fila temporariamente indisponível (Redis). Tente novamente mais tarde."
+              : reason === "sem_cliente_para_teste" ||
+                reason.includes("Nenhum cliente ativo")
+              ? reason
+              : reason !== "desconhecido"
+                ? reason
+                : "Não foi possível enfileirar o teste"
+      return NextResponse.json({ enqueued: false, reason, error: msg }, { status: 422 })
     }
 
     return NextResponse.json({

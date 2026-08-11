@@ -371,11 +371,37 @@ export async function resolverDadosEnvioTeste(params: {
     }
   }
 
+  const clientePlaceholder = await buscarClientePlaceholderTeste(params.administradoraId)
+  if ("erro" in clientePlaceholder) return clientePlaceholder
+
   return {
     dados: await montarDadosExemploEnvioWhatsApp(params.administradoraId),
-    clienteId: `__teste_ficticio__`,
+    clienteId: clientePlaceholder.clienteId,
     faturaId: null,
   }
+}
+
+/** UUID válido para FK em whatsapp_messages no modo fictício (dados de exemplo). */
+async function buscarClientePlaceholderTeste(
+  administradoraId: string
+): Promise<{ clienteId: string } | { erro: string }> {
+  const { data, error } = await supabaseAdmin
+    .from("clientes_administradoras")
+    .select("id")
+    .eq("administradora_id", administradoraId)
+    .eq("status", "ativo")
+    .order("id", { ascending: true })
+    .limit(1)
+    .maybeSingle()
+
+  if (error) return { erro: error.message }
+  if (!data?.id) {
+    return {
+      erro: "Nenhum cliente ativo encontrado para teste fictício. Cadastre um cliente ou selecione um real.",
+    }
+  }
+
+  return { clienteId: String(data.id) }
 }
 
 export async function dispararTesteTemplateWhatsApp(params: {

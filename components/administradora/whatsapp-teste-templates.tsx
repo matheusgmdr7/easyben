@@ -19,14 +19,6 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover"
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command"
 import { cn } from "@/lib/utils"
 import { formatarTelefone } from "@/utils/formatters"
 import { normalizarTelefoneWhatsApp } from "@/lib/whatsapp-cobranca"
@@ -333,6 +325,7 @@ export function WhatsAppTesteTemplates({ administradoraId }: Props) {
             <div className="space-y-2">
               <Label>Cliente (dados da mensagem)</Label>
               <Popover
+                modal
                 open={comboboxAberto}
                 onOpenChange={(open) => {
                   setComboboxAberto(open)
@@ -355,75 +348,85 @@ export function WhatsAppTesteTemplates({ administradoraId }: Props) {
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
-                  <Command shouldFilter={false}>
-                    <CommandInput
+                  <div className="border-b border-slate-100 p-2">
+                    <Input
                       placeholder="Digite nome, CPF ou plano…"
                       value={buscaCliente}
-                      onValueChange={setBuscaCliente}
+                      onChange={(e) => setBuscaCliente(e.target.value)}
+                      className={cn(btnSquare, "h-9 text-sm")}
+                      autoFocus
                     />
-                    <CommandList>
-                      {buscandoClientes ? (
-                        <div className="py-6 text-center text-xs text-slate-500 flex items-center justify-center gap-2">
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          Buscando…
-                        </div>
-                      ) : null}
-                      {!buscandoClientes && clientesBusca.length === 0 && buscaCliente.trim().length === 0 ? (
-                        <CommandEmpty>Digite para buscar ou role a lista inicial.</CommandEmpty>
-                      ) : null}
-                      {!buscandoClientes && clientesBusca.length === 0 && buscaCliente.trim().length > 0 ? (
-                        <CommandEmpty>Nenhum cliente encontrado.</CommandEmpty>
-                      ) : null}
-                      {!buscandoClientes ? (
-                        <CommandGroup>
-                          <CommandItem
-                            value={FICTICIO}
-                            onSelect={() =>
-                              selecionarCliente(FICTICIO, "Dados fictícios (exemplo)")
-                            }
-                            onMouseDown={(e) => e.preventDefault()}
-                          >
-                            <Check
+                  </div>
+                  <div className="max-h-[280px] overflow-y-auto p-1">
+                    {buscandoClientes ? (
+                      <div className="py-6 text-center text-xs text-slate-500 flex items-center justify-center gap-2">
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        Buscando…
+                      </div>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          className={cn(
+                            "flex w-full items-center gap-2 rounded-sm px-2 py-2 text-sm text-left hover:bg-slate-100",
+                            clienteId === FICTICIO && "bg-slate-100"
+                          )}
+                          onClick={() =>
+                            selecionarCliente(FICTICIO, "Dados fictícios (exemplo)")
+                          }
+                        >
+                          <Check
+                            className={cn(
+                              "h-4 w-4 shrink-0",
+                              clienteId === FICTICIO ? "opacity-100" : "opacity-0"
+                            )}
+                          />
+                          Dados fictícios (exemplo)
+                        </button>
+                        {clientesBusca.map((c) => {
+                          const label = `${c.nome}${c.cpf ? ` — ${formatarCpf(c.cpf)}` : ""}`
+                          return (
+                            <button
+                              key={c.id}
+                              type="button"
                               className={cn(
-                                "mr-2 h-4 w-4",
-                                clienteId === FICTICIO ? "opacity-100" : "opacity-0"
+                                "flex w-full items-start gap-2 rounded-sm px-2 py-2 text-sm text-left hover:bg-slate-100",
+                                clienteId === c.id && "bg-slate-100"
                               )}
-                            />
-                            Dados fictícios (exemplo)
-                          </CommandItem>
-                          {clientesBusca.map((c) => {
-                            const label = `${c.nome}${c.cpf ? ` — ${formatarCpf(c.cpf)}` : ""}`
-                            return (
-                              <CommandItem
-                                key={c.id}
-                                value={c.id}
-                                keywords={[c.nome, c.cpf || "", c.plano_nome || ""]}
-                                onSelect={() => selecionarCliente(c.id, label)}
-                                onMouseDown={(e) => e.preventDefault()}
-                              >
-                                <Check
-                                  className={cn(
-                                    "mr-2 h-4 w-4",
-                                    clienteId === c.id ? "opacity-100" : "opacity-0"
-                                  )}
-                                />
-                                <div className="min-w-0">
-                                  <p className="truncate">{c.nome}</p>
-                                  {(c.cpf || c.plano_nome) && (
-                                    <p className="text-[10px] text-slate-500 truncate">
-                                      {[c.cpf ? formatarCpf(c.cpf) : null, c.plano_nome]
-                                        .filter(Boolean)
-                                        .join(" · ")}
-                                    </p>
-                                  )}
-                                </div>
-                              </CommandItem>
-                            )
-                          })}
-                        </CommandGroup>
-                      ) : null}
-                    </CommandList>
-                  </Command>
+                              onClick={() => selecionarCliente(c.id, label)}
+                            >
+                              <Check
+                                className={cn(
+                                  "h-4 w-4 shrink-0 mt-0.5",
+                                  clienteId === c.id ? "opacity-100" : "opacity-0"
+                                )}
+                              />
+                              <div className="min-w-0">
+                                <p className="truncate text-slate-800">{c.nome}</p>
+                                {(c.cpf || c.plano_nome) && (
+                                  <p className="text-[10px] text-slate-500 truncate">
+                                    {[c.cpf ? formatarCpf(c.cpf) : null, c.plano_nome]
+                                      .filter(Boolean)
+                                      .join(" · ")}
+                                  </p>
+                                )}
+                              </div>
+                            </button>
+                          )
+                        })}
+                        {clientesBusca.length === 0 && buscaCliente.trim().length > 0 ? (
+                          <p className="py-4 text-center text-xs text-slate-500">
+                            Nenhum cliente encontrado.
+                          </p>
+                        ) : null}
+                        {clientesBusca.length === 0 && buscaCliente.trim().length === 0 ? (
+                          <p className="py-4 text-center text-xs text-slate-500">
+                            Nenhum cliente ativo carregado.
+                          </p>
+                        ) : null}
+                      </>
+                    )}
+                  </div>
                 </PopoverContent>
               </Popover>
               <p className="text-[11px] text-slate-500">
