@@ -19,6 +19,8 @@ export interface AsaasCustomer {
   externalReference?: string
   notificationDisabled?: boolean
   observations?: string
+  /** Cliente removido no Asaas — não aceita novas cobranças até restaurar. */
+  deleted?: boolean
 }
 
 export interface AsaasCharge {
@@ -195,6 +197,14 @@ class AsaasService {
     return this.request<AsaasCustomer>(`/customers/${customerId}`)
   }
 
+  /** Restaura cliente previamente removido (POST /customers/{id}/restore). */
+  async restoreCustomer(customerId: string): Promise<AsaasCustomer> {
+    console.log(`[ASAAS] restoreCustomer: ${customerId}`)
+    return this.request<AsaasCustomer>(`/customers/${customerId}/restore`, {
+      method: "POST",
+    })
+  }
+
   /**
    * Lista todos os clientes (paginado)
    */
@@ -227,7 +237,9 @@ class AsaasService {
     const response = await this.request<{ data: AsaasCustomer[] }>(
       `/customers?cpfCnpj=${cpfCnpjLimpo}`
     )
-    return response.data[0] || null
+    const lista = response.data || []
+    const ativo = lista.find((c) => c.deleted !== true)
+    return ativo ?? lista[0] ?? null
   }
 
   /**

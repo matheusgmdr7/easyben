@@ -60,6 +60,142 @@ function patchTelefoneAsaas(telefoneRaw: string): Partial<AsaasCustomer> | null 
   return null
 }
 
+function isErroClienteRemovidoAsaas(mensagem: string): boolean {
+  const m = mensagem.toLowerCase()
+  return (
+    m.includes("invalid_customer") ||
+    m.includes("cliente removido") ||
+    m.includes("removed customer") ||
+    m.includes("não é possível criar uma cobrança para um cliente removido")
+  )
+}
+
+async function limparAsaasCustomerIdSalvo(clienteAdministradoraId: string, tenantId: string): Promise<void> {
+  await supabaseAdmin
+    .from("clientes_administradoras")
+    .update({ asaas_customer_id: null })
+    .eq("id", clienteAdministradoraId)
+    .eq("tenant_id", tenantId)
+}
+
+/** Se o customer existir mas estiver removido no Asaas, tenta restaurar; senão retorna null. */
+async function validarOuRestaurarCustomerAsaas(
+  customerId: string,
+  log: (msg: string, data?: unknown) => void
+): Promise<string | null> {
+  try {
+    const cust = await AsaasServiceInstance.getCustomer(String(customerId))
+    if (cust.deleted !== true) return String(customerId)
+    log("asaas_customer_id removido no Asaas, tentando restaurar", { customerId })
+    try {
+      const restored = await AsaasServiceInstance.restoreCustomer(String(customerId))
+      const id = restored.id ? String(restored.id) : String(customerId)
+      log("Cliente Asaas restaurado", { customerId: id })
+      return id
+    } catch (restoreErr) {
+      log("Falha ao restaurar cliente removido no Asaas", restoreErr)
+      return null
+    }
+  } catch {
+    log("asaas_customer_id ignorado (não existe na conta Asaas desta financeira)", { customerId })
+    return null
+  }
+}
+
+type ResolverCustomerAsaasParams = {
+  idParaFatura: string
+  tenantId: string
+  nome: string
+  cpf: string
+  email: string
+  telefone: string
+  customerIdInicial?: string | null
+  log: (msg: string, data?: unknown) => void
+}
+
+async function resolverCustomerIdAsaas(params: ResolverCustomerAsaasParams): Promise<string> {
+  const { idParaFatura, tenantId, nome, cpf, email, telefone, log } = params
+  let customerId = params.customerIdInicial ? String(params.customerIdInicial).trim() : ""
+  if (!customerId) customerId = ""
+
+  if (customerId) {
+    const validado = await validarOuRestaurarCustomerAsaas(customerId, log)
+    if (validado) customerId = validado
+    else {
+      customerId = ""
+      await limparAsaasCustomerIdSalvo(idParaFatura, tenantId)
+    }
+  }
+
+  const cpfApenasDigitos = (cpf || "").replace(/\D/g, "")
+
+  if (!customerId && cpfApenasDigitos.length === 11) {
+    try {
+      const existente = await AsaasServiceInstance.getCustomerByCpfCnpj(cpfApenasDigitos)
+      if (existente?.id) {
+        if (existente.deleted === true) {
+          const restaurado = await validarOuRestaurarCustomerAsaas(String(existente.id), log)
+          if (restaurado) customerId = restaurado
+        } else {
+          customerId = String(existente.id)
+          log("Cliente encontrado no Asaas por CPF", { customerId })
+        }
+      }
+    } catch (buscaErr) {
+      log("AVISO: falha ao buscar cliente por CPF no Asaas (seguindo para criação)", buscaErr)
+    }
+  }
+
+  if (!customerId) {
+    if (cpfApenasDigitos.length !== 11) {
+      throw new Error(
+        "O Asaas exige CPF válido (11 dígitos). Informe o CPF do beneficiário no cadastro (vida importada ou proposta) e tente novamente."
+      )
+    }
+    if (!validarCPF(cpfApenasDigitos)) {
+      throw new Error(
+        "O CPF do beneficiário é inválido (dígitos verificadores incorretos). Corrija o CPF no cadastro do beneficiário e tente novamente."
+      )
+    }
+    log("Criando cliente no Asaas (createCustomer)")
+    const cpfParaAsaas = String(cpfApenasDigitos).replace(/\D/g, "").slice(0, 11)
+    const asaasCustomer: AsaasCustomer = {
+      name: nome || "Cliente",
+      cpfCnpj: cpfParaAsaas,
+      email: email || undefined,
+      externalReference: idParaFatura,
+    }
+    const telPatch = patchTelefoneAsaas(String(telefone || ""))
+    if (telPatch) Object.assign(asaasCustomer, telPatch)
+
+    const customer = await AsaasServiceInstance.createCustomer(asaasCustomer)
+    customerId = String(customer.id || "")
+    log("Cliente Asaas criado", { customerId, telefone_enviado_gateway: !!telPatch })
+  } else {
+    const telPatch = patchTelefoneAsaas(String(telefone || ""))
+    if (telPatch) {
+      try {
+        await AsaasServiceInstance.updateCustomer(String(customerId), telPatch)
+        log("Cliente Asaas: telefone sincronizado no gateway", { customerId })
+      } catch (syncErr) {
+        log("AVISO: não foi possível atualizar telefone do cliente no Asaas (cobrança segue normalmente)", syncErr)
+      }
+    }
+  }
+
+  if (!customerId) {
+    throw new Error("Não foi possível obter ou criar o cliente no Asaas.")
+  }
+
+  await supabaseAdmin
+    .from("clientes_administradoras")
+    .update({ asaas_customer_id: customerId })
+    .eq("id", idParaFatura)
+    .eq("tenant_id", tenantId)
+
+  return customerId
+}
+
 function extrairColunaInexistenteFaturas(mensagem: string | undefined): string | null {
   const txt = String(mensagem || "")
   const m = txt.match(/column\s+"?([a-zA-Z0-9_]+)"?\s+of relation/i)
@@ -487,14 +623,13 @@ export async function gerarBoletoAdministradora(body: Record<string, unknown>): 
 
     const cpfApenasDigitos = (cpf || "").replace(/\D/g, "")
 
-    // Verificar se já existe asaas_customer_id no cliente
     const { data: caCompleto } = await supabaseAdmin
       .from("clientes_administradoras")
       .select("asaas_customer_id")
       .eq("id", idParaFatura)
       .single()
 
-    let customerId = (caCompleto as any)?.asaas_customer_id as string | null | undefined
+    const customerIdSalvo = (caCompleto as { asaas_customer_id?: string | null } | null)?.asaas_customer_id
     log("Cliente para fatura", {
       idParaFatura,
       nome,
@@ -502,85 +637,28 @@ export async function gerarBoletoAdministradora(body: Record<string, unknown>): 
       cpf_digitos: cpfApenasDigitos ? `${cpfApenasDigitos.slice(0, 3)}***${cpfApenasDigitos.slice(-2)}` : null,
       tem_email: !!email,
       tem_telefone: !!String(telefone || "").trim(),
-      asaas_customer_id_existente: customerId ?? null,
+      asaas_customer_id_existente: customerIdSalvo ?? null,
       financeira: financeira.nome,
     })
 
-    // ID salvo pode ser de outra financeira/conta Asaas — validar na conta atual antes de reutilizar
-    if (customerId) {
-      try {
-        await AsaasServiceInstance.getCustomer(String(customerId))
-        log("asaas_customer_id válido na conta Asaas desta financeira", { customerId })
-      } catch {
-        log("asaas_customer_id ignorado (não existe na conta Asaas desta financeira)", { customerId })
-        customerId = null
+    let customerId: string
+    try {
+      customerId = await resolverCustomerIdAsaas({
+        idParaFatura,
+        tenantId,
+        nome,
+        cpf,
+        email,
+        telefone,
+        customerIdInicial: customerIdSalvo,
+        log,
+      })
+    } catch (resolveErr) {
+      const resolveMsg = resolveErr instanceof Error ? resolveErr.message : String(resolveErr)
+      if (/cpf|asaas exige|inválido|não foi possível obter/i.test(resolveMsg)) {
+        return NextResponse.json({ error: resolveMsg }, { status: 400 })
       }
-    }
-
-    // Buscar cliente já cadastrado nesta conta Asaas pelo CPF
-    if (!customerId && cpfApenasDigitos.length === 11) {
-      try {
-        const existente = await AsaasServiceInstance.getCustomerByCpfCnpj(cpfApenasDigitos)
-        if (existente?.id) {
-          customerId = existente.id
-          log("Cliente encontrado no Asaas por CPF", { customerId })
-        }
-      } catch (buscaErr) {
-        log("AVISO: falha ao buscar cliente por CPF no Asaas (seguindo para criação)", buscaErr)
-      }
-    }
-
-    if (!customerId) {
-      if (cpfApenasDigitos.length !== 11) {
-        return NextResponse.json(
-          {
-            error:
-              "O Asaas exige CPF válido (11 dígitos). Informe o CPF do beneficiário no cadastro (vida importada ou proposta) e tente novamente.",
-          },
-          { status: 400 }
-        )
-      }
-      if (!validarCPF(cpfApenasDigitos)) {
-        return NextResponse.json(
-          {
-            error:
-              "O CPF do beneficiário é inválido (dígitos verificadores incorretos). Corrija o CPF no cadastro do beneficiário e tente novamente.",
-          },
-          { status: 400 }
-        )
-      }
-      log("Criando cliente no Asaas (createCustomer)")
-      const cpfParaAsaas = String(cpfApenasDigitos).replace(/\D/g, "").slice(0, 11)
-      const asaasCustomer: AsaasCustomer = {
-        name: nome || "Cliente",
-        cpfCnpj: cpfParaAsaas,
-        email: email || undefined,
-        externalReference: idParaFatura,
-      }
-      const telPatch = patchTelefoneAsaas(String(telefone || ""))
-      if (telPatch) Object.assign(asaasCustomer, telPatch)
-
-      const customer = await AsaasServiceInstance.createCustomer(asaasCustomer)
-      customerId = customer.id
-      log("Cliente Asaas criado", { customerId, telefone_enviado_gateway: !!telPatch })
-    } else {
-      const telPatch = patchTelefoneAsaas(String(telefone || ""))
-      if (telPatch) {
-        try {
-          await AsaasServiceInstance.updateCustomer(String(customerId), telPatch)
-          log("Cliente Asaas: telefone sincronizado no gateway", { customerId })
-        } catch (syncErr) {
-          log("AVISO: não foi possível atualizar telefone do cliente no Asaas (cobrança segue normalmente)", syncErr)
-        }
-      }
-    }
-
-    if (customerId) {
-      await supabaseAdmin
-        .from("clientes_administradoras")
-        .update({ asaas_customer_id: customerId })
-        .eq("id", idParaFatura)
-        .eq("tenant_id", tenantId)
+      throw resolveErr
     }
 
     // Texto enviado ao Asaas na cobrança (aparece na fatura/boleto do gateway): apenas dados comerciais.
@@ -605,7 +683,29 @@ export async function gerarBoletoAdministradora(body: Record<string, unknown>): 
       externalReference: idParaFatura,
     }
     log("Criando cobrança no Asaas (createCharge)", { customer: customerId, value: valorTotalBoleto, dueDate: charge.dueDate })
-    const chargeResponse = await AsaasServiceInstance.createCharge(charge)
+    let chargeResponse: Awaited<ReturnType<typeof AsaasServiceInstance.createCharge>>
+    try {
+      chargeResponse = await AsaasServiceInstance.createCharge(charge)
+    } catch (chargeErr) {
+      const chargeMsg = chargeErr instanceof Error ? chargeErr.message : String(chargeErr)
+      if (!isErroClienteRemovidoAsaas(chargeMsg)) throw chargeErr
+      log("Cobrança rejeitada: cliente removido no Asaas; re-resolvendo customer e tentando novamente", {
+        customerId,
+      })
+      await limparAsaasCustomerIdSalvo(idParaFatura, tenantId)
+      customerId = await resolverCustomerIdAsaas({
+        idParaFatura,
+        tenantId,
+        nome,
+        cpf,
+        email,
+        telefone,
+        customerIdInicial: null,
+        log,
+      })
+      charge.customer = customerId
+      chargeResponse = await AsaasServiceInstance.createCharge(charge)
+    }
     log("Cobrança Asaas criada", { chargeId: chargeResponse.id, bankSlipUrl: !!chargeResponse.bankSlipUrl })
 
     const fatura = await FaturasService.criar(
