@@ -25,7 +25,37 @@ type PorEvento = {
   falha: number
 }
 
-type ErroFrequente = { mensagem: string; qtd: number }
+type ErroFrequente = {
+  chave: string
+  titulo: string
+  mensagem: string
+  error_code: string | null
+  qtd: number
+  pct_falhas: number
+  eventos: Array<{ event_type: string; event_label: string; qtd: number }>
+  ultima_ocorrencia: string | null
+  status_tipico: string | null
+}
+
+type FalhasResumo = {
+  total: number
+  com_motivo: number
+  sem_motivo: number
+}
+
+type FalhaRecente = {
+  id?: string
+  created_at: string
+  failed_at: string | null
+  event_type: string
+  event_label: string
+  status: string
+  error_code: string | null
+  titulo_erro: string
+  mensagem: string
+  cliente_nome?: string | null
+  telefone_mascara?: string
+}
 
 type MensagemRow = {
   id: string
@@ -36,6 +66,8 @@ type MensagemRow = {
   reference_date: string
   created_at: string
   error_message: string | null
+  error_code: string | null
+  titulo_erro: string | null
 }
 
 const btnSquare = "rounded-sm"
@@ -79,8 +111,10 @@ export function WhatsAppRelatorioEnvios({ administradoraId }: Props) {
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [resumo, setResumo] = useState<Resumo | null>(null)
+  const [falhasResumo, setFalhasResumo] = useState<FalhasResumo | null>(null)
   const [porEvento, setPorEvento] = useState<PorEvento[]>([])
   const [errosFrequentes, setErrosFrequentes] = useState<ErroFrequente[]>([])
+  const [falhasRecentes, setFalhasRecentes] = useState<FalhaRecente[]>([])
   const [mensagens, setMensagens] = useState<MensagemRow[]>([])
 
   const carregar = useCallback(async () => {
@@ -101,8 +135,10 @@ export function WhatsAppRelatorioEnvios({ administradoraId }: Props) {
       if (!res.ok) throw new Error(data.error || "Erro ao carregar relatório")
 
       setResumo(data.resumo || null)
+      setFalhasResumo(data.falhas_resumo || null)
       setPorEvento(data.por_evento || [])
       setErrosFrequentes(data.erros_frequentes || [])
+      setFalhasRecentes(data.falhas_recentes || [])
       setMensagens(data.mensagens || [])
       setTotalPages(data.total_pages || 1)
     } catch (e) {
@@ -123,6 +159,13 @@ export function WhatsAppRelatorioEnvios({ administradoraId }: Props) {
       void carregar()
     }
   }
+
+  function filtrarSoFalhas() {
+    setStatus("__falhas__")
+    if (page !== 1) setPage(1)
+  }
+
+  const STATUS_FALHA = new Set(["failed", "failed_permanent", "undelivered"])
 
   const taxaSucesso =
     resumo && resumo.total > 0 ? Math.round((resumo.sucesso / resumo.total) * 100) : 0
@@ -219,6 +262,7 @@ export function WhatsAppRelatorioEnvios({ administradoraId }: Props) {
                 onChange={(e) => setStatus(e.target.value)}
               >
                 <option value="">Todos</option>
+                <option value="__falhas__">Todas as falhas</option>
                 <option value="sent">Enviado</option>
                 <option value="delivered">Entregue</option>
                 <option value="read">Lido</option>
@@ -314,24 +358,151 @@ export function WhatsAppRelatorioEnvios({ administradoraId }: Props) {
               )}
             </div>
 
-            <div className="rounded-sm border border-slate-200 bg-white shadow-sm overflow-hidden">
-              <div className="border-b border-slate-100 px-5 py-3 bg-slate-50/80">
-                <h3 className="text-sm font-semibold text-slate-800">Erros mais frequentes</h3>
+            <div className="rounded-sm border border-slate-200 bg-white shadow-sm overflow-hidden lg:col-span-2">
+              <div className="border-b border-slate-100 px-5 py-3 bg-slate-50/80 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-800">Erros mais frequentes</h3>
+                  {falhasResumo && falhasResumo.total > 0 ? (
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      {falhasResumo.com_motivo} com motivo · {falhasResumo.sem_motivo} sem motivo
+                      detalhado
+                    </p>
+                  ) : null}
+                </div>
+                {resumo && resumo.falha > 0 ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className={cn(btnSquare, "border-slate-300 text-xs h-8")}
+                    onClick={() => filtrarSoFalhas()}
+                  >
+                    Ver só falhas no detalhamento
+                  </Button>
+                ) : null}
               </div>
               {errosFrequentes.length === 0 ? (
                 <p className="px-5 py-8 text-sm text-slate-500 text-center">Nenhum erro no período.</p>
               ) : (
-                <ul className="divide-y divide-slate-100">
-                  {errosFrequentes.map((e) => (
-                    <li key={e.mensagem} className="px-5 py-3 flex items-start justify-between gap-3">
-                      <span className="text-xs text-slate-700 leading-relaxed">{e.mensagem}</span>
-                      <span className="text-xs font-semibold text-slate-800 tabular-nums shrink-0">{e.qtd}x</span>
-                    </li>
-                  ))}
-                </ul>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-slate-200 bg-slate-50/90">
+                        <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                          Motivo
+                        </th>
+                        <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                          Código
+                        </th>
+                        <th className="px-4 py-2.5 text-right text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                          Qtd
+                        </th>
+                        <th className="px-4 py-2.5 text-right text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                          % falhas
+                        </th>
+                        <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                          Eventos
+                        </th>
+                        <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                          Última
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {errosFrequentes.map((e, idx) => (
+                        <tr key={e.chave} className={idx % 2 === 0 ? "bg-white" : "bg-slate-50/50"}>
+                          <td className="px-4 py-2.5 max-w-xs">
+                            <p className="text-xs font-medium text-slate-800">{e.titulo}</p>
+                            {e.mensagem !== e.titulo ? (
+                              <p
+                                className="text-[11px] text-slate-500 mt-0.5 line-clamp-2"
+                                title={e.mensagem}
+                              >
+                                {e.mensagem}
+                              </p>
+                            ) : null}
+                          </td>
+                          <td className="px-4 py-2.5 text-xs text-slate-600 tabular-nums whitespace-nowrap">
+                            {e.error_code || "—"}
+                          </td>
+                          <td className="px-4 py-2.5 text-right tabular-nums text-slate-800 font-medium">
+                            {e.qtd}
+                          </td>
+                          <td className="px-4 py-2.5 text-right tabular-nums text-slate-600">
+                            {e.pct_falhas}%
+                          </td>
+                          <td className="px-4 py-2.5 text-xs text-slate-600">
+                            {e.eventos.length === 0
+                              ? "—"
+                              : e.eventos.map((ev) => `${ev.event_label} (${ev.qtd})`).join(", ")}
+                          </td>
+                          <td className="px-4 py-2.5 text-xs text-slate-500 whitespace-nowrap tabular-nums">
+                            {formatarDataHora(e.ultima_ocorrencia)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </div>
           </div>
+
+          {falhasRecentes.length > 0 ? (
+            <div className="rounded-sm border border-slate-200 bg-white shadow-sm overflow-hidden">
+              <div className="border-b border-slate-100 px-5 py-3 bg-slate-50/80">
+                <h3 className="text-sm font-semibold text-slate-800">Últimas falhas</h3>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  Amostra recente para investigação rápida
+                </p>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-200 bg-slate-50/90">
+                      <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                        Quando
+                      </th>
+                      <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                        Cliente
+                      </th>
+                      <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                        Evento
+                      </th>
+                      <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                        Motivo
+                      </th>
+                      <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                        Código
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {falhasRecentes.map((f, idx) => (
+                      <tr key={f.id || `${f.created_at}-${idx}`} className={idx % 2 === 0 ? "bg-white" : "bg-slate-50/50"}>
+                        <td className="px-4 py-2.5 text-xs text-slate-600 whitespace-nowrap tabular-nums">
+                          {formatarDataHora(f.failed_at || f.created_at)}
+                        </td>
+                        <td className="px-4 py-2.5 text-slate-800 text-xs">{f.cliente_nome || "—"}</td>
+                        <td className="px-4 py-2.5 text-slate-600 text-xs">{f.event_label}</td>
+                        <td className="px-4 py-2.5 max-w-xs">
+                          <p className="text-xs text-slate-800">{f.titulo_erro}</p>
+                          {f.mensagem !== f.titulo_erro ? (
+                            <p className="text-[11px] text-slate-500 line-clamp-1" title={f.mensagem}>
+                              {f.mensagem}
+                            </p>
+                          ) : null}
+                        </td>
+                        <td className="px-4 py-2.5 text-xs text-slate-600 tabular-nums">
+                          {f.error_code || "—"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : null}
 
           <div className="rounded-sm border border-slate-200 bg-white shadow-sm overflow-hidden">
           <div className="border-b border-slate-100 px-5 py-3 bg-slate-50/80">
@@ -356,12 +527,15 @@ export function WhatsAppRelatorioEnvios({ administradoraId }: Props) {
                   <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">
                     Status
                   </th>
+                  <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                    Motivo
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {mensagens.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="px-4 py-12 text-center text-slate-500">
+                    <td colSpan={6} className="px-4 py-12 text-center text-slate-500">
                       Nenhum envio encontrado com os filtros selecionados.
                     </td>
                   </tr>
@@ -375,7 +549,27 @@ export function WhatsAppRelatorioEnvios({ administradoraId }: Props) {
                       <td className="px-4 py-2.5 text-slate-600 text-xs">{m.event_label}</td>
                       <td className="px-4 py-2.5 text-slate-500 text-xs tabular-nums">{m.telefone_mascara}</td>
                       <td className="px-4 py-2.5">
-                        <StatusEnvioWhatsApp status={m.status} title={m.error_message || undefined} />
+                        <StatusEnvioWhatsApp
+                          status={m.status}
+                          title={m.error_message || m.titulo_erro || undefined}
+                        />
+                      </td>
+                      <td className="px-4 py-2.5 max-w-[220px]">
+                        {STATUS_FALHA.has(m.status) ? (
+                          <div>
+                            <p className="text-xs text-slate-800">{m.titulo_erro || "Sem motivo"}</p>
+                            {m.error_code ? (
+                              <p className="text-[11px] text-slate-500 tabular-nums">Cód. {m.error_code}</p>
+                            ) : null}
+                            {m.error_message && m.error_message !== m.titulo_erro ? (
+                              <p className="text-[11px] text-slate-500 line-clamp-2" title={m.error_message}>
+                                {m.error_message}
+                              </p>
+                            ) : null}
+                          </div>
+                        ) : (
+                          <span className="text-xs text-slate-400">—</span>
+                        )}
                       </td>
                     </tr>
                   ))

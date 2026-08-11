@@ -3,7 +3,7 @@ import type { WhatsAppOutboundJobPayload } from "./event-types"
 import { montarIdempotencyKey } from "./idempotency"
 import { whatsappBillingLog } from "./logger"
 import { telefoneParaTwilioWhatsApp } from "./content-variables"
-import { enviarWhatsAppTemplateTwilio, isTwilioValidationError } from "./twilio-client"
+import { enviarWhatsAppTemplateTwilio, extrairCodigoErroTwilio, isTwilioValidationError } from "./twilio-client"
 
 const STATUS_SUCESSO = new Set(["queued", "sent", "delivered", "read"])
 
@@ -113,11 +113,13 @@ export async function processarJobOutboundWhatsApp(payload: WhatsAppOutboundJobP
     return { skipped: false, messageSid: result.messageSid }
   } catch (err: unknown) {
     const permanente = isTwilioValidationError(err)
+    const errorCode = extrairCodigoErroTwilio(err)
     await supabaseAdmin
       .from("whatsapp_messages")
       .update({
         status: permanente ? "failed_permanent" : "failed",
         failed_at: new Date().toISOString(),
+        error_code: errorCode,
         error_message: err instanceof Error ? err.message : String(err),
       })
       .eq("id", messageId)

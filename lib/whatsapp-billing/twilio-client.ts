@@ -50,6 +50,13 @@ export function isTwilioValidationError(err: unknown): boolean {
   return status === 400 || status === 404 || status === 422
 }
 
+export function extrairCodigoErroTwilio(err: unknown): string | null {
+  if (!err || typeof err !== "object") return null
+  const code = (err as { code?: number | string }).code
+  if (code === undefined || code === null || code === "") return null
+  return String(code)
+}
+
 export async function enviarWhatsAppTemplateTwilio(params: {
   to: string
   contentSid: string
