@@ -141,12 +141,56 @@ export async function listarTemplatesParaTeste(): Promise<TemplateTesteInfo[]> {
   })
 }
 
+function sanitizarTermoBuscaCliente(termo: string): string {
+  return termo
+    .replace(/\\/g, "")
+    .replace(/[%_]/g, " ")
+    .replace(/[,()]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+}
+
+function formatarCpfParcialBusca(digits: string): string | null {
+  const d = digits.replace(/\D/g, "")
+  if (d.length !== 11) return null
+  return d.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4")
+}
+
+function montarFiltrosBuscaCliente(termo: string): string[] {
+  const safe = sanitizarTermoBuscaCliente(termo)
+  const cpfDigits = termo.replace(/\D/g, "")
+  const filtros: string[] = []
+
+  if (safe.length >= 2) {
+    filtros.push(
+      `cliente_nome.ilike.%${safe}%`,
+      `plano_nome.ilike.%${safe}%`,
+      `produto_nome.ilike.%${safe}%`
+    )
+  }
+
+  if (cpfDigits.length >= 3) {
+    filtros.push(`cliente_cpf.ilike.%${cpfDigits}%`)
+    const cpfFormatado = formatarCpfParcialBusca(cpfDigits)
+    if (cpfFormatado) {
+      filtros.push(`cliente_cpf.ilike.%${cpfFormatado}%`)
+    }
+  }
+
+  return filtros
+}
+
 export async function listarClientesParaTeste(
   administradoraId: string,
   busca?: string
 ): Promise<ClienteTesteOpcao[]> {
   const termo = busca?.trim() || ""
   const cpfDigits = termo.replace(/\D/g, "")
+  const minimoBusca = cpfDigits.length >= 3 && cpfDigits.length >= termo.replace(/\s/g, "").length ? 3 : 2
+
+  if (termo && termo.length < minimoBusca) {
+    return []
+  }
 
   let query = supabaseAdmin
     .from("vw_clientes_administradoras_completo")
@@ -156,15 +200,8 @@ export async function listarClientesParaTeste(
     .order("cliente_nome", { ascending: true })
     .limit(termo ? 50 : 500)
 
-  if (termo) {
-    const filtros = [
-      `cliente_nome.ilike.%${termo}%`,
-      `plano_nome.ilike.%${termo}%`,
-      `produto_nome.ilike.%${termo}%`,
-    ]
-    if (cpfDigits.length >= 3) {
-      filtros.push(`cliente_cpf.ilike.%${cpfDigits}%`)
-    }
+  const filtros = termo ? montarFiltrosBuscaCliente(termo) : []
+  if (filtros.length > 0) {
     query = query.or(filtros.join(","))
   }
 

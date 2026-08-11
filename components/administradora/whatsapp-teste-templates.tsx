@@ -180,10 +180,15 @@ export function WhatsAppTesteTemplates({ administradoraId }: Props) {
     if (debounceRef.current) clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => {
       const termo = buscaCliente.trim()
-      if (termo.length >= 2) {
+      const cpfDigits = termo.replace(/\D/g, "")
+      const minimo = cpfDigits.length >= 3 && cpfDigits.length >= termo.replace(/\s/g, "").length ? 3 : 2
+
+      if (termo.length >= minimo) {
         void buscarClientes(termo)
       } else if (termo.length === 0) {
         setClientesBusca(clientes)
+      } else {
+        setClientesBusca([])
       }
     }, 300)
     return () => {
@@ -208,8 +213,11 @@ export function WhatsAppTesteTemplates({ administradoraId }: Props) {
 
     if (id !== FICTICIO) {
       const c = clientes.find((x) => x.id === id) || clientesBusca.find((x) => x.id === id)
-      if (c?.telefone && !telefone) {
-        setTelefone(formatarTelefone(c.telefone) || c.telefone)
+      if (c) {
+        setClientes((prev) => (prev.some((x) => x.id === c.id) ? prev : [...prev, c]))
+        if (c.telefone && !telefone) {
+          setTelefone(formatarTelefone(c.telefone) || c.telefone)
+        }
       }
     }
   }
@@ -324,7 +332,16 @@ export function WhatsAppTesteTemplates({ administradoraId }: Props) {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>Cliente (dados da mensagem)</Label>
-              <Popover open={comboboxAberto} onOpenChange={setComboboxAberto}>
+              <Popover
+                open={comboboxAberto}
+                onOpenChange={(open) => {
+                  setComboboxAberto(open)
+                  if (open) {
+                    setBuscaCliente("")
+                    setClientesBusca(clientes)
+                  }
+                }}
+              >
                 <PopoverTrigger asChild>
                   <Button
                     type="button"
@@ -350,60 +367,67 @@ export function WhatsAppTesteTemplates({ administradoraId }: Props) {
                           <Loader2 className="h-3.5 w-3.5 animate-spin" />
                           Buscando…
                         </div>
-                      ) : (
-                        <>
-                          <CommandEmpty>Nenhum cliente encontrado.</CommandEmpty>
-                          <CommandGroup>
-                            <CommandItem
-                              value={FICTICIO}
-                              onSelect={() =>
-                                selecionarCliente(FICTICIO, "Dados fictícios (exemplo)")
-                              }
-                            >
-                              <Check
-                                className={cn(
-                                  "mr-2 h-4 w-4",
-                                  clienteId === FICTICIO ? "opacity-100" : "opacity-0"
-                                )}
-                              />
-                              Dados fictícios (exemplo)
-                            </CommandItem>
-                            {clientesBusca.map((c) => {
-                              const label = `${c.nome}${c.cpf ? ` — ${formatarCpf(c.cpf)}` : ""}`
-                              return (
-                                <CommandItem
-                                  key={c.id}
-                                  value={`${c.id}-${c.nome}`}
-                                  onSelect={() => selecionarCliente(c.id, label)}
-                                >
-                                  <Check
-                                    className={cn(
-                                      "mr-2 h-4 w-4",
-                                      clienteId === c.id ? "opacity-100" : "opacity-0"
-                                    )}
-                                  />
-                                  <div className="min-w-0">
-                                    <p className="truncate">{c.nome}</p>
-                                    {(c.cpf || c.plano_nome) && (
-                                      <p className="text-[10px] text-slate-500 truncate">
-                                        {[c.cpf ? formatarCpf(c.cpf) : null, c.plano_nome]
-                                          .filter(Boolean)
-                                          .join(" · ")}
-                                      </p>
-                                    )}
-                                  </div>
-                                </CommandItem>
-                              )
-                            })}
-                          </CommandGroup>
-                        </>
-                      )}
+                      ) : null}
+                      {!buscandoClientes && clientesBusca.length === 0 && buscaCliente.trim().length === 0 ? (
+                        <CommandEmpty>Digite para buscar ou role a lista inicial.</CommandEmpty>
+                      ) : null}
+                      {!buscandoClientes && clientesBusca.length === 0 && buscaCliente.trim().length > 0 ? (
+                        <CommandEmpty>Nenhum cliente encontrado.</CommandEmpty>
+                      ) : null}
+                      {!buscandoClientes ? (
+                        <CommandGroup>
+                          <CommandItem
+                            value={FICTICIO}
+                            onSelect={() =>
+                              selecionarCliente(FICTICIO, "Dados fictícios (exemplo)")
+                            }
+                            onMouseDown={(e) => e.preventDefault()}
+                          >
+                            <Check
+                              className={cn(
+                                "mr-2 h-4 w-4",
+                                clienteId === FICTICIO ? "opacity-100" : "opacity-0"
+                              )}
+                            />
+                            Dados fictícios (exemplo)
+                          </CommandItem>
+                          {clientesBusca.map((c) => {
+                            const label = `${c.nome}${c.cpf ? ` — ${formatarCpf(c.cpf)}` : ""}`
+                            return (
+                              <CommandItem
+                                key={c.id}
+                                value={c.id}
+                                keywords={[c.nome, c.cpf || "", c.plano_nome || ""]}
+                                onSelect={() => selecionarCliente(c.id, label)}
+                                onMouseDown={(e) => e.preventDefault()}
+                              >
+                                <Check
+                                  className={cn(
+                                    "mr-2 h-4 w-4",
+                                    clienteId === c.id ? "opacity-100" : "opacity-0"
+                                  )}
+                                />
+                                <div className="min-w-0">
+                                  <p className="truncate">{c.nome}</p>
+                                  {(c.cpf || c.plano_nome) && (
+                                    <p className="text-[10px] text-slate-500 truncate">
+                                      {[c.cpf ? formatarCpf(c.cpf) : null, c.plano_nome]
+                                        .filter(Boolean)
+                                        .join(" · ")}
+                                    </p>
+                                  )}
+                                </div>
+                              </CommandItem>
+                            )
+                          })}
+                        </CommandGroup>
+                      ) : null}
                     </CommandList>
                   </Command>
                 </PopoverContent>
               </Popover>
               <p className="text-[11px] text-slate-500">
-                {clientes.length} cliente(s) ativo(s). Digite ao menos 2 caracteres para buscar.
+                {clientes.length} cliente(s) ativo(s). Busque por nome (2+ letras) ou CPF (3+ dígitos).
               </p>
             </div>
 
