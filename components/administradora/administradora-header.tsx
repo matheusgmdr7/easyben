@@ -7,6 +7,7 @@ import Link from "next/link"
 import { Settings, User, LogOut, Bell, AlertTriangle, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { getAdministradoraLogada } from "@/services/auth-administradoras-service"
+import { limparEstadoNotificacoesChamados } from "@/lib/chamados-notificacoes-storage"
 import { carregarNomeMarcaExibicao, nomeMarcaFallbackLocal } from "@/lib/administradora-marca"
 import {
   listarAlertasSistema,
@@ -109,6 +110,8 @@ export default function AdministradoraHeader({ sidebarCollapsed = false }: Admin
 
   const handleLogout = async () => {
     try {
+      const adm = getAdministradoraLogada()
+      if (adm?.id) limparEstadoNotificacoesChamados(adm.id)
       // Limpar dados do localStorage e sessionStorage
       if (typeof window !== 'undefined') {
         localStorage.removeItem('administradoraLogada')
@@ -215,11 +218,25 @@ export default function AdministradoraHeader({ sidebarCollapsed = false }: Admin
                   {alertas.map((alerta) => (
                     <div key={alerta.id} className={`p-3 ${alerta.lido ? "bg-white" : "bg-amber-50/50"}`}>
                       <div className="flex items-start justify-between gap-2">
-                        <div className="flex items-start gap-2 min-w-0">
-                          <AlertTriangle className={`h-4 w-4 mt-0.5 ${alerta.tipo === "warning" ? "text-amber-600" : "text-blue-600"}`} />
-                          <div className="min-w-0">
-                            <p className="text-sm font-semibold text-gray-900 truncate">{alerta.titulo}</p>
-                            <p className="text-xs text-gray-700 mt-1 whitespace-pre-line">{alerta.mensagem}</p>
+                        <div className="flex items-start gap-2 min-w-0 flex-1">
+                          <AlertTriangle className={`h-4 w-4 mt-0.5 shrink-0 ${alerta.tipo === "warning" ? "text-amber-600" : "text-blue-600"}`} />
+                          <div className="min-w-0 flex-1">
+                            {alerta.href ? (
+                              <Link
+                                href={alerta.href}
+                                className="block hover:opacity-90"
+                                onClick={() => setShowAlertas(false)}
+                              >
+                                <p className="text-sm font-semibold text-gray-900 truncate">{alerta.titulo}</p>
+                                <p className="text-xs text-gray-700 mt-1 whitespace-pre-line">{alerta.mensagem}</p>
+                                <p className="text-[11px] text-blue-600 mt-1">Ver chamado →</p>
+                              </Link>
+                            ) : (
+                              <>
+                                <p className="text-sm font-semibold text-gray-900 truncate">{alerta.titulo}</p>
+                                <p className="text-xs text-gray-700 mt-1 whitespace-pre-line">{alerta.mensagem}</p>
+                              </>
+                            )}
                             <p className="text-[11px] text-gray-500 mt-1">
                               {new Date(alerta.criadoEm).toLocaleString("pt-BR")}
                             </p>

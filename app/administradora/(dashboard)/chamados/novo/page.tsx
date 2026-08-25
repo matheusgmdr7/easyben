@@ -7,6 +7,7 @@ import {
   getUsuarioAdministradoraLogado,
 } from "@/services/auth-administradoras-service"
 import { ASSUNTOS_CHAMADO, PRIORIDADES_CHAMADO, PRIORIDADE_CHAMADO_LABELS, SETORES_CHAMADO, SETOR_CHAMADO_LABELS } from "@/services/chamados-administradora-service"
+import { marcarChamadoComoNotificado } from "@/lib/chamados-notificacoes-storage"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -94,6 +95,7 @@ export default function NovoChamadoPage() {
         throw new Error(err?.error || "Erro ao salvar")
       }
       const data = await res.json()
+      marcarChamadoComoNotificado(administradoraId, data.id)
       toast.success("Chamado aberto com sucesso")
       router.push(`/administradora/chamados/${data.id}`)
     } catch (e: unknown) {

@@ -390,6 +390,42 @@ export class ChamadosAdministradoraService {
     if (error) throw new Error(mensagemErroSupabase(error))
   }
 
+  static async listarRecentesParaNotificacao(
+    administradoraId: string,
+    desde: string
+  ): Promise<
+    Array<{
+      id: string
+      numero: number
+      cliente_nome: string
+      assunto: string
+      aberto_em: string
+      setor_responsavel: string | null
+    }>
+  > {
+    const tenantId = await this.resolverTenantId(administradoraId)
+    let query = supabaseAdmin
+      .from("chamados_administradora")
+      .select("id, numero, cliente_nome, assunto, aberto_em, setor_responsavel")
+      .eq("administradora_id", administradoraId)
+      .gt("aberto_em", desde)
+      .order("aberto_em", { ascending: true })
+      .limit(20)
+
+    query = this.aplicarFiltroTenant(query, tenantId)
+
+    const { data, error } = await query
+    if (error) throw new Error(mensagemErroSupabase(error))
+    return (data || []) as Array<{
+      id: string
+      numero: number
+      cliente_nome: string
+      assunto: string
+      aberto_em: string
+      setor_responsavel: string | null
+    }>
+  }
+
   static async criar(payload: CriarChamadoData): Promise<ChamadoAdministradora> {
     const tenantId = await this.resolverTenantId(payload.administradora_id)
     const agora = new Date().toISOString()
