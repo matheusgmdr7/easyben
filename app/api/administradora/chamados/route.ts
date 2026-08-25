@@ -3,6 +3,11 @@ import {
   ChamadosAdministradoraService,
   assuntoChamadoValido,
   labelAssuntoChamado,
+  prioridadeChamadoValida,
+  prazoChamadoDeInput,
+  setorChamadoValido,
+  type PrioridadeChamado,
+  type SetorChamado,
   type StatusChamado,
 } from "@/services/chamados-administradora-service"
 
@@ -14,8 +19,12 @@ export async function GET(request: NextRequest) {
     }
 
     const status = request.nextUrl.searchParams.get("status") as StatusChamado | "todos" | null
+    const prioridade = request.nextUrl.searchParams.get("prioridade") as PrioridadeChamado | "todos" | null
+    const setor = request.nextUrl.searchParams.get("setor") as SetorChamado | "todos" | null
     const list = await ChamadosAdministradoraService.listar(administradoraId, {
       status: status || "todos",
+      prioridade: prioridade || "todos",
+      setor: setor || "todos",
     })
     return NextResponse.json(list)
   } catch (e: unknown) {
@@ -75,6 +84,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "cliente_administradora_id é obrigatório" }, { status: 400 })
     }
 
+    const prioridadeRaw = body.prioridade ? String(body.prioridade) : "normal"
+    if (!prioridadeChamadoValida(prioridadeRaw)) {
+      return NextResponse.json({ error: "Prioridade inválida" }, { status: 400 })
+    }
+
+    const setorRaw = body.setor_responsavel ? String(body.setor_responsavel) : ""
+    if (!setorChamadoValido(setorRaw)) {
+      return NextResponse.json({ error: "Setor responsável inválido" }, { status: 400 })
+    }
+
     const created = await ChamadosAdministradoraService.criar({
       administradora_id,
       grupo_id,
@@ -89,6 +108,9 @@ export async function POST(request: NextRequest) {
       assunto_codigo,
       assunto: assuntoLabel,
       queixa: queixa.trim(),
+      prioridade: prioridadeRaw,
+      prazo: prazoChamadoDeInput(body.prazo),
+      setor_responsavel: setorRaw,
       aberto_por_usuario_id: body.aberto_por_usuario_id ?? null,
       aberto_por_nome: body.aberto_por_nome?.trim() ?? null,
     })

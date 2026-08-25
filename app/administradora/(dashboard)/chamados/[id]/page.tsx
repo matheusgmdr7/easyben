@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Textarea } from "@/components/ui/textarea"
+import { Input } from "@/components/ui/input"
 import {
   Select,
   SelectContent,
@@ -29,8 +30,17 @@ import { ArrowLeft, Clock, CheckCircle2, ExternalLink } from "lucide-react"
 import Link from "next/link"
 import {
   STATUS_CHAMADO_LABELS,
+  PRIORIDADE_CHAMADO_LABELS,
+  PRIORIDADES_CHAMADO,
+  SETOR_CHAMADO_LABELS,
+  SETORES_CHAMADO,
+  formatarPrazoChamado,
+  prazoChamadoParaInput,
+  prazoChamadoVencido,
   type ChamadoAdministradora,
   type ChamadoHistorico,
+  type PrioridadeChamado,
+  type SetorChamado,
   type StatusChamado,
 } from "@/services/chamados-administradora-service"
 
@@ -65,10 +75,28 @@ function badgeStatus(status: StatusChamado) {
 function labelHistorico(item: ChamadoHistorico) {
   if (item.tipo === "abertura") return "Chamado aberto"
   if (item.tipo === "fechamento") return "Chamado concluído"
+  if (item.tipo === "prioridade") return "Prioridade alterada"
+  if (item.tipo === "prazo") return "Prazo alterado"
+  if (item.tipo === "setor") return "Setor alterado"
   if (item.tipo === "status" && item.status_novo) {
     return `Status alterado para ${STATUS_CHAMADO_LABELS[item.status_novo as StatusChamado] || item.status_novo}`
   }
   return "Observação registrada"
+}
+
+function badgePrioridade(prioridade: PrioridadeChamado | null | undefined) {
+  const valor = prioridade || "normal"
+  const map: Record<PrioridadeChamado, string> = {
+    baixa: "bg-slate-100 text-slate-700",
+    normal: "bg-blue-50 text-blue-700",
+    alta: "bg-orange-100 text-orange-800",
+    urgente: "bg-red-100 text-red-800",
+  }
+  return (
+    <Badge variant="secondary" className={map[valor]}>
+      {PRIORIDADE_CHAMADO_LABELS[valor]}
+    </Badge>
+  )
 }
 
 export default function ChamadoDetalhePage() {
@@ -81,6 +109,9 @@ export default function ChamadoDetalhePage() {
   const [loading, setLoading] = useState(true)
   const [salvando, setSalvando] = useState(false)
   const [novoStatus, setNovoStatus] = useState<StatusChamado | "">("")
+  const [novaPrioridade, setNovaPrioridade] = useState<PrioridadeChamado>("normal")
+  const [novoSetor, setNovoSetor] = useState<SetorChamado>("implantacao")
+  const [novoPrazo, setNovoPrazo] = useState("")
   const [observacao, setObservacao] = useState("")
   const [modalFechar, setModalFechar] = useState(false)
   const [resolucao, setResolucao] = useState("")
@@ -100,6 +131,9 @@ export default function ChamadoDetalhePage() {
       const data = await res.json()
       setChamado(data)
       setNovoStatus(data.status)
+      setNovaPrioridade(data.prioridade || "normal")
+      setNovoSetor(data.setor_responsavel || "implantacao")
+      setNovoPrazo(prazoChamadoParaInput(data.prazo))
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Erro ao carregar chamado")
       setChamado(null)
@@ -120,11 +154,15 @@ export default function ChamadoDetalhePage() {
 
   async function atualizarStatus() {
     if (!administradoraId || !chamado || chamado.status === "fechado" || chamado.status === "resolvido") return
-    if (!novoStatus || novoStatus === chamado.status) {
-      if (!observacao.trim()) {
-        toast.error("Selecione um novo status ou adicione uma observação")
-        return
-      }
+
+    const statusMudou = novoStatus && novoStatus !== chamado.status
+    const prioridadeMudou = novaPrioridade !== (chamado.prioridade || "normal")
+    const setorMudou = novoSetor !== (chamado.setor_responsavel || "implantacao")
+    const prazoMudou = novoPrazo !== prazoChamadoParaInput(chamado.prazo)
+
+    if (!statusMudou && !prioridadeMudou && !setorMudou && !prazoMudou && !observacao.trim()) {
+      toast.error("Altere status, prioridade, setor, prazo ou adicione uma observação")
+      return
     }
 
     if (novoStatus === "fechado" || novoStatus === "resolvido") {
@@ -139,7 +177,10 @@ export default function ChamadoDetalhePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           administradora_id: administradoraId,
-          status: novoStatus !== chamado.status ? novoStatus : undefined,
+          status: statusMudou ? novoStatus : undefined,
+          prioridade: prioridadeMudou ? novaPrioridade : undefined,
+          setor_responsavel: setorMudou ? novoSetor : undefined,
+          prazo: prazoMudou ? novoPrazo : undefined,
           observacao: observacao.trim() || undefined,
           usuario_id: usuario?.id ?? null,
           usuario_nome: usuario?.nome,
@@ -243,7 +284,10 @@ export default function ChamadoDetalhePage() {
             </h1>
             <p className="text-sm text-gray-500 mt-0.5">Cliente: {chamado.cliente_nome}</p>
           </div>
-          {badgeStatus(chamado.status)}
+          <div className="flex flex-wrap items-center gap-2">
+            {badgePrioridade(chamado.prioridade)}
+            {badgeStatus(chamado.status)}
+          </div>
         </div>
       </div>
 
@@ -307,6 +351,49 @@ export default function ChamadoDetalhePage() {
                     </SelectContent>
                   </Select>
                 </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Setor responsável</label>
+                    <Select value={novoSetor} onValueChange={(v) => setNovoSetor(v as SetorChamado)}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {SETORES_CHAMADO.map((s) => (
+                          <SelectItem key={s} value={s}>
+                            {SETOR_CHAMADO_LABELS[s]}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Prioridade</label>
+                    <Select
+                      value={novaPrioridade}
+                      onValueChange={(v) => setNovaPrioridade(v as PrioridadeChamado)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {PRIORIDADES_CHAMADO.map((p) => (
+                          <SelectItem key={p} value={p}>
+                            {PRIORIDADE_CHAMADO_LABELS[p]}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Prazo</label>
+                    <Input
+                      type="date"
+                      value={novoPrazo}
+                      onChange={(e) => setNovoPrazo(e.target.value)}
+                    />
+                  </div>
+                </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Observação</label>
                   <Textarea
@@ -347,6 +434,27 @@ export default function ChamadoDetalhePage() {
                   <span className="text-gray-500">Grupo:</span> {chamado.grupo_nome}
                 </p>
               )}
+              <p>
+                <span className="text-gray-500">Setor:</span>{" "}
+                {SETOR_CHAMADO_LABELS[chamado.setor_responsavel || "implantacao"]}
+              </p>
+              <p>
+                <span className="text-gray-500">Prioridade:</span>{" "}
+                {PRIORIDADE_CHAMADO_LABELS[chamado.prioridade || "normal"]}
+              </p>
+              <p>
+                <span className="text-gray-500">Prazo:</span>{" "}
+                <span
+                  className={
+                    prazoChamadoVencido(chamado.prazo, chamado.status)
+                      ? "text-red-600 font-medium"
+                      : undefined
+                  }
+                >
+                  {formatarPrazoChamado(chamado.prazo)}
+                  {prazoChamadoVencido(chamado.prazo, chamado.status) ? " (vencido)" : ""}
+                </span>
+              </p>
               {beneficiarioHref && (
                 <Link
                   href={beneficiarioHref}

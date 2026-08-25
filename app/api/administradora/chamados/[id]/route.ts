@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server"
-import { ChamadosAdministradoraService } from "@/services/chamados-administradora-service"
+import {
+  ChamadosAdministradoraService,
+  prioridadeChamadoValida,
+  prazoChamadoDeInput,
+  setorChamadoValido,
+} from "@/services/chamados-administradora-service"
 
 export async function GET(
   request: NextRequest,
@@ -33,14 +38,42 @@ export async function PUT(
   try {
     const { id } = await params
     const body = await request.json()
-    const { administradora_id, status, resolucao, observacao, usuario_id, usuario_nome } = body
+    const {
+      administradora_id,
+      status,
+      resolucao,
+      observacao,
+      usuario_id,
+      usuario_nome,
+      prioridade,
+      prazo,
+      setor_responsavel,
+    } = body
 
     if (!administradora_id) {
       return NextResponse.json({ error: "administradora_id é obrigatório" }, { status: 400 })
     }
 
+    if (prioridade !== undefined && prioridade !== null && !prioridadeChamadoValida(String(prioridade))) {
+      return NextResponse.json({ error: "Prioridade inválida" }, { status: 400 })
+    }
+
+    if (
+      setor_responsavel !== undefined &&
+      setor_responsavel !== null &&
+      !setorChamadoValido(String(setor_responsavel))
+    ) {
+      return NextResponse.json({ error: "Setor responsável inválido" }, { status: 400 })
+    }
+
     const updated = await ChamadosAdministradoraService.atualizar(id, administradora_id, {
       status,
+      prioridade: prioridade !== undefined && prioridade !== null ? String(prioridade) : undefined,
+      prazo: prazo !== undefined ? prazoChamadoDeInput(String(prazo || "")) : undefined,
+      setor_responsavel:
+        setor_responsavel !== undefined && setor_responsavel !== null
+          ? String(setor_responsavel)
+          : undefined,
       resolucao,
       observacao,
       usuario_id,

@@ -25,7 +25,14 @@ import {
 import { Plus, Eye, Ticket } from "lucide-react"
 import {
   STATUS_CHAMADO_LABELS,
+  PRIORIDADE_CHAMADO_LABELS,
+  SETOR_CHAMADO_LABELS,
+  SETORES_CHAMADO,
+  formatarPrazoChamado,
+  prazoChamadoVencido,
   type ChamadoAdministradora,
+  type PrioridadeChamado,
+  type SetorChamado,
   type StatusChamado,
 } from "@/services/chamados-administradora-service"
 
@@ -41,6 +48,21 @@ function formatarData(iso: string) {
   } catch {
     return iso
   }
+}
+
+function badgePrioridade(prioridade: PrioridadeChamado | null | undefined) {
+  const valor = prioridade || "normal"
+  const map: Record<PrioridadeChamado, string> = {
+    baixa: "bg-slate-100 text-slate-700",
+    normal: "bg-blue-50 text-blue-700",
+    alta: "bg-orange-100 text-orange-800",
+    urgente: "bg-red-100 text-red-800",
+  }
+  return (
+    <Badge variant="secondary" className={map[valor]}>
+      {PRIORIDADE_CHAMADO_LABELS[valor]}
+    </Badge>
+  )
 }
 
 function badgeStatus(status: StatusChamado) {
@@ -63,6 +85,8 @@ export default function ChamadosPage() {
   const [list, setList] = useState<ChamadoAdministradora[]>([])
   const [loading, setLoading] = useState(true)
   const [filtroStatus, setFiltroStatus] = useState<StatusChamado | "todos">("todos")
+  const [filtroPrioridade, setFiltroPrioridade] = useState<PrioridadeChamado | "todos">("todos")
+  const [filtroSetor, setFiltroSetor] = useState<SetorChamado | "todos">("todos")
 
   useEffect(() => {
     const adm = getAdministradoraLogada()
@@ -71,14 +95,21 @@ export default function ChamadosPage() {
       return
     }
     setAdministradoraId(adm.id)
-    carregar(adm.id, filtroStatus)
-  }, [router, filtroStatus])
+    carregar(adm.id, filtroStatus, filtroPrioridade, filtroSetor)
+  }, [router, filtroStatus, filtroPrioridade, filtroSetor])
 
-  async function carregar(admId: string, status: StatusChamado | "todos") {
+  async function carregar(
+    admId: string,
+    status: StatusChamado | "todos",
+    prioridade: PrioridadeChamado | "todos",
+    setor: SetorChamado | "todos"
+  ) {
     try {
       setLoading(true)
       const params = new URLSearchParams({ administradora_id: admId })
       if (status !== "todos") params.set("status", status)
+      if (prioridade !== "todos") params.set("prioridade", prioridade)
+      if (setor !== "todos") params.set("setor", setor)
       const res = await fetch(`/api/administradora/chamados?${params.toString()}`)
       if (!res.ok) throw new Error("Erro ao carregar")
       const data = await res.json()
@@ -120,22 +151,59 @@ export default function ChamadosPage() {
               <Ticket className="h-5 w-5" />
               Chamados registrados
             </CardTitle>
-            <div className="w-full sm:w-48">
-              <Select
-                value={filtroStatus}
-                onValueChange={(v) => setFiltroStatus(v as StatusChamado | "todos")}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Filtrar status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="todos">Todos os status</SelectItem>
-                  <SelectItem value="aberto">Aberto</SelectItem>
-                  <SelectItem value="em_andamento">Em andamento</SelectItem>
-                  <SelectItem value="resolvido">Resolvido</SelectItem>
-                  <SelectItem value="fechado">Fechado</SelectItem>
-                </SelectContent>
-              </Select>
+            <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
+              <div className="w-full sm:w-52">
+                <Select
+                  value={filtroSetor}
+                  onValueChange={(v) => setFiltroSetor(v as SetorChamado | "todos")}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Setor" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todos">Todos os setores</SelectItem>
+                    {SETORES_CHAMADO.map((s) => (
+                      <SelectItem key={s} value={s}>
+                        {SETOR_CHAMADO_LABELS[s]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="w-full sm:w-44">
+                <Select
+                  value={filtroPrioridade}
+                  onValueChange={(v) => setFiltroPrioridade(v as PrioridadeChamado | "todos")}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Prioridade" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todos">Todas prioridades</SelectItem>
+                    <SelectItem value="urgente">Urgente</SelectItem>
+                    <SelectItem value="alta">Alta</SelectItem>
+                    <SelectItem value="normal">Normal</SelectItem>
+                    <SelectItem value="baixa">Baixa</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="w-full sm:w-44">
+                <Select
+                  value={filtroStatus}
+                  onValueChange={(v) => setFiltroStatus(v as StatusChamado | "todos")}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Filtrar status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todos">Todos os status</SelectItem>
+                    <SelectItem value="aberto">Aberto</SelectItem>
+                    <SelectItem value="em_andamento">Em andamento</SelectItem>
+                    <SelectItem value="resolvido">Resolvido</SelectItem>
+                    <SelectItem value="fechado">Fechado</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           </CardHeader>
           <CardContent>
@@ -153,6 +221,9 @@ export default function ChamadosPage() {
                     <TableHead>Grupo</TableHead>
                     <TableHead>Cliente</TableHead>
                     <TableHead>Assunto</TableHead>
+                    <TableHead>Setor</TableHead>
+                    <TableHead>Prioridade</TableHead>
+                    <TableHead>Prazo</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Aberto em</TableHead>
                     <TableHead>Fechado em</TableHead>
@@ -168,6 +239,26 @@ export default function ChamadosPage() {
                       </TableCell>
                       <TableCell>{item.cliente_nome}</TableCell>
                       <TableCell className="max-w-[200px] truncate">{item.assunto}</TableCell>
+                      <TableCell className="text-sm text-gray-600 max-w-[160px] truncate">
+                        {SETOR_CHAMADO_LABELS[item.setor_responsavel || "implantacao"]}
+                      </TableCell>
+                      <TableCell>{badgePrioridade(item.prioridade)}</TableCell>
+                      <TableCell className="text-sm">
+                        {item.prazo ? (
+                          <span
+                            className={
+                              prazoChamadoVencido(item.prazo, item.status)
+                                ? "text-red-600 font-medium"
+                                : "text-gray-600"
+                            }
+                          >
+                            {formatarPrazoChamado(item.prazo)}
+                            {prazoChamadoVencido(item.prazo, item.status) ? " (vencido)" : ""}
+                          </span>
+                        ) : (
+                          <span className="text-gray-400">—</span>
+                        )}
+                      </TableCell>
                       <TableCell>{badgeStatus(item.status)}</TableCell>
                       <TableCell className="text-sm text-gray-600">
                         {formatarData(item.aberto_em)}

@@ -17,6 +17,69 @@ export type BeneficiarioChamadoBusca = {
 
 export type StatusChamado = "aberto" | "em_andamento" | "resolvido" | "fechado"
 
+export type PrioridadeChamado = "baixa" | "normal" | "alta" | "urgente"
+
+export type SetorChamado = "implantacao" | "cadastro_boletos"
+
+export const PRIORIDADES_CHAMADO: PrioridadeChamado[] = ["baixa", "normal", "alta", "urgente"]
+
+export const SETORES_CHAMADO: SetorChamado[] = ["implantacao", "cadastro_boletos"]
+
+export const PRIORIDADE_CHAMADO_LABELS: Record<PrioridadeChamado, string> = {
+  baixa: "Baixa",
+  normal: "Normal",
+  alta: "Alta",
+  urgente: "Urgente",
+}
+
+export const SETOR_CHAMADO_LABELS: Record<SetorChamado, string> = {
+  implantacao: "Setor de Implantação",
+  cadastro_boletos: "Setor de Cadastro e Boletos",
+}
+
+export function prioridadeChamadoValida(valor: string): valor is PrioridadeChamado {
+  return PRIORIDADES_CHAMADO.includes(valor as PrioridadeChamado)
+}
+
+export function setorChamadoValido(valor: string): valor is SetorChamado {
+  return SETORES_CHAMADO.includes(valor as SetorChamado)
+}
+
+export function prazoChamadoVencido(prazo: string | null | undefined, status?: StatusChamado): boolean {
+  if (!prazo || status === "resolvido" || status === "fechado") return false
+  return new Date(prazo).getTime() < Date.now()
+}
+
+export function formatarPrazoChamado(prazo: string | null | undefined): string {
+  if (!prazo) return "—"
+  try {
+    return new Date(prazo).toLocaleDateString("pt-BR", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    })
+  } catch {
+    return prazo
+  }
+}
+
+export function prazoChamadoParaInput(prazo: string | null | undefined): string {
+  if (!prazo) return ""
+  try {
+    return new Date(prazo).toISOString().slice(0, 10)
+  } catch {
+    return ""
+  }
+}
+
+export function prazoChamadoDeInput(valor: string): string | null {
+  const data = String(valor || "").trim()
+  if (!data) return null
+  const d = new Date(`${data}T23:59:59.999`)
+  if (Number.isNaN(d.getTime())) return null
+  return d.toISOString()
+}
+
 export type AssuntoChamadoCodigo =
   | "implantacao_pendente"
   | "uso_do_plano"
@@ -104,7 +167,7 @@ export function assuntoChamadoValido(codigo: string): codigo is AssuntoChamadoCo
 export interface ChamadoHistorico {
   id: string
   chamado_id: string
-  tipo: "abertura" | "status" | "observacao" | "fechamento"
+  tipo: "abertura" | "status" | "observacao" | "fechamento" | "prioridade" | "prazo" | "setor"
   status_anterior: string | null
   status_novo: string | null
   descricao: string | null
@@ -131,6 +194,9 @@ export interface ChamadoAdministradora {
   assunto_codigo: string | null
   queixa: string
   status: StatusChamado
+  prioridade: PrioridadeChamado
+  prazo: string | null
+  setor_responsavel: SetorChamado
   aberto_por_usuario_id: string | null
   aberto_por_nome: string | null
   fechado_por_usuario_id: string | null
@@ -157,12 +223,18 @@ export interface CriarChamadoData {
   assunto_codigo: AssuntoChamadoCodigo
   assunto: string
   queixa: string
+  prioridade?: PrioridadeChamado
+  prazo?: string | null
+  setor_responsavel: SetorChamado
   aberto_por_usuario_id?: string | null
   aberto_por_nome?: string | null
 }
 
 export interface AtualizarChamadoData {
   status?: StatusChamado
+  prioridade?: PrioridadeChamado
+  prazo?: string | null
+  setor_responsavel?: SetorChamado
   resolucao?: string
   observacao?: string
   usuario_id?: string | null
@@ -224,19 +296,32 @@ export class ChamadosAdministradoraService {
 
   static async listar(
     administradoraId: string,
-    filtros?: { status?: StatusChamado | "todos" }
+    filtros?: {
+      status?: StatusChamado | "todos"
+      prioridade?: PrioridadeChamado | "todos"
+      setor?: SetorChamado | "todos"
+    }
   ): Promise<ChamadoAdministradora[]> {
     const tenantId = await this.resolverTenantId(administradoraId)
     let query = supabaseAdmin
       .from("chamados_administradora")
       .select("*")
       .eq("administradora_id", administradoraId)
+      .order("prazo", { ascending: true, nullsFirst: false })
       .order("aberto_em", { ascending: false })
 
     query = this.aplicarFiltroTenant(query, tenantId)
 
     if (filtros?.status && filtros.status !== "todos") {
       query = query.eq("status", filtros.status)
+    }
+
+    if (filtros?.prioridade && filtros.prioridade !== "todos") {
+      query = query.eq("prioridade", filtros.prioridade)
+    }
+
+    if (filtros?.setor && filtros.setor !== "todos") {
+      query = query.eq("setor_responsavel", filtros.setor)
     }
 
     const { data, error } = await query
@@ -328,21 +413,32 @@ export class ChamadosAdministradoraService {
       assunto: payload.assunto.trim(),
       queixa: payload.queixa.trim(),
       status: "aberto",
+      prioridade: payload.prioridade || "normal",
+      prazo: payload.prazo ?? null,
+      setor_responsavel: payload.setor_responsavel,
       aberto_por_usuario_id: abertoPorUsuarioId,
       aberto_por_nome: payload.aberto_por_nome?.trim() || null,
       aberto_em: agora,
     }
 
+    let insertPayload: Record<string, unknown> = {
+      ...insertBase,
+      assunto_codigo: payload.assunto_codigo,
+    }
+
     let { data, error } = await supabaseAdmin
       .from("chamados_administradora")
-      .insert({ ...insertBase, assunto_codigo: payload.assunto_codigo })
+      .insert(insertPayload)
       .select()
       .single()
 
-    if (error && erroColunaInexistente(error, "assunto_codigo")) {
+    for (const coluna of ["assunto_codigo", "prioridade", "prazo", "setor_responsavel"]) {
+      if (!error) break
+      if (!erroColunaInexistente(error, coluna)) break
+      delete insertPayload[coluna]
       ;({ data, error } = await supabaseAdmin
         .from("chamados_administradora")
-        .insert(insertBase)
+        .insert(insertPayload)
         .select()
         .single())
     }
@@ -378,9 +474,27 @@ export class ChamadosAdministradoraService {
     const update: Record<string, unknown> = {}
     const statusNovo = payload.status
     const fechando = statusNovo === "fechado" || statusNovo === "resolvido"
+    const prioridadeNova = payload.prioridade
+    const prazoNovo = payload.prazo !== undefined ? payload.prazo : undefined
+    const setorNovo = payload.setor_responsavel
 
     if (statusNovo) {
       update.status = statusNovo
+    }
+
+    if (prioridadeNova && prioridadeNova !== (existente.prioridade || "normal")) {
+      update.prioridade = prioridadeNova
+    }
+
+    if (prazoNovo !== undefined) {
+      const prazoAtual = existente.prazo ?? null
+      if (prazoNovo !== prazoAtual) {
+        update.prazo = prazoNovo
+      }
+    }
+
+    if (setorNovo && setorNovo !== (existente.setor_responsavel || "implantacao")) {
+      update.setor_responsavel = setorNovo
     }
 
     if (fechando) {
@@ -422,6 +536,41 @@ export class ChamadosAdministradoraService {
           status_anterior: existente.status,
           status_novo: statusNovo,
           descricao: fechando ? payload.resolucao?.trim() : payload.observacao?.trim() || null,
+          usuario_id: payload.usuario_id ?? null,
+          usuario_nome: payload.usuario_nome ?? null,
+          administradora_id: administradoraId,
+        })
+      }
+
+      if (prioridadeNova && prioridadeNova !== (existente.prioridade || "normal")) {
+        await this.registrarHistorico({
+          chamado_id: id,
+          tipo: "prioridade",
+          descricao: `Prioridade alterada de ${PRIORIDADE_CHAMADO_LABELS[existente.prioridade || "normal"]} para ${PRIORIDADE_CHAMADO_LABELS[prioridadeNova]}`,
+          usuario_id: payload.usuario_id ?? null,
+          usuario_nome: payload.usuario_nome ?? null,
+          administradora_id: administradoraId,
+        })
+      }
+
+      if (prazoNovo !== undefined && prazoNovo !== (existente.prazo ?? null)) {
+        await this.registrarHistorico({
+          chamado_id: id,
+          tipo: "prazo",
+          descricao: prazoNovo
+            ? `Prazo definido para ${formatarPrazoChamado(prazoNovo)}`
+            : "Prazo removido",
+          usuario_id: payload.usuario_id ?? null,
+          usuario_nome: payload.usuario_nome ?? null,
+          administradora_id: administradoraId,
+        })
+      }
+
+      if (setorNovo && setorNovo !== (existente.setor_responsavel || "implantacao")) {
+        await this.registrarHistorico({
+          chamado_id: id,
+          tipo: "setor",
+          descricao: `Setor alterado de ${SETOR_CHAMADO_LABELS[existente.setor_responsavel || "implantacao"]} para ${SETOR_CHAMADO_LABELS[setorNovo]}`,
           usuario_id: payload.usuario_id ?? null,
           usuario_nome: payload.usuario_nome ?? null,
           administradora_id: administradoraId,

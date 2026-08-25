@@ -6,9 +6,10 @@ import {
   getAdministradoraLogada,
   getUsuarioAdministradoraLogado,
 } from "@/services/auth-administradoras-service"
-import { ASSUNTOS_CHAMADO } from "@/services/chamados-administradora-service"
+import { ASSUNTOS_CHAMADO, PRIORIDADES_CHAMADO, PRIORIDADE_CHAMADO_LABELS, SETORES_CHAMADO, SETOR_CHAMADO_LABELS } from "@/services/chamados-administradora-service"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
@@ -29,6 +30,9 @@ export default function NovoChamadoPage() {
   const [saving, setSaving] = useState(false)
   const [beneficiario, setBeneficiario] = useState<BeneficiarioSelecionadoChamado | null>(null)
   const [assuntoCodigo, setAssuntoCodigo] = useState("")
+  const [prioridade, setPrioridade] = useState("normal")
+  const [setorResponsavel, setSetorResponsavel] = useState("implantacao")
+  const [prazo, setPrazo] = useState("")
   const [queixa, setQueixa] = useState("")
 
   const administradora = getAdministradoraLogada()
@@ -49,6 +53,10 @@ export default function NovoChamadoPage() {
     }
     if (!assuntoCodigo) {
       toast.error("Selecione o assunto do chamado")
+      return
+    }
+    if (!setorResponsavel) {
+      toast.error("Selecione o setor responsável")
       return
     }
     if (!queixa.trim()) {
@@ -73,6 +81,9 @@ export default function NovoChamadoPage() {
           cliente_telefone: beneficiario.telefone || undefined,
           cliente_email: beneficiario.email || undefined,
           assunto_codigo: assuntoCodigo,
+          prioridade,
+          setor_responsavel: setorResponsavel,
+          prazo: prazo || undefined,
           queixa: queixa.trim(),
           aberto_por_usuario_id: usuario?.id ?? null,
           aberto_por_nome: usuario?.nome || administradora?.nome || administradora?.email,
@@ -151,6 +162,56 @@ export default function NovoChamadoPage() {
                 {assuntoSelecionado && (
                   <p className="text-xs text-gray-500 mt-1.5">{assuntoSelecionado.descricao}</p>
                 )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Setor responsável <span className="text-red-500">*</span>
+                </label>
+                <Select value={setorResponsavel} onValueChange={setSetorResponsavel}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione o setor" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SETORES_CHAMADO.map((s) => (
+                      <SelectItem key={s} value={s}>
+                        {SETOR_CHAMADO_LABELS[s]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Prioridade
+                  </label>
+                  <Select value={prioridade} onValueChange={setPrioridade}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {PRIORIDADES_CHAMADO.map((p) => (
+                        <SelectItem key={p} value={p}>
+                          {PRIORIDADE_CHAMADO_LABELS[p]}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Prazo
+                  </label>
+                  <Input
+                    type="date"
+                    value={prazo}
+                    onChange={(e) => setPrazo(e.target.value)}
+                    className="border-gray-300"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Opcional — data limite para resolução</p>
+                </div>
               </div>
 
               <div>
