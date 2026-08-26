@@ -3,7 +3,12 @@ import type { WhatsAppOutboundJobPayload } from "./event-types"
 import { montarIdempotencyKey } from "./idempotency"
 import { whatsappBillingLog } from "./logger"
 import { telefoneParaTwilioWhatsApp } from "./content-variables"
-import { enviarWhatsAppTemplateTwilio, extrairCodigoErroTwilio, isTwilioValidationError } from "./twilio-client"
+import {
+  enviarWhatsAppTemplateTwilio,
+  extrairCodigoErroTwilio,
+  isTwilioRetryableError,
+  isTwilioValidationError,
+} from "./twilio-client"
 
 const STATUS_SUCESSO = new Set(["queued", "sent", "delivered", "read"])
 
@@ -17,7 +22,7 @@ export async function processarJobOutboundWhatsApp(payload: WhatsAppOutboundJobP
 
   const { data: existente } = await supabaseAdmin
     .from("whatsapp_messages")
-    .select("id, status, message_sid")
+    .select("id, status, message_sid, attempt_count")
     .eq("idempotency_key", idempotencyKey)
     .maybeSingle()
 
@@ -71,7 +76,7 @@ export async function processarJobOutboundWhatsApp(payload: WhatsAppOutboundJobP
     content_sid: template.content_sid,
     content_variables: contentVariables,
     status: "pending",
-    attempt_count: (existente ? 1 : 0) + 1,
+    attempt_count: (Number(existente?.attempt_count) || 0) + 1,
   }
 
   let messageId = existente?.id as string | undefined
@@ -87,7 +92,13 @@ export async function processarJobOutboundWhatsApp(payload: WhatsAppOutboundJobP
   } else {
     await supabaseAdmin
       .from("whatsapp_messages")
-      .update({ attempt_count: registroBase.attempt_count, status: "pending" })
+      .update({
+        attempt_count: registroBase.attempt_count,
+        status: "pending",
+        error_code: null,
+        error_message: null,
+        failed_at: null,
+      })
       .eq("id", messageId)
   }
 
@@ -112,7 +123,8 @@ export async function processarJobOutboundWhatsApp(payload: WhatsAppOutboundJobP
 
     return { skipped: false, messageSid: result.messageSid }
   } catch (err: unknown) {
-    const permanente = isTwilioValidationError(err)
+    const retryable = isTwilioRetryableError(err)
+    const permanente = !retryable && isTwilioValidationError(err)
     const errorCode = extrairCodigoErroTwilio(err)
     await supabaseAdmin
       .from("whatsapp_messages")

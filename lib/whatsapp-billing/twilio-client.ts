@@ -1,5 +1,6 @@
 import Twilio from "twilio"
 import { TWILIO_REQUEST_TIMEOUT_MS } from "./event-types"
+import { TWILIO_RETRYABLE_ERROR_CODES } from "./rate-limit-policy"
 import { whatsappBillingLog } from "./logger"
 
 export type TwilioConfig = {
@@ -42,7 +43,22 @@ export function getTwilioClient() {
   return client
 }
 
+export function isTwilioRetryableError(err: unknown): boolean {
+  if (!err || typeof err !== "object") {
+    const msg = err instanceof Error ? err.message : String(err || "")
+    return msg.includes("Timeout Twilio")
+  }
+  const code = extrairCodigoErroTwilio(err)
+  if (code && TWILIO_RETRYABLE_ERROR_CODES.has(code)) return true
+  const status = Number((err as { status?: number }).status)
+  if (status === 429 || status >= 500) return true
+  const msg = err instanceof Error ? err.message : String(err)
+  if (msg.includes("Timeout Twilio")) return true
+  return false
+}
+
 export function isTwilioValidationError(err: unknown): boolean {
+  if (isTwilioRetryableError(err)) return false
   if (!err || typeof err !== "object") return false
   const code = Number((err as { code?: number }).code)
   if (Number.isFinite(code) && code >= 20000 && code < 70000) return true

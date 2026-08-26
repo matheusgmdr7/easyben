@@ -5,6 +5,10 @@ import {
   type WhatsAppInboundJobPayload,
   type WhatsAppOutboundJobPayload,
 } from "./event-types"
+import {
+  WHATSAPP_OUTBOUND_BACKOFF_MS,
+  WHATSAPP_OUTBOUND_JOB_ATTEMPTS,
+} from "./rate-limit-policy"
 import { getRedisConnection } from "./redis"
 
 function queueConnection() {
@@ -48,13 +52,16 @@ export function sanitizarJobIdBullMQ(id: string): string {
 export async function enfileirarNotificacaoOutbound(
   payload: WhatsAppOutboundJobPayload,
   jobId?: string,
-  options?: { delayMs?: number }
+  options?: { delayMs?: number; attempts?: number; backoffMs?: number }
 ) {
   const queue = getOutboundQueue()
   return queue.add("send", payload, {
     jobId: jobId ? sanitizarJobIdBullMQ(jobId) : undefined,
-    attempts: 3,
-    backoff: { type: "exponential", delay: 5000 },
+    attempts: options?.attempts ?? WHATSAPP_OUTBOUND_JOB_ATTEMPTS,
+    backoff: {
+      type: "exponential",
+      delay: options?.backoffMs ?? WHATSAPP_OUTBOUND_BACKOFF_MS,
+    },
     ...(options?.delayMs && options.delayMs > 0 ? { delay: options.delayMs } : {}),
   })
 }

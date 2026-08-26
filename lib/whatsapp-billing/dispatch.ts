@@ -14,6 +14,7 @@ import {
   referenceDateHoje,
 } from "./idempotency"
 import { PRIMEIRO_BOLETO_MENSAGEM_DELAY_MS } from "./event-types"
+import { calcularDelayEscalonadoSaudacao } from "./rate-limit-policy"
 import { carregarContextoSaudacaoWhatsApp } from "./saudacao-context"
 import { enfileirarNotificacaoOutbound } from "./queues"
 import { whatsappBillingLog } from "./logger"
@@ -198,6 +199,7 @@ export async function dispararSaudacaoBoasVindas(params: {
     clienteAdministradoraId: params.clienteAdministradoraId,
     telefone: ctx.telefone,
     faturaId: params.faturaId ?? null,
+    delayMs: calcularDelayEscalonadoSaudacao(params.clienteAdministradoraId),
     dados: {
       clienteNome: ctx.clienteNome,
       administradoraNome,

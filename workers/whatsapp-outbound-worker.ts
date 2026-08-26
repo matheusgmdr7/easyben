@@ -14,8 +14,10 @@ import {
 } from "../lib/whatsapp-billing"
 import { identificarPapelSupabaseKey, resolverSupabaseUrl } from "../lib/supabase-admin"
 
-const RATE_LIMIT_MAX = 15
-const RATE_LIMIT_DURATION_MS = 1000
+import {
+  WHATSAPP_WORKER_CONCURRENCY,
+  WHATSAPP_WORKER_MAX_PER_SECOND,
+} from "../lib/whatsapp-billing/rate-limit-policy"
 
 const worker = new Worker<WhatsAppOutboundJobPayload>(
   WHATSAPP_QUEUE_OUTBOUND,
@@ -27,11 +29,11 @@ const worker = new Worker<WhatsAppOutboundJobPayload>(
   },
   {
     connection: getRedisConnection(),
-    concurrency: 5,
+    concurrency: WHATSAPP_WORKER_CONCURRENCY,
     drainDelay: 2000,
     limiter: {
-      max: RATE_LIMIT_MAX,
-      duration: RATE_LIMIT_DURATION_MS,
+      max: WHATSAPP_WORKER_MAX_PER_SECOND,
+      duration: 1000,
     },
   }
 )
@@ -50,7 +52,7 @@ worker.on("error", (err) => {
 
 whatsappBillingLog.info("worker.outbound.ready", {
   queue: WHATSAPP_QUEUE_OUTBOUND,
-  rateLimit: `${RATE_LIMIT_MAX}/s`,
+  rateLimit: `${WHATSAPP_WORKER_MAX_PER_SECOND}/s`,
   supabaseProject: resolverSupabaseUrl()?.match(/https:\/\/([^.]+)/)?.[1] ?? "nao_configurado",
   supabaseKeyRole: identificarPapelSupabaseKey(process.env.SUPABASE_SERVICE_ROLE_KEY) ?? "desconhecido",
 })

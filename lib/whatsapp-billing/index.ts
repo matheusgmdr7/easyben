@@ -27,6 +27,7 @@ export {
   enviarWhatsAppTemplateTwilio,
   validarAssinaturaTwilio,
   isTwilioValidationError,
+  isTwilioRetryableError,
   type TwilioConfig,
 } from "./twilio-client"
 export { getRedisConnection, fecharRedisConnection } from "./redis"
@@ -56,6 +57,8 @@ export {
   dispararConfirmacaoPagamentoSafe,
 } from "./trigger-hooks"
 export { executarCronLembretesWhatsApp } from "./reminders-cron"
+export { executarCronRecuperacaoWhatsApp } from "./recovery-cron"
+export { reenfileirarMensagensWhatsAppFalhas } from "./requeue-failed"
 export { REGRAS_LEMBRETE_COBRANCA, horarioEnvioPermitido, vencimentoAlvoParaEvento, inferirEventoCobrancaPorVencimento } from "./reminder-rules"
 export {
   parseTwilioFormBody,
