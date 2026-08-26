@@ -150,7 +150,7 @@ export function WhatsAppMensagensHistorico({ administradoraId }: Props) {
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50/90">
                   <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">
-                    Data
+                    Data/hora
                   </th>
                   <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">
                     Cliente
@@ -179,8 +179,8 @@ export function WhatsAppMensagensHistorico({ administradoraId }: Props) {
                 ) : (
                   messages.map((m, idx) => (
                     <tr key={m.id} className={idx % 2 === 0 ? "bg-white" : "bg-slate-50/50"}>
-                      <td className="px-4 py-2.5 text-slate-700 tabular-nums whitespace-nowrap">
-                        {formatarData(String(m.created_at).slice(0, 10))}
+                      <td className="px-4 py-2.5 text-slate-700 tabular-nums whitespace-nowrap text-xs">
+                        {formatarDataHora(m.sent_at || m.created_at)}
                       </td>
                       <td className="px-4 py-2.5 text-slate-800 font-medium">
                         {m.cliente_nome || "—"}

@@ -66,6 +66,8 @@ type MensagemRow = {
   status: string
   reference_date: string
   created_at: string
+  sent_at: string | null
+  failed_at: string | null
   error_message: string | null
   error_code: string | null
   titulo_erro: string | null
@@ -409,7 +411,7 @@ export function WhatsAppRelatorioEnvios({ administradoraId }: Props) {
                   mensagens.map((m, idx) => (
                     <tr key={m.id} className={idx % 2 === 0 ? "bg-white" : "bg-slate-50/50"}>
                       <td className="px-4 py-2.5 text-slate-600 text-xs whitespace-nowrap tabular-nums">
-                        {formatarDataHora(m.created_at)}
+                        {formatarDataHora(m.sent_at || m.failed_at || m.created_at)}
                       </td>
                       <td className="px-4 py-2.5 text-slate-800 font-medium">{m.cliente_nome || "—"}</td>
                       <td className="px-4 py-2.5 text-slate-600 text-xs">{m.event_label}</td>
