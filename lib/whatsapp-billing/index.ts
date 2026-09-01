@@ -57,6 +57,8 @@ export {
   dispararConfirmacaoPagamentoSafe,
 } from "./trigger-hooks"
 export { executarCronLembretesWhatsApp } from "./reminders-cron"
+export { executarCronCatchupLembretesVencimento } from "./reminders-catchup-cron"
+export { criarLembreteDispatchCache, type LembreteDispatchCache } from "./dispatch"
 export { executarCronRecuperacaoWhatsApp } from "./recovery-cron"
 export { reenfileirarMensagensWhatsAppFalhas } from "./requeue-failed"
 export { REGRAS_LEMBRETE_COBRANCA, horarioEnvioPermitido, vencimentoAlvoParaEvento, inferirEventoCobrancaPorVencimento } from "./reminder-rules"

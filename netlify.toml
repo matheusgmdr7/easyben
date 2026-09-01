@@ -24,3 +24,8 @@
 [functions."whatsapp-billing-reminders-tarde"]
   schedule = "0 18 * * *"
   timeout = 26
+
+# Catch-up D0/D-1 — a cada 15 min, 08h–12h45 BRT
+[functions."whatsapp-billing-reminders-catchup"]
+  schedule = "*/15 11-15 * * *"
+  timeout = 26

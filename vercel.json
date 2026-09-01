@@ -12,6 +12,10 @@
     {
       "path": "/api/cron/whatsapp-billing-recovery",
       "schedule": "0 */2 * * *"
+    },
+    {
+      "path": "/api/cron/whatsapp-billing-reminders-catchup",
+      "schedule": "*/15 11-15 * * *"
     }
   ],
   "functions": {

@@ -14,7 +14,7 @@ import {
   referenceDateHoje,
 } from "./idempotency"
 import { PRIMEIRO_BOLETO_MENSAGEM_DELAY_MS } from "./event-types"
-import { calcularDelayEscalonadoSaudacao } from "./rate-limit-policy"
+import { calcularDelayEscalonadoSaudacao, prioridadeFilaWhatsApp } from "./rate-limit-policy"
 import { carregarContextoSaudacaoWhatsApp } from "./saudacao-context"
 import { enfileirarNotificacaoOutbound } from "./queues"
 import { whatsappBillingLog } from "./logger"
@@ -26,6 +26,22 @@ type BillingSettings = {
   eventos_ativos: Record<string, boolean>
   telefone_suporte_whatsapp: string | null
   url_portal_cliente: string | null
+}
+
+export type LembreteDispatchCache = {
+  administradoraNome: Map<string, string>
+  tenantId: Map<string, string>
+  settings: Map<string, BillingSettings | null>
+  variaveisMap: Map<string, Record<string, string> | null>
+}
+
+export function criarLembreteDispatchCache(): LembreteDispatchCache {
+  return {
+    administradoraNome: new Map(),
+    tenantId: new Map(),
+    settings: new Map(),
+    variaveisMap: new Map(),
+  }
 }
 
 export type DispararNotificacaoParams = {
@@ -57,7 +73,19 @@ function eventoAtivo(settings: BillingSettings | null, eventType: WhatsAppBillin
   return eventos[eventType] !== false
 }
 
-async function carregarVariaveisMap(eventType: WhatsAppBillingEventType) {
+async function carregarVariaveisMap(
+  eventType: WhatsAppBillingEventType,
+  ctx?: LembreteDispatchCache
+) {
+  if (ctx?.variaveisMap.has(eventType)) {
+    return ctx.variaveisMap.get(eventType) ?? null
+  }
+  const map = await carregarVariaveisMapSemCache(eventType)
+  ctx?.variaveisMap.set(eventType, map)
+  return map
+}
+
+async function carregarVariaveisMapSemCache(eventType: WhatsAppBillingEventType) {
   const { data } = await supabaseAdmin
     .from("billing_templates")
     .select("variaveis_map")
@@ -76,6 +104,7 @@ export async function dispararNotificacaoWhatsApp(
     idempotencySuffix?: string
     /** Na janela da tarde: só reenvia se a manhã falhou ou não registrou envio. */
     somenteRetentativa?: boolean
+    ctx?: LembreteDispatchCache
   }
 ): Promise<{ enqueued: boolean; reason?: string; jobId?: string }> {
   const telefoneDigits = normalizarTelefoneWhatsApp(params.telefone)
@@ -83,12 +112,19 @@ export async function dispararNotificacaoWhatsApp(
     return { enqueued: false, reason: "telefone_invalido" }
   }
 
-  const settings = await carregarSettings(params.administradoraId)
+  let settings: BillingSettings | null
+  if (options?.ctx?.settings.has(params.administradoraId)) {
+    settings = options.ctx.settings.get(params.administradoraId) ?? null
+  } else {
+    settings = await carregarSettings(params.administradoraId)
+    options?.ctx?.settings.set(params.administradoraId, settings)
+  }
+
   if (!options?.ignorarAutomatico && !eventoAtivo(settings, params.eventType)) {
     return { enqueued: false, reason: "evento_desativado" }
   }
 
-  const variaveisMap = await carregarVariaveisMap(params.eventType)
+  const variaveisMap = await carregarVariaveisMap(params.eventType, options?.ctx)
   if (!variaveisMap || Object.keys(variaveisMap).length === 0) {
     return { enqueued: false, reason: "template_indisponivel" }
   }
@@ -137,7 +173,10 @@ export async function dispararNotificacaoWhatsApp(
         variaveis,
       },
       jobId,
-      { delayMs: params.delayMs }
+      {
+        delayMs: params.delayMs,
+        priority: prioridadeFilaWhatsApp(params.eventType),
+      }
     )
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err)
@@ -165,6 +204,18 @@ export function dispararNotificacaoWhatsAppSafe(params: DispararNotificacaoParam
       message: err instanceof Error ? err.message : String(err),
     })
   })
+}
+
+async function carregarNomeAdministradoraCached(
+  administradoraId: string,
+  ctx?: LembreteDispatchCache
+): Promise<string> {
+  if (ctx?.administradoraNome.has(administradoraId)) {
+    return ctx.administradoraNome.get(administradoraId)!
+  }
+  const nome = await carregarNomeAdministradora(administradoraId)
+  ctx?.administradoraNome.set(administradoraId, nome)
+  return nome
 }
 
 async function carregarNomeAdministradora(administradoraId: string): Promise<string> {
@@ -349,12 +400,21 @@ export async function dispararLembreteFatura(
     ignorarAutomatico?: boolean
     delayMs?: number
     somenteRetentativa?: boolean
+    ctx?: LembreteDispatchCache
   }
 ): Promise<{ enqueued: boolean; reason?: string }> {
-  const administradoraNome = await carregarNomeAdministradora(fatura.administradora_id)
+  const administradoraNome = await carregarNomeAdministradoraCached(
+    fatura.administradora_id,
+    options?.ctx
+  )
   const linkBoleto = getBoletoLinkFromFatura(fatura)
 
-  const tenantId = await resolveTenantIdForAdministradora(fatura.administradora_id)
+  let tenantId = options?.ctx?.tenantId.get(fatura.administradora_id)
+  if (!tenantId) {
+    tenantId = await resolveTenantIdForAdministradora(fatura.administradora_id)
+    options?.ctx?.tenantId.set(fatura.administradora_id, tenantId)
+  }
+
   const telefone =
     (await carregarTelefoneAtualClienteCobranca({
       administradoraId: fatura.administradora_id,
@@ -383,6 +443,7 @@ export async function dispararLembreteFatura(
     {
       ...(options?.ignorarAutomatico ? { ignorarAutomatico: true } : {}),
       ...(options?.somenteRetentativa ? { somenteRetentativa: true } : {}),
+      ctx: options?.ctx,
     }
   )
 }
