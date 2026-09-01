@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { buscarBeneficiariosAtivosParaChamado } from "@/lib/chamados-busca-beneficiarios"
+import { buscarBeneficiariosParaChamado } from "@/lib/chamados-busca-beneficiarios"
 
 export async function GET(request: NextRequest) {
   try {
@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    const lista = await buscarBeneficiariosAtivosParaChamado({
+    const lista = await buscarBeneficiariosParaChamado({
       administradoraId,
       q,
     })

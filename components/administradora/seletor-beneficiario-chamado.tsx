@@ -16,6 +16,10 @@ type Props = {
   onChange: (beneficiario: BeneficiarioSelecionadoChamado | null) => void
 }
 
+function labelSituacao(situacao: BeneficiarioChamadoBusca["situacao"]) {
+  return situacao === "cancelado" ? "Cancelado" : "Ativo"
+}
+
 function formatarCpf(cpf: string) {
   const d = cpf.replace(/\D/g, "")
   if (d.length !== 11) return cpf
@@ -48,7 +52,7 @@ export function SeletorBeneficiarioChamado({ administradoraId, value, onChange }
       const lista = Array.isArray(data) ? data : []
       setResultados(lista)
       if (lista.length === 0) {
-        toast.info("Nenhum beneficiário ativo encontrado")
+        toast.info("Nenhum beneficiário encontrado")
       }
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Erro ao buscar beneficiários")
@@ -86,6 +90,7 @@ export function SeletorBeneficiarioChamado({ administradoraId, value, onChange }
                 <p className="text-sm text-gray-600">
                   {value.cpf ? formatarCpf(value.cpf) : "CPF não informado"}
                   {value.tipo ? ` · ${value.tipo}` : ""}
+                  {` · ${labelSituacao(value.situacao)}`}
                 </p>
                 <p className="text-sm text-gray-500">Grupo: {value.grupo_nome}</p>
                 {(value.telefone || value.email) && (
@@ -120,7 +125,7 @@ export function SeletorBeneficiarioChamado({ administradoraId, value, onChange }
           <Input
             value={busca}
             onChange={(e) => setBusca(e.target.value)}
-            placeholder="Nome ou CPF do beneficiário ativo"
+            placeholder="Nome ou CPF do beneficiário"
             className="border-gray-300"
             onKeyDown={(e) => {
               if (e.key === "Enter") {
@@ -142,7 +147,7 @@ export function SeletorBeneficiarioChamado({ administradoraId, value, onChange }
       </div>
 
       <p className="text-xs text-gray-500">
-        Busca em todos os grupos. Somente beneficiários ativos.
+        Busca em todos os grupos. Inclui beneficiários ativos e cancelados.
       </p>
 
       {buscando && <p className="text-sm text-gray-500">Buscando...</p>}
@@ -164,6 +169,7 @@ export function SeletorBeneficiarioChamado({ administradoraId, value, onChange }
                 <p className="text-sm text-gray-600">
                   {item.cpf ? formatarCpf(item.cpf) : "Sem CPF"}
                   {item.tipo ? ` · ${item.tipo}` : ""}
+                  {` · ${labelSituacao(item.situacao)}`}
                 </p>
                 <p className="text-xs text-gray-500">{item.grupo_nome}</p>
               </button>

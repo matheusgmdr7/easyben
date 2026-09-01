@@ -13,6 +13,8 @@ export type BeneficiarioChamadoBusca = {
   email: string | null
   telefone: string | null
   tipo: string | null
+  /** Situação cadastral exibida na busca (ativo ou cancelado). */
+  situacao: "ativo" | "cancelado"
 }
 
 export type StatusChamado = "aberto" | "em_andamento" | "resolvido" | "fechado"

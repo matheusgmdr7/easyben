@@ -49,7 +49,7 @@ export default function NovoChamadoPage() {
       return
     }
     if (!beneficiario) {
-      toast.error("Selecione um beneficiário ativo")
+      toast.error("Selecione um beneficiário")
       return
     }
     if (!assuntoCodigo) {

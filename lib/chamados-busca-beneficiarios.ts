@@ -2,7 +2,7 @@ import { supabaseAdmin } from "@/lib/supabase-admin"
 import { resolveTenantIdForAdministradora } from "@/lib/resolve-tenant-administradora"
 import type { BeneficiarioChamadoBusca } from "@/services/chamados-administradora-service"
 
-const STATUS_PROPOSTA_ATIVA = ["aprovada", "assinada", "finalizada"] as const
+const STATUS_CLIENTE_CHAMADO = ["ativo", "cancelado"] as const
 const LIMITE_PADRAO = 40
 
 const SELECTS_VIDAS_IMPORTADAS = [
@@ -90,7 +90,7 @@ async function listarGruposAdministradora(
   return data || []
 }
 
-async function buscarVidasImportadasAtivas(params: {
+async function buscarVidasImportadas(params: {
   administradoraId: string
   gruposIds: string[]
   grupoId?: string
@@ -107,7 +107,6 @@ async function buscarVidasImportadasAtivas(params: {
       .from("vidas_importadas")
       .select(cols)
       .eq("administradora_id", administradoraId)
-      .neq("ativo", false)
 
     if (grupoId) query = query.eq("grupo_id", grupoId)
     else query = query.in("grupo_id", gruposIds)
@@ -125,6 +124,14 @@ async function buscarVidasImportadasAtivas(params: {
 
   if (ultimoErro) throw ultimoErro
   return []
+}
+
+function situacaoVidaImportada(v: Registro): "ativo" | "cancelado" {
+  return v.ativo === false ? "cancelado" : "ativo"
+}
+
+function situacaoClienteAdministradora(ca: Registro): "ativo" | "cancelado" {
+  return String(ca.status || "ativo") === "cancelado" ? "cancelado" : "ativo"
 }
 
 async function listarVinculosGrupos(
@@ -157,7 +164,7 @@ async function listarVinculosGrupos(
   }>
 }
 
-export async function buscarBeneficiariosAtivosParaChamado(params: {
+export async function buscarBeneficiariosParaChamado(params: {
   administradoraId: string
   grupoId?: string
   q?: string
@@ -193,7 +200,7 @@ export async function buscarBeneficiariosAtivosParaChamado(params: {
     }
   }
 
-  const vidas = await buscarVidasImportadasAtivas({
+  const vidas = await buscarVidasImportadas({
     administradoraId,
     gruposIds,
     grupoId,
@@ -219,6 +226,7 @@ export async function buscarBeneficiariosAtivosParaChamado(params: {
       email: contato.email,
       telefone: contato.telefone,
       tipo: v.tipo ? String(v.tipo) : null,
+      situacao: situacaoVidaImportada(v as Registro),
     })
   }
 
@@ -240,11 +248,10 @@ export async function buscarBeneficiariosAtivosParaChamado(params: {
       "clientes_administradoras",
       "id",
       idsCa,
-      (qb) => qb.eq("administradora_id", administradoraId).eq("status", "ativo")
+      (qb) =>
+        qb.eq("administradora_id", administradoraId).in("status", [...STATUS_CLIENTE_CHAMADO])
     )
-    const propostasDiretas = await buscarPorIdsEmLotes<Registro>("propostas", "id", idsProposta, (qb) =>
-      qb.in("status", [...STATUS_PROPOSTA_ATIVA])
-    )
+    const propostasDiretas = await buscarPorIdsEmLotes<Registro>("propostas", "id", idsProposta)
 
     const propostaIdsExtras = clientesAdm
       .map((c) => (c.proposta_id ? String(c.proposta_id) : ""))
@@ -254,14 +261,20 @@ export async function buscarBeneficiariosAtivosParaChamado(params: {
     for (const p of [...propostasDiretas, ...propostasCa]) {
       propostasMap.set(String(p.id), p)
     }
-    const clientesAdmMap = new Map(clientesAdm.map((c) => [String(c.id), c]))
 
     const casPorProposta = await buscarPorIdsEmLotes<Registro>(
       "clientes_administradoras",
       "proposta_id",
       [...new Set([...idsProposta, ...propostaIdsExtras])],
-      (qb) => qb.eq("administradora_id", administradoraId).eq("status", "ativo")
+      (qb) =>
+        qb.eq("administradora_id", administradoraId).in("status", [...STATUS_CLIENTE_CHAMADO])
     )
+
+    const clientesAdmMap = new Map<string, Registro>()
+    for (const ca of [...clientesAdm, ...casPorProposta]) {
+      clientesAdmMap.set(String(ca.id), ca)
+    }
+
     const caIdPorPropostaId = new Map<string, string>()
     for (const ca of [...clientesAdm, ...casPorProposta]) {
       if (ca.proposta_id) caIdPorPropostaId.set(String(ca.proposta_id), String(ca.id))
@@ -298,6 +311,7 @@ export async function buscarBeneficiariosAtivosParaChamado(params: {
           email: p.email ? String(p.email).trim() : null,
           telefone: p.telefone ? String(p.telefone).trim() : null,
           tipo: "titular",
+          situacao: situacaoClienteAdministradora(clientesAdmMap.get(caId) || {}),
         })
         continue
       }
@@ -326,6 +340,7 @@ export async function buscarBeneficiariosAtivosParaChamado(params: {
         email: p?.email ? String(p.email).trim() : null,
         telefone: p?.telefone ? String(p.telefone).trim() : null,
         tipo: "titular",
+        situacao: situacaoClienteAdministradora(ca),
       })
     }
   }
