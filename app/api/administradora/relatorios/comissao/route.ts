@@ -29,6 +29,9 @@ const OR_FILTRO_PAGA_NO_BANCO =
 
 const TODAS_CORRETORAS = "todas"
 
+/** PostgREST/Supabase limitam ~1000 linhas por request; paginar para trazer o mês inteiro. */
+const PAGE_SIZE_FATURAS = 1000
+
 function primeiroDiaMes(ano: number, mes: number): string {
   return `${ano}-${String(mes).padStart(2, "0")}-01`
 }
@@ -119,27 +122,35 @@ export async function GET(request: NextRequest) {
     const inicio = primeiroDiaMes(ano, mes)
     const fim = ultimoDiaMes(ano, mes)
 
-    const { data: faturasPagas, error: errFaturas } = await supabaseAdmin
-      .from("faturas")
-      .select(
-        "id, cliente_administradora_id, cliente_nome, valor, status, vencimento, numero_fatura, pagamento_data, gateway_nome, financeira_id"
-      )
-      .eq("administradora_id", administradoraId)
-      .gte("vencimento", inicio)
-      .lte("vencimento", fim)
-      .or(OR_FILTRO_PAGA_NO_BANCO)
-      .order("vencimento", { ascending: true })
-      .limit(8000)
+    const faturas: FaturaRow[] = []
+    let from = 0
+    while (true) {
+      const { data: chunk, error: errFaturas } = await supabaseAdmin
+        .from("faturas")
+        .select(
+          "id, cliente_administradora_id, cliente_nome, valor, status, vencimento, numero_fatura, pagamento_data, gateway_nome, financeira_id"
+        )
+        .eq("administradora_id", administradoraId)
+        .gte("vencimento", inicio)
+        .lte("vencimento", fim)
+        .or(OR_FILTRO_PAGA_NO_BANCO)
+        .order("vencimento", { ascending: true })
+        .order("id", { ascending: true })
+        .range(from, from + PAGE_SIZE_FATURAS - 1)
 
-    if (errFaturas) {
-      console.error("relatório comissão — faturas:", errFaturas)
-      return NextResponse.json(
-        { error: errFaturas.message || "Erro ao buscar faturas" },
-        { status: 500 }
-      )
+      if (errFaturas) {
+        console.error("relatório comissão — faturas:", errFaturas)
+        return NextResponse.json(
+          { error: errFaturas.message || "Erro ao buscar faturas" },
+          { status: 500 }
+        )
+      }
+
+      const lista = (chunk || []) as FaturaRow[]
+      faturas.push(...lista)
+      if (lista.length < PAGE_SIZE_FATURAS) break
+      from += PAGE_SIZE_FATURAS
     }
-
-    const faturas = (faturasPagas || []) as FaturaRow[]
     const clienteIds = Array.from(
       new Set(
         faturas
