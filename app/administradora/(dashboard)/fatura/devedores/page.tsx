@@ -42,6 +42,16 @@ const MESES = [
 
 const ITENS_POR_PAGINA = 15
 
+function slugArquivo(nome: string) {
+  return nome
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .toLowerCase()
+    .slice(0, 48)
+}
+
 export default function DevedoresPage() {
   const [linhas, setLinhas] = useState<LinhaRelatorio[]>([])
   const [paginaAtual, setPaginaAtual] = useState(1)
@@ -329,7 +339,7 @@ export default function DevedoresPage() {
       doc.setTextColor(100, 116, 139)
       doc.text(`${linhas.length} fatura(s) na exportação`, margem + 72, y)
 
-      doc.save(`relatorio-faturas-${anoRef}-${mesRef}.pdf`)
+      doc.save(nomeArquivoExportacao("pdf"))
       toast.success("PDF exportado com sucesso")
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Erro ao exportar PDF")
@@ -359,7 +369,7 @@ export default function DevedoresPage() {
       const ws = XLSX.utils.json_to_sheet(rows)
       const wb = XLSX.utils.book_new()
       XLSX.utils.book_append_sheet(wb, ws, "RelatorioFaturas")
-      XLSX.writeFile(wb, `relatorio-faturas-${anoRef}-${mesRef}.xlsx`)
+      XLSX.writeFile(wb, nomeArquivoExportacao("xlsx"))
       toast.success("Excel exportado com sucesso")
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Erro ao exportar Excel")
@@ -369,6 +379,19 @@ export default function DevedoresPage() {
   }
 
   const totalValor = linhas.reduce((sum, item) => sum + Number(item.valor_fatura || 0), 0)
+
+  const corretorSelecionado = useMemo(
+    () => (corretorId !== "todos" ? corretores.find((c) => c.id === corretorId) : null),
+    [corretorId, corretores]
+  )
+
+  function nomeArquivoExportacao(ext: "pdf" | "xlsx") {
+    const base = `relatorio-faturas-${anoRef}-${mesRef}`
+    if (corretorSelecionado?.nome) {
+      return `${base}-${slugArquivo(corretorSelecionado.nome)}.${ext}`
+    }
+    return `${base}.${ext}`
+  }
 
   const totalBeneficiariosDistintos = useMemo(() => {
     const chaves = new Set<string>()
