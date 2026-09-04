@@ -42,14 +42,14 @@ const MESES = [
 
 const ITENS_POR_PAGINA = 15
 
-function slugArquivo(nome: string) {
+function sanitizarNomeArquivo(nome: string) {
   return nome
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-zA-Z0-9]+/g, "-")
-    .replace(/^-|-$/g, "")
-    .toLowerCase()
-    .slice(0, 48)
+    .replace(/[\\/:*?"<>|]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 80)
 }
 
 export default function DevedoresPage() {
@@ -386,11 +386,10 @@ export default function DevedoresPage() {
   )
 
   function nomeArquivoExportacao(ext: "pdf" | "xlsx") {
-    const base = `relatorio-faturas-${anoRef}-${mesRef}`
     if (corretorSelecionado?.nome) {
-      return `${base}-${slugArquivo(corretorSelecionado.nome)}.${ext}`
+      return `Devedores-${sanitizarNomeArquivo(corretorSelecionado.nome)}.${ext}`
     }
-    return `${base}.${ext}`
+    return `Devedores.${ext}`
   }
 
   const totalBeneficiariosDistintos = useMemo(() => {
