@@ -1,6 +1,7 @@
 "use client"
 
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import { getAdministradoraLogada } from "@/services/auth-administradoras-service"
 import { GruposBeneficiariosService, type GrupoBeneficiarios } from "@/services/grupos-beneficiarios-service"
 import { toast } from "sonner"
@@ -9,7 +10,7 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { Search, X, Edit, ChevronDown } from "lucide-react"
+import { Search, X, ExternalLink, ChevronDown } from "lucide-react"
 import { formatarMoeda } from "@/utils/formatters"
 import { format } from "date-fns"
 import { ptBR } from "date-fns/locale"
@@ -19,6 +20,9 @@ type Corretor = { id: string; nome: string }
 
 interface FaturaCompleta {
   id: string
+  cliente_administradora_id?: string
+  grupo_id?: string | null
+  vida_id?: string | null
   titular?: string
   beneficiario?: string
   corretor?: string
@@ -35,6 +39,7 @@ interface FaturaCompleta {
 }
 
 export default function FaturaPage() {
+  const router = useRouter()
   const [faturas, setFaturas] = useState<FaturaCompleta[]>([])
   const [loading, setLoading] = useState(false)
   const [administradoraId, setAdministradoraId] = useState<string | null>(null)
@@ -203,6 +208,33 @@ export default function FaturaPage() {
     } catch {
       return data
     }
+  }
+
+  function abrirFinanceiroCliente(fatura: FaturaCompleta) {
+    const clienteId = String(fatura.cliente_administradora_id || "").trim()
+    const grupoId = String(fatura.grupo_id || "").trim()
+    const vidaId = String(fatura.vida_id || "").trim()
+
+    if (!clienteId) {
+      toast.error("Cliente não identificado para esta fatura.")
+      return
+    }
+
+    if (grupoId && vidaId) {
+      router.push(
+        `/administradora/grupos-beneficiarios/${grupoId}/beneficiario/vida-${vidaId}?aba=financeiro`
+      )
+      return
+    }
+
+    if (grupoId) {
+      router.push(
+        `/administradora/grupos-beneficiarios/${grupoId}?aba=financeiro&cliente=${encodeURIComponent(clienteId)}`
+      )
+      return
+    }
+
+    toast.error("Grupo do beneficiário não encontrado para abrir o financeiro.")
   }
 
   function getStatusBadge(status: string) {
@@ -519,7 +551,7 @@ export default function FaturaPage() {
                   <th className="px-4 py-2 text-left text-xs font-semibold text-gray-700 border-r border-gray-300">Variação</th>
                   <th className="px-4 py-2 text-left text-xs font-semibold text-gray-700 border-r border-gray-300">Liquidação</th>
                   <th className="px-4 py-2 text-left text-xs font-semibold text-gray-700 border-r border-gray-300">Dias Atraso</th>
-                  <th className="px-4 py-2 text-center text-xs font-semibold text-gray-700">Editar</th>
+                  <th className="px-4 py-2 text-center text-xs font-semibold text-gray-700">Ver</th>
                 </tr>
               </thead>
               <tbody>
@@ -575,9 +607,10 @@ export default function FaturaPage() {
                           variant="outline"
                           size="sm"
                           className="h-8 w-8 p-0 border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-800 hover:border-slate-300 rounded-md"
-                          title="Editar"
+                          title="Ver faturas do cliente (aba Financeiro)"
+                          onClick={() => abrirFinanceiroCliente(fatura)}
                         >
-                          <Edit className="h-4 w-4" />
+                          <ExternalLink className="h-4 w-4" />
                         </Button>
                       </td>
                     </tr>

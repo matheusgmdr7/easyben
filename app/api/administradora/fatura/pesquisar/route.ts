@@ -469,6 +469,37 @@ export async function GET(request: NextRequest) {
     )
 
     const mapaCorretor = await montarMapaCorretorPorCliente(clienteIds, administradoraId, tenantId)
+
+    const mapaGrupoVida = new Map<string, { grupo_id: string; vida_id: string }>()
+    if (clienteIds.length > 0) {
+      const CHUNK = 100
+      const prioridadePorCliente = new Map<string, number>()
+      for (let i = 0; i < clienteIds.length; i += CHUNK) {
+        const chunk = clienteIds.slice(i, i + CHUNK)
+        let qV = supabaseAdmin
+          .from("vidas_importadas")
+          .select("id, cliente_administradora_id, grupo_id, tipo, ativo")
+          .eq("administradora_id", administradoraId)
+          .in("cliente_administradora_id", chunk)
+        if (tenantId) qV = qV.or(`tenant_id.eq.${tenantId},tenant_id.is.null`)
+        const { data: vidasGrupo } = await qV
+        for (const v of vidasGrupo || []) {
+          const cid = String((v as { cliente_administradora_id?: string }).cliente_administradora_id || "").trim()
+          const grupo_id = String((v as { grupo_id?: string }).grupo_id || "").trim()
+          const vida_id = String((v as { id?: string }).id || "").trim()
+          if (!cid || !grupo_id || !vida_id) continue
+          const tipo = String((v as { tipo?: string }).tipo || "titular").toLowerCase()
+          const ativo = (v as { ativo?: boolean }).ativo !== false
+          const prioridade = (ativo ? 10 : 0) + (tipo !== "dependente" ? 5 : 0)
+          const prev = prioridadePorCliente.get(cid) ?? -1
+          if (prioridade >= prev) {
+            prioridadePorCliente.set(cid, prioridade)
+            mapaGrupoVida.set(cid, { grupo_id, vida_id })
+          }
+        }
+      }
+    }
+
     const corretoresLista = await CorretoresAdministradoraService.listar(administradoraId)
     const nomePorCorretorId = new Map<string, string>()
     for (const c of corretoresLista) nomePorCorretorId.set(c.id, c.nome)
@@ -526,6 +557,7 @@ export async function GET(request: NextRequest) {
         ? "paga"
         : normalizarStatusFatura(String(f.status || ""))
       const vencimento = f.vencimento ? String(f.vencimento).slice(0, 10) : null
+      const grupoVida = cid ? mapaGrupoVida.get(cid) : undefined
       let diasAtraso = 0
       if (vencimento && statusNorm !== "paga") {
         const diff = hojeMs - new Date(`${vencimento}T12:00:00`).getTime()
@@ -540,6 +572,8 @@ export async function GET(request: NextRequest) {
         corretor: corretorNome,
         numero_fatura: f.numero_fatura,
         referencia: referenciaDeVencimento(f.vencimento),
+        grupo_id: grupoVida?.grupo_id ?? null,
+        vida_id: grupoVida?.vida_id ?? null,
         status: statusNorm || "pendente",
         data_vencimento: vencimento,
         valor_total: valor,
