@@ -1,10 +1,8 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { getAdministradoraLogada } from "@/services/auth-administradoras-service"
 import { GruposBeneficiariosService, type GrupoBeneficiarios } from "@/services/grupos-beneficiarios-service"
-import { buscarCorretores } from "@/services/corretores-service"
-import { FaturasService, type Fatura } from "@/services/faturas-service"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -16,16 +14,23 @@ import { formatarMoeda } from "@/utils/formatters"
 import { format } from "date-fns"
 import { ptBR } from "date-fns/locale"
 import { cn } from "@/lib/utils"
-import type { Corretor } from "@/types/corretores"
 
-interface FaturaCompleta extends Fatura {
+type Corretor = { id: string; nome: string }
+
+interface FaturaCompleta {
+  id: string
   titular?: string
   beneficiario?: string
   corretor?: string
+  numero_fatura?: string | null
+  referencia?: string | null
+  status: string
+  data_vencimento?: string | null
+  valor_total: number
   coparticipacao?: number
   valor_liquidado?: number
   variacao?: number
-  data_liquidacao?: string
+  data_liquidacao?: string | null
   dias_atraso?: number
 }
 
@@ -37,9 +42,9 @@ export default function FaturaPage() {
   const [corretores, setCorretores] = useState<Corretor[]>([])
 
   // Filtros
-  const [grupoFiltro, setGrupoFiltro] = useState<string>("")
+  const [grupoFiltro, setGrupoFiltro] = useState<string>("todos")
   const [beneficiarioFiltro, setBeneficiarioFiltro] = useState<string>("")
-  const [corretorFiltro, setCorretorFiltro] = useState<string>("")
+  const [corretorFiltro, setCorretorFiltro] = useState<string>("todos")
   const [referenciaFiltro, setReferenciaFiltro] = useState<string>("")
   const [dataInicioFiltro, setDataInicioFiltro] = useState<string>("")
   const [dataFimFiltro, setDataFimFiltro] = useState<string>("")
@@ -48,7 +53,7 @@ export default function FaturaPage() {
   const [dataVencimentoInicioFiltro, setDataVencimentoInicioFiltro] = useState<string>("")
   const [dataVencimentoFimFiltro, setDataVencimentoFimFiltro] = useState<string>("")
   const [statusFaturaFiltro, setStatusFaturaFiltro] = useState<string[]>([])
-  const [statusBeneficiarioFiltro, setStatusBeneficiarioFiltro] = useState<string>("")
+  const [statusBeneficiarioFiltro, setStatusBeneficiarioFiltro] = useState<string>("todos")
   const [somenteVencidas, setSomenteVencidas] = useState(false)
 
   // Resumo
@@ -67,7 +72,7 @@ export default function FaturaPage() {
     if (administradora?.id) {
       setAdministradoraId(administradora.id)
       carregarGrupos(administradora.id)
-      carregarCorretores()
+      carregarCorretores(administradora.id)
     }
   }, [])
 
@@ -80,144 +85,99 @@ export default function FaturaPage() {
     }
   }
 
-  async function carregarCorretores() {
+  async function carregarCorretores(admId: string) {
     try {
-      const data = await buscarCorretores()
-      setCorretores(data)
+      const res = await fetch(`/api/administradora/corretores?administradora_id=${encodeURIComponent(admId)}`)
+      if (res.ok) {
+        const data = await res.json()
+        setCorretores(Array.isArray(data) ? data : [])
+      }
     } catch (error) {
       console.error("Erro ao carregar corretores:", error)
     }
   }
 
-  async function pesquisarFaturas() {
+  function temAlgumFiltroPreenchido() {
+    if (grupoFiltro && grupoFiltro !== "todos") return true
+    if (beneficiarioFiltro.trim()) return true
+    if (corretorFiltro && corretorFiltro !== "todos") return true
+    if (referenciaFiltro.trim()) return true
+    if (dataInicioFiltro || dataFimFiltro) return true
+    if (dataLiquidacaoInicioFiltro || dataLiquidacaoFimFiltro) return true
+    if (dataVencimentoInicioFiltro || dataVencimentoFimFiltro) return true
+    if (statusFaturaFiltro.length > 0) return true
+    if (statusBeneficiarioFiltro && statusBeneficiarioFiltro !== "todos") return true
+    if (somenteVencidas) return true
+    return false
+  }
+
+  async function pesquisarFaturas(pagina = 1, limitOverride?: number) {
     if (!administradoraId) return
+
+    if (!temAlgumFiltroPreenchido()) {
+      toast.error("Preencha ao menos um filtro para pesquisar.")
+      return
+    }
 
     try {
       setLoading(true)
+      const url = new URL("/api/administradora/fatura/pesquisar", window.location.origin)
+      url.searchParams.set("administradora_id", administradoraId)
+      url.searchParams.set("page", String(pagina))
+      url.searchParams.set("limit", String(limitOverride ?? itemsPerPage))
 
-      const resultado = await FaturasService.buscarPorAdministradora(
-        administradoraId,
-        {
-          data_inicio: dataInicioFiltro || undefined,
-          data_fim: dataFimFiltro || undefined,
-          page: 1,
-          limit: 1000,
-        }
-      )
-
-      if (!resultado) {
-        throw new Error("Erro ao buscar faturas: resultado vazio")
-      }
-
-      let faturasFiltradas = resultado.faturas || []
-
-      // Filtrar por status da fatura (múltiplos)
-      if (statusFaturaFiltro.length > 0) {
-        faturasFiltradas = faturasFiltradas.filter((f) => 
-          statusFaturaFiltro.includes(f.status?.toLowerCase() || "")
-        )
-      }
-
-      if (referenciaFiltro) {
-        faturasFiltradas = faturasFiltradas.filter((f) => 
-          f.referencia?.toLowerCase().includes(referenciaFiltro.toLowerCase())
-        )
-      }
-
-      if (beneficiarioFiltro) {
-        faturasFiltradas = faturasFiltradas.filter((f) => 
-          f.cliente_nome?.toLowerCase().includes(beneficiarioFiltro.toLowerCase())
-        )
-      }
-
-      // Filtrar por status do beneficiário
+      if (grupoFiltro && grupoFiltro !== "todos") url.searchParams.set("grupo_id", grupoFiltro)
+      if (beneficiarioFiltro.trim()) url.searchParams.set("beneficiario", beneficiarioFiltro.trim())
+      if (corretorFiltro && corretorFiltro !== "todos") url.searchParams.set("corretor_id", corretorFiltro)
+      if (referenciaFiltro.trim()) url.searchParams.set("referencia", referenciaFiltro.trim())
+      if (dataInicioFiltro) url.searchParams.set("data_inicio", dataInicioFiltro)
+      if (dataFimFiltro) url.searchParams.set("data_fim", dataFimFiltro)
+      if (dataLiquidacaoInicioFiltro) url.searchParams.set("pagamento_inicio", dataLiquidacaoInicioFiltro)
+      if (dataLiquidacaoFimFiltro) url.searchParams.set("pagamento_fim", dataLiquidacaoFimFiltro)
+      if (dataVencimentoInicioFiltro) url.searchParams.set("vencimento_inicio", dataVencimentoInicioFiltro)
+      if (dataVencimentoFimFiltro) url.searchParams.set("vencimento_fim", dataVencimentoFimFiltro)
+      if (statusFaturaFiltro.length > 0) url.searchParams.set("status_fatura", statusFaturaFiltro.join(","))
       if (statusBeneficiarioFiltro && statusBeneficiarioFiltro !== "todos") {
-        // TODO: Implementar filtro por status do beneficiário quando houver relação
+        url.searchParams.set("status_beneficiario", statusBeneficiarioFiltro)
+      }
+      if (somenteVencidas) url.searchParams.set("somente_vencidas", "1")
+
+      const res = await fetch(url.toString(), { cache: "no-store" })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        throw new Error(data?.error || "Erro ao buscar faturas")
       }
 
-      if (somenteVencidas) {
-        const hoje = new Date()
-        hoje.setHours(0, 0, 0, 0)
-        faturasFiltradas = faturasFiltradas.filter((f) => {
-          if (!f.data_vencimento) return false
-          const vencimento = new Date(f.data_vencimento)
-          vencimento.setHours(0, 0, 0, 0)
-          return vencimento < hoje && f.status !== "paga"
-        })
+      const lista = Array.isArray(data?.linhas) ? (data.linhas as FaturaCompleta[]) : []
+      setFaturas(lista)
+      setTotalFaturas(Number(data?.total_registros ?? lista.length))
+      setValorTotal(Number(data?.total_valor ?? 0))
+      setValorCoparticipacao(0)
+      setValorLiquidado(Number(data?.total_liquidado ?? 0))
+      setCurrentPage(Number(data?.page ?? pagina))
+      setTotalPages(Math.max(0, Number(data?.total_pages ?? 0)))
+
+      if (Number(data?.total_registros ?? 0) === 0) {
+        toast.info("Nenhuma fatura encontrada com os filtros informados.")
       }
-
-      if (dataLiquidacaoInicioFiltro) {
-        faturasFiltradas = faturasFiltradas.filter((f) => {
-          if (!f.data_pagamento) return false
-          return new Date(f.data_pagamento) >= new Date(dataLiquidacaoInicioFiltro)
-        })
-      }
-      if (dataLiquidacaoFimFiltro) {
-        faturasFiltradas = faturasFiltradas.filter((f) => {
-          if (!f.data_pagamento) return false
-          return new Date(f.data_pagamento) <= new Date(dataLiquidacaoFimFiltro)
-        })
-      }
-
-      if (dataVencimentoInicioFiltro) {
-        faturasFiltradas = faturasFiltradas.filter((f) => {
-          if (!f.data_vencimento) return false
-          return new Date(f.data_vencimento) >= new Date(dataVencimentoInicioFiltro)
-        })
-      }
-      if (dataVencimentoFimFiltro) {
-        faturasFiltradas = faturasFiltradas.filter((f) => {
-          if (!f.data_vencimento) return false
-          return new Date(f.data_vencimento) <= new Date(dataVencimentoFimFiltro)
-        })
-      }
-
-      const faturasCompletas = faturasFiltradas.map((fatura) => {
-        let diasAtraso = 0
-        if (fatura.data_vencimento && fatura.status !== "paga") {
-          const hoje = new Date()
-          const vencimento = new Date(fatura.data_vencimento)
-          const diff = hoje.getTime() - vencimento.getTime()
-          diasAtraso = Math.max(0, Math.floor(diff / (1000 * 60 * 60 * 24)))
-        }
-
-        return {
-          ...fatura,
-          titular: fatura.cliente_nome || "-",
-          beneficiario: fatura.cliente_nome || "-",
-          corretor: "-",
-          coparticipacao: 0,
-          valor_liquidado: fatura.valor_pago || 0,
-          variacao: (fatura.valor_pago || 0) - (fatura.valor_total || 0),
-          data_liquidacao: fatura.data_pagamento,
-          dias_atraso: diasAtraso,
-        }
-      })
-
-      const total = faturasCompletas.length
-      const valor = faturasCompletas.reduce((sum, f) => sum + (f.valor_total || 0), 0)
-      const coparticipacao = faturasCompletas.reduce((sum, f) => sum + (f.coparticipacao || 0), 0)
-      const liquidado = faturasCompletas.reduce((sum, f) => sum + (f.valor_liquidado || 0), 0)
-
-      setTotalFaturas(total)
-      setValorTotal(valor)
-      setValorCoparticipacao(coparticipacao)
-      setValorLiquidado(liquidado)
-
-      setFaturas(faturasCompletas)
-      setTotalPages(Math.ceil(faturasCompletas.length / itemsPerPage))
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Erro ao pesquisar faturas:", error)
-      toast.error("Erro ao pesquisar faturas: " + error.message)
+      toast.error(error instanceof Error ? error.message : "Erro ao pesquisar faturas")
+      setFaturas([])
+      setTotalFaturas(0)
+      setValorTotal(0)
+      setValorCoparticipacao(0)
+      setValorLiquidado(0)
+      setTotalPages(0)
     } finally {
       setLoading(false)
     }
   }
 
   function limparFiltros() {
-    setGrupoFiltro("")
+    setGrupoFiltro("todos")
     setBeneficiarioFiltro("")
-    setCorretorFiltro("")
+    setCorretorFiltro("todos")
     setReferenciaFiltro("")
     setDataInicioFiltro("")
     setDataFimFiltro("")
@@ -226,7 +186,7 @@ export default function FaturaPage() {
     setDataVencimentoInicioFiltro("")
     setDataVencimentoFimFiltro("")
     setStatusFaturaFiltro([])
-    setStatusBeneficiarioFiltro("")
+    setStatusBeneficiarioFiltro("todos")
     setSomenteVencidas(false)
     setCurrentPage(1)
     setFaturas([])
@@ -261,16 +221,21 @@ export default function FaturaPage() {
     return <span className={cn(baseClass, statusInfo.className)}>{statusInfo.label}</span>
   }
 
-  const faturasPaginadas = faturas.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
-  )
+  function irParaPagina(pagina: number) {
+    setCurrentPage(pagina)
+    pesquisarFaturas(pagina)
+  }
+
+  const faturasPaginadas = faturas
 
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header Simplificado */}
       <div className="bg-white border-b border-gray-200 px-6 py-4">
         <h1 className="text-xl font-semibold text-gray-800">Pesquisar Faturas</h1>
+        <p className="text-sm text-gray-500 mt-0.5">
+          Informe ao menos um filtro (nome do beneficiário, grupo, corretor, datas, etc.) para localizar faturas.
+        </p>
       </div>
 
       {/* Filtros Simplificados */}
@@ -284,6 +249,7 @@ export default function FaturaPage() {
                   <SelectValue placeholder="Selecione" />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="todos">Todos os grupos</SelectItem>
                   {grupos.map((grupo) => (
                     <SelectItem key={grupo.id} value={grupo.id}>
                       {grupo.nome}
@@ -307,7 +273,10 @@ export default function FaturaPage() {
               <Input
                 value={beneficiarioFiltro}
                 onChange={(e) => setBeneficiarioFiltro(e.target.value)}
-                placeholder="Nome"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") pesquisarFaturas(1)
+                }}
+                placeholder="Nome, CPF ou nº da fatura"
                 className="h-9 text-sm border-gray-300 rounded-sm flex-1"
               />
               <Button
@@ -328,6 +297,7 @@ export default function FaturaPage() {
                   <SelectValue placeholder="Selecione" />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="todos">Todos os corretores</SelectItem>
                   {corretores.map((corretor) => (
                     <SelectItem key={corretor.id} value={corretor.id}>
                       {corretor.nome?.toUpperCase() || "-"}
@@ -491,7 +461,7 @@ export default function FaturaPage() {
         {/* Botões de Ação Simplificados */}
         <div className="flex gap-2 pt-2 border-t border-gray-200">
           <Button
-            onClick={pesquisarFaturas}
+            onClick={() => pesquisarFaturas(1)}
             disabled={loading}
             className="h-9 px-4 text-sm bg-gray-700 hover:bg-gray-800 text-white rounded-sm"
           >
@@ -627,8 +597,8 @@ export default function FaturaPage() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => setCurrentPage(1)}
-                disabled={currentPage === 1}
+                onClick={() => irParaPagina(1)}
+                disabled={currentPage === 1 || loading}
                 className="h-8 px-3 text-xs border-gray-300"
               >
                 Primeira
@@ -636,8 +606,8 @@ export default function FaturaPage() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                disabled={currentPage === 1}
+                onClick={() => irParaPagina(Math.max(1, currentPage - 1))}
+                disabled={currentPage === 1 || loading}
                 className="h-8 px-3 text-xs border-gray-300"
               >
                 Anterior
@@ -648,8 +618,8 @@ export default function FaturaPage() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                disabled={currentPage >= totalPages}
+                onClick={() => irParaPagina(Math.min(totalPages, currentPage + 1))}
+                disabled={currentPage >= totalPages || loading}
                 className="h-8 px-3 text-xs border-gray-300"
               >
                 Próxima
@@ -657,14 +627,22 @@ export default function FaturaPage() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => setCurrentPage(totalPages)}
-                disabled={currentPage >= totalPages}
+                onClick={() => irParaPagina(totalPages)}
+                disabled={currentPage >= totalPages || loading}
                 className="h-8 px-3 text-xs border-gray-300"
               >
                 Última
               </Button>
             </div>
-            <Select value={String(itemsPerPage)} onValueChange={(v) => setItemsPerPage(Number(v))}>
+            <Select
+              value={String(itemsPerPage)}
+              onValueChange={(v) => {
+                const novo = Number(v)
+                setItemsPerPage(novo)
+                setCurrentPage(1)
+                if (temAlgumFiltroPreenchido()) pesquisarFaturas(1, novo)
+              }}
+            >
               <SelectTrigger className="w-24 h-8 text-xs rounded-md border border-gray-300 bg-background px-3 py-2">
                 <SelectValue />
               </SelectTrigger>
