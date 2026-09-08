@@ -19,7 +19,6 @@ type FaturaRow = {
   cliente_administradora_id: string | null
   cliente_nome: string | null
   numero_fatura: string | null
-  referencia: string | null
   valor: number | null
   status: string | null
   vencimento: string | null
@@ -27,8 +26,10 @@ type FaturaRow = {
   pagamento_valor?: number | null
 }
 
-const FATURAS_SELECT =
-  "id, cliente_administradora_id, cliente_nome, numero_fatura, referencia, valor, status, vencimento, pagamento_data, pagamento_valor"
+/** Colunas presentes em produção (sem `referencia`; derivada do vencimento). */
+const FATURAS_SELECT_BASE =
+  "id, cliente_administradora_id, cliente_nome, numero_fatura, valor, status, vencimento, pagamento_data"
+const FATURAS_SELECT_COM_PAGAMENTO_VALOR = `${FATURAS_SELECT_BASE}, pagamento_valor`
 
 const PAGE_SIZE = 1000
 
@@ -192,6 +193,7 @@ async function buscarClienteIdsPorBeneficiario(
 
 async function buscarFaturasPaginado(
   administradoraId: string,
+  selectCols: string,
   aplicar: (q: ReturnType<typeof supabaseAdmin.from>) => ReturnType<typeof supabaseAdmin.from>
 ): Promise<FaturaRow[]> {
   const acumulado: FaturaRow[] = []
@@ -199,7 +201,7 @@ async function buscarFaturasPaginado(
   while (true) {
     let q = supabaseAdmin
       .from("faturas")
-      .select(FATURAS_SELECT)
+      .select(selectCols)
       .eq("administradora_id", administradoraId)
       .order("vencimento", { ascending: false })
       .order("id", { ascending: false })
@@ -255,52 +257,52 @@ async function buscarFaturasFiltradas(
     beneficiario: opcoes.beneficiario,
   }
 
-  if (opcoes.clienteIds && opcoes.clienteIds.length > 0) {
-    const CHUNK = 100
-    const acumulado: FaturaRow[] = []
-    for (let i = 0; i < opcoes.clienteIds.length; i += CHUNK) {
-      const chunk = opcoes.clienteIds.slice(i, i + CHUNK)
-      try {
-        const parte = await buscarFaturasPaginado(administradoraId, (q) =>
-          aplicarFiltrosDb(q.in("cliente_administradora_id", chunk), dbOpts)
-        )
-        acumulado.push(...parte)
-      } catch (e) {
-        const msg = mensagemErro(e)
-        if (/column/i.test(msg)) {
-          const parte = await buscarFaturasPaginado(administradoraId, (q) => {
-            let qq = q.in("cliente_administradora_id", chunk)
-            if (dbOpts.vencimentoInicio) qq = qq.gte("vencimento", dbOpts.vencimentoInicio)
-            if (dbOpts.vencimentoFim) qq = qq.lte("vencimento", dbOpts.vencimentoFim)
-            if (dbOpts.pagamentoInicio) qq = qq.gte("pagamento_data", dbOpts.pagamentoInicio)
-            if (dbOpts.pagamentoFim) qq = qq.lte("pagamento_data", `${dbOpts.pagamentoFim}T23:59:59`)
-            if (dbOpts.beneficiario) qq = qq.ilike("cliente_nome", `%${dbOpts.beneficiario}%`)
-            return qq
-          })
+  async function buscarComSelect(selectCols: string): Promise<FaturaRow[]> {
+    if (opcoes.clienteIds && opcoes.clienteIds.length > 0) {
+      const CHUNK = 100
+      const acumulado: FaturaRow[] = []
+      for (let i = 0; i < opcoes.clienteIds.length; i += CHUNK) {
+        const chunk = opcoes.clienteIds.slice(i, i + CHUNK)
+        try {
+          const parte = await buscarFaturasPaginado(administradoraId, selectCols, (q) =>
+            aplicarFiltrosDb(q.in("cliente_administradora_id", chunk), dbOpts)
+          )
           acumulado.push(...parte)
-        } else {
-          throw e
+        } catch (e) {
+          const msg = mensagemErro(e)
+          if (/column/i.test(msg)) {
+            const parte = await buscarFaturasPaginado(administradoraId, FATURAS_SELECT_BASE, (q) => {
+              let qq = q.in("cliente_administradora_id", chunk)
+              if (dbOpts.vencimentoInicio) qq = qq.gte("vencimento", dbOpts.vencimentoInicio)
+              if (dbOpts.vencimentoFim) qq = qq.lte("vencimento", dbOpts.vencimentoFim)
+              if (dbOpts.pagamentoInicio) qq = qq.gte("pagamento_data", dbOpts.pagamentoInicio)
+              if (dbOpts.pagamentoFim) qq = qq.lte("pagamento_data", `${dbOpts.pagamentoFim}T23:59:59`)
+              if (dbOpts.beneficiario) qq = qq.ilike("cliente_nome", `%${dbOpts.beneficiario}%`)
+              return qq
+            })
+            acumulado.push(...parte)
+          } else {
+            throw e
+          }
         }
       }
+      return acumulado
     }
-    return acumulado
+
+    return buscarFaturasPaginado(administradoraId, selectCols, (q) => aplicarFiltrosDb(q, dbOpts))
   }
 
-  try {
-    return await buscarFaturasPaginado(administradoraId, (q) => aplicarFiltrosDb(q, dbOpts))
-  } catch (e) {
-    const msg = mensagemErro(e)
-    if (!/column/i.test(msg)) throw e
-    return buscarFaturasPaginado(administradoraId, (q) => {
-      let qq = q
-      if (dbOpts.vencimentoInicio) qq = qq.gte("vencimento", dbOpts.vencimentoInicio)
-      if (dbOpts.vencimentoFim) qq = qq.lte("vencimento", dbOpts.vencimentoFim)
-      if (dbOpts.pagamentoInicio) qq = qq.gte("pagamento_data", dbOpts.pagamentoInicio)
-      if (dbOpts.pagamentoFim) qq = qq.lte("pagamento_data", `${dbOpts.pagamentoFim}T23:59:59`)
-      if (dbOpts.beneficiario) qq = qq.ilike("cliente_nome", `%${dbOpts.beneficiario}%`)
-      return qq
-    })
+  const tentativas = [FATURAS_SELECT_COM_PAGAMENTO_VALOR, FATURAS_SELECT_BASE]
+  let ultimoErro = ""
+  for (const cols of tentativas) {
+    try {
+      return await buscarComSelect(cols)
+    } catch (e) {
+      ultimoErro = mensagemErro(e)
+      if (!/column/i.test(ultimoErro)) throw e
+    }
   }
+  throw new Error(ultimoErro || "Erro ao buscar faturas")
 }
 
 /**
@@ -435,9 +437,9 @@ export async function GET(request: NextRequest) {
     }
 
     if (referencia) {
-      const refNorm = referencia.toLowerCase()
+      const refNorm = referencia.toLowerCase().replace(/\s/g, "")
       faturas = faturas.filter((f) => {
-        const ref = String(f.referencia || referenciaDeVencimento(f.vencimento) || "").toLowerCase()
+        const ref = String(referenciaDeVencimento(f.vencimento) || "").toLowerCase().replace(/\s/g, "")
         return ref.includes(refNorm)
       })
     }
@@ -537,7 +539,7 @@ export async function GET(request: NextRequest) {
         beneficiario: f.cliente_nome || "—",
         corretor: corretorNome,
         numero_fatura: f.numero_fatura,
-        referencia: f.referencia || referenciaDeVencimento(f.vencimento),
+        referencia: referenciaDeVencimento(f.vencimento),
         status: statusNorm || "pendente",
         data_vencimento: vencimento,
         valor_total: valor,
