@@ -28,6 +28,7 @@ import {
   UserPlus,
   Users,
   CheckCircle,
+  ArrowRightLeft,
   type LucideIcon,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -353,6 +354,10 @@ export default function DetalhesGrupoPage() {
   const [corretorLoteId, setCorretorLoteId] = useState<string>("")
   const [salvandoCorretorLote, setSalvandoCorretorLote] = useState(false)
   const [modoSelecaoCorretorLote, setModoSelecaoCorretorLote] = useState(false)
+  const [todosGrupos, setTodosGrupos] = useState<GrupoBeneficiarios[]>([])
+  const [modalMudarGrupoOpen, setModalMudarGrupoOpen] = useState(false)
+  const [grupoDestinoId, setGrupoDestinoId] = useState<string>("")
+  const [salvandoMudancaGrupo, setSalvandoMudancaGrupo] = useState(false)
 
   function getTipoItem(item: any): "titular" | "dependente" {
     if (item.cliente_tipo === "vida_importada") {
@@ -469,6 +474,14 @@ export default function DetalhesGrupoPage() {
       .then((r) => r.json())
       .then((d) => setCorretores(Array.isArray(d) ? d.map((c: { id: string; nome: string }) => ({ id: c.id, nome: c.nome })) : []))
       .catch(() => setCorretores([]))
+  }, [grupoId])
+
+  useEffect(() => {
+    const adm = getAdministradoraLogada()
+    if (!adm?.id) return
+    GruposBeneficiariosService.buscarTodos(adm.id)
+      .then((lista) => setTodosGrupos(lista || []))
+      .catch(() => setTodosGrupos([]))
   }, [grupoId])
 
   async function carregarGrupo() {
@@ -816,6 +829,81 @@ export default function DetalhesGrupoPage() {
       }
       return proximo
     })
+  }
+
+  function entrarModoSelecaoLote() {
+    setModoSelecaoCorretorLote(true)
+  }
+
+  function obterItensSelecionadosLote() {
+    return clientes.filter((item) => selecionadosLote.has(chaveSelecaoItem(item)))
+  }
+
+  function abrirModalMudarGrupo() {
+    const itens = obterItensSelecionadosLote()
+    if (itens.length === 0) {
+      toast.error("Selecione ao menos um beneficiário")
+      return
+    }
+    const primeiroDestino = todosGrupos.find((g) => g.id !== grupoId)?.id || ""
+    setGrupoDestinoId(primeiroDestino)
+    setModalMudarGrupoOpen(true)
+  }
+
+  async function confirmarMudancaGrupo() {
+    const adm = getAdministradoraLogada()
+    if (!adm?.id) {
+      toast.error("Administradora não identificada")
+      return
+    }
+    if (!grupoDestinoId || grupoDestinoId === grupoId) {
+      toast.error("Selecione um grupo de destino diferente do atual")
+      return
+    }
+
+    const itensSelecionados = obterItensSelecionadosLote()
+    const vidaIds = itensSelecionados
+      .filter((item) => item.cliente_tipo === "vida_importada")
+      .map((item) => String(item.id))
+    if (vidaIds.length === 0) {
+      toast.error("Nenhum beneficiário importado válido na seleção")
+      return
+    }
+
+    try {
+      setSalvandoMudancaGrupo(true)
+      const res = await fetch(`/api/administradora/grupos/${grupoId}/mover-vidas-lote`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          administradora_id: adm.id,
+          grupo_destino_id: grupoDestinoId,
+          vida_ids: vidaIds,
+        }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(json?.error || "Erro ao mudar de grupo")
+
+      const movidas = Number(json?.movidas ?? vidaIds.length)
+      const deps = Number(json?.dependentes_incluidos ?? 0)
+      const nomeDestino = todosGrupos.find((g) => g.id === grupoDestinoId)?.nome || "novo grupo"
+
+      await carregarClientes()
+      setSelecionadosLote(new Set())
+      setModoSelecaoCorretorLote(false)
+      setModalMudarGrupoOpen(false)
+      setGrupoDestinoId("")
+
+      if (deps > 0) {
+        toast.success(`${movidas} beneficiário(s) movidos para "${nomeDestino}" (inclui ${deps} dependente(s)).`)
+      } else {
+        toast.success(`${movidas} beneficiário(s) movidos para "${nomeDestino}".`)
+      }
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Erro ao mudar de grupo")
+    } finally {
+      setSalvandoMudancaGrupo(false)
+    }
   }
 
   async function vincularCorretorEmLote() {
@@ -1365,6 +1453,8 @@ export default function DetalhesGrupoPage() {
             {modoLista === "ativos" && modoSelecaoCorretorLote && (
               <p className="text-sm text-gray-600 ml-1">
                 Selecionados: <span className="font-semibold text-gray-900">{totalSelecionadosLote}</span>
+                <span className="text-gray-400 mx-1">·</span>
+                <span className="text-gray-500">Marque os beneficiários e use a ação desejada</span>
               </p>
             )}
             {loadingClientes && (
@@ -1384,17 +1474,27 @@ export default function DetalhesGrupoPage() {
             )}
             {modoLista === "ativos" && (
               <>
-                <Button
-                  variant={modoSelecaoCorretorLote ? "default" : "outline"}
-                  size="sm"
-                  className={modoSelecaoCorretorLote ? "bg-[#0F172A] hover:bg-[#1E293B] text-white" : ""}
-                  onClick={alternarModoSelecaoCorretorLote}
-                >
-                  <Users className="h-3.5 w-3.5 mr-1.5" />
-                  {modoSelecaoCorretorLote ? "Cancelar seleção" : "Vincular corretor em lote"}
-                </Button>
-                {modoSelecaoCorretorLote && (
+                {!modoSelecaoCorretorLote ? (
                   <>
+                    <Button variant="outline" size="sm" onClick={entrarModoSelecaoLote}>
+                      <Users className="h-3.5 w-3.5 mr-1.5" />
+                      Vincular corretor em lote
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={entrarModoSelecaoLote}>
+                      <ArrowRightLeft className="h-3.5 w-3.5 mr-1.5" />
+                      Mudar de grupo
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <Button
+                      variant="default"
+                      size="sm"
+                      className="bg-[#0F172A] hover:bg-[#1E293B] text-white"
+                      onClick={alternarModoSelecaoCorretorLote}
+                    >
+                      Cancelar seleção
+                    </Button>
                     <Button variant="outline" size="sm" onClick={selecionarPaginaAtualLote}>
                       Selecionar página
                     </Button>
@@ -1406,11 +1506,20 @@ export default function DetalhesGrupoPage() {
                     </Button>
                     <Button
                       size="sm"
-                      className="bg-[#0F172A] hover:bg-[#1E293B] text-white"
+                      variant="outline"
                       disabled={totalSelecionadosLote === 0}
                       onClick={() => setModalCorretorLoteOpen(true)}
                     >
-                      Confirmar vínculo ({totalSelecionadosLote})
+                      Vincular corretor ({totalSelecionadosLote})
+                    </Button>
+                    <Button
+                      size="sm"
+                      className="bg-[#0F172A] hover:bg-[#1E293B] text-white"
+                      disabled={totalSelecionadosLote === 0}
+                      onClick={abrirModalMudarGrupo}
+                    >
+                      <ArrowRightLeft className="h-3.5 w-3.5 mr-1.5" />
+                      Mudar de grupo ({totalSelecionadosLote})
                     </Button>
                   </>
                 )}
@@ -1811,6 +1920,65 @@ export default function DetalhesGrupoPage() {
                 </>
               ) : (
                 "Vincular"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={modalMudarGrupoOpen} onOpenChange={setModalMudarGrupoOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Mudar beneficiários de grupo</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <p className="text-sm text-gray-600">
+              <span className="font-semibold text-gray-900">{totalSelecionadosLote}</span> beneficiário(s)
+              selecionado(s) sairão de{" "}
+              <span className="font-medium text-gray-800">{grupo?.nome || "grupo atual"}</span>.
+              Dependentes dos titulares selecionados também serão movidos.
+            </p>
+            <div>
+              <Label className="text-xs text-gray-600">Grupo de destino</Label>
+              <Select value={grupoDestinoId} onValueChange={setGrupoDestinoId}>
+                <SelectTrigger className="mt-1 h-10 w-full">
+                  <SelectValue placeholder="Selecione o grupo" />
+                </SelectTrigger>
+                <SelectContent>
+                  {todosGrupos
+                    .filter((g) => g.id !== grupoId)
+                    .map((g) => (
+                      <SelectItem key={g.id} value={g.id}>
+                        {g.nome}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+              Esta ação altera o grupo dos beneficiários selecionados. Confirme apenas se o destino estiver correto.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setModalMudarGrupoOpen(false)}
+              disabled={salvandoMudancaGrupo}
+            >
+              Cancelar
+            </Button>
+            <Button
+              className="bg-[#0F172A] hover:bg-[#1E293B] text-white"
+              onClick={confirmarMudancaGrupo}
+              disabled={salvandoMudancaGrupo || !grupoDestinoId || grupoDestinoId === grupoId}
+            >
+              {salvandoMudancaGrupo ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Movendo...
+                </>
+              ) : (
+                "Confirmar mudança"
               )}
             </Button>
           </DialogFooter>
