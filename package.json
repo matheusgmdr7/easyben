@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "whatsapp:fila-status": "tsx --env-file=.env.local scripts/status-fila-whatsapp.ts",
     "worker:whatsapp": "tsx --env-file=.env.local workers/whatsapp-outbound-worker.ts",
     "worker:whatsapp:inbound": "tsx --env-file=.env.local workers/whatsapp-inbound-worker.ts",
     "worker:whatsapp:prod": "tsx workers/whatsapp-outbound-worker.ts",

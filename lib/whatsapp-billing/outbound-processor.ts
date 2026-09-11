@@ -4,11 +4,17 @@ import { montarIdempotencyKey } from "./idempotency"
 import { whatsappBillingLog } from "./logger"
 import { telefoneParaTwilioWhatsApp } from "./content-variables"
 import {
+  aguardarSlotEnvioAdaptativo,
+  registrarEnvioSucessoAdaptativo,
+  registrarRateLimitMeta,
+} from "./adaptive-rate-limit"
+import {
   enviarWhatsAppTemplateTwilio,
   extrairCodigoErroTwilio,
   isTwilioRetryableError,
   isTwilioValidationError,
 } from "./twilio-client"
+import { TWILIO_RETRYABLE_ERROR_CODES } from "./rate-limit-policy"
 
 const STATUS_SUCESSO = new Set(["queued", "sent", "delivered", "read"])
 
@@ -103,11 +109,15 @@ export async function processarJobOutboundWhatsApp(payload: WhatsAppOutboundJobP
   }
 
   try {
+    await aguardarSlotEnvioAdaptativo()
+
     const result = await enviarWhatsAppTemplateTwilio({
       to,
       contentSid: template.content_sid,
       contentVariables,
     })
+
+    void registrarEnvioSucessoAdaptativo()
 
     await supabaseAdmin
       .from("whatsapp_messages")
@@ -135,6 +145,10 @@ export async function processarJobOutboundWhatsApp(payload: WhatsAppOutboundJobP
         error_message: err instanceof Error ? err.message : String(err),
       })
       .eq("id", messageId)
+
+    if (errorCode && TWILIO_RETRYABLE_ERROR_CODES.has(errorCode)) {
+      void registrarRateLimitMeta()
+    }
 
     if (permanente) {
       whatsappBillingLog.warn("outbound.failed_permanent", { idempotencyKey })

@@ -1,24 +1,21 @@
 import { supabaseAdmin } from "@/lib/supabase-admin"
-import {
-  criarLembreteDispatchCache,
-  dispararLembreteFatura,
-  type FaturaLembreteRow,
-} from "./dispatch"
-import { montarIdempotencyKey, referenceDateHoje } from "./idempotency"
+import { criarLembreteDispatchCache } from "./dispatch"
 import { whatsappBillingLog } from "./logger"
-import {
-  WHATSAPP_CATCHUP_FATURAS_POR_LOTE,
-  WHATSAPP_LEMBRETE_STAGGER_MS,
-} from "./rate-limit-policy"
-import { vencimentoAlvoParaEvento } from "./reminder-rules"
+import { WHATSAPP_CATCHUP_FATURAS_POR_LOTE } from "./rate-limit-policy"
+import { REGRAS_LEMBRETE_COBRANCA, vencimentoAlvoParaEvento } from "./reminder-rules"
+import { referenceDateHoje } from "./idempotency"
+import { processarLembretesPendentes } from "./reminders-pending"
 import type { WhatsAppBillingEventType } from "./event-types"
 
-const FATURA_SELECT =
-  "id, cliente_administradora_id, administradora_id, cliente_nome, cliente_telefone, valor, vencimento, numero_fatura, status, asaas_boleto_url, boleto_url, gateway_id, asaas_charge_id"
-
-const EVENTOS_CATCHUP: WhatsAppBillingEventType[] = ["aviso_d0", "aviso_d1"]
-
-const STATUS_SUCESSO = new Set(["queued", "sent", "delivered", "read"])
+const PRIORIDADE_CATCHUP: Partial<Record<WhatsAppBillingEventType, number>> = {
+  aviso_d0: 0,
+  aviso_d1: 1,
+  lembrete_d5: 2,
+  cobranca_d3: 3,
+  cobranca_d7: 4,
+  cobranca_d15: 5,
+  cobranca_d25: 6,
+}
 
 export type ResultadoCatchupLembretes = {
   data_referencia: string
@@ -31,6 +28,7 @@ export type ResultadoCatchupLembretes = {
     enfileirados: number
     ignorados: number
     pendentes_apos_run: number
+    motivos_ignorados: Record<string, number>
   }>
 }
 
@@ -39,32 +37,16 @@ function eventoAtivo(settings: { eventos_ativos?: Record<string, boolean> } | nu
   return eventos[eventType] !== false
 }
 
-async function faturasComEnvioSucesso(
-  eventType: WhatsAppBillingEventType,
-  referenceDate: string,
-  faturaIds: string[]
-): Promise<Set<string>> {
-  const ok = new Set<string>()
-  if (!faturaIds.length) return ok
-
-  const CHUNK = 200
-  for (let i = 0; i < faturaIds.length; i += CHUNK) {
-    const chunk = faturaIds.slice(i, i + CHUNK)
-    const { data } = await supabaseAdmin
-      .from("whatsapp_messages")
-      .select("fatura_id, status")
-      .eq("event_type", eventType)
-      .eq("reference_date", referenceDate)
-      .in("fatura_id", chunk)
-      .in("status", [...STATUS_SUCESSO])
-
-    for (const row of data || []) {
-      if (row.fatura_id) ok.add(String(row.fatura_id))
-    }
-  }
-  return ok
+function regrasCatchupOrdenadas() {
+  return [...REGRAS_LEMBRETE_COBRANCA].sort(
+    (a, b) => (PRIORIDADE_CATCHUP[a.eventType] ?? 9) - (PRIORIDADE_CATCHUP[b.eventType] ?? 9)
+  )
 }
 
+/**
+ * Catch-up: enfileira lembretes sem envio bem-sucedido no dia (todos os eventos D-5…D+25).
+ * Roda a cada 15 min (08h–18h45 BRT) para cobrir backlog além do cron matinal.
+ */
 export async function executarCronCatchupLembretesVencimento(options?: {
   hoje?: string
   maxPorEvento?: number
@@ -83,111 +65,49 @@ export async function executarCronCatchupLembretesVencimento(options?: {
     .select("administradora_id, whatsapp_automatico_ativo, eventos_ativos")
     .eq("whatsapp_automatico_ativo", true)
 
-  for (const eventType of EVENTOS_CATCHUP) {
-    const dayOffset = eventType === "aviso_d0" ? 0 : 1
-    const vencimentoAlvo = vencimentoAlvoParaEvento(dayOffset, hoje)
-    let enfileirados = 0
-    let ignorados = 0
-    let pendentesAposRun = 0
-    let staggerGlobal = 0
+  for (const regra of regrasCatchupOrdenadas()) {
+    const vencimentoAlvo = vencimentoAlvoParaEvento(regra.dayOffset, hoje)
+    let enfileiradosEvento = 0
+    let ignoradosEvento = 0
+    let pendentesEvento = 0
+    const motivosEvento: Record<string, number> = {}
 
     for (const settings of settingsRows || []) {
-      if (enfileirados >= maxPorEvento) break
+      if (enfileiradosEvento >= maxPorEvento) break
 
       const admId = String(settings.administradora_id)
-      if (!eventoAtivo(settings, eventType)) continue
+      if (!eventoAtivo(settings, regra.eventType)) continue
 
-      const { data: faturas, error } = await supabaseAdmin
-        .from("faturas")
-        .select(FATURA_SELECT)
-        .eq("administradora_id", admId)
-        .eq("vencimento", vencimentoAlvo)
-        .in("status", ["pendente", "atrasada", "vencida"])
-        .order("id", { ascending: true })
-        .limit(600)
+      const restante = maxPorEvento - enfileiradosEvento
+      const resultado = await processarLembretesPendentes({
+        administradoraId: admId,
+        eventType: regra.eventType,
+        vencimentoAlvo,
+        referenceDate: hoje,
+        maxEnfileirar: restante,
+        ctx,
+      })
 
-      if (error) {
-        whatsappBillingLog.error("cron.catchup.query_error", {
-          administradoraId: admId,
-          eventType,
-          message: error.message,
-        })
-        continue
-      }
+      enfileiradosEvento += resultado.enfileirados
+      ignoradosEvento += resultado.ignorados
+      pendentesEvento += resultado.pendentes_restantes
 
-      const lista = (faturas || []) as FaturaLembreteRow[]
-      const ids = lista.map((f) => String(f.id))
-      const jaEnviadas = await faturasComEnvioSucesso(eventType, hoje, ids)
-
-      for (const row of lista) {
-        if (enfileirados >= maxPorEvento) {
-          if (!jaEnviadas.has(String(row.id))) pendentesAposRun++
-          continue
-        }
-
-        if (!row.cliente_administradora_id) {
-          ignorados++
-          continue
-        }
-
-        if (jaEnviadas.has(String(row.id))) {
-          ignorados++
-          continue
-        }
-
-        const idempotencyKey = montarIdempotencyKey({
-          eventType,
-          clienteId: row.cliente_administradora_id,
-          referenceDate: hoje,
-          faturaId: row.id,
-        })
-
-        const { data: existente } = await supabaseAdmin
-          .from("whatsapp_messages")
-          .select("status")
-          .eq("idempotency_key", idempotencyKey)
-          .maybeSingle()
-
-        if (existente && STATUS_SUCESSO.has(String(existente.status))) {
-          ignorados++
-          continue
-        }
-
-        try {
-          const delayMs = staggerGlobal * WHATSAPP_LEMBRETE_STAGGER_MS
-          staggerGlobal++
-
-          const result = await dispararLembreteFatura(row, eventType, {
-            delayMs,
-            ctx,
-          })
-
-          if (result.enqueued) {
-            enfileirados++
-            totalEnfileirados++
-          } else {
-            ignorados++
-            totalIgnorados++
-          }
-        } catch (err: unknown) {
-          ignorados++
-          totalIgnorados++
-          whatsappBillingLog.error("cron.catchup.dispatch_error", {
-            faturaId: row.id,
-            eventType,
-            message: err instanceof Error ? err.message : String(err),
-          })
-        }
+      for (const [k, v] of Object.entries(resultado.motivos_ignorados)) {
+        motivosEvento[k] = (motivosEvento[k] || 0) + v
       }
     }
 
-    totalPendentesEstimado += pendentesAposRun
+    totalEnfileirados += enfileiradosEvento
+    totalIgnorados += ignoradosEvento
+    totalPendentesEstimado += pendentesEvento
+
     porEvento.push({
-      eventType,
+      eventType: regra.eventType,
       vencimento_alvo: vencimentoAlvo,
-      enfileirados,
-      ignorados,
-      pendentes_apos_run: pendentesAposRun,
+      enfileirados: enfileiradosEvento,
+      ignorados: ignoradosEvento,
+      pendentes_apos_run: pendentesEvento,
+      motivos_ignorados: motivosEvento,
     })
   }
 

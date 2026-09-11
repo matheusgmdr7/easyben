@@ -10,12 +10,25 @@ export function montarIdempotencyKey(params: {
   return `${params.eventType}:${params.clienteId}:${params.referenceDate}:${fatura}`
 }
 
+function dataIsoEmTimeZone(timeZone: string, offsetDays = 0): string {
+  const d = new Date(Date.now() + offsetDays * 86_400_000)
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(d)
+  const y = parts.find((p) => p.type === "year")?.value
+  const m = parts.find((p) => p.type === "month")?.value
+  const day = parts.find((p) => p.type === "day")?.value
+  return `${y}-${m}-${day}`
+}
+
+/** Data de referência (YYYY-MM-DD) em America/Sao_Paulo. */
 export function referenceDateHoje(): string {
-  return new Date().toISOString().slice(0, 10)
+  return dataIsoEmTimeZone("America/Sao_Paulo")
 }
 
 export function referenceDateAmanha(): string {
-  const d = new Date()
-  d.setUTCDate(d.getUTCDate() + 1)
-  return d.toISOString().slice(0, 10)
+  return dataIsoEmTimeZone("America/Sao_Paulo", 1)
 }

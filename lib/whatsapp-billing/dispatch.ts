@@ -137,16 +137,18 @@ export async function dispararNotificacaoWhatsApp(
     faturaId: params.faturaId,
   })
 
-  if (options?.somenteRetentativa) {
-    const { data: existente } = await supabaseAdmin
-      .from("whatsapp_messages")
-      .select("status")
-      .eq("idempotency_key", idempotencyKeyBase)
-      .maybeSingle()
+  const { data: existente } = await supabaseAdmin
+    .from("whatsapp_messages")
+    .select("status")
+    .eq("idempotency_key", idempotencyKeyBase)
+    .maybeSingle()
 
-    if (existente && STATUS_SUCESSO_ENVIO.has(String(existente.status))) {
-      return { enqueued: false, reason: "ja_enviado" }
-    }
+  if (existente && STATUS_SUCESSO_ENVIO.has(String(existente.status))) {
+    return { enqueued: false, reason: "ja_enviado" }
+  }
+
+  if (options?.somenteRetentativa && !existente) {
+    return { enqueued: false, reason: "nao_tentado_manha" }
   }
 
   const variaveisInternas = montarVariaveisInternas({

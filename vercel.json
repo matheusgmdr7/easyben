@@ -6,8 +6,12 @@
   "regions": ["gru1"],
   "crons": [
     {
-      "path": "/api/cron/whatsapp-billing-reminders",
+      "path": "/api/cron/whatsapp-billing-reminders?janela=manha",
       "schedule": "0 12 * * *"
+    },
+    {
+      "path": "/api/cron/whatsapp-billing-reminders?janela=tarde",
+      "schedule": "0 18 * * *"
     },
     {
       "path": "/api/cron/whatsapp-billing-recovery",
@@ -15,7 +19,7 @@
     },
     {
       "path": "/api/cron/whatsapp-billing-reminders-catchup",
-      "schedule": "*/15 11-15 * * *"
+      "schedule": "*/15 11-21 * * *"
     }
   ],
   "functions": {

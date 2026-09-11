@@ -16,6 +16,8 @@ import {
 
 export type { ErroFrequenteRelatorio, FalhaRecenteRelatorio } from "./relatorio-erros"
 
+export type ModoDataRelatorio = "created_at" | "reference_date"
+
 export type RelatorioEnviosParams = {
   administradoraId: string
   de: string
@@ -24,6 +26,8 @@ export type RelatorioEnviosParams = {
   status?: string
   page?: number
   limit?: number
+  /** created_at = quando entrou no sistema; reference_date = dia do lembrete/cobrança. */
+  modoData?: ModoDataRelatorio
 }
 
 export type MensagemRelatorioRow = {
@@ -56,10 +60,27 @@ function intervaloIso(de: string, ate: string) {
   }
 }
 
+function aplicarFiltroPeriodo<T extends { gte: (col: string, v: string) => T; lte: (col: string, v: string) => T }>(
+  query: T,
+  modoData: ModoDataRelatorio,
+  inicio: string,
+  fim: string,
+  de: string,
+  ate: string
+): T {
+  if (modoData === "reference_date") {
+    return query.gte("reference_date", de).lte("reference_date", ate)
+  }
+  return query.gte("created_at", inicio).lte("created_at", fim)
+}
+
 async function carregarLinhasPeriodoParaAgregacao(params: {
   administradoraId: string
   inicio: string
   fim: string
+  de: string
+  ate: string
+  modoData: ModoDataRelatorio
   eventType?: string
   status?: string
 }): Promise<LinhaAgregacaoFalha[]> {
@@ -72,10 +93,15 @@ async function carregarLinhasPeriodoParaAgregacao(params: {
       .from("whatsapp_messages")
       .select("event_type, status, error_message, error_code, failed_at, created_at")
       .eq("administradora_id", params.administradoraId)
-      .gte("created_at", params.inicio)
-      .lte("created_at", params.fim)
-      .order("created_at", { ascending: true })
-      .range(offset, offset + pageSize - 1)
+    query = aplicarFiltroPeriodo(
+      query,
+      params.modoData,
+      params.inicio,
+      params.fim,
+      params.de,
+      params.ate
+    )
+    query = query.order("created_at", { ascending: true }).range(offset, offset + pageSize - 1)
 
     if (params.eventType) query = query.eq("event_type", params.eventType)
     if (params.status === STATUS_FALHA_FILTRO) {
@@ -103,6 +129,7 @@ export async function montarRelatorioEnviosWhatsApp(params: RelatorioEnviosParam
   const limit = Math.min(100, Math.max(1, params.limit || 25))
   const offset = (page - 1) * limit
   const { inicio, fim } = intervaloIso(de, ate)
+  const modoData: ModoDataRelatorio = params.modoData || "created_at"
 
   let query = supabaseAdmin
     .from("whatsapp_messages")
@@ -111,9 +138,10 @@ export async function montarRelatorioEnviosWhatsApp(params: RelatorioEnviosParam
       { count: "exact" }
     )
     .eq("administradora_id", params.administradoraId)
-    .gte("created_at", inicio)
-    .lte("created_at", fim)
-    .order("created_at", { ascending: false })
+  query = aplicarFiltroPeriodo(query, modoData, inicio, fim, de, ate)
+  query = query.order(modoData === "reference_date" ? "reference_date" : "created_at", {
+    ascending: false,
+  })
 
   if (params.eventType) query = query.eq("event_type", params.eventType)
   if (params.status === STATUS_FALHA_FILTRO) {
@@ -148,6 +176,9 @@ export async function montarRelatorioEnviosWhatsApp(params: RelatorioEnviosParam
     administradoraId: params.administradoraId,
     inicio,
     fim,
+    de,
+    ate,
+    modoData,
     eventType: params.eventType,
     status: params.status,
   })
@@ -215,8 +246,15 @@ export async function montarRelatorioEnviosWhatsApp(params: RelatorioEnviosParam
       "id, cliente_administradora_id, event_type, telefone, status, created_at, failed_at, error_message, error_code"
     )
     .eq("administradora_id", params.administradoraId)
-    .gte("created_at", inicio)
-    .lte("created_at", fim)
+  falhasRecentesQuery = aplicarFiltroPeriodo(
+    falhasRecentesQuery,
+    modoData,
+    inicio,
+    fim,
+    de,
+    ate
+  )
+  falhasRecentesQuery = falhasRecentesQuery
     .in("status", [...STATUS_FALHA_WHATSAPP])
     .order("failed_at", { ascending: false, nullsFirst: false })
     .limit(12)
@@ -267,6 +305,7 @@ export async function montarRelatorioEnviosWhatsApp(params: RelatorioEnviosParam
 
   return {
     periodo: { de, ate },
+    modo_data: modoData,
     resumo: {
       total: totalPeriodo,
       sucesso: totalSucesso,

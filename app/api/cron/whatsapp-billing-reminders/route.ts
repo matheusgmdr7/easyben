@@ -32,7 +32,14 @@ async function executarJob(request: NextRequest) {
     const ignorarHorario = request.nextUrl.searchParams.get("ignorar_horario") === "1"
     const janelaParam = request.nextUrl.searchParams.get("janela")?.trim()
     const janela = janelaParam === "tarde" ? "tarde" : "manha"
-    const resultado = await executarCronLembretesWhatsApp({ ignorarHorario, janela })
+    const timeBudgetMs =
+      Number(process.env.WHATSAPP_CRON_TIME_BUDGET_MS) ||
+      (janela === "manha" ? 280_000 : 120_000)
+    const resultado = await executarCronLembretesWhatsApp({
+      ignorarHorario,
+      janela,
+      timeBudgetMs,
+    })
     return NextResponse.json(resultado)
   } catch (err: unknown) {
     return NextResponse.json(

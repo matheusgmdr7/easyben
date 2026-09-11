@@ -73,6 +73,35 @@ type MensagemRow = {
   titulo_erro: string | null
 }
 
+type CoberturaResumo = {
+  elegiveis_total: number
+  enviados_ok_total: number
+  falhas_total: number
+  nunca_tentados_total: number
+  cobertura_pct: number
+}
+
+type CoberturaEventoDia = {
+  event_type: string
+  event_label: string
+  reference_date: string
+  vencimento_alvo: string
+  elegiveis: number
+  enviados_ok: number
+  falhas: number
+  pendentes_fila: number
+  nunca_tentados: number
+  cobertura_pct: number
+}
+
+type ErroPorTelefone = {
+  telefone_mascara: string
+  total_falhas: number
+  titulo_erro: string
+  error_code: string | null
+  eventos: string[]
+}
+
 const btnSquare = "rounded-sm"
 
 type Props = {
@@ -108,12 +137,16 @@ function formatarPeriodo(de: string, ate: string) {
 export function WhatsAppRelatorioEnvios({ administradoraId }: Props) {
   const [de, setDe] = useState(inicioMesIso)
   const [ate, setAte] = useState(hojeIso)
+  const [modoData, setModoData] = useState<"created_at" | "reference_date">("reference_date")
   const [eventType, setEventType] = useState("")
   const [status, setStatus] = useState("")
   const [loading, setLoading] = useState(true)
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [resumo, setResumo] = useState<Resumo | null>(null)
+  const [coberturaResumo, setCoberturaResumo] = useState<CoberturaResumo | null>(null)
+  const [coberturaEventos, setCoberturaEventos] = useState<CoberturaEventoDia[]>([])
+  const [errosPorTelefone, setErrosPorTelefone] = useState<ErroPorTelefone[]>([])
   const [falhasResumo, setFalhasResumo] = useState<FalhasResumo | null>(null)
   const [porEvento, setPorEvento] = useState<PorEvento[]>([])
   const [errosFrequentes, setErrosFrequentes] = useState<ErroFrequente[]>([])
@@ -130,13 +163,30 @@ export function WhatsAppRelatorioEnvios({ administradoraId }: Props) {
         ate,
         page: String(page),
         limit: "25",
+        modo_data: modoData,
       })
       if (eventType) qs.set("event_type", eventType)
       if (status) qs.set("status", status)
 
-      const res = await fetch(`/api/administradora/whatsapp/relatorio?${qs}`, { cache: "no-store" })
+      const qsCobertura = new URLSearchParams({
+        administradora_id: administradoraId,
+        de,
+        ate,
+      })
+
+      const [res, resCobertura] = await Promise.all([
+        fetch(`/api/administradora/whatsapp/relatorio?${qs}`, { cache: "no-store" }),
+        fetch(`/api/administradora/whatsapp/cobertura?${qsCobertura}`, { cache: "no-store" }),
+      ])
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || "Erro ao carregar relatório")
+
+      const dataCobertura = await resCobertura.json()
+      if (resCobertura.ok) {
+        setCoberturaResumo(dataCobertura.resumo || null)
+        setCoberturaEventos(dataCobertura.por_evento_dia || [])
+        setErrosPorTelefone(dataCobertura.erros_por_telefone || [])
+      }
 
       setResumo(data.resumo || null)
       setFalhasResumo(data.falhas_resumo || null)
@@ -150,7 +200,7 @@ export function WhatsAppRelatorioEnvios({ administradoraId }: Props) {
     } finally {
       setLoading(false)
     }
-  }, [administradoraId, de, ate, eventType, status, page])
+  }, [administradoraId, de, ate, modoData, eventType, status, page])
 
   useEffect(() => {
     void carregar()
@@ -182,7 +232,8 @@ export function WhatsAppRelatorioEnvios({ administradoraId }: Props) {
           <div>
             <h2 className="text-base font-semibold text-slate-800">Relatório de envios WhatsApp</h2>
             <p className="text-sm text-slate-500 mt-0.5">
-              Período selecionado: {formatarPeriodo(de, ate)}
+              Período: {formatarPeriodo(de, ate)} ·{" "}
+              {modoData === "reference_date" ? "Por dia do lembrete" : "Por data de registro"}
             </p>
           </div>
           <Button
@@ -207,7 +258,23 @@ export function WhatsAppRelatorioEnvios({ administradoraId }: Props) {
         {/* Filtros */}
         <div className="px-5 py-4">
           <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 mb-3">Filtros</p>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-[repeat(4,minmax(0,1fr))_auto] lg:items-end">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-[repeat(5,minmax(0,1fr))_auto] lg:items-end">
+            <div className="space-y-1.5">
+              <Label htmlFor="rel-modo" className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                Agrupar por
+              </Label>
+              <select
+                id="rel-modo"
+                className={cn(btnSquare, "h-10 w-full border border-slate-300 bg-white px-3 text-sm")}
+                value={modoData}
+                onChange={(e) =>
+                  setModoData(e.target.value as "created_at" | "reference_date")
+                }
+              >
+                <option value="reference_date">Dia do lembrete (recomendado)</option>
+                <option value="created_at">Data de registro no sistema</option>
+              </select>
+            </div>
             <div className="space-y-1.5">
               <Label htmlFor="rel-de" className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
                 De
@@ -295,6 +362,131 @@ export function WhatsAppRelatorioEnvios({ administradoraId }: Props) {
         </div>
       ) : (
         <>
+          {coberturaResumo ? (
+            <div className="rounded-sm border border-blue-200 bg-blue-50/40 shadow-sm overflow-hidden">
+              <div className="border-b border-blue-100 px-5 py-3">
+                <h3 className="text-sm font-semibold text-slate-800">Cobertura de lembretes</h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Faturas elegíveis vs mensagens entregues (por dia de referência do lembrete)
+                </p>
+              </div>
+              <div className="grid grid-cols-2 gap-3 p-4 lg:grid-cols-5">
+                {[
+                  { label: "Elegíveis", value: coberturaResumo.elegiveis_total },
+                  { label: "Enviados OK", value: coberturaResumo.enviados_ok_total },
+                  { label: "Nunca tentados", value: coberturaResumo.nunca_tentados_total },
+                  { label: "Falhas", value: coberturaResumo.falhas_total },
+                  {
+                    label: "Cobertura",
+                    value: `${coberturaResumo.cobertura_pct}%`,
+                  },
+                ].map((card) => (
+                  <div key={card.label} className="rounded-sm border border-blue-100 bg-white px-3 py-2">
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                      {card.label}
+                    </p>
+                    <p className="mt-1 text-xl font-semibold tabular-nums text-slate-900">{card.value}</p>
+                  </div>
+                ))}
+              </div>
+              {coberturaEventos.length > 0 ? (
+                <div className="overflow-x-auto border-t border-blue-100">
+                  <table className="min-w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-blue-100 bg-white/80">
+                        <th className="px-4 py-2 text-left text-[11px] font-semibold uppercase text-slate-600">
+                          Ref.
+                        </th>
+                        <th className="px-4 py-2 text-left text-[11px] font-semibold uppercase text-slate-600">
+                          Evento
+                        </th>
+                        <th className="px-4 py-2 text-left text-[11px] font-semibold uppercase text-slate-600">
+                          Vencimento
+                        </th>
+                        <th className="px-4 py-2 text-right text-[11px] font-semibold uppercase text-slate-600">
+                          Elegíveis
+                        </th>
+                        <th className="px-4 py-2 text-right text-[11px] font-semibold uppercase text-slate-600">
+                          OK
+                        </th>
+                        <th className="px-4 py-2 text-right text-[11px] font-semibold uppercase text-slate-600">
+                          Nunca
+                        </th>
+                        <th className="px-4 py-2 text-right text-[11px] font-semibold uppercase text-slate-600">
+                          Falha
+                        </th>
+                        <th className="px-4 py-2 text-right text-[11px] font-semibold uppercase text-slate-600">
+                          %
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-blue-50">
+                      {coberturaEventos.map((row) => (
+                        <tr key={`${row.reference_date}-${row.event_type}`}>
+                          <td className="px-4 py-2 text-xs text-slate-600">
+                            {formatarData(row.reference_date)}
+                          </td>
+                          <td className="px-4 py-2 text-slate-700">{row.event_label}</td>
+                          <td className="px-4 py-2 text-xs text-slate-500">
+                            {formatarData(row.vencimento_alvo)}
+                          </td>
+                          <td className="px-4 py-2 text-right tabular-nums">{row.elegiveis}</td>
+                          <td className="px-4 py-2 text-right tabular-nums text-green-700">
+                            {row.enviados_ok}
+                          </td>
+                          <td className="px-4 py-2 text-right tabular-nums text-amber-700">
+                            {row.nunca_tentados}
+                          </td>
+                          <td className="px-4 py-2 text-right tabular-nums text-red-700">{row.falhas}</td>
+                          <td className="px-4 py-2 text-right tabular-nums font-medium">
+                            {row.cobertura_pct}%
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
+          {errosPorTelefone.length > 0 ? (
+            <div className="rounded-sm border border-slate-200 bg-white shadow-sm overflow-hidden">
+              <div className="border-b border-slate-100 px-5 py-3 bg-slate-50/80">
+                <h3 className="text-sm font-semibold text-slate-800">Telefones com mais falhas</h3>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-200 bg-slate-50/90">
+                      <th className="px-4 py-2 text-left text-[11px] font-semibold uppercase text-slate-600">
+                        Telefone
+                      </th>
+                      <th className="px-4 py-2 text-right text-[11px] font-semibold uppercase text-slate-600">
+                        Falhas
+                      </th>
+                      <th className="px-4 py-2 text-left text-[11px] font-semibold uppercase text-slate-600">
+                        Motivo
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {errosPorTelefone.map((row) => (
+                      <tr key={row.telefone_mascara}>
+                        <td className="px-4 py-2 tabular-nums text-slate-700">{row.telefone_mascara}</td>
+                        <td className="px-4 py-2 text-right tabular-nums">{row.total_falhas}</td>
+                        <td className="px-4 py-2 text-xs text-slate-600">
+                          {row.titulo_erro}
+                          {row.error_code ? ` (cód. ${row.error_code})` : ""}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : null}
+
           {resumo ? (
             <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
               {[

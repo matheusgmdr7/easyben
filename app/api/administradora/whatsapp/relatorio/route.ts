@@ -23,6 +23,10 @@ export async function GET(request: NextRequest) {
     const eventType =
       eventTypeRaw && isWhatsAppBillingEventType(eventTypeRaw) ? eventTypeRaw : undefined
 
+    const modoRaw = qs.get("modo_data")?.trim()
+    const modoData =
+      modoRaw === "reference_date" || modoRaw === "created_at" ? modoRaw : undefined
+
     const relatorio = await montarRelatorioEnviosWhatsApp({
       administradoraId,
       de,
@@ -31,6 +35,7 @@ export async function GET(request: NextRequest) {
       status: qs.get("status")?.trim() || undefined,
       page: Number(qs.get("page")) || 1,
       limit: Number(qs.get("limit")) || 25,
+      modoData,
     })
 
     return NextResponse.json(relatorio)

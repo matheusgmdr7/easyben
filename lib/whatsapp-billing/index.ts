@@ -61,6 +61,13 @@ export { executarCronCatchupLembretesVencimento } from "./reminders-catchup-cron
 export { criarLembreteDispatchCache, type LembreteDispatchCache } from "./dispatch"
 export { executarCronRecuperacaoWhatsApp } from "./recovery-cron"
 export { reenfileirarMensagensWhatsAppFalhas } from "./requeue-failed"
+export { montarRelatorioCoberturaWhatsApp } from "./relatorio-cobertura"
+export { processarLembretesPendentes } from "./reminders-pending"
+export {
+  getAdaptiveMaxPerSecond,
+  registrarRateLimitMeta,
+  registrarEnvioSucessoAdaptativo,
+} from "./adaptive-rate-limit"
 export { REGRAS_LEMBRETE_COBRANCA, horarioEnvioPermitido, vencimentoAlvoParaEvento, inferirEventoCobrancaPorVencimento } from "./reminder-rules"
 export {
   parseTwilioFormBody,

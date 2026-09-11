@@ -2,7 +2,7 @@ import type { Config } from "@netlify/functions"
 import { executarCronCatchupLembretesVencimento } from "../../lib/whatsapp-billing/reminders-catchup-cron"
 
 /**
- * Catch-up lembretes D0/D-1 — a cada 15 min, 08h–12h45 BRT (11–15 UTC).
+ * Catch-up lembretes D-5…D+25 — a cada 15 min, 08h–18h45 BRT (11–21 UTC).
  */
 export default async function handler() {
   try {
@@ -23,5 +23,5 @@ export default async function handler() {
 }
 
 export const config: Config = {
-  schedule: "*/15 11-15 * * *",
+  schedule: "*/15 11-21 * * *",
 }

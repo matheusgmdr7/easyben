@@ -8,11 +8,28 @@ export const WHATSAPP_OUTBOUND_BACKOFF_MS = 60_000
 /** Escalonamento entre lembretes enfileirados no cron (protege tier Meta/Twilio). */
 export const WHATSAPP_LEMBRETE_STAGGER_MS = 3_000
 
-/** Máximo de faturas enfileiradas por evento/admin em um run de cron (evita timeout 26s Netlify). */
-export const WHATSAPP_CRON_FATURAS_POR_LOTE = 60
+/** Página de faturas consultadas por iteração do cron paginado. */
+export const WHATSAPP_CRON_PAGE_SIZE = 100
 
-/** Catch-up: faturas por run (D0/D-1 sem envio bem-sucedido). */
-export const WHATSAPP_CATCHUP_FATURAS_POR_LOTE = 80
+/** Máximo de faturas enfileiradas por evento/admin em um run de cron (legado / fallback). */
+export const WHATSAPP_CRON_FATURAS_POR_LOTE = 100
+
+/** Catch-up: faturas enfileiradas por evento em um run (todos os lembretes). */
+export const WHATSAPP_CATCHUP_FATURAS_POR_LOTE = 150
+
+/** Orçamento de tempo do cron paginado (Netlify ~26s; Vercel até 300s). */
+export const WHATSAPP_CRON_TIME_BUDGET_MS = Number(
+  process.env.WHATSAPP_CRON_TIME_BUDGET_MS || 24_000
+)
+
+/** Recovery cron: mensagens reenfileiradas por execução. */
+export const WHATSAPP_RECOVERY_MAX_MESSAGES = 800
+
+/** Rate adaptativo worker (msg/s). */
+export const WHATSAPP_WORKER_MAX_PER_SECOND_DEFAULT = 2
+export const WHATSAPP_WORKER_MAX_PER_SECOND_MIN = 1
+export const WHATSAPP_WORKER_MAX_PER_SECOND_MAX = 5
+export const WHATSAPP_ADAPTIVE_RATE_REDIS_KEY = "whatsapp:worker:max_per_second"
 
 /**
  * Prioridade BullMQ (menor número = processado antes).
@@ -39,8 +56,8 @@ export function prioridadeFilaWhatsApp(eventType: WhatsAppBillingEventType): num
 export const WHATSAPP_SAUDACAO_STAGGER_MS = 4_000
 export const WHATSAPP_SAUDACAO_MAX_STAGGER_MS = 30 * 60 * 1000
 
-/** Worker: mensagens por segundo (alinhar ao tier da conta Meta/Twilio). */
-export const WHATSAPP_WORKER_MAX_PER_SECOND = 2
+/** Worker: mensagens por segundo inicial (adaptativo via Redis). */
+export const WHATSAPP_WORKER_MAX_PER_SECOND = WHATSAPP_WORKER_MAX_PER_SECOND_DEFAULT
 export const WHATSAPP_WORKER_CONCURRENCY = 2
 
 /** Códigos Twilio que devem ser retentados (não são falha permanente). */

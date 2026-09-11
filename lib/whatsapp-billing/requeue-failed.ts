@@ -14,6 +14,10 @@ export type ReenfileirarFalhasOptions = {
   createdFrom?: string
   createdTo?: string
   errorCodes?: string[]
+  /** Processa primeiro estes eventos (ex.: D0, D-1). */
+  eventTypesPrioritarios?: string[]
+  /** Exclui estes event_types (segunda passagem do recovery). */
+  excluirEventTypes?: string[]
   dryRun?: boolean
   maxMessages?: number
   staggerMs?: number
@@ -72,6 +76,15 @@ export async function reenfileirarMensagensWhatsAppFalhas(
   }
   if (options.createdTo) {
     query = query.lte("created_at", options.createdTo)
+  }
+
+  if (options.eventTypesPrioritarios?.length) {
+    query = query.in("event_type", options.eventTypesPrioritarios)
+  }
+  if (options.excluirEventTypes?.length) {
+    for (const et of options.excluirEventTypes) {
+      query = query.neq("event_type", et)
+    }
   }
 
   const { data: rows, error } = await query
