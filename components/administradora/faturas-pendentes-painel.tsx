@@ -1,8 +1,9 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { ExternalLink, FileDown, FileSpreadsheet } from "lucide-react"
+import { ExternalLink, FileDown, FileSpreadsheet, Loader2, Send } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { cn } from "@/lib/utils"
 import { formatarData, formatarMoeda } from "@/utils/formatters"
 import { toast } from "sonner"
@@ -13,6 +14,7 @@ import {
   normalizarTelefoneWhatsApp,
 } from "@/lib/whatsapp-cobranca"
 import { StatusEnvioWhatsApp, isStatusEnvioEmProgresso } from "@/components/administradora/whatsapp-status-envio"
+import { WhatsAppLimiteEnvios } from "@/components/administradora/whatsapp-limite-envios"
 import {
   carregarEnviosRecentes,
   filtrarEnviosAtivos,
@@ -96,6 +98,10 @@ function corPontoStatus(status: string) {
 
 const btnSquare = "rounded-sm"
 
+function itemElegivelEnvioTwilio(item: PendenciaFaturaItem) {
+  return !!item.link_boleto && !!normalizarTelefoneWhatsApp(item.cliente_telefone)
+}
+
 type FaturasPendentesPainelProps = {
   pendencias: PendenciaFaturaItem[]
   financeiraId?: string
@@ -136,6 +142,9 @@ export function FaturasPendentesPainel({
   const [exportandoExcel, setExportandoExcel] = useState(false)
   const [agoraUi, setAgoraUi] = useState(() => Date.now())
   const [enviosRecentes, setEnviosRecentes] = useState<RegistroEnvioCobranca[]>([])
+  const [limitesRefreshToken, setLimitesRefreshToken] = useState(0)
+  const [selecionados, setSelecionados] = useState<Set<string>>(() => new Set())
+  const [enviandoLote, setEnviandoLote] = useState(false)
 
   const enviosPorFaturaId = useMemo(
     () => new Map(enviosRecentes.map((e) => [e.fatura_id, e])),
@@ -147,6 +156,10 @@ export function FaturasPendentesPainel({
   useEffect(() => {
     setPaginaPendencias(1)
   }, [filtroPendencias, corretorIdFiltro, pendencias.length])
+
+  useEffect(() => {
+    setSelecionados(new Set())
+  }, [paginaPendencias, filtroPendencias, corretorIdFiltro, pendencias.length])
 
   useEffect(() => {
     if (!mostrarEnvioWhatsApp || !administradoraId?.trim()) {
@@ -234,6 +247,42 @@ export function FaturasPendentesPainel({
     paginaAtual * itensPorPagina
   )
 
+  const elegiveisPagina = useMemo(
+    () => pendenciasPaginadas.filter(itemElegivelEnvioTwilio),
+    [pendenciasPaginadas]
+  )
+
+  const qtdSelecionados = selecionados.size
+  const todosSelecionadosPagina =
+    elegiveisPagina.length > 0 && elegiveisPagina.every((i) => selecionados.has(i.fatura_id))
+  const algunsSelecionadosPagina =
+    elegiveisPagina.some((i) => selecionados.has(i.fatura_id)) && !todosSelecionadosPagina
+
+  function alternarSelecao(faturaId: string, checked: boolean) {
+    setSelecionados((atual) => {
+      const next = new Set(atual)
+      if (checked) next.add(faturaId)
+      else next.delete(faturaId)
+      return next
+    })
+  }
+
+  function selecionarPaginaInteira(checked: boolean) {
+    if (!checked) {
+      setSelecionados((atual) => {
+        const next = new Set(atual)
+        for (const item of elegiveisPagina) next.delete(item.fatura_id)
+        return next
+      })
+      return
+    }
+    setSelecionados((atual) => {
+      const next = new Set(atual)
+      for (const item of elegiveisPagina) next.add(item.fatura_id)
+      return next
+    })
+  }
+
   async function enviarWhatsAppTwilio(item: PendenciaFaturaItem) {
     if (!administradoraId) {
       toast.error("Administradora não identificada.")
@@ -262,11 +311,93 @@ export function FaturasPendentesPainel({
       if (!res.ok) throw new Error(data.error || "Erro ao enfileirar envio")
       marcarEnvioRecente(item)
       onEnvioWhatsApp?.(item.fatura_id)
+      setLimitesRefreshToken((n) => n + 1)
       toast.success(data.message || "Cobrança enfileirada para envio direto")
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Erro ao enviar cobrança")
     } finally {
       setEnviandoTwilioId(null)
+    }
+  }
+
+  async function enviarLoteTwilio() {
+    if (!administradoraId) {
+      toast.error("Administradora não identificada.")
+      return
+    }
+
+    const ids = Array.from(selecionados)
+    if (ids.length === 0) {
+      toast.error("Selecione ao menos uma fatura.")
+      return
+    }
+
+    try {
+      const resLimites = await fetch("/api/administradora/whatsapp/limites", { cache: "no-store" })
+      if (resLimites.ok) {
+        const limites = await resLimites.json()
+        if (limites.restantes != null && ids.length > limites.restantes) {
+          toast.error(
+            `Restam ${limites.restantes} envio(s) no tier de 24h. Reduza a seleção para ${limites.restantes} fatura(s) ou menos.`
+          )
+          return
+        }
+      }
+    } catch {
+      /* segue sem bloquear */
+    }
+
+    setEnviandoLote(true)
+    try {
+      const res = await fetch("/api/administradora/whatsapp/enviar-cobranca-lote", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          administradora_id: administradoraId,
+          fatura_ids: ids,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || "Erro ao enfileirar lote")
+
+      const enfileirados = Number(data.enfileirados || 0)
+      const falhas = (data.resultados || []).filter(
+        (r: { enqueued?: boolean }) => !r.enqueued
+      ).length
+
+      for (const item of pendenciasFiltradas) {
+        if (ids.includes(item.fatura_id)) {
+          const ok = (data.resultados || []).find(
+            (r: { fatura_id: string; enqueued?: boolean }) =>
+              r.fatura_id === item.fatura_id && r.enqueued
+          )
+          if (ok) marcarEnvioRecente(item)
+        }
+      }
+
+      for (const id of ids) {
+        const ok = (data.resultados || []).find(
+          (r: { fatura_id: string; enqueued?: boolean }) => r.fatura_id === id && r.enqueued
+        )
+        if (ok) onEnvioWhatsApp?.(id)
+      }
+
+      setLimitesRefreshToken((n) => n + 1)
+      setSelecionados(new Set())
+
+      if (enfileirados > 0) {
+        toast.success(
+          falhas > 0
+            ? `${enfileirados} enfileirada(s), ${falhas} ignorada(s) (já enviadas ou inválidas).`
+            : data.message || `${enfileirados} cobrança(s) enfileirada(s).`
+        )
+      } else {
+        toast.error("Nenhuma cobrança enfileirada. Verifique telefone, boleto ou envios já realizados hoje.")
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erro ao enviar lote")
+    } finally {
+      setEnviandoLote(false)
     }
   }
 
@@ -428,7 +559,7 @@ export function FaturasPendentesPainel({
   }
 
   const colSpanBase =
-    (mostrarEnvioWhatsApp ? 8 : 6) + (mostrarColunaValor ? 1 : 0)
+    (mostrarEnvioWhatsApp ? 8 : 6) + (mostrarColunaValor ? 1 : 0) + (whatsappModoTwilio ? 1 : 0)
 
   return (
     <div className="rounded-sm border border-slate-200/90 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.06)] overflow-hidden">
@@ -437,6 +568,11 @@ export function FaturasPendentesPainel({
           Faturas atrasadas e pendentes
         </h2>
       </div>
+      {whatsappModoTwilio ? (
+        <div className="border-b border-slate-200 bg-white px-5 py-3">
+          <WhatsAppLimiteEnvios refreshToken={limitesRefreshToken} />
+        </div>
+      ) : null}
       <div className="border-b border-slate-200 bg-white px-5 py-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-wrap gap-1.5" role="tablist" aria-label="Filtrar listagem">
           {filtrosPendencias.map((f) => (
@@ -465,7 +601,33 @@ export function FaturasPendentesPainel({
             </button>
           ))}
         </div>
-        <div className="flex flex-wrap gap-2 shrink-0">
+        <div className="flex flex-wrap gap-2 shrink-0 items-center">
+          {whatsappModoTwilio ? (
+            <Button
+              type="button"
+              size="sm"
+              className={cn(
+                btnSquare,
+                "h-8 text-xs font-medium",
+                qtdSelecionados > 0
+                  ? "bg-emerald-600 text-white hover:bg-emerald-700"
+                  : "bg-slate-200 text-slate-500 cursor-not-allowed"
+              )}
+              disabled={qtdSelecionados === 0 || enviandoLote || enviandoTwilioId !== null}
+              onClick={() => void enviarLoteTwilio()}
+            >
+              {enviandoLote ? (
+                <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+              ) : (
+                <Send className="h-3.5 w-3.5 mr-1.5" />
+              )}
+              {enviandoLote
+                ? "Enfileirando…"
+                : qtdSelecionados > 0
+                  ? `Envio direto (${qtdSelecionados})`
+                  : "Envio direto em lote"}
+            </Button>
+          ) : null}
           <Button
             type="button"
             variant="outline"
@@ -494,6 +656,22 @@ export function FaturasPendentesPainel({
         <table className="min-w-full text-sm">
           <thead>
             <tr className="border-b border-slate-200 bg-slate-50/90">
+              {whatsappModoTwilio ? (
+                <th className="w-10 px-3 py-3">
+                  <Checkbox
+                    checked={
+                      todosSelecionadosPagina
+                        ? true
+                        : algunsSelecionadosPagina
+                          ? "indeterminate"
+                          : false
+                    }
+                    disabled={elegiveisPagina.length === 0 || enviandoLote}
+                    aria-label="Selecionar todas as faturas elegíveis desta página"
+                    onCheckedChange={(v) => selecionarPaginaInteira(v === true)}
+                  />
+                </th>
+              ) : null}
               <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600">
                 Nome
               </th>
@@ -540,17 +718,28 @@ export function FaturasPendentesPainel({
               </tr>
             ) : (
               pendenciasPaginadas.map((item, idx) => {
-                const podeWhatsApp =
-                  mostrarEnvioWhatsApp &&
-                  !!item.link_boleto &&
-                  !!normalizarTelefoneWhatsApp(item.cliente_telefone)
+                const podeWhatsApp = mostrarEnvioWhatsApp && itemElegivelEnvioTwilio(item)
                 const envioRecente = enviosPorFaturaId.get(item.fatura_id)
                 const statusTwilio = statusWhatsAppPorFatura[item.fatura_id]
+                const selecionado = selecionados.has(item.fatura_id)
                 return (
                   <tr
                     key={item.fatura_id}
-                    className={idx % 2 === 0 ? "bg-white" : "bg-slate-50/50"}
+                    className={cn(
+                      idx % 2 === 0 ? "bg-white" : "bg-slate-50/50",
+                      selecionado && "bg-emerald-50/40"
+                    )}
                   >
+                    {whatsappModoTwilio ? (
+                      <td className="w-10 px-3 py-2.5 align-top">
+                        <Checkbox
+                          checked={selecionado}
+                          disabled={!podeWhatsApp || enviandoLote}
+                          aria-label={`Selecionar ${item.cliente_nome}`}
+                          onCheckedChange={(v) => alternarSelecao(item.fatura_id, v === true)}
+                        />
+                      </td>
+                    ) : null}
                     <td className="px-4 py-2.5 text-slate-800 font-medium">
                       <div>{item.cliente_nome}</div>
                       {mostrarEnvioWhatsApp && item.cliente_telefone ? (
@@ -630,7 +819,11 @@ export function FaturasPendentesPainel({
                                       : "border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-700 hover:text-white hover:border-emerald-700 active:bg-emerald-800",
                                     !podeWhatsApp && "opacity-50"
                                   )}
-                                  disabled={!podeWhatsApp || enviandoTwilioId === item.fatura_id}
+                                  disabled={
+                                    !podeWhatsApp ||
+                                    enviandoTwilioId === item.fatura_id ||
+                                    enviandoLote
+                                  }
                                   title={
                                     !item.link_boleto
                                       ? "Sem link de boleto"

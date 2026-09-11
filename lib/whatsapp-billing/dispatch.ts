@@ -14,7 +14,11 @@ import {
   referenceDateHoje,
 } from "./idempotency"
 import { PRIMEIRO_BOLETO_MENSAGEM_DELAY_MS } from "./event-types"
-import { calcularDelayEscalonadoSaudacao, prioridadeFilaWhatsApp } from "./rate-limit-policy"
+import {
+  calcularDelayEscalonadoSaudacao,
+  prioridadeFilaWhatsApp,
+  WHATSAPP_LEMBRETE_STAGGER_MS,
+} from "./rate-limit-policy"
 import { carregarContextoSaudacaoWhatsApp } from "./saudacao-context"
 import { enfileirarNotificacaoOutbound } from "./queues"
 import { whatsappBillingLog } from "./logger"
@@ -473,4 +477,75 @@ export async function dispararCobrancaManualFatura(
   })
 
   return { ...result, eventType }
+}
+
+export type ResultadoCobrancaManualLote = {
+  fatura_id: string
+  enqueued: boolean
+  reason?: string
+  event_type?: string
+}
+
+export async function dispararCobrancaManualFaturasLote(params: {
+  faturaIds: string[]
+  administradoraId?: string
+  staggerMs?: number
+}): Promise<{
+  total: number
+  enfileirados: number
+  resultados: ResultadoCobrancaManualLote[]
+}> {
+  const ids = Array.from(new Set(params.faturaIds.map((id) => String(id || "").trim()).filter(Boolean)))
+  if (!ids.length) {
+    return { total: 0, enfileirados: 0, resultados: [] }
+  }
+
+  const staggerMs = params.staggerMs ?? WHATSAPP_LEMBRETE_STAGGER_MS
+  const { inferirEventoCobrancaPorVencimento } = await import("./reminder-rules")
+
+  let q = supabaseAdmin
+    .from("faturas")
+    .select(
+      "id, cliente_administradora_id, administradora_id, cliente_nome, cliente_telefone, valor, vencimento, numero_fatura, status, asaas_boleto_url, boleto_url, gateway_id, asaas_charge_id"
+    )
+    .in("id", ids)
+
+  if (params.administradoraId) {
+    q = q.eq("administradora_id", params.administradoraId)
+  }
+
+  const { data: faturas, error } = await q
+  if (error) throw new Error(error.message)
+
+  const porId = new Map((faturas || []).map((f) => [String(f.id), f as FaturaLembreteRow]))
+  const ctx = criarLembreteDispatchCache()
+  const resultados: ResultadoCobrancaManualLote[] = []
+  let enfileirados = 0
+  let indice = 0
+
+  for (const faturaId of ids) {
+    const fatura = porId.get(faturaId)
+    if (!fatura?.cliente_administradora_id || !fatura.administradora_id) {
+      resultados.push({ fatura_id: faturaId, enqueued: false, reason: "fatura_nao_encontrada" })
+      continue
+    }
+
+    const eventType = inferirEventoCobrancaPorVencimento(String(fatura.vencimento || ""))
+    const result = await dispararLembreteFatura(fatura, eventType, {
+      ignorarAutomatico: true,
+      delayMs: indice * staggerMs,
+      ctx,
+    })
+
+    if (result.enqueued) enfileirados += 1
+    resultados.push({
+      fatura_id: faturaId,
+      enqueued: result.enqueued,
+      reason: result.reason,
+      event_type: eventType,
+    })
+    indice += 1
+  }
+
+  return { total: ids.length, enfileirados, resultados }
 }
