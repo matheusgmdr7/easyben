@@ -19,16 +19,22 @@ export type LinhaRelatorioImplantacao = {
   pagamento_data: string | null
   pagamento_valor: number | null
   primeiro_boleto: boolean
+  pago: boolean
   implantado: boolean
   numero_carteirinha: string | null
   data_vinculacao: string | null
+  fatura_created_at: string | null
 }
 
 export type ResultadoRelatorioImplantacao = {
   linhas: LinhaRelatorioImplantacao[]
   total_registros: number
-  total_primeiro_boleto: number
+  total_pagos: number
+  total_aguardando_pagamento: number
+  total_implantados: number
   total_aguardando_implantacao: number
+  /** @deprecated Use total_registros */
+  total_primeiro_boleto: number
   periodo: { inicio: string; fim: string }
 }
 
@@ -112,33 +118,95 @@ export function clienteEstaImplantado(params: {
   return Boolean(String(params.numero_carteirinha || "").trim())
 }
 
-/** Cliente já tinha outra fatura paga antes desta data (exclui a fatura atual). */
-function tinhaPagamentoAnterior(
-  clienteId: string,
-  faturaId: string,
-  pagamentoData: string,
-  pagasPorCliente: Map<string, Array<{ id: string; pagamento_data: string }>>
-): boolean {
-  const lista = pagasPorCliente.get(clienteId) || []
-  return lista.some(
-    (f) =>
-      f.id !== faturaId &&
-      f.pagamento_data &&
-      f.pagamento_data < pagamentoData
-  )
+type FaturaRow = {
+  id: string
+  cliente_administradora_id: string | null
+  cliente_nome: string | null
+  cliente_telefone: string | null
+  cliente_id?: string | null
+  numero_fatura: string | null
+  valor: number | null
+  vencimento: string | null
+  pagamento_data: string | null
+  pagamento_valor: number | null
+  status: string | null
+  created_at: string | null
 }
 
+async function carregarFaturasGeradasNoPeriodo(
+  administradoraId: string,
+  inicio: string,
+  fim: string
+): Promise<FaturaRow[]> {
+  const rows: FaturaRow[] = []
+  const pageSize = 1000
+  let offset = 0
+
+  for (;;) {
+    const { data, error } = await supabaseAdmin
+      .from("faturas")
+      .select(FATURAS_SELECT)
+      .eq("administradora_id", administradoraId)
+      .gte("created_at", `${inicio}T00:00:00.000Z`)
+      .lte("created_at", `${fim}T23:59:59.999Z`)
+      .order("created_at", { ascending: true })
+      .range(offset, offset + pageSize - 1)
+
+    if (error) throw new Error(error.message)
+    const chunk = (data || []) as FaturaRow[]
+    rows.push(...chunk)
+    if (chunk.length < pageSize) break
+    offset += pageSize
+    if (offset > 100_000) break
+  }
+
+  return rows
+}
+
+async function clientesComFaturaAnterior(
+  administradoraId: string,
+  clienteIds: string[],
+  inicioMes: string
+): Promise<Set<string>> {
+  const comAnterior = new Set<string>()
+  if (!clienteIds.length) return comAnterior
+
+  const CHUNK = 200
+  for (let i = 0; i < clienteIds.length; i += CHUNK) {
+    const chunk = clienteIds.slice(i, i + CHUNK)
+    const { data } = await supabaseAdmin
+      .from("faturas")
+      .select("cliente_administradora_id")
+      .eq("administradora_id", administradoraId)
+      .in("cliente_administradora_id", chunk)
+      .lt("created_at", `${inicioMes}T00:00:00.000Z`)
+
+    for (const row of data || []) {
+      const cid = String(row.cliente_administradora_id || "").trim()
+      if (cid) comAnterior.add(cid)
+    }
+  }
+
+  return comAnterior
+}
+
+/**
+ * Relatório de implantação: clientes inseridos no mês selecionado.
+ * Critério: exatamente 1 fatura gerada (created_at) no mês e nenhuma fatura anterior.
+ */
 export async function gerarRelatorioImplantacao(params: {
   administradoraId: string
   tenantId?: string | null
   ano: number
   mes: number
-  /** @deprecated Preferir dataInicio/dataFim */
+  /** @deprecated Preferir dataInicio/dataFim para filtro de pagamento */
   dia?: number | null
+  /** Filtro opcional de data de pagamento (subconjunto do mês). */
   dataInicio?: string | null
   dataFim?: string | null
   grupoId?: string | null
   corretorId?: string | null
+  /** Se true, inclui só clientes cujo boleto do mês está pago. */
   somentePrimeiroBoleto?: boolean
   implantado?: "todos" | "sim" | "nao"
 }): Promise<ResultadoRelatorioImplantacao> {
@@ -146,32 +214,42 @@ export async function gerarRelatorioImplantacao(params: {
   const inicioInformado = dataPagamentoIso(params.dataInicio)
   const fimInformado = dataPagamentoIso(params.dataFim)
 
-  let inicio: string
-  let fim: string
+  const inicioMes = primeiroDiaMes(ano, mes)
+  const fimMes = ultimoDiaMes(ano, mes)
+
+  let inicioPagamento: string | null = null
+  let fimPagamento: string | null = null
   if (inicioInformado && fimInformado) {
-    inicio = inicioInformado <= fimInformado ? inicioInformado : fimInformado
-    fim = inicioInformado <= fimInformado ? fimInformado : inicioInformado
+    inicioPagamento = inicioInformado <= fimInformado ? inicioInformado : fimInformado
+    fimPagamento = inicioInformado <= fimInformado ? fimInformado : inicioInformado
   } else if (params.dia) {
-    inicio = `${ano}-${String(mes).padStart(2, "0")}-${String(params.dia).padStart(2, "0")}`
-    fim = inicio
-  } else {
-    inicio = primeiroDiaMes(ano, mes)
-    fim = ultimoDiaMes(ano, mes)
+    inicioPagamento = `${ano}-${String(mes).padStart(2, "0")}-${String(params.dia).padStart(2, "0")}`
+    fimPagamento = inicioPagamento
   }
 
-  let query = supabaseAdmin
-    .from("faturas")
-    .select(FATURAS_SELECT)
-    .eq("administradora_id", administradoraId)
-    .gte("pagamento_data", inicio)
-    .lte("pagamento_data", fim)
-    .order("pagamento_data", { ascending: false })
+  const faturasNoMes = await carregarFaturasGeradasNoPeriodo(
+    administradoraId,
+    inicioMes,
+    fimMes
+  )
 
-  const { data: faturasRaw, error } = await query
-  if (error) throw new Error(error.message)
+  const faturasPorCliente = new Map<string, FaturaRow[]>()
+  for (const f of faturasNoMes) {
+    const clienteId = String(f.cliente_administradora_id || "").trim()
+    if (!clienteId) continue
+    const arr = faturasPorCliente.get(clienteId) || []
+    arr.push(f)
+    faturasPorCliente.set(clienteId, arr)
+  }
 
-  const faturasPagas = (faturasRaw || []).filter((f) =>
-    faturaEstaPaga(String(f.status || ""), f.pagamento_data)
+  const candidatosUmaFatura = Array.from(faturasPorCliente.entries())
+    .filter(([, lista]) => lista.length === 1)
+    .map(([clienteId]) => clienteId)
+
+  const comFaturaAnterior = await clientesComFaturaAnterior(
+    administradoraId,
+    candidatosUmaFatura,
+    inicioMes
   )
 
   let clienteIdsGrupo: Set<string> | null = null
@@ -183,13 +261,17 @@ export async function gerarRelatorioImplantacao(params: {
     )
   }
 
-  const clienteIds = Array.from(
-    new Set(
-      faturasPagas
-        .map((f) => String(f.cliente_administradora_id || "").trim())
-        .filter(Boolean)
-    )
-  )
+  const clientesNovos: FaturaRow[] = []
+  for (const clienteId of candidatosUmaFatura) {
+    if (comFaturaAnterior.has(clienteId)) continue
+    if (clienteIdsGrupo && !clienteIdsGrupo.has(clienteId)) continue
+    const fatura = faturasPorCliente.get(clienteId)![0]
+    clientesNovos.push(fatura)
+  }
+
+  const clienteIds = clientesNovos
+    .map((f) => String(f.cliente_administradora_id || "").trim())
+    .filter(Boolean)
 
   const mapaCorretor = await montarMapaCorretorPorCliente(
     clienteIds,
@@ -306,33 +388,11 @@ export async function gerarRelatorioImplantacao(params: {
     }
   }
 
-  const pagasPorCliente = new Map<string, Array<{ id: string; pagamento_data: string }>>()
-  if (clienteIds.length > 0) {
-    const { data: historicoPagas } = await supabaseAdmin
-      .from("faturas")
-      .select("id, cliente_administradora_id, pagamento_data, status")
-      .eq("administradora_id", administradoraId)
-      .in("cliente_administradora_id", clienteIds)
-      .not("pagamento_data", "is", null)
-
-    for (const f of historicoPagas || []) {
-      if (!faturaEstaPaga(String(f.status || ""), f.pagamento_data)) continue
-      const cid = String(f.cliente_administradora_id || "").trim()
-      const pd = dataPagamentoIso(f.pagamento_data)
-      if (!cid || !pd) continue
-      const arr = pagasPorCliente.get(cid) || []
-      arr.push({ id: String(f.id), pagamento_data: pd })
-      pagasPorCliente.set(cid, arr)
-    }
-  }
-
   const linhas: LinhaRelatorioImplantacao[] = []
 
-  for (const f of faturasPagas) {
+  for (const f of clientesNovos) {
     const clienteId = String(f.cliente_administradora_id || "").trim()
     if (!clienteId) continue
-
-    if (clienteIdsGrupo && !clienteIdsGrupo.has(clienteId)) continue
 
     const corretorIdCliente = mapaCorretor.get(clienteId) ?? null
     if (params.corretorId?.trim() && params.corretorId !== "todos") {
@@ -340,16 +400,15 @@ export async function gerarRelatorioImplantacao(params: {
     }
 
     const pagamentoData = dataPagamentoIso(f.pagamento_data)
-    if (!pagamentoData) continue
+    const pago = faturaEstaPaga(String(f.status || ""), f.pagamento_data)
 
-    const primeiroBoleto = !tinhaPagamentoAnterior(
-      clienteId,
-      String(f.id),
-      pagamentoData,
-      pagasPorCliente
-    )
+    if (inicioPagamento && fimPagamento) {
+      if (!pagamentoData || pagamentoData < inicioPagamento || pagamentoData > fimPagamento) {
+        continue
+      }
+    }
 
-    if (params.somentePrimeiroBoleto !== false && !primeiroBoleto) continue
+    if (params.somentePrimeiroBoleto !== false && !pago) continue
 
     const cliente = clientesMap.get(clienteId)
     const implantado = clienteEstaImplantado({
@@ -370,7 +429,7 @@ export async function gerarRelatorioImplantacao(params: {
       cpf: resolverCpfCliente(
         cpfVidaPorCliente.get(clienteId),
         cliente?.cpf,
-        (f as { cliente_id?: string | null }).cliente_id
+        f.cliente_id
       ),
       telefone: resolverTelefoneClienteCobranca(telVida, null, telFatura),
       grupo_nome: grupoNomePorCliente.get(clienteId) || null,
@@ -380,24 +439,32 @@ export async function gerarRelatorioImplantacao(params: {
       vencimento: f.vencimento ? String(f.vencimento).slice(0, 10) : null,
       pagamento_data: pagamentoData,
       pagamento_valor: f.pagamento_valor != null ? Number(f.pagamento_valor) : null,
-      primeiro_boleto: primeiroBoleto,
+      primeiro_boleto: true,
+      pago,
       implantado,
       numero_carteirinha: cliente?.numero_carteirinha || null,
       data_vinculacao: cliente?.data_vinculacao || null,
+      fatura_created_at: f.created_at ? String(f.created_at) : null,
     })
   }
 
   linhas.sort((a, b) => {
-    const d = (b.pagamento_data || "").localeCompare(a.pagamento_data || "")
+    const d = (b.fatura_created_at || "").localeCompare(a.fatura_created_at || "")
     if (d !== 0) return d
     return a.cliente_nome.localeCompare(b.cliente_nome, "pt-BR")
   })
 
+  const totalPagos = linhas.filter((l) => l.pago).length
+  const totalImplantados = linhas.filter((l) => l.implantado).length
+
   return {
     linhas,
     total_registros: linhas.length,
-    total_primeiro_boleto: linhas.filter((l) => l.primeiro_boleto).length,
-    total_aguardando_implantacao: linhas.filter((l) => !l.implantado).length,
-    periodo: { inicio, fim },
+    total_pagos: totalPagos,
+    total_aguardando_pagamento: linhas.length - totalPagos,
+    total_implantados: totalImplantados,
+    total_aguardando_implantacao: linhas.length - totalImplantados,
+    total_primeiro_boleto: linhas.length,
+    periodo: { inicio: inicioMes, fim: fimMes },
   }
 }

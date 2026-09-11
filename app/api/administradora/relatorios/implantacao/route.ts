@@ -7,7 +7,7 @@ export const maxDuration = 60
 
 /**
  * GET /api/administradora/relatorios/implantacao
- * Clientes com boleto pago no período (foco em primeiro boleto → implantação).
+ * Clientes inseridos no mês (1ª fatura gerada no mês, sem faturas anteriores).
  */
 export async function GET(request: NextRequest) {
   try {
@@ -55,7 +55,7 @@ export async function GET(request: NextRequest) {
     const tenantId = administradora?.tenant_id || tenantAtual
     const grupoId = qs.get("grupo_id")?.trim() || null
     const corretorId = qs.get("corretor_id")?.trim() || null
-    const somentePrimeiro = qs.get("somente_primeiro_boleto") !== "0"
+    const somentePrimeiro = qs.get("somente_primeiro_boleto") === "1"
     const implantadoRaw = qs.get("implantado")?.trim() || "todos"
     const implantado =
       implantadoRaw === "sim" || implantadoRaw === "nao"

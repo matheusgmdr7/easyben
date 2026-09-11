@@ -43,7 +43,14 @@ export default function RelatorioImplantacaoPage() {
   const agora = new Date()
   const [administradoraId, setAdministradoraId] = useState<string | null>(null)
   const [linhas, setLinhas] = useState<LinhaRelatorioImplantacao[]>([])
-  const [totais, setTotais] = useState({ total: 0, primeiro: 0, aguardando: 0 })
+  const [totais, setTotais] = useState({
+    total: 0,
+    pagos: 0,
+    aguardandoPagamento: 0,
+    implantados: 0,
+    aguardandoImplantacao: 0,
+  })
+  const [relatorioGerado, setRelatorioGerado] = useState(false)
   const [periodo, setPeriodo] = useState<{ inicio: string; fim: string } | null>(null)
   const [loading, setLoading] = useState(false)
   const [exportandoExcel, setExportandoExcel] = useState(false)
@@ -54,7 +61,7 @@ export default function RelatorioImplantacaoPage() {
   const [periodoRange, setPeriodoRange] = useState<DateRange | undefined>()
   const [grupoId, setGrupoId] = useState("todos")
   const [corretorId, setCorretorId] = useState("todos")
-  const [somentePrimeiro, setSomentePrimeiro] = useState(true)
+  const [somentePrimeiro, setSomentePrimeiro] = useState(false)
 
   const [grupos, setGrupos] = useState<GrupoBeneficiarios[]>([])
   const [corretores, setCorretores] = useState<Corretor[]>([])
@@ -140,11 +147,14 @@ export default function RelatorioImplantacaoPage() {
       setLinhas(data.linhas || [])
       setTotais({
         total: data.total_registros || 0,
-        primeiro: data.total_primeiro_boleto || 0,
-        aguardando: data.total_aguardando_implantacao || 0,
+        pagos: data.total_pagos || 0,
+        aguardandoPagamento: data.total_aguardando_pagamento || 0,
+        implantados: data.total_implantados || 0,
+        aguardandoImplantacao: data.total_aguardando_implantacao || 0,
       })
       setPeriodo(data.periodo || null)
-      toast.success(`${data.total_registros || 0} registro(s) encontrado(s)`)
+      setRelatorioGerado(true)
+      toast.success(`${data.total_registros || 0} cliente(s) novo(s) no período`)
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Erro ao gerar relatório")
     } finally {
@@ -177,7 +187,7 @@ export default function RelatorioImplantacaoPage() {
         Valor: item.valor != null ? Number(item.valor) : "",
         Vencimento: item.vencimento ? formatarData(item.vencimento) : "—",
         "Nº fatura": item.numero_fatura || "—",
-        "Primeiro boleto": item.primeiro_boleto ? "Sim" : "Não",
+        "Boleto pago": item.pago ? "Sim" : "Não",
         Implantado: item.implantado ? "Sim" : "Aguardando",
         Carteirinha: item.numero_carteirinha || "—",
       }))
@@ -216,8 +226,8 @@ export default function RelatorioImplantacaoPage() {
       <div className="bg-white border-b border-gray-200 px-6 py-4">
         <h1 className="text-xl font-semibold text-gray-800">Relatório de Implantação</h1>
         <p className="text-sm text-gray-500 mt-0.5">
-          Clientes com boleto pago — ideal para identificar quem pagou o primeiro boleto e pode ser
-          incluído no plano. Implantado: carteirinha preenchida ou marcado como implantado no cadastro.
+          Clientes inseridos no mês selecionado — identificados pela 1ª fatura gerada no mês, sem
+          faturas anteriores. Implantado: carteirinha preenchida ou marcado no cadastro.
         </p>
       </div>
 
@@ -252,7 +262,7 @@ export default function RelatorioImplantacaoPage() {
             </div>
             <div className="space-y-1 sm:col-span-2">
               <Label className="text-[10px] uppercase tracking-wide text-slate-500">
-                Período de pagamento (opcional)
+                Pagamento entre (opcional)
               </Label>
               <Popover open={calendarioAberto} onOpenChange={setCalendarioAberto}>
                 <PopoverTrigger asChild>
@@ -344,7 +354,7 @@ export default function RelatorioImplantacaoPage() {
                 onCheckedChange={setSomentePrimeiro}
               />
               <Label htmlFor="somente-primeiro" className="text-sm text-slate-700 cursor-pointer">
-                Apenas primeiro boleto pago
+                Apenas com boleto pago
               </Label>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -375,21 +385,44 @@ export default function RelatorioImplantacaoPage() {
           </div>
         </div>
 
-        {totais.total > 0 ? (
-          <div className="grid gap-3 sm:grid-cols-3">
-            <div className="rounded-sm border border-slate-200 bg-white px-4 py-3">
-              <p className="text-[10px] uppercase tracking-wide text-slate-500">Registros</p>
-              <p className="text-2xl font-semibold text-slate-800 tabular-nums">{totais.total}</p>
-              <p className="text-xs text-slate-500">{periodoLabel}</p>
-            </div>
-            <div className="rounded-sm border border-slate-200 bg-white px-4 py-3">
-              <p className="text-[10px] uppercase tracking-wide text-slate-500">Primeiro boleto</p>
-              <p className="text-2xl font-semibold text-slate-800 tabular-nums">{totais.primeiro}</p>
-            </div>
-            <div className="rounded-sm border border-slate-200 bg-white px-4 py-3">
-              <p className="text-[10px] uppercase tracking-wide text-slate-500">Aguardando implantação</p>
-              <p className="text-2xl font-semibold text-slate-800 tabular-nums">{totais.aguardando}</p>
-            </div>
+        {relatorioGerado ? (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            {[
+              {
+                label: "Total novos",
+                value: totais.total,
+                hint: "1 fatura gerada no mês",
+              },
+              {
+                label: "Boletos pagos",
+                value: totais.pagos,
+                hint: "Pagamento confirmado",
+              },
+              {
+                label: "Aguardando pagamento",
+                value: totais.aguardandoPagamento,
+                hint: "Boleto ainda em aberto",
+              },
+              {
+                label: "Implantados",
+                value: totais.implantados,
+                hint: "Carteirinha ou flag ativa",
+              },
+              {
+                label: "Aguardando implantação",
+                value: totais.aguardandoImplantacao,
+                hint: "Pendente de carteirinha",
+              },
+            ].map((card) => (
+              <div
+                key={card.label}
+                className="rounded-sm border border-slate-200 bg-white px-4 py-3 shadow-sm"
+              >
+                <p className="text-[10px] uppercase tracking-wide text-slate-500">{card.label}</p>
+                <p className="text-2xl font-semibold text-slate-800 tabular-nums">{card.value}</p>
+                <p className="text-xs text-slate-500 mt-0.5">{card.hint}</p>
+              </div>
+            ))}
           </div>
         ) : null}
 
@@ -404,9 +437,9 @@ export default function RelatorioImplantacaoPage() {
                     "Telefone",
                     "Grupo",
                     "Corretora",
-                    "Pagamento",
+                    "Data pagamento",
                     "Valor",
-                    "1º boleto",
+                    "Situação boleto",
                     "Implantação",
                     "Carteirinha",
                   ].map((h) => (
@@ -447,11 +480,17 @@ export default function RelatorioImplantacaoPage() {
                       <td className="px-4 py-2.5">
                         <span
                           className={cn(
-                            "text-xs",
-                            item.primeiro_boleto ? "text-slate-800 font-medium" : "text-slate-400"
+                            "inline-flex items-center gap-1.5 text-xs",
+                            item.pago ? "text-green-700 font-medium" : "text-amber-700 font-medium"
                           )}
                         >
-                          {item.primeiro_boleto ? "Sim" : "Não"}
+                          <span
+                            className={cn(
+                              "h-1.5 w-1.5 rounded-full",
+                              item.pago ? "bg-green-600" : "bg-amber-500"
+                            )}
+                          />
+                          {item.pago ? "Pago" : "Em aberto"}
                         </span>
                       </td>
                       <td className="px-4 py-2.5">
