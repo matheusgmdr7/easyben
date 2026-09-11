@@ -45,6 +45,8 @@ export default function RelatorioImplantacaoPage() {
   const [linhas, setLinhas] = useState<LinhaRelatorioImplantacao[]>([])
   const [totais, setTotais] = useState({
     total: 0,
+    titulares: 0,
+    dependentes: 0,
     pagos: 0,
     aguardandoPagamento: 0,
     implantados: 0,
@@ -147,6 +149,8 @@ export default function RelatorioImplantacaoPage() {
       setLinhas(data.linhas || [])
       setTotais({
         total: data.total_registros || 0,
+        titulares: data.total_titulares || 0,
+        dependentes: data.total_dependentes || 0,
         pagos: data.total_pagos || 0,
         aguardandoPagamento: data.total_aguardando_pagamento || 0,
         implantados: data.total_implantados || 0,
@@ -178,7 +182,9 @@ export default function RelatorioImplantacaoPage() {
       const XLSX = await import("xlsx")
       const rows = linhas.map((item, idx) => ({
         Qtd: idx + 1,
+        Tipo: item.tipo_beneficiario === "dependente" ? "Dependente" : "Titular",
         Cliente: item.cliente_nome,
+        Titular: item.titular_nome || "—",
         CPF: formatarCpf(item.cpf),
         Telefone: item.telefone || "—",
         Grupo: item.grupo_nome || "—",
@@ -226,8 +232,8 @@ export default function RelatorioImplantacaoPage() {
       <div className="bg-white border-b border-gray-200 px-6 py-4">
         <h1 className="text-xl font-semibold text-gray-800">Relatório de Implantação</h1>
         <p className="text-sm text-gray-500 mt-0.5">
-          Clientes inseridos no mês selecionado — identificados pela 1ª fatura gerada no mês, sem
-          faturas anteriores. Implantado: carteirinha preenchida ou marcado no cadastro.
+            Beneficiários inseridos no mês (vidas importadas): titulares com no máximo 1 fatura nova no
+          mês e dependentes vinculados a esses titulares. Implantado: carteirinha/matrícula preenchida.
         </p>
       </div>
 
@@ -386,32 +392,42 @@ export default function RelatorioImplantacaoPage() {
         </div>
 
         {relatorioGerado ? (
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
             {[
               {
-                label: "Total novos",
+                label: "Total beneficiários",
                 value: totais.total,
-                hint: "1 fatura gerada no mês",
+                hint: "Titulares + dependentes",
+              },
+              {
+                label: "Titulares",
+                value: totais.titulares,
+                hint: "Vidas novas no mês",
+              },
+              {
+                label: "Dependentes",
+                value: totais.dependentes,
+                hint: "Vinculados a titular novo",
               },
               {
                 label: "Boletos pagos",
                 value: totais.pagos,
-                hint: "Pagamento confirmado",
+                hint: "Titular com pagamento OK",
               },
               {
                 label: "Aguardando pagamento",
                 value: totais.aguardandoPagamento,
-                hint: "Boleto ainda em aberto",
+                hint: "Boleto do titular em aberto",
               },
               {
                 label: "Implantados",
                 value: totais.implantados,
-                hint: "Carteirinha ou flag ativa",
+                hint: "Carteirinha/matrícula",
               },
               {
                 label: "Aguardando implantação",
                 value: totais.aguardandoImplantacao,
-                hint: "Pendente de carteirinha",
+                hint: "Sem carteirinha",
               },
             ].map((card) => (
               <div
@@ -432,7 +448,9 @@ export default function RelatorioImplantacaoPage() {
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50/90">
                   {[
+                    "Tipo",
                     "Cliente",
+                    "Titular",
                     "CPF",
                     "Telefone",
                     "Grupo",
@@ -455,7 +473,7 @@ export default function RelatorioImplantacaoPage() {
               <tbody className="divide-y divide-slate-100">
                 {linhas.length === 0 ? (
                   <tr>
-                    <td colSpan={10} className="px-4 py-12 text-center text-slate-500">
+                    <td colSpan={12} className="px-4 py-12 text-center text-slate-500">
                       {loading
                         ? "Carregando…"
                         : "Nenhum registro. Ajuste os filtros e clique em Gerar relatório."}
@@ -464,7 +482,11 @@ export default function RelatorioImplantacaoPage() {
                 ) : (
                   linhasPaginadas.map((item, idx) => (
                     <tr key={item.fatura_id} className={idx % 2 === 0 ? "bg-white" : "bg-slate-50/50"}>
+                      <td className="px-4 py-2.5 text-xs text-slate-600">
+                        {item.tipo_beneficiario === "dependente" ? "Dependente" : "Titular"}
+                      </td>
                       <td className="px-4 py-2.5 font-medium text-slate-800">{item.cliente_nome}</td>
+                      <td className="px-4 py-2.5 text-slate-600 text-xs">{item.titular_nome || "—"}</td>
                       <td className="px-4 py-2.5 text-slate-600 tabular-nums">{formatarCpf(item.cpf)}</td>
                       <td className="px-4 py-2.5 text-slate-600 tabular-nums text-xs">
                         {item.telefone || "—"}
