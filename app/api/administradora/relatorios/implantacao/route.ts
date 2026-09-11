@@ -62,6 +62,15 @@ export async function GET(request: NextRequest) {
         ? (implantadoRaw as "sim" | "nao")
         : "todos"
 
+    const modoRaw = qs.get("modo_referencia")?.trim() || "importacao"
+    const modoReferencia =
+      modoRaw === "primeira_fatura" || modoRaw === "pagamento"
+        ? modoRaw
+        : "importacao"
+
+    const incluirDependentesInclusao = qs.get("incluir_dependentes_inclusao") === "1"
+    const ignorarCpfAnteriorInativo = qs.get("ignorar_cpf_anterior_inativo") !== "0"
+
     const resultado = await gerarRelatorioImplantacao({
       administradoraId,
       tenantId,
@@ -74,6 +83,9 @@ export async function GET(request: NextRequest) {
       corretorId: corretorId && corretorId !== "todos" ? corretorId : null,
       somentePrimeiroBoleto: somentePrimeiro,
       implantado,
+      modoReferencia,
+      incluirDependentesInclusao,
+      ignorarCpfAnteriorInativo,
     })
 
     return NextResponse.json(resultado)

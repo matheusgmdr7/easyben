@@ -11,13 +11,13 @@ import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
 import { Calendar } from "@/components/ui/calendar"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { CalendarDays, FileSpreadsheet, Loader2, Search, X } from "lucide-react"
+import { CalendarDays, ChevronDown, ChevronUp, FileSpreadsheet, Loader2, Search, X } from "lucide-react"
 import { format, parse } from "date-fns"
 import { ptBR } from "date-fns/locale"
 import type { DateRange } from "react-day-picker"
 import { formatarData, formatarMoeda } from "@/utils/formatters"
 import { cn } from "@/lib/utils"
-import type { LinhaRelatorioImplantacao } from "@/lib/relatorio-implantacao"
+import type { DiagnosticoExclusao, LinhaRelatorioImplantacao, ModoReferenciaImplantacao } from "@/lib/relatorio-implantacao"
 
 type Corretor = { id: string; nome: string }
 
@@ -36,7 +36,47 @@ const MESES = [
   { value: "12", label: "Dezembro" },
 ]
 
-const ITENS_POR_PAGINA = 20
+const MODOS_REFERENCIA: { value: ModoReferenciaImplantacao; label: string; hint: string }[] = [
+  {
+    value: "importacao",
+    label: "Importação da vida",
+    hint: "Vidas inseridas no mês selecionado",
+  },
+  {
+    value: "primeira_fatura",
+    label: "1ª fatura gerada",
+    hint: "1º boleto gerado no mês, sem fatura anterior",
+  },
+  {
+    value: "pagamento",
+    label: "Pagamento da 1ª fatura",
+    hint: "1º pagamento no mês, sem pagamento anterior",
+  },
+]
+
+const LABELS_MOTIVO: Record<string, string> = {
+  inativo: "Vida inativa",
+  sem_cpf: "Sem CPF válido",
+  fora_grupo: "Fora do grupo filtrado",
+  sem_vida_titular: "Sem vida titular vinculada",
+  cpf_anterior: "CPF já existia antes",
+  fatura_anterior: "Já tinha fatura/pagamento anterior",
+  titular_nao_novo: "Titular não é novo no mês",
+  dependente_sem_cpf: "Dependente sem CPF",
+  dependente_cpf_anterior: "Dependente com CPF anterior",
+  dependente_fora_grupo: "Dependente fora do grupo",
+  dependente_sem_titular: "Dependente sem CPF titular",
+  corretor: "Corretora filtrada",
+  somente_pago: "Boleto não pago",
+  pagamento_fora_periodo: "Pagamento fora do período",
+  implantado_filtro: "Filtro de implantação",
+  dependente_corretor: "Dependente — corretora",
+  dependente_pagamento: "Dependente — pagamento titular",
+  dependente_titular_nao_listado: "Dependente — titular fora da lista",
+  dependente_implantado_filtro: "Dependente — implantação",
+}
+
+const ITENS_POR_PAGINA = 25
 const btnSquare = "rounded-sm"
 
 export default function RelatorioImplantacaoPage() {
@@ -45,15 +85,14 @@ export default function RelatorioImplantacaoPage() {
   const [linhas, setLinhas] = useState<LinhaRelatorioImplantacao[]>([])
   const [totais, setTotais] = useState({
     total: 0,
-    titulares: 0,
-    dependentes: 0,
     pagos: 0,
-    aguardandoPagamento: 0,
-    implantados: 0,
     aguardandoImplantacao: 0,
+    excluidos: 0,
   })
+  const [diagnostico, setDiagnostico] = useState<DiagnosticoExclusao | null>(null)
+  const [modoReferencia, setModoReferencia] = useState<ModoReferenciaImplantacao>("importacao")
   const [relatorioGerado, setRelatorioGerado] = useState(false)
-  const [periodo, setPeriodo] = useState<{ inicio: string; fim: string } | null>(null)
+  const [diagnosticoAberto, setDiagnosticoAberto] = useState(false)
   const [loading, setLoading] = useState(false)
   const [exportandoExcel, setExportandoExcel] = useState(false)
   const [paginaAtual, setPaginaAtual] = useState(1)
@@ -64,6 +103,7 @@ export default function RelatorioImplantacaoPage() {
   const [grupoId, setGrupoId] = useState("todos")
   const [corretorId, setCorretorId] = useState("todos")
   const [somentePrimeiro, setSomentePrimeiro] = useState(false)
+  const [incluirDependentesInclusao, setIncluirDependentesInclusao] = useState(false)
 
   const [grupos, setGrupos] = useState<GrupoBeneficiarios[]>([])
   const [corretores, setCorretores] = useState<Corretor[]>([])
@@ -89,6 +129,8 @@ export default function RelatorioImplantacaoPage() {
     () => parse(`${anoRef}-${mesRef}-01`, "yyyy-MM-dd", new Date()),
     [anoRef, mesRef]
   )
+
+  const modoAtual = MODOS_REFERENCIA.find((m) => m.value === modoReferencia)
 
   function labelPeriodoSelecionado(range: DateRange | undefined): string {
     if (!range?.from) return "Todo o mês"
@@ -131,6 +173,7 @@ export default function RelatorioImplantacaoPage() {
       url.searchParams.set("administradora_id", administradoraId)
       url.searchParams.set("ano", anoRef)
       url.searchParams.set("mes", mesRef)
+      url.searchParams.set("modo_referencia", modoReferencia)
       if (periodoRange?.from) {
         url.searchParams.set("data_inicio", format(periodoRange.from, "yyyy-MM-dd"))
         url.searchParams.set(
@@ -141,6 +184,7 @@ export default function RelatorioImplantacaoPage() {
       if (grupoId !== "todos") url.searchParams.set("grupo_id", grupoId)
       if (corretorId !== "todos") url.searchParams.set("corretor_id", corretorId)
       url.searchParams.set("somente_primeiro_boleto", somentePrimeiro ? "1" : "0")
+      url.searchParams.set("incluir_dependentes_inclusao", incluirDependentesInclusao ? "1" : "0")
 
       const res = await fetch(url.toString(), { cache: "no-store" })
       const data = await res.json()
@@ -149,16 +193,15 @@ export default function RelatorioImplantacaoPage() {
       setLinhas(data.linhas || [])
       setTotais({
         total: data.total_registros || 0,
-        titulares: data.total_titulares || 0,
-        dependentes: data.total_dependentes || 0,
         pagos: data.total_pagos || 0,
-        aguardandoPagamento: data.total_aguardando_pagamento || 0,
-        implantados: data.total_implantados || 0,
         aguardandoImplantacao: data.total_aguardando_implantacao || 0,
+        excluidos: data.diagnostico?.total_excluidos || 0,
       })
-      setPeriodo(data.periodo || null)
+      setDiagnostico(data.diagnostico || null)
+      setModoReferencia(data.modo_referencia || modoReferencia)
       setRelatorioGerado(true)
-      toast.success(`${data.total_registros || 0} cliente(s) novo(s) no período`)
+      setDiagnosticoAberto(Boolean(data.diagnostico?.total_excluidos))
+      toast.success(`${data.total_registros || 0} beneficiário(s) no período`)
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Erro ao gerar relatório")
     } finally {
@@ -191,9 +234,8 @@ export default function RelatorioImplantacaoPage() {
         Corretora: item.corretora || "—",
         "Data pagamento": item.pagamento_data ? formatarData(item.pagamento_data) : "—",
         Valor: item.valor != null ? Number(item.valor) : "",
-        Vencimento: item.vencimento ? formatarData(item.vencimento) : "—",
         "Nº fatura": item.numero_fatura || "—",
-        "Boleto pago": item.pago ? "Sim" : "Não",
+        Boleto: item.pago ? "Pago" : "Em aberto",
         Implantado: item.implantado ? "Sim" : "Aguardando",
         Carteirinha: item.numero_carteirinha || "—",
       }))
@@ -221,25 +263,48 @@ export default function RelatorioImplantacaoPage() {
     return linhas.slice(inicio, inicio + ITENS_POR_PAGINA)
   }, [linhas, paginaSegura])
 
-  const periodoLabel = periodo
-    ? periodo.inicio === periodo.fim
-      ? formatarData(periodo.inicio)
-      : `${formatarData(periodo.inicio)} — ${formatarData(periodo.fim)}`
-    : labelPeriodoSelecionado(periodoRange)
+  const motivosOrdenados = useMemo(() => {
+    if (!diagnostico?.motivos) return []
+    return Object.entries(diagnostico.motivos)
+      .filter(([, n]) => n > 0)
+      .sort((a, b) => b[1] - a[1])
+  }, [diagnostico])
 
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="bg-white border-b border-gray-200 px-6 py-4">
         <h1 className="text-xl font-semibold text-gray-800">Relatório de Implantação</h1>
         <p className="text-sm text-gray-500 mt-0.5">
-            Beneficiários inseridos no mês (vidas importadas): titulares com no máximo 1 fatura nova no
-          mês e dependentes vinculados a esses titulares. Implantado: carteirinha/matrícula preenchida.
+          Novos beneficiários no período — pagamento e implantação em visão resumida.
         </p>
       </div>
 
-      <div className="px-6 py-6 space-y-6 max-w-[min(100%,90rem)]">
+      <div className="px-6 py-6 space-y-5 max-w-[min(100%,80rem)]">
         <div className="rounded-sm border border-slate-200 bg-white p-4 shadow-sm space-y-4">
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="space-y-1 lg:col-span-2">
+              <Label className="text-[10px] uppercase tracking-wide text-slate-500">
+                Referência do período
+              </Label>
+              <Select
+                value={modoReferencia}
+                onValueChange={(v) => setModoReferencia(v as ModoReferenciaImplantacao)}
+              >
+                <SelectTrigger className={cn(btnSquare, "h-10")}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {MODOS_REFERENCIA.map((m) => (
+                    <SelectItem key={m.value} value={m.value}>
+                      {m.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {modoAtual ? (
+                <p className="text-xs text-slate-500">{modoAtual.hint}</p>
+              ) : null}
+            </div>
             <div className="space-y-1">
               <Label className="text-[10px] uppercase tracking-wide text-slate-500">Mês</Label>
               <Select value={mesRef} onValueChange={setMesRef}>
@@ -312,11 +377,9 @@ export default function RelatorioImplantacaoPage() {
                   onClick={() => setPeriodoRange(undefined)}
                 >
                   <X className="h-3 w-3" />
-                  Limpar período
+                  Limpar
                 </button>
-              ) : (
-                <p className="text-xs text-slate-500">Selecione um dia ou intervalo; vazio = mês inteiro.</p>
-              )}
+              ) : null}
             </div>
             <div className="space-y-1">
               <Label className="text-[10px] uppercase tracking-wide text-slate-500">Grupo</Label>
@@ -353,15 +416,27 @@ export default function RelatorioImplantacaoPage() {
           </div>
 
           <div className="flex flex-wrap items-center justify-between gap-4">
-            <div className="flex items-center gap-2">
-              <Switch
-                id="somente-primeiro"
-                checked={somentePrimeiro}
-                onCheckedChange={setSomentePrimeiro}
-              />
-              <Label htmlFor="somente-primeiro" className="text-sm text-slate-700 cursor-pointer">
-                Apenas com boleto pago
-              </Label>
+            <div className="flex flex-wrap items-center gap-6">
+              <div className="flex items-center gap-2">
+                <Switch
+                  id="somente-primeiro"
+                  checked={somentePrimeiro}
+                  onCheckedChange={setSomentePrimeiro}
+                />
+                <Label htmlFor="somente-primeiro" className="text-sm text-slate-700 cursor-pointer">
+                  Só com boleto pago
+                </Label>
+              </div>
+              <div className="flex items-center gap-2">
+                <Switch
+                  id="incluir-deps"
+                  checked={incluirDependentesInclusao}
+                  onCheckedChange={setIncluirDependentesInclusao}
+                />
+                <Label htmlFor="incluir-deps" className="text-sm text-slate-700 cursor-pointer">
+                  Dependentes de titular antigo
+                </Label>
+              </div>
             </div>
             <div className="flex flex-wrap gap-2">
               <Button
@@ -375,7 +450,7 @@ export default function RelatorioImplantacaoPage() {
                 ) : (
                   <Search className="h-4 w-4 mr-2" />
                 )}
-                Gerar relatório
+                Gerar
               </Button>
               <Button
                 type="button"
@@ -392,54 +467,67 @@ export default function RelatorioImplantacaoPage() {
         </div>
 
         {relatorioGerado ? (
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
-            {[
-              {
-                label: "Total beneficiários",
-                value: totais.total,
-                hint: "Titulares + dependentes",
-              },
-              {
-                label: "Titulares",
-                value: totais.titulares,
-                hint: "Vidas novas no mês",
-              },
-              {
-                label: "Dependentes",
-                value: totais.dependentes,
-                hint: "Vinculados a titular novo",
-              },
-              {
-                label: "Boletos pagos",
-                value: totais.pagos,
-                hint: "Titular com pagamento OK",
-              },
-              {
-                label: "Aguardando pagamento",
-                value: totais.aguardandoPagamento,
-                hint: "Boleto do titular em aberto",
-              },
-              {
-                label: "Implantados",
-                value: totais.implantados,
-                hint: "Carteirinha/matrícula",
-              },
-              {
-                label: "Aguardando implantação",
-                value: totais.aguardandoImplantacao,
-                hint: "Sem carteirinha",
-              },
-            ].map((card) => (
-              <div
-                key={card.label}
-                className="rounded-sm border border-slate-200 bg-white px-4 py-3 shadow-sm"
-              >
-                <p className="text-[10px] uppercase tracking-wide text-slate-500">{card.label}</p>
-                <p className="text-2xl font-semibold text-slate-800 tabular-nums">{card.value}</p>
-                <p className="text-xs text-slate-500 mt-0.5">{card.hint}</p>
+          <>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              {[
+                { label: "Beneficiários", value: totais.total },
+                { label: "Boletos pagos", value: totais.pagos },
+                { label: "Aguard. implantação", value: totais.aguardandoImplantacao },
+                { label: "Excluídos", value: totais.excluidos, muted: true },
+              ].map((card) => (
+                <div
+                  key={card.label}
+                  className="rounded-sm border border-slate-200 bg-white px-4 py-3 shadow-sm"
+                >
+                  <p className="text-[10px] uppercase tracking-wide text-slate-500">{card.label}</p>
+                  <p
+                    className={cn(
+                      "text-2xl font-semibold tabular-nums",
+                      card.muted ? "text-slate-500" : "text-slate-800"
+                    )}
+                  >
+                    {card.value}
+                  </p>
+                </div>
+              ))}
+            </div>
+
+            {diagnostico && motivosOrdenados.length > 0 ? (
+              <div className="rounded-sm border border-slate-200 bg-white shadow-sm overflow-hidden">
+                <button
+                  type="button"
+                  className="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-slate-50/80"
+                  onClick={() => setDiagnosticoAberto((v) => !v)}
+                >
+                  <div>
+                    <p className="text-sm font-medium text-slate-800">Por que clientes foram excluídos?</p>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      {diagnostico.vidas_bruto} vidas no mês · {diagnostico.titulares_candidatos} titulares
+                      candidatos · {diagnostico.total_excluidos} exclusões
+                    </p>
+                  </div>
+                  {diagnosticoAberto ? (
+                    <ChevronUp className="h-4 w-4 text-slate-400" />
+                  ) : (
+                    <ChevronDown className="h-4 w-4 text-slate-400" />
+                  )}
+                </button>
+                {diagnosticoAberto ? (
+                  <div className="border-t border-slate-100 px-4 py-3 flex flex-wrap gap-2">
+                    {motivosOrdenados.map(([motivo, qtd]) => (
+                      <span
+                        key={motivo}
+                        className="inline-flex items-center gap-1.5 rounded-sm bg-slate-100 px-2.5 py-1 text-xs text-slate-700"
+                      >
+                        <span className="font-semibold tabular-nums">{qtd}</span>
+                        {LABELS_MOTIVO[motivo] || motivo}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
               </div>
-            ))}
-          </div>
+            ) : null}
+          </>
         ) : null}
 
         <div className="rounded-sm border border-slate-200 bg-white shadow-sm overflow-hidden">
@@ -447,20 +535,7 @@ export default function RelatorioImplantacaoPage() {
             <table className="min-w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50/90">
-                  {[
-                    "Tipo",
-                    "Cliente",
-                    "Titular",
-                    "CPF",
-                    "Telefone",
-                    "Grupo",
-                    "Corretora",
-                    "Data pagamento",
-                    "Valor",
-                    "Situação boleto",
-                    "Implantação",
-                    "Carteirinha",
-                  ].map((h) => (
+                  {["Beneficiário", "Tipo", "Boleto", "Implantação", "Carteirinha"].map((h) => (
                     <th
                       key={h}
                       className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-600 whitespace-nowrap"
@@ -473,37 +548,33 @@ export default function RelatorioImplantacaoPage() {
               <tbody className="divide-y divide-slate-100">
                 {linhas.length === 0 ? (
                   <tr>
-                    <td colSpan={12} className="px-4 py-12 text-center text-slate-500">
+                    <td colSpan={5} className="px-4 py-12 text-center text-slate-500">
                       {loading
                         ? "Carregando…"
-                        : "Nenhum registro. Ajuste os filtros e clique em Gerar relatório."}
+                        : "Nenhum registro. Ajuste os filtros e clique em Gerar."}
                     </td>
                   </tr>
                 ) : (
                   linhasPaginadas.map((item, idx) => (
                     <tr key={item.fatura_id} className={idx % 2 === 0 ? "bg-white" : "bg-slate-50/50"}>
+                      <td className="px-4 py-2.5">
+                        <p className="font-medium text-slate-800">{item.cliente_nome}</p>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          {item.tipo_beneficiario === "dependente" && item.titular_nome
+                            ? `Titular: ${item.titular_nome}`
+                            : formatarCpf(item.cpf)}
+                          {item.pagamento_data ? ` · Pago ${formatarData(item.pagamento_data)}` : ""}
+                          {item.valor != null ? ` · ${formatarMoeda(Number(item.valor))}` : ""}
+                        </p>
+                      </td>
                       <td className="px-4 py-2.5 text-xs text-slate-600">
                         {item.tipo_beneficiario === "dependente" ? "Dependente" : "Titular"}
-                      </td>
-                      <td className="px-4 py-2.5 font-medium text-slate-800">{item.cliente_nome}</td>
-                      <td className="px-4 py-2.5 text-slate-600 text-xs">{item.titular_nome || "—"}</td>
-                      <td className="px-4 py-2.5 text-slate-600 tabular-nums">{formatarCpf(item.cpf)}</td>
-                      <td className="px-4 py-2.5 text-slate-600 tabular-nums text-xs">
-                        {item.telefone || "—"}
-                      </td>
-                      <td className="px-4 py-2.5 text-slate-600 text-xs">{item.grupo_nome || "—"}</td>
-                      <td className="px-4 py-2.5 text-slate-600 text-xs">{item.corretora || "—"}</td>
-                      <td className="px-4 py-2.5 tabular-nums text-slate-700">
-                        {item.pagamento_data ? formatarData(item.pagamento_data) : "—"}
-                      </td>
-                      <td className="px-4 py-2.5 tabular-nums text-slate-800">
-                        {item.valor != null ? formatarMoeda(Number(item.valor)) : "—"}
                       </td>
                       <td className="px-4 py-2.5">
                         <span
                           className={cn(
-                            "inline-flex items-center gap-1.5 text-xs",
-                            item.pago ? "text-green-700 font-medium" : "text-amber-700 font-medium"
+                            "inline-flex items-center gap-1.5 text-xs font-medium",
+                            item.pago ? "text-green-700" : "text-amber-700"
                           )}
                         >
                           <span
@@ -518,16 +589,10 @@ export default function RelatorioImplantacaoPage() {
                       <td className="px-4 py-2.5">
                         <span
                           className={cn(
-                            "inline-flex items-center gap-1.5 text-xs",
-                            item.implantado ? "text-slate-600" : "text-slate-800 font-medium"
+                            "text-xs",
+                            item.implantado ? "text-slate-500" : "text-slate-800 font-medium"
                           )}
                         >
-                          <span
-                            className={cn(
-                              "h-1.5 w-1.5 rounded-full",
-                              item.implantado ? "bg-slate-400" : "bg-slate-800"
-                            )}
-                          />
                           {item.implantado ? "Implantado" : "Aguardando"}
                         </span>
                       </td>
@@ -544,7 +609,7 @@ export default function RelatorioImplantacaoPage() {
           {linhas.length > 0 ? (
             <div className="flex items-center justify-between border-t border-slate-200 bg-slate-50/50 px-5 py-3">
               <p className="text-xs text-slate-500">
-                Página {paginaSegura} de {totalPaginas} — {linhas.length} registro
+                Página {paginaSegura} de {totalPaginas} · {linhas.length} registro
                 {linhas.length !== 1 ? "s" : ""}
               </p>
               <div className="flex gap-2">

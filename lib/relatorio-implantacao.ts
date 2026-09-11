@@ -1,9 +1,10 @@
 import { supabaseAdmin } from "@/lib/supabase-admin"
 import { montarMapaCorretorPorCliente } from "@/lib/corretor-cliente-vinculo"
-import { listarClienteAdministradoraIdsENomesDoGrupo } from "@/lib/grupo-cliente-administradora-ids"
 import { faturaEstaPaga } from "@/lib/fatura-status"
 import { extrairMatriculaDeDados } from "@/lib/matricula-beneficiario"
 import { primeiroTelefoneDeVida, resolverTelefoneClienteCobranca } from "@/lib/telefone-cliente-cobranca"
+
+export type ModoReferenciaImplantacao = "importacao" | "primeira_fatura" | "pagamento"
 
 export type LinhaRelatorioImplantacao = {
   fatura_id: string
@@ -21,13 +22,17 @@ export type LinhaRelatorioImplantacao = {
   vencimento: string | null
   pagamento_data: string | null
   pagamento_valor: number | null
-  primeiro_boleto: boolean
   pago: boolean
   implantado: boolean
   numero_carteirinha: string | null
-  data_vinculacao: string | null
-  fatura_created_at: string | null
-  vida_created_at: string | null
+}
+
+export type DiagnosticoExclusao = {
+  vidas_bruto: number
+  titulares_candidatos: number
+  dependentes_candidatos: number
+  motivos: Record<string, number>
+  total_excluidos: number
 }
 
 export type ResultadoRelatorioImplantacao = {
@@ -42,10 +47,12 @@ export type ResultadoRelatorioImplantacao = {
   /** @deprecated Use total_registros */
   total_primeiro_boleto: number
   periodo: { inicio: string; fim: string }
+  modo_referencia: ModoReferenciaImplantacao
+  diagnostico: DiagnosticoExclusao
 }
 
 const FATURAS_SELECT =
-  "id, cliente_administradora_id, cliente_nome, cliente_telefone, cliente_id, numero_fatura, valor, vencimento, pagamento_data, pagamento_valor, status, created_at"
+  "id, cliente_administradora_id, cliente_nome, cliente_telefone, numero_fatura, valor, vencimento, pagamento_data, pagamento_valor, status, created_at"
 
 const VIDAS_SELECT =
   "id, nome, cpf, cpf_titular, tipo, grupo_id, corretor_id, cliente_administradora_id, telefones, dados_adicionais, ativo, created_at"
@@ -70,7 +77,6 @@ type FaturaRow = {
   cliente_administradora_id: string | null
   cliente_nome: string | null
   cliente_telefone: string | null
-  cliente_id?: string | null
   numero_fatura: string | null
   valor: number | null
   vencimento: string | null
@@ -95,7 +101,7 @@ function dataPagamentoIso(raw: unknown): string | null {
   return s.slice(0, 10)
 }
 
-function normalizarCpf(raw: unknown): string | null {
+export function normalizarCpf(raw: unknown): string | null {
   const digits = String(raw || "").replace(/\D/g, "")
   if (digits.length === 11) return digits
   if (digits.length >= 10) return digits.slice(-11).padStart(11, "0")
@@ -106,7 +112,6 @@ function tipoVida(v: VidaRow): "titular" | "dependente" {
   return String(v.tipo || "titular").toLowerCase() === "dependente" ? "dependente" : "titular"
 }
 
-/** Implantado = flag explícita ou número de carteirinha preenchido. */
 export function clienteEstaImplantado(params: {
   implantado?: boolean | null
   numero_carteirinha?: string | null
@@ -120,6 +125,21 @@ function vidaEstaImplantada(vida: VidaRow, cliente?: { implantado?: boolean; num
   if (matriculaVida) return true
   if (cliente) return clienteEstaImplantado(cliente)
   return false
+}
+
+function escolherFaturaPrincipal(faturas: FaturaRow[]): FaturaRow | undefined {
+  if (!faturas.length) return undefined
+  const pagas = faturas.filter((f) => faturaEstaPaga(String(f.status || ""), f.pagamento_data))
+  if (pagas.length) {
+    return pagas.sort((a, b) =>
+      String(b.pagamento_data || b.created_at || "").localeCompare(
+        String(a.pagamento_data || a.created_at || "")
+      )
+    )[0]
+  }
+  return faturas.sort((a, b) =>
+    String(a.created_at || "").localeCompare(String(b.created_at || ""))
+  )[0]
 }
 
 async function carregarPaginado<T>(
@@ -160,11 +180,41 @@ async function carregarVidasInseridasNoMes(
   })
 }
 
+async function carregarVidasPorClienteIds(
+  administradoraId: string,
+  clienteIds: string[],
+  tenantId?: string | null
+): Promise<Map<string, VidaRow>> {
+  const mapa = new Map<string, VidaRow>()
+  if (!clienteIds.length) return mapa
+
+  const CHUNK = 200
+  for (let i = 0; i < clienteIds.length; i += CHUNK) {
+    const chunk = clienteIds.slice(i, i + CHUNK)
+    let q = supabaseAdmin
+      .from("vidas_importadas")
+      .select(VIDAS_SELECT)
+      .eq("administradora_id", administradoraId)
+      .in("cliente_administradora_id", chunk)
+      .order("created_at", { ascending: true })
+    if (tenantId) q = q.or(`tenant_id.eq.${tenantId},tenant_id.is.null`)
+    const { data } = await q
+    for (const row of data || []) {
+      const vida = row as VidaRow
+      if (tipoVida(vida) !== "titular") continue
+      const caId = String(vida.cliente_administradora_id || "").trim()
+      if (caId && !mapa.has(caId)) mapa.set(caId, vida)
+    }
+  }
+  return mapa
+}
+
 async function carregarCpfsComVidaAnterior(
   administradoraId: string,
   cpfs: string[],
   inicioMes: string,
-  tenantId?: string | null
+  tenantId?: string | null,
+  ignorarInativos?: boolean
 ): Promise<Set<string>> {
   const anteriores = new Set<string>()
   if (!cpfs.length) return anteriores
@@ -174,14 +224,16 @@ async function carregarCpfsComVidaAnterior(
     const chunk = cpfs.slice(i, i + CHUNK)
     let q = supabaseAdmin
       .from("vidas_importadas")
-      .select("cpf")
+      .select("cpf, ativo")
       .eq("administradora_id", administradoraId)
       .in("cpf", chunk)
       .lt("created_at", `${inicioMes}T00:00:00.000Z`)
     if (tenantId) q = q.or(`tenant_id.eq.${tenantId},tenant_id.is.null`)
     const { data } = await q
     for (const row of data || []) {
-      const cpf = normalizarCpf((row as { cpf?: string }).cpf)
+      const r = row as { cpf?: string; ativo?: boolean | null }
+      if (ignorarInativos && r.ativo === false) continue
+      const cpf = normalizarCpf(r.cpf)
       if (cpf) anteriores.add(cpf)
     }
   }
@@ -205,10 +257,27 @@ async function carregarFaturasGeradasNoPeriodo(
   })
 }
 
+async function carregarFaturasPagasNoPeriodo(
+  administradoraId: string,
+  inicio: string,
+  fim: string
+): Promise<FaturaRow[]> {
+  return carregarPaginado(async (offset, pageSize) => {
+    return supabaseAdmin
+      .from("faturas")
+      .select(FATURAS_SELECT)
+      .eq("administradora_id", administradoraId)
+      .gte("pagamento_data", inicio)
+      .lte("pagamento_data", fim)
+      .order("pagamento_data", { ascending: true })
+      .range(offset, offset + pageSize - 1)
+  })
+}
+
 async function clientesComFaturaAnterior(
   administradoraId: string,
   clienteIds: string[],
-  inicioMes: string
+  antesDe: string
 ): Promise<Set<string>> {
   const comAnterior = new Set<string>()
   if (!clienteIds.length) return comAnterior
@@ -221,7 +290,7 @@ async function clientesComFaturaAnterior(
       .select("cliente_administradora_id")
       .eq("administradora_id", administradoraId)
       .in("cliente_administradora_id", chunk)
-      .lt("created_at", `${inicioMes}T00:00:00.000Z`)
+      .lt("created_at", `${antesDe}T00:00:00.000Z`)
 
     for (const row of data || []) {
       const cid = String(row.cliente_administradora_id || "").trim()
@@ -231,10 +300,37 @@ async function clientesComFaturaAnterior(
   return comAnterior
 }
 
+async function clientesComPagamentoAnterior(
+  administradoraId: string,
+  clienteIds: string[],
+  antesDe: string
+): Promise<Set<string>> {
+  const comAnterior = new Set<string>()
+  if (!clienteIds.length) return comAnterior
+
+  const CHUNK = 200
+  for (let i = 0; i < clienteIds.length; i += CHUNK) {
+    const chunk = clienteIds.slice(i, i + CHUNK)
+    const { data } = await supabaseAdmin
+      .from("faturas")
+      .select("cliente_administradora_id, pagamento_data, status")
+      .eq("administradora_id", administradoraId)
+      .in("cliente_administradora_id", chunk)
+      .lt("pagamento_data", antesDe)
+
+    for (const row of data || []) {
+      const r = row as { cliente_administradora_id?: string; pagamento_data?: string; status?: string }
+      if (!faturaEstaPaga(String(r.status || ""), r.pagamento_data)) continue
+      const cid = String(r.cliente_administradora_id || "").trim()
+      if (cid) comAnterior.add(cid)
+    }
+  }
+  return comAnterior
+}
+
 /**
- * Relatório de implantação: beneficiários inseridos no mês (vidas_importadas).
- * Titular: 1ª vida no mês + no máximo 1 fatura no mês, sem fatura anterior.
- * Dependente: vida inserida no mês vinculada a titular também novo no mês.
+ * Relatório de implantação: beneficiários novos no período.
+ * Modos: importação da vida, 1ª fatura gerada ou pagamento da 1ª fatura.
  */
 export async function gerarRelatorioImplantacao(params: {
   administradoraId: string
@@ -248,8 +344,15 @@ export async function gerarRelatorioImplantacao(params: {
   corretorId?: string | null
   somentePrimeiroBoleto?: boolean
   implantado?: "todos" | "sim" | "nao"
+  modoReferencia?: ModoReferenciaImplantacao
+  incluirDependentesInclusao?: boolean
+  ignorarCpfAnteriorInativo?: boolean
 }): Promise<ResultadoRelatorioImplantacao> {
   const { administradoraId, tenantId, ano, mes } = params
+  const modoReferencia = params.modoReferencia || "importacao"
+  const incluirDependentesInclusao = params.incluirDependentesInclusao === true
+  const ignorarCpfAnteriorInativo = params.ignorarCpfAnteriorInativo !== false
+
   const inicioMes = primeiroDiaMes(ano, mes)
   const fimMes = ultimoDiaMes(ano, mes)
 
@@ -263,24 +366,34 @@ export async function gerarRelatorioImplantacao(params: {
   } else if (params.dia) {
     inicioPagamento = `${ano}-${String(mes).padStart(2, "0")}-${String(params.dia).padStart(2, "0")}`
     fimPagamento = inicioPagamento
+  } else if (modoReferencia === "pagamento") {
+    inicioPagamento = inicioMes
+    fimPagamento = fimMes
   }
 
-  const vidasNoMes = (await carregarVidasInseridasNoMes(
+  const motivos: Record<string, number> = {}
+  function inc(motivo: string) {
+    motivos[motivo] = (motivos[motivo] || 0) + 1
+  }
+
+  let grupoIdsFiltro: Set<string> | null = null
+  if (params.grupoId?.trim()) {
+    grupoIdsFiltro = new Set([params.grupoId.trim()])
+  }
+
+  const vidasNoMesBruto = await carregarVidasInseridasNoMes(
     administradoraId,
     inicioMes,
     fimMes,
     tenantId
-  )).filter((v) => v.ativo !== false)
-
-  const cpfsNoMes = Array.from(
-    new Set(vidasNoMes.map((v) => normalizarCpf(v.cpf)).filter(Boolean) as string[])
   )
-  const cpfsComVidaAnterior = await carregarCpfsComVidaAnterior(
-    administradoraId,
-    cpfsNoMes,
-    inicioMes,
-    tenantId
-  )
+  const vidasNoMes = vidasNoMesBruto.filter((v) => {
+    if (v.ativo === false) {
+      inc("inativo")
+      return false
+    }
+    return true
+  })
 
   const faturasNoMes = await carregarFaturasGeradasNoPeriodo(administradoraId, inicioMes, fimMes)
   const faturasPorCliente = new Map<string, FaturaRow[]>()
@@ -292,57 +405,175 @@ export async function gerarRelatorioImplantacao(params: {
     faturasPorCliente.set(cid, arr)
   }
 
+  type TitularCandidato = { vida: VidaRow; cpf: string; fatura?: FaturaRow }
+  const titularesCandidatos: TitularCandidato[] = []
+
+  if (modoReferencia === "importacao") {
+    for (const vida of vidasNoMes) {
+      if (tipoVida(vida) !== "titular") continue
+      const cpf = normalizarCpf(vida.cpf)
+      if (!cpf) {
+        inc("sem_cpf")
+        continue
+      }
+      if (grupoIdsFiltro && !grupoIdsFiltro.has(String(vida.grupo_id || ""))) {
+        inc("fora_grupo")
+        continue
+      }
+      titularesCandidatos.push({ vida, cpf })
+    }
+  } else if (modoReferencia === "primeira_fatura") {
+    const clienteIdsFatura = Array.from(
+      new Set(
+        faturasNoMes
+          .map((f) => String(f.cliente_administradora_id || "").trim())
+          .filter(Boolean)
+      )
+    )
+    const vidasPorCliente = await carregarVidasPorClienteIds(administradoraId, clienteIdsFatura, tenantId)
+
+    for (const [caId, faturasCliente] of faturasPorCliente) {
+      const vida = vidasPorCliente.get(caId)
+      if (!vida || vida.ativo === false) {
+        inc("sem_vida_titular")
+        continue
+      }
+      const cpf = normalizarCpf(vida.cpf)
+      if (!cpf) {
+        inc("sem_cpf")
+        continue
+      }
+      if (grupoIdsFiltro && !grupoIdsFiltro.has(String(vida.grupo_id || ""))) {
+        inc("fora_grupo")
+        continue
+      }
+      titularesCandidatos.push({ vida, cpf, fatura: escolherFaturaPrincipal(faturasCliente) })
+    }
+  } else {
+    const inicioPag = inicioPagamento || inicioMes
+    const fimPag = fimPagamento || fimMes
+    const faturasPagas = (await carregarFaturasPagasNoPeriodo(administradoraId, inicioPag, fimPag)).filter(
+      (f) => faturaEstaPaga(String(f.status || ""), f.pagamento_data)
+    )
+
+    const faturasPagasPorCliente = new Map<string, FaturaRow[]>()
+    for (const f of faturasPagas) {
+      const cid = String(f.cliente_administradora_id || "").trim()
+      if (!cid) continue
+      const arr = faturasPagasPorCliente.get(cid) || []
+      arr.push(f)
+      faturasPagasPorCliente.set(cid, arr)
+    }
+
+    const clienteIdsPagos = Array.from(faturasPagasPorCliente.keys())
+    const vidasPorCliente = await carregarVidasPorClienteIds(administradoraId, clienteIdsPagos, tenantId)
+
+    for (const [caId, faturasCliente] of faturasPagasPorCliente) {
+      const vida = vidasPorCliente.get(caId)
+      if (!vida || vida.ativo === false) {
+        inc("sem_vida_titular")
+        continue
+      }
+      const cpf = normalizarCpf(vida.cpf)
+      if (!cpf) {
+        inc("sem_cpf")
+        continue
+      }
+      if (grupoIdsFiltro && !grupoIdsFiltro.has(String(vida.grupo_id || ""))) {
+        inc("fora_grupo")
+        continue
+      }
+      titularesCandidatos.push({ vida, cpf, fatura: escolherFaturaPrincipal(faturasCliente) })
+    }
+  }
+
+  const cpfsCandidatos = Array.from(new Set(titularesCandidatos.map((t) => t.cpf)))
+  const cpfsComVidaAnterior = await carregarCpfsComVidaAnterior(
+    administradoraId,
+    cpfsCandidatos,
+    inicioMes,
+    tenantId,
+    ignorarCpfAnteriorInativo
+  )
+
   const clienteIdsTitulares = Array.from(
     new Set(
-      vidasNoMes
-        .filter((v) => tipoVida(v) === "titular")
-        .map((v) => String(v.cliente_administradora_id || "").trim())
+      titularesCandidatos
+        .map((t) => String(t.vida.cliente_administradora_id || "").trim())
         .filter(Boolean)
     )
   )
-  const comFaturaAnterior = await clientesComFaturaAnterior(
-    administradoraId,
-    clienteIdsTitulares,
-    inicioMes
-  )
 
-  let grupoIdsFiltro: Set<string> | null = null
-  if (params.grupoId?.trim()) {
-    grupoIdsFiltro = new Set([params.grupoId.trim()])
-  }
+  const comFaturaAnterior =
+    modoReferencia === "pagamento"
+      ? await clientesComPagamentoAnterior(administradoraId, clienteIdsTitulares, inicioPagamento || inicioMes)
+      : await clientesComFaturaAnterior(administradoraId, clienteIdsTitulares, inicioMes)
 
-  const titularesNovos = new Map<string, VidaRow>()
-  for (const vida of vidasNoMes) {
-    if (tipoVida(vida) !== "titular") continue
-    const cpf = normalizarCpf(vida.cpf)
-    if (!cpf || cpfsComVidaAnterior.has(cpf)) continue
-    if (grupoIdsFiltro && !grupoIdsFiltro.has(String(vida.grupo_id || ""))) continue
+  const titularesNovos = new Map<string, TitularCandidato>()
+  for (const cand of titularesCandidatos) {
+    if (cpfsComVidaAnterior.has(cand.cpf)) {
+      inc("cpf_anterior")
+      continue
+    }
 
-    const caId = String(vida.cliente_administradora_id || "").trim()
-    const faturasCliente = caId ? faturasPorCliente.get(caId) || [] : []
-    if (caId && comFaturaAnterior.has(caId)) continue
-    if (faturasCliente.length > 1) continue
+    const caId = String(cand.vida.cliente_administradora_id || "").trim()
+    if (caId && comFaturaAnterior.has(caId)) {
+      inc("fatura_anterior")
+      continue
+    }
 
-    titularesNovos.set(cpf, vida)
+    if (modoReferencia === "importacao") {
+      const faturasCliente = caId ? faturasPorCliente.get(caId) || [] : []
+      cand.fatura = escolherFaturaPrincipal(faturasCliente)
+    }
+
+    if (!titularesNovos.has(cand.cpf)) {
+      titularesNovos.set(cand.cpf, cand)
+    }
   }
 
   const cpfsTitularesNovos = new Set(titularesNovos.keys())
 
-  const dependentesNovos: VidaRow[] = []
+  const dependentesCandidatos: VidaRow[] = []
   for (const vida of vidasNoMes) {
     if (tipoVida(vida) !== "dependente") continue
     const cpf = normalizarCpf(vida.cpf)
-    if (!cpf || cpfsComVidaAnterior.has(cpf)) continue
+    if (!cpf) {
+      inc("dependente_sem_cpf")
+      continue
+    }
+    if (cpfsComVidaAnterior.has(cpf)) {
+      inc("dependente_cpf_anterior")
+      continue
+    }
+    if (grupoIdsFiltro && !grupoIdsFiltro.has(String(vida.grupo_id || ""))) {
+      inc("dependente_fora_grupo")
+      continue
+    }
+
     const cpfTit = normalizarCpf(vida.cpf_titular)
-    if (!cpfTit || !cpfsTitularesNovos.has(cpfTit)) continue
-    if (grupoIdsFiltro && !grupoIdsFiltro.has(String(vida.grupo_id || ""))) continue
-    dependentesNovos.push(vida)
+    if (!cpfTit) {
+      inc("dependente_sem_titular")
+      continue
+    }
+
+    if (cpfsTitularesNovos.has(cpfTit)) {
+      dependentesCandidatos.push(vida)
+      continue
+    }
+
+    if (incluirDependentesInclusao) {
+      dependentesCandidatos.push(vida)
+      continue
+    }
+
+    inc("titular_nao_novo")
   }
 
   const clienteIds = Array.from(
     new Set(
       [...titularesNovos.values()]
-        .map((v) => String(v.cliente_administradora_id || "").trim())
+        .map((t) => String(t.vida.cliente_administradora_id || "").trim())
         .filter(Boolean)
     )
   )
@@ -351,8 +582,11 @@ export async function gerarRelatorioImplantacao(params: {
 
   const corretorIdsVida = Array.from(
     new Set(
-      [...titularesNovos.values(), ...dependentesNovos]
-        .map((v) => String(v.corretor_id || "").trim())
+      [...titularesNovos.values(), ...dependentesCandidatos]
+        .flatMap((item) => {
+          const vida = "vida" in item ? item.vida : item
+          return [String(vida.corretor_id || "").trim()]
+        })
         .filter(Boolean)
     )
   )
@@ -372,27 +606,30 @@ export async function gerarRelatorioImplantacao(params: {
 
   const clientesMap = new Map<
     string,
-    { implantado: boolean; numero_carteirinha: string | null; data_vinculacao: string | null }
+    { implantado: boolean; numero_carteirinha: string | null }
   >()
   if (clienteIds.length > 0) {
     for (let i = 0; i < clienteIds.length; i += 500) {
       const lote = clienteIds.slice(i, i + 500)
       const { data: clientes } = await supabaseAdmin
         .from("clientes_administradoras")
-        .select("id, implantado, numero_carteirinha, data_vinculacao")
+        .select("id, implantado, numero_carteirinha")
         .in("id", lote)
       for (const c of clientes || []) {
         clientesMap.set(String(c.id), {
           implantado: Boolean(c.implantado),
           numero_carteirinha: c.numero_carteirinha ? String(c.numero_carteirinha) : null,
-          data_vinculacao: c.data_vinculacao ? String(c.data_vinculacao).slice(0, 10) : null,
         })
       }
     }
   }
 
   const grupoIds = new Set<string>()
-  for (const v of [...titularesNovos.values(), ...dependentesNovos]) {
+  for (const t of titularesNovos.values()) {
+    const gid = String(t.vida.grupo_id || "").trim()
+    if (gid) grupoIds.add(gid)
+  }
+  for (const v of dependentesCandidatos) {
     const gid = String(v.grupo_id || "").trim()
     if (gid) grupoIds.add(gid)
   }
@@ -419,7 +656,7 @@ export async function gerarRelatorioImplantacao(params: {
 
   function passaFiltrosPagamento(pago: boolean, pagamentoData: string | null): boolean {
     if (params.somentePrimeiroBoleto === true && !pago) return false
-    if (inicioPagamento && fimPagamento) {
+    if (inicioPagamento && fimPagamento && modoReferencia !== "pagamento") {
       if (!pagamentoData || pagamentoData < inicioPagamento || pagamentoData > fimPagamento) {
         return false
       }
@@ -429,28 +666,39 @@ export async function gerarRelatorioImplantacao(params: {
 
   const linhas: LinhaRelatorioImplantacao[] = []
 
-  for (const [cpfTit, vidaTit] of titularesNovos) {
+  for (const [cpfTit, cand] of titularesNovos) {
+    const vidaTit = cand.vida
     const caId = String(vidaTit.cliente_administradora_id || "").trim()
     if (params.corretorId?.trim() && params.corretorId !== "todos") {
       const corId = String(vidaTit.corretor_id || mapaCorretor.get(caId) || "")
-      if (corId !== params.corretorId.trim()) continue
+      if (corId !== params.corretorId.trim()) {
+        inc("corretor")
+        continue
+      }
     }
 
-    const faturasCliente = caId ? faturasPorCliente.get(caId) || [] : []
-    const fatura = faturasCliente[0]
+    const fatura = cand.fatura
     const pagamentoData = fatura ? dataPagamentoIso(fatura.pagamento_data) : null
     const pago = fatura ? faturaEstaPaga(String(fatura.status || ""), fatura.pagamento_data) : false
 
-    if (!passaFiltrosPagamento(pago, pagamentoData)) continue
+    if (!passaFiltrosPagamento(pago, pagamentoData)) {
+      inc(params.somentePrimeiroBoleto ? "somente_pago" : "pagamento_fora_periodo")
+      continue
+    }
 
     const cliente = caId ? clientesMap.get(caId) : undefined
     const matriculaVida = extrairMatriculaDeDados(vidaTit as Record<string, unknown>)
     const implantado = vidaEstaImplantada(vidaTit, cliente)
-    const numeroCarteirinha =
-      matriculaVida || cliente?.numero_carteirinha || null
+    const numeroCarteirinha = matriculaVida || cliente?.numero_carteirinha || null
 
-    if (params.implantado === "sim" && !implantado) continue
-    if (params.implantado === "nao" && implantado) continue
+    if (params.implantado === "sim" && !implantado) {
+      inc("implantado_filtro")
+      continue
+    }
+    if (params.implantado === "nao" && implantado) {
+      inc("implantado_filtro")
+      continue
+    }
 
     const telVida = primeiroTelefoneDeVida(vidaTit as Record<string, unknown>)
     const telFatura = fatura ? String(fatura.cliente_telefone || "").trim() || null : null
@@ -471,17 +719,16 @@ export async function gerarRelatorioImplantacao(params: {
       vencimento: fatura?.vencimento ? String(fatura.vencimento).slice(0, 10) : null,
       pagamento_data: pagamentoData,
       pagamento_valor: fatura?.pagamento_valor != null ? Number(fatura.pagamento_valor) : null,
-      primeiro_boleto: true,
       pago,
       implantado,
       numero_carteirinha: numeroCarteirinha,
-      data_vinculacao: cliente?.data_vinculacao || null,
-      fatura_created_at: fatura?.created_at ? String(fatura.created_at) : null,
-      vida_created_at: vidaTit.created_at ? String(vidaTit.created_at) : null,
     })
   }
 
-  const titularPorCpf = new Map<string, { nome: string; pago: boolean; pagamentoData: string | null; caId: string | null }>()
+  const titularPorCpf = new Map<
+    string,
+    { nome: string; pago: boolean; pagamentoData: string | null; caId: string | null }
+  >()
   for (const linha of linhas.filter((l) => l.tipo_beneficiario === "titular")) {
     const cpf = normalizarCpf(linha.cpf)
     if (cpf) {
@@ -494,34 +741,55 @@ export async function gerarRelatorioImplantacao(params: {
     }
   }
 
-  for (const vidaDep of dependentesNovos) {
+  for (const vidaDep of dependentesCandidatos) {
     const cpfTit = normalizarCpf(vidaDep.cpf_titular)
     const titularInfo = cpfTit ? titularPorCpf.get(cpfTit) : undefined
-    if (!titularInfo) continue
+
+    if (!titularInfo && !incluirDependentesInclusao) continue
 
     if (params.corretorId?.trim() && params.corretorId !== "todos") {
-      const caId = titularInfo.caId || ""
+      const caId = titularInfo?.caId || ""
       const corId = String(vidaDep.corretor_id || (caId ? mapaCorretor.get(caId) : "") || "")
-      if (corId !== params.corretorId.trim()) continue
+      if (corId !== params.corretorId.trim()) {
+        inc("dependente_corretor")
+        continue
+      }
     }
 
-    const pago = titularInfo.pago
-    const pagamentoData = titularInfo.pagamentoData
-    if (!passaFiltrosPagamento(pago, pagamentoData)) continue
+    const pago = titularInfo?.pago ?? false
+    const pagamentoData = titularInfo?.pagamentoData ?? null
+
+    if (titularInfo && !passaFiltrosPagamento(pago, pagamentoData)) {
+      inc("dependente_pagamento")
+      continue
+    }
+
+    if (!titularInfo && incluirDependentesInclusao) {
+      if (params.somentePrimeiroBoleto) {
+        inc("dependente_titular_nao_listado")
+        continue
+      }
+    }
 
     const matriculaDep = extrairMatriculaDeDados(vidaDep as Record<string, unknown>)
     const implantado = Boolean(matriculaDep)
 
-    if (params.implantado === "sim" && !implantado) continue
-    if (params.implantado === "nao" && implantado) continue
+    if (params.implantado === "sim" && !implantado) {
+      inc("dependente_implantado_filtro")
+      continue
+    }
+    if (params.implantado === "nao" && implantado) {
+      inc("dependente_implantado_filtro")
+      continue
+    }
 
-    const caIdTit = titularInfo.caId
+    const caIdTit = titularInfo?.caId ?? null
 
     linhas.push({
       fatura_id: `vida-dependente-${vidaDep.id}`,
       vida_id: String(vidaDep.id),
       tipo_beneficiario: "dependente",
-      titular_nome: titularInfo.nome,
+      titular_nome: titularInfo?.nome || null,
       cliente_administradora_id: caIdTit || `vida:${vidaDep.id}`,
       cliente_nome: String(vidaDep.nome || "Dependente"),
       cpf: normalizarCpf(vidaDep.cpf),
@@ -533,13 +801,9 @@ export async function gerarRelatorioImplantacao(params: {
       vencimento: null,
       pagamento_data: pagamentoData,
       pagamento_valor: null,
-      primeiro_boleto: true,
       pago,
       implantado,
       numero_carteirinha: matriculaDep || null,
-      data_vinculacao: null,
-      fatura_created_at: null,
-      vida_created_at: vidaDep.created_at ? String(vidaDep.created_at) : null,
     })
   }
 
@@ -558,6 +822,7 @@ export async function gerarRelatorioImplantacao(params: {
   const totalDependentes = linhas.filter((l) => l.tipo_beneficiario === "dependente").length
   const totalPagos = linhas.filter((l) => l.pago).length
   const totalImplantados = linhas.filter((l) => l.implantado).length
+  const totalExcluidos = Object.values(motivos).reduce((s, n) => s + n, 0)
 
   return {
     linhas,
@@ -570,5 +835,13 @@ export async function gerarRelatorioImplantacao(params: {
     total_aguardando_implantacao: linhas.length - totalImplantados,
     total_primeiro_boleto: linhas.length,
     periodo: { inicio: inicioMes, fim: fimMes },
+    modo_referencia: modoReferencia,
+    diagnostico: {
+      vidas_bruto: vidasNoMesBruto.length,
+      titulares_candidatos: titularesCandidatos.length,
+      dependentes_candidatos: dependentesCandidatos.length,
+      motivos,
+      total_excluidos: totalExcluidos,
+    },
   }
 }
