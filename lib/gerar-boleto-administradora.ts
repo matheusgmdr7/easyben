@@ -264,7 +264,12 @@ export async function gerarBoletoAdministradora(body: Record<string, unknown>): 
       cliente_telefone: bodyClienteTelefone,
       dia_vencimento: bodyDiaVencimento,
       taxa_administracao: bodyTaxaAdministracao,
+      permitir_duplicata_mes: bodyPermitirDuplicataMes,
+      motivo_segunda_via: bodyMotivoSegundaVia,
     } = body
+
+    const permitirDuplicataMes = bodyPermitirDuplicataMes === true || bodyPermitirDuplicataMes === "true"
+    const motivoSegundaVia = String(bodyMotivoSegundaVia || "").trim()
 
     if (
       !administradora_id ||
@@ -606,17 +611,27 @@ export async function gerarBoletoAdministradora(body: Record<string, unknown>): 
       .limit(1)
       .maybeSingle()
 
-    if (faturaMesExistente) {
+    if (faturaMesExistente && !permitirDuplicataMes) {
       return NextResponse.json(
         {
           error:
             `Este cliente já possui boleto/fatura para ${String(mes).padStart(2, "0")}/${ano}. ` +
-            `Exclua o boleto atual para gerar novamente no mesmo mês.`,
+            `Confirme a geração de segunda via ou exclua o boleto atual.`,
           fatura_existente_id: faturaMesExistente.id,
           fatura_existente_numero: faturaMesExistente.numero_fatura,
+          fatura_existente_status: faturaMesExistente.status,
+          fatura_existente_vencimento: faturaMesExistente.vencimento,
+          codigo: "fatura_mes_existente",
         },
         { status: 409 }
       )
+    }
+
+    if (faturaMesExistente && permitirDuplicataMes) {
+      log("Segunda via no mesmo mês autorizada", {
+        fatura_existente_id: faturaMesExistente.id,
+        motivo: motivoSegundaVia || null,
+      })
     }
 
     AsaasServiceInstance.setApiKey(financeira.api_key, financeira.ambiente || "producao")
@@ -671,6 +686,15 @@ export async function gerarBoletoAdministradora(body: Record<string, unknown>): 
       if (dependentesNomes.length > 0) partes.push(`Dependentes: ${dependentesNomes.join(", ")}`)
       if (taxaAdministracao > 0) partes.push(`Taxa de administração: R$ ${taxaAdministracao.toFixed(2)}`)
       descricaoBoleto = partes.length > 0 ? partes.join(". ") : `Mensalidade - ${nome || "Cliente"}`
+    }
+
+    if (permitirDuplicataMes && faturaMesExistente) {
+      const prefixoSegundaVia = motivoSegundaVia
+        ? `[Segunda via] ${motivoSegundaVia}`
+        : "[Segunda via]"
+      descricaoBoleto = descricaoBoleto
+        ? `${prefixoSegundaVia} — ${descricaoBoleto}`
+        : prefixoSegundaVia
     }
 
     const charge: AsaasCharge = {

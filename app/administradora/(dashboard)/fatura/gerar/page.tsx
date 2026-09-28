@@ -32,6 +32,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Progress } from "@/components/ui/progress"
 import {
@@ -142,6 +143,16 @@ function FaturaGerarPageContent() {
   const [descricao, setDescricao] = useState("")
   const [taxaAdministracao, setTaxaAdministracao] = useState("")
   const [gerando, setGerando] = useState(false)
+  const [segundaViaDialogOpen, setSegundaViaDialogOpen] = useState(false)
+  const [segundaViaInfo, setSegundaViaInfo] = useState<{
+    error?: string
+    fatura_existente_id?: string
+    fatura_existente_numero?: string
+    fatura_existente_status?: string
+    fatura_existente_vencimento?: string
+  } | null>(null)
+  const [motivoSegundaVia, setMotivoSegundaVia] = useState("")
+  const [confirmarSegundaVia, setConfirmarSegundaVia] = useState(false)
   const [ultimoBoletoUrl, setUltimoBoletoUrl] = useState<string | null>(null)
   const [ultimoInvoiceUrl, setUltimoInvoiceUrl] = useState<string | null>(null)
   const [faturaGerada, setFaturaGerada] = useState(false)
@@ -323,6 +334,9 @@ function FaturaGerarPageContent() {
       partes.push(`${qtdDeps} dependente(s): ${(cliente.dependentes_nomes ?? []).join(", ")}`)
     }
     setDescricao(partes.join(". "))
+    setMotivoSegundaVia("")
+    setConfirmarSegundaVia(false)
+    setSegundaViaInfo(null)
     setModalOpen(true)
   }
 
@@ -421,7 +435,10 @@ function FaturaGerarPageContent() {
     }
   }
 
-  async function gerarBoleto() {
+  async function executarGerarBoleto(opcoes?: {
+    permitirDuplicataMes?: boolean
+    motivoSegundaVia?: string
+  }) {
     if (!administradoraId || !clienteSelecionado || !financeiraId) {
       toast.error("Selecione a empresa financeira e preencha valor e vencimento")
       return
@@ -456,13 +473,34 @@ function FaturaGerarPageContent() {
           cliente_nome: clienteSelecionado.cliente_nome || undefined,
           cliente_email: clienteSelecionado.cliente_email || undefined,
           taxa_administracao: taxaNum > 0 ? taxaNum : undefined,
+          ...(opcoes?.permitirDuplicataMes
+            ? {
+                permitir_duplicata_mes: true,
+                motivo_segunda_via: opcoes.motivoSegundaVia?.trim() || undefined,
+              }
+            : {}),
         }),
       })
       const data = await res.json().catch(() => ({}))
+      if (res.status === 409 && data?.codigo === "fatura_mes_existente" && !opcoes?.permitirDuplicataMes) {
+        setSegundaViaInfo({
+          error: data.error,
+          fatura_existente_id: data.fatura_existente_id,
+          fatura_existente_numero: data.fatura_existente_numero,
+          fatura_existente_status: data.fatura_existente_status,
+          fatura_existente_vencimento: data.fatura_existente_vencimento,
+        })
+        setMotivoSegundaVia("")
+        setConfirmarSegundaVia(false)
+        setSegundaViaDialogOpen(true)
+        return
+      }
       if (!res.ok) {
         throw new Error(data?.error || "Erro ao gerar boleto")
       }
-      toast.success("Boleto gerado com sucesso")
+      toast.success(
+        opcoes?.permitirDuplicataMes ? "Segunda via gerada com sucesso" : "Boleto gerado com sucesso"
+      )
       const linkBoleto = data.boleto_url || data.invoice_url || data.payment_link
       const clienteAdministradoraIdAtualizado =
         data.cliente_administradora_id || clienteSelecionado.cliente_administradora_id
@@ -504,6 +542,22 @@ function FaturaGerarPageContent() {
     }
   }
 
+  async function gerarBoleto() {
+    await executarGerarBoleto()
+  }
+
+  async function confirmarGerarSegundaVia() {
+    if (!confirmarSegundaVia) {
+      toast.error("Marque a confirmação para gerar a segunda via no mesmo mês.")
+      return
+    }
+    setSegundaViaDialogOpen(false)
+    await executarGerarBoleto({
+      permitirDuplicataMes: true,
+      motivoSegundaVia,
+    })
+  }
+
   function irParaAbaFinanceiro() {
     if (!grupoSelecionado || !clienteSelecionado) return
     const clienteId = clienteSelecionado.cliente_administradora_id
@@ -525,7 +579,7 @@ function FaturaGerarPageContent() {
 
   /**
    * Mês (YYYY-MM) de competência do próximo faturamento, alinhado ao modal individual e à regra do
-   * gerar-boleto (duplicata = já existe fatura com vencimento naquele mês).
+   * gerar-boleto (duplicata = já existe fatura com vencimento naquele mês; segunda via exige confirmação).
    * Antes usávamos o "mês atual" em UTC, o que não batia com vencimento em outro mês (ex.: boleto em
    * abril enquanto "hoje" ainda é março → a UI liberava e a API retornava 409).
    */
@@ -1768,6 +1822,76 @@ function FaturaGerarPageContent() {
                 </>
               ) : (
                 "Gerar boleto"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={segundaViaDialogOpen} onOpenChange={setSegundaViaDialogOpen}>
+        <DialogContent className="sm:max-w-md rounded-xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-amber-900">
+              <AlertTriangle className="h-5 w-5 shrink-0" />
+              Segunda via no mesmo mês
+            </DialogTitle>
+            <DialogDescription className="text-sm text-slate-600 pt-1">
+              {segundaViaInfo?.error ||
+                "Este cliente já possui boleto/fatura com vencimento neste mês."}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 text-sm">
+            {segundaViaInfo?.fatura_existente_numero ? (
+              <p className="text-slate-700">
+                Fatura existente:{" "}
+                <span className="font-medium">{segundaViaInfo.fatura_existente_numero}</span>
+                {segundaViaInfo.fatura_existente_vencimento
+                  ? ` · venc. ${formatarData(String(segundaViaInfo.fatura_existente_vencimento).slice(0, 10))}`
+                  : ""}
+                {segundaViaInfo.fatura_existente_status
+                  ? ` · ${segundaViaInfo.fatura_existente_status}`
+                  : ""}
+              </p>
+            ) : null}
+            <div>
+              <Label htmlFor="motivo-segunda-via" className="text-sm">
+                Motivo (opcional)
+              </Label>
+              <Input
+                id="motivo-segunda-via"
+                value={motivoSegundaVia}
+                onChange={(e) => setMotivoSegundaVia(e.target.value)}
+                placeholder="Ex.: correção de valor, segunda via solicitada pelo cliente"
+                className="mt-1.5 h-10"
+              />
+            </div>
+            <label className="flex items-start gap-2 cursor-pointer">
+              <Checkbox
+                checked={confirmarSegundaVia}
+                onCheckedChange={(v) => setConfirmarSegundaVia(v === true)}
+                className="mt-0.5"
+              />
+              <span className="text-slate-700 leading-snug">
+                Confirmo que preciso gerar outro boleto para este cliente no mesmo mês de vencimento.
+              </span>
+            </label>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setSegundaViaDialogOpen(false)} disabled={gerando}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={() => void confirmarGerarSegundaVia()}
+              disabled={gerando || !confirmarSegundaVia}
+              className="bg-amber-700 hover:bg-amber-800"
+            >
+              {gerando ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Gerando…
+                </>
+              ) : (
+                "Gerar segunda via"
               )}
             </Button>
           </DialogFooter>
