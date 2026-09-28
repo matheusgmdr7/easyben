@@ -7,7 +7,7 @@ export const maxDuration = 60
 
 /**
  * GET /api/administradora/relatorios/implantacao
- * Clientes inseridos no mês (1ª fatura gerada no mês, sem faturas anteriores).
+ * Clientes com boleto pago no período (foco em primeiro boleto → implantação).
  */
 export async function GET(request: NextRequest) {
   try {
@@ -55,21 +55,12 @@ export async function GET(request: NextRequest) {
     const tenantId = administradora?.tenant_id || tenantAtual
     const grupoId = qs.get("grupo_id")?.trim() || null
     const corretorId = qs.get("corretor_id")?.trim() || null
-    const somentePrimeiro = qs.get("somente_primeiro_boleto") === "1"
+    const somentePrimeiro = qs.get("somente_primeiro_boleto") !== "0"
     const implantadoRaw = qs.get("implantado")?.trim() || "todos"
     const implantado =
       implantadoRaw === "sim" || implantadoRaw === "nao"
         ? (implantadoRaw as "sim" | "nao")
         : "todos"
-
-    const modoRaw = qs.get("modo_referencia")?.trim() || "importacao"
-    const modoReferencia =
-      modoRaw === "primeira_fatura" || modoRaw === "pagamento"
-        ? modoRaw
-        : "importacao"
-
-    const incluirDependentesInclusao = qs.get("incluir_dependentes_inclusao") === "1"
-    const ignorarCpfAnteriorInativo = qs.get("ignorar_cpf_anterior_inativo") !== "0"
 
     const resultado = await gerarRelatorioImplantacao({
       administradoraId,
@@ -83,9 +74,6 @@ export async function GET(request: NextRequest) {
       corretorId: corretorId && corretorId !== "todos" ? corretorId : null,
       somentePrimeiroBoleto: somentePrimeiro,
       implantado,
-      modoReferencia,
-      incluirDependentesInclusao,
-      ignorarCpfAnteriorInativo,
     })
 
     return NextResponse.json(resultado)
