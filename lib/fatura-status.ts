@@ -18,6 +18,16 @@ export const ASAAS_TO_INTERNO: Record<string, string> = {
   DUNNING_RECEIVED: "paga",
 }
 
+/** Sinônimos usados em importações/planilhas (mesmo mapa da pesquisa de faturas). */
+const STATUS_ALIASES: Record<string, string> = {
+  liquidado: "paga",
+  baixado: "paga",
+  cancelado: "cancelada",
+  faturado: "pendente",
+  processado: "pendente",
+  vencido: "vencida",
+}
+
 export function normalizarStatusFatura(status: string | null | undefined): string {
   const bruto = String(status || "").trim()
   if (!bruto) return ""
@@ -26,6 +36,7 @@ export function normalizarStatusFatura(status: string | null | undefined): strin
   if (ASAAS_TO_INTERNO[upper]) return ASAAS_TO_INTERNO[upper]
 
   const lower = bruto.toLowerCase()
+  if (STATUS_ALIASES[lower]) return STATUS_ALIASES[lower]
   if (lower === "paid" || lower === "pago") return "paga"
   if (lower === "overdue") return "atrasada"
   if (lower === "cancelled" || lower === "canceled") return "cancelada"
@@ -85,6 +96,12 @@ export function faturaCombinaFiltroStatus(
   const alvo = normalizarStatusFatura(statusFiltro)
   if (!alvo) return false
   if (alvo === "paga") return faturaEstaPaga(statusFatura, pagamentoData)
+  if (faturaEstaPaga(statusFatura, pagamentoData)) return false
+  const canon = normalizarStatusFatura(statusFatura)
+  if (canon === "cancelada") return alvo === "cancelada"
+  if (!canon && (alvo === "pendente" || alvo === "vencida" || alvo === "atrasada")) {
+    return true
+  }
   return statusCanonicoEquivaleAoFiltro(statusFatura, alvo)
 }
 

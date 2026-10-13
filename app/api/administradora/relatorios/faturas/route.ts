@@ -10,7 +10,12 @@ import {
   faturaEstaPaga,
   normalizarStatusFatura,
 } from "@/lib/fatura-status"
-import { montarMapaCorretorPorCliente } from "@/lib/corretor-cliente-vinculo"
+import {
+  carregarNomesCorretoresLegado,
+  corretorCombinaComFiltro,
+  montarMapaCorretorPorCliente,
+} from "@/lib/corretor-cliente-vinculo"
+import { CorretoresAdministradoraService } from "@/services/corretores-administradora-service"
 
 type FaturaRow = {
   id: string
@@ -38,6 +43,9 @@ const FATURAS_BASE_COLS =
 const FATURAS_SELECT_SEM_GATEWAY = FATURAS_BASE_COLS
 const FATURAS_SELECT_COM_GATEWAY = `${FATURAS_BASE_COLS}, gateway_nome`
 const FATURAS_SELECT_COM_GATEWAY_FIN = `${FATURAS_SELECT_COM_GATEWAY}, financeira_id`
+
+/** PostgREST/Supabase limitam ~1000 linhas por request (`max_rows`); paginar o mês inteiro. */
+const PAGE_SIZE_FATURAS = 1000
 
 function linkBoletoFatura(f: FaturaRow): string | null {
   const u =
@@ -142,40 +150,54 @@ async function buscarFaturasRelatorio(
     ano?: string | null
     mes?: string | null
     filtroPagaNoBanco?: boolean
+    tenantId?: string | null
   }
 ): Promise<{ faturas: FaturaRow[]; erro?: string }> {
-  const base = () =>
-    supabaseAdmin
+  const acumulado: FaturaRow[] = []
+  let from = 0
+
+  const aplicarTenant = (q: ReturnType<typeof supabaseAdmin.from>) => {
+    const tid = String(opcoes.tenantId || "").trim()
+    if (tid) return q.or(`tenant_id.eq.${tid},tenant_id.is.null`)
+    return q.is("tenant_id", null)
+  }
+
+  while (true) {
+    let q = supabaseAdmin
       .from("faturas")
       .select(selectCols)
       .eq("administradora_id", administradoraId)
-      .order("vencimento", { ascending: false })
-      .limit(8000)
 
-  const ano = opcoes.ano
-  const mes = opcoes.mes
-  if (!ano || !mes) {
-    let q = base()
+    q = aplicarTenant(q)
+
+    const ano = opcoes.ano
+    const mes = opcoes.mes
+    if (ano && mes) {
+      const anoNum = Number(ano)
+      const mesNum = Number(mes)
+      const inicio = primeiroDiaMes(anoNum, mesNum)
+      const fim = ultimoDiaMes(anoNum, mesNum)
+      q = q.gte("vencimento", inicio).lte("vencimento", fim)
+    }
+
     if (opcoes.filtroPagaNoBanco) {
       q = q.or(OR_FILTRO_PAGA_NO_BANCO)
     }
+
     const r = await q
+      .order("vencimento", { ascending: false })
+      .order("id", { ascending: true })
+      .range(from, from + PAGE_SIZE_FATURAS - 1)
+
     if (r.error) return { faturas: [], erro: mensagemErro(r.error) }
-    return { faturas: (r.data || []) as FaturaRow[] }
+
+    const chunk = (r.data || []) as FaturaRow[]
+    acumulado.push(...chunk)
+    if (chunk.length < PAGE_SIZE_FATURAS) break
+    from += PAGE_SIZE_FATURAS
   }
 
-  const anoNum = Number(ano)
-  const mesNum = Number(mes)
-  const inicio = primeiroDiaMes(anoNum, mesNum)
-  const fim = ultimoDiaMes(anoNum, mesNum)
-
-  let q = base().gte("vencimento", inicio).lte("vencimento", fim)
-  if (opcoes.filtroPagaNoBanco) {
-    q = q.or(OR_FILTRO_PAGA_NO_BANCO)
-  }
-  const r = await q
-  if (r.error) return { faturas: [], erro: mensagemErro(r.error) }
-  return { faturas: (r.data || []) as FaturaRow[] }
+  return { faturas: acumulado }
 }
 
 async function buscarFaturasComFallbackColunas(
@@ -184,6 +206,7 @@ async function buscarFaturasComFallbackColunas(
     ano?: string | null
     mes?: string | null
     filtroPagaNoBanco?: boolean
+    tenantId?: string | null
   }
 ): Promise<{ faturas: FaturaRow[]; erro?: string }> {
   const tentativas = [
@@ -265,9 +288,29 @@ export async function GET(request: NextRequest) {
       ? await listarClienteIdsDoGrupo(grupoId!, administradoraId, tenantId)
       : null
 
+    if (filtrarPorGrupo && clienteIdsDoGrupo && clienteIdsDoGrupo.size === 0) {
+      return NextResponse.json({
+        total_registros: 0,
+        total_valor: 0,
+        linhas: [],
+      })
+    }
+
+    let corretorFiltro: { id: string; nome: string } | null = null
+    const nomePorCorretorId = new Map<string, string>()
+    if (corretorId && corretorId !== "todos") {
+      const corretoresLista = await CorretoresAdministradoraService.listar(administradoraId)
+      for (const c of corretoresLista) nomePorCorretorId.set(c.id, c.nome)
+      const corretor = await CorretoresAdministradoraService.buscarPorId(corretorId, administradoraId)
+      if (!corretor) {
+        return NextResponse.json({ error: "Corretor não encontrado para esta administradora." }, { status: 404 })
+      }
+      corretorFiltro = { id: corretor.id, nome: corretor.nome }
+    }
+
     const { faturas: faturasBuscadas, erro: erroBusca } = await buscarFaturasComFallbackColunas(
       administradoraId,
-      { ano, mes, filtroPagaNoBanco: somentePaga }
+      { ano, mes, filtroPagaNoBanco: somentePaga, tenantId }
     )
     if (erroBusca) {
       console.error("Erro ao buscar faturas do relatório:", erroBusca)
@@ -347,6 +390,22 @@ export async function GET(request: NextRequest) {
 
     const mapaCorretor = await montarMapaCorretorPorCliente(clienteIds, administradoraId, tenantId)
 
+    if (corretorFiltro && nomePorCorretorId.size === 0) {
+      const corretoresLista = await CorretoresAdministradoraService.listar(administradoraId)
+      for (const c of corretoresLista) nomePorCorretorId.set(c.id, c.nome)
+    }
+    if (corretorFiltro) {
+      const idsLegado = Array.from(
+        new Set(
+          Array.from(mapaCorretor.values()).filter(
+            (id): id is string => Boolean(id) && !nomePorCorretorId.has(id!)
+          ) as string[]
+        )
+      )
+      const nomesLegado = await carregarNomesCorretoresLegado(idsLegado)
+      for (const [id, nome] of nomesLegado) nomePorCorretorId.set(id, nome)
+    }
+
     const linhas = faturasFiltradasStatus
       .filter((f) => {
         const clienteId = String(f.cliente_administradora_id || "").trim()
@@ -354,7 +413,12 @@ export async function GET(request: NextRequest) {
           if (!clienteId || !clienteIdsDoGrupo.has(clienteId)) return false
         }
         const corretorCliente = clienteId ? mapaCorretor.get(clienteId) ?? null : null
-        if (corretorId && corretorId !== "todos" && corretorCliente !== corretorId) return false
+        if (
+          corretorFiltro &&
+          !corretorCombinaComFiltro(corretorCliente, corretorFiltro, nomePorCorretorId)
+        ) {
+          return false
+        }
         if (financeiraIdParam) {
           if (
             !faturaPertenceAFinanceira(
