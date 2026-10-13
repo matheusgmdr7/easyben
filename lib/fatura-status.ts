@@ -26,6 +26,13 @@ const STATUS_ALIASES: Record<string, string> = {
   faturado: "pendente",
   processado: "pendente",
   vencido: "vencida",
+  atrasado: "atrasada",
+}
+
+/** No banco, inadimplência aparece como `atrasada` (Asaas/cron) ou `vencida` (legado). */
+const STATUS_EQUIVALENTES_FILTRO: Record<string, readonly string[]> = {
+  atrasada: ["atrasada", "vencida"],
+  vencida: ["vencida", "atrasada"],
 }
 
 export function normalizarStatusFatura(status: string | null | undefined): string {
@@ -85,13 +92,23 @@ export function statusCanonicoEquivaleAoFiltro(statusFatura: string, statusFiltr
   const f = normalizarStatusFatura(statusFatura)
   const alvo = normalizarStatusFatura(statusFiltro)
   if (!f || !alvo) return false
-  return f === alvo
+  if (f === alvo) return true
+  const equivalentes = STATUS_EQUIVALENTES_FILTRO[alvo]
+  return equivalentes?.includes(f) ?? false
+}
+
+function faturaVencimentoAnteriorAHoje(vencimento: string | null | undefined): boolean {
+  const venc = dataIsoFatura(vencimento)
+  if (!venc) return false
+  const hoje = new Date().toISOString().slice(0, 10)
+  return venc < hoje
 }
 
 export function faturaCombinaFiltroStatus(
   statusFatura: string,
   pagamentoData: string | null | undefined,
-  statusFiltro: string
+  statusFiltro: string,
+  vencimento?: string | null
 ): boolean {
   const alvo = normalizarStatusFatura(statusFiltro)
   if (!alvo) return false
@@ -102,7 +119,16 @@ export function faturaCombinaFiltroStatus(
   if (!canon && (alvo === "pendente" || alvo === "vencida" || alvo === "atrasada")) {
     return true
   }
-  return statusCanonicoEquivaleAoFiltro(statusFatura, alvo)
+  if (statusCanonicoEquivaleAoFiltro(statusFatura, alvo)) return true
+  // Ainda `pendente` no banco, mas vencimento já passou (cron de atrasada não rodou).
+  if (
+    (alvo === "atrasada" || alvo === "vencida") &&
+    (canon === "pendente" || !canon) &&
+    faturaVencimentoAnteriorAHoje(vencimento)
+  ) {
+    return true
+  }
+  return false
 }
 
 export function dataIsoFatura(val: unknown): string | null {

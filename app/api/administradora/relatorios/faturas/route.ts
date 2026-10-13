@@ -326,8 +326,9 @@ export async function GET(request: NextRequest) {
         : faturas.filter((f) => {
             const st = String(f.status || "")
             const pd = f.pagamento_data
+            const venc = f.vencimento || f.data_vencimento || null
             for (const alvo of statusSet) {
-              if (faturaCombinaFiltroStatus(st, pd, alvo)) return true
+              if (faturaCombinaFiltroStatus(st, pd, alvo, venc)) return true
             }
             return false
           })
