@@ -112,15 +112,30 @@ export function faturaCombinaFiltroStatus(
 ): boolean {
   const alvo = normalizarStatusFatura(statusFiltro)
   if (!alvo) return false
-  if (alvo === "paga") return faturaEstaPaga(statusFatura, pagamentoData)
-  if (faturaEstaPaga(statusFatura, pagamentoData)) return false
   const canon = normalizarStatusFatura(statusFatura)
+
+  if (alvo === "paga") return faturaEstaPaga(statusFatura, pagamentoData)
   if (canon === "cancelada") return alvo === "cancelada"
+
+  // Status em aberto no banco prevalece sobre `pagamento_data` residual (sync/import).
+  if (faturaStatusEmAberto(statusFatura)) {
+    if (statusCanonicoEquivaleAoFiltro(statusFatura, alvo)) return true
+    if (
+      (alvo === "atrasada" || alvo === "vencida") &&
+      canon === "pendente" &&
+      faturaVencimentoAnteriorAHoje(vencimento)
+    ) {
+      return true
+    }
+    return false
+  }
+
+  if (faturaEstaPaga(statusFatura, pagamentoData)) return false
+
   if (!canon && (alvo === "pendente" || alvo === "vencida" || alvo === "atrasada")) {
     return true
   }
   if (statusCanonicoEquivaleAoFiltro(statusFatura, alvo)) return true
-  // Ainda `pendente` no banco, mas vencimento já passou (cron de atrasada não rodou).
   if (
     (alvo === "atrasada" || alvo === "vencida") &&
     (canon === "pendente" || !canon) &&

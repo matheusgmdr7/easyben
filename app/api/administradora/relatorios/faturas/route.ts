@@ -150,25 +150,16 @@ async function buscarFaturasRelatorio(
     ano?: string | null
     mes?: string | null
     filtroPagaNoBanco?: boolean
-    tenantId?: string | null
   }
 ): Promise<{ faturas: FaturaRow[]; erro?: string }> {
   const acumulado: FaturaRow[] = []
   let from = 0
-
-  const aplicarTenant = (q: ReturnType<typeof supabaseAdmin.from>) => {
-    const tid = String(opcoes.tenantId || "").trim()
-    if (tid) return q.or(`tenant_id.eq.${tid},tenant_id.is.null`)
-    return q.is("tenant_id", null)
-  }
 
   while (true) {
     let q = supabaseAdmin
       .from("faturas")
       .select(selectCols)
       .eq("administradora_id", administradoraId)
-
-    q = aplicarTenant(q)
 
     const ano = opcoes.ano
     const mes = opcoes.mes
@@ -206,7 +197,6 @@ async function buscarFaturasComFallbackColunas(
     ano?: string | null
     mes?: string | null
     filtroPagaNoBanco?: boolean
-    tenantId?: string | null
   }
 ): Promise<{ faturas: FaturaRow[]; erro?: string }> {
   const tentativas = [
@@ -310,7 +300,7 @@ export async function GET(request: NextRequest) {
 
     const { faturas: faturasBuscadas, erro: erroBusca } = await buscarFaturasComFallbackColunas(
       administradoraId,
-      { ano, mes, filtroPagaNoBanco: somentePaga, tenantId }
+      { ano, mes, filtroPagaNoBanco: somentePaga }
     )
     if (erroBusca) {
       console.error("Erro ao buscar faturas do relatório:", erroBusca)
