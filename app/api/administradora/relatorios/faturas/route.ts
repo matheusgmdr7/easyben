@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase-admin"
-import { getCurrentTenantId } from "@/lib/tenant-query-helper"
+import { resolveTenantIdForAdministradora } from "@/lib/resolve-tenant-administradora"
 import { listarClienteAdministradoraIdsENomesDoGrupo } from "@/lib/grupo-cliente-administradora-ids"
 import { carregarVidasImportadasDoGrupo } from "@/lib/vidas-importadas-grupo"
 import { FinanceirasService } from "@/services/financeiras-service"
 import { faturaCombinaFiltroFinanceira, faturaPertenceAFinanceira } from "@/lib/fatura-filtro-financeira"
 import {
+  expandirStatusParaConsultaDb,
   faturaCombinaFiltroStatus,
   faturaEstaPaga,
   normalizarStatusFatura,
@@ -141,7 +142,7 @@ const OR_FILTRO_PAGA_NO_BANCO =
 /**
  * Busca faturas da administradora.
  * - "Somente paga": quitadas no banco (`paga`/`pago` ou `pagamento_data` sem cancelada) + vencimento no mês.
- * - Demais filtros: vencimento no mês; status aplicado depois em memória.
+ * - Demais filtros: vencimento no mês + status no banco quando possível; refinamento em memória.
  */
 async function buscarFaturasRelatorio(
   administradoraId: string,
@@ -150,6 +151,7 @@ async function buscarFaturasRelatorio(
     ano?: string | null
     mes?: string | null
     filtroPagaNoBanco?: boolean
+    statusDb?: string[] | null
   }
 ): Promise<{ faturas: FaturaRow[]; erro?: string }> {
   const acumulado: FaturaRow[] = []
@@ -173,6 +175,8 @@ async function buscarFaturasRelatorio(
 
     if (opcoes.filtroPagaNoBanco) {
       q = q.or(OR_FILTRO_PAGA_NO_BANCO)
+    } else if (opcoes.statusDb && opcoes.statusDb.length > 0) {
+      q = q.in("status", opcoes.statusDb)
     }
 
     const r = await q
@@ -197,6 +201,7 @@ async function buscarFaturasComFallbackColunas(
     ano?: string | null
     mes?: string | null
     filtroPagaNoBanco?: boolean
+    statusDb?: string[] | null
   }
 ): Promise<{ faturas: FaturaRow[]; erro?: string }> {
   const tentativas = [
@@ -230,14 +235,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "administradora_id é obrigatório" }, { status: 400 })
     }
 
-    const { data: administradora } = await supabaseAdmin
-      .from("administradoras")
-      .select("tenant_id")
-      .eq("id", administradoraId)
-      .maybeSingle()
-
-    const tenantAtual = await getCurrentTenantId()
-    const tenantId = administradora?.tenant_id || tenantAtual
+    const tenantId = await resolveTenantIdForAdministradora(administradoraId)
 
     let financeiraFiltro = ""
     let nomeFinanceiraPorId = ""
@@ -298,9 +296,12 @@ export async function GET(request: NextRequest) {
       corretorFiltro = { id: corretor.id, nome: corretor.nome }
     }
 
+    const statusDb =
+      somentePaga || filtrarTodosStatus ? null : expandirStatusParaConsultaDb(statusSolicitados)
+
     const { faturas: faturasBuscadas, erro: erroBusca } = await buscarFaturasComFallbackColunas(
       administradoraId,
-      { ano, mes, filtroPagaNoBanco: somentePaga }
+      { ano, mes, filtroPagaNoBanco: somentePaga, statusDb }
     )
     if (erroBusca) {
       console.error("Erro ao buscar faturas do relatório:", erroBusca)

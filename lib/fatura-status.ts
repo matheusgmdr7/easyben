@@ -88,6 +88,46 @@ export function faturaStatusEmAberto(status: string | null | undefined): boolean
   return s === "pendente" || s === "atrasada" || s === "vencida"
 }
 
+/** Valores possíveis em `faturas.status` para cada status canônico do filtro (consulta SQL). */
+const STATUS_BRUTOS_POR_CANONICO: Record<string, readonly string[]> = {
+  pendente: ["pendente", "PENDING", "faturado", "processado", "AWAITING_RISK_ANALYSIS"],
+  atrasada: ["atrasada", "vencida", "atrasado", "OVERDUE", "overdue", "DUNNING_REQUESTED"],
+  vencida: ["vencida", "atrasada", "vencido", "OVERDUE", "overdue"],
+  cancelada: [
+    "cancelada",
+    "cancelado",
+    "cancelled",
+    "canceled",
+    "CANCELED",
+    "CANCELLED",
+    "REFUNDED",
+    "DELETED",
+  ],
+  paga: ["paga", "pago", "paid", "RECEIVED", "CONFIRMED", "RECEIVED_IN_CASH", "DUNNING_RECEIVED"],
+}
+
+/**
+ * Expande filtros canônicos para `.in('status', …)` no PostgREST.
+ * Evita buscar só as primeiras 1000 faturas do mês (ordenadas por vencimento desc)
+ * quando o alvo (ex.: atrasada no dia 01) ficaria fora do lote.
+ */
+export function expandirStatusParaConsultaDb(statusSolicitados: string[]): string[] | null {
+  if (statusSolicitados.length === 0) return null
+  const set = new Set<string>()
+  for (const raw of statusSolicitados) {
+    const bruto = String(raw || "").trim()
+    const canon = normalizarStatusFatura(bruto)
+    if (bruto) set.add(bruto)
+    if (!canon) continue
+    set.add(canon)
+    for (const s of STATUS_BRUTOS_POR_CANONICO[canon] ?? []) set.add(s)
+    for (const [asaas, interno] of Object.entries(ASAAS_TO_INTERNO)) {
+      if (interno === canon) set.add(asaas)
+    }
+  }
+  return set.size > 0 ? Array.from(set) : null
+}
+
 export function statusCanonicoEquivaleAoFiltro(statusFatura: string, statusFiltro: string): boolean {
   const f = normalizarStatusFatura(statusFatura)
   const alvo = normalizarStatusFatura(statusFiltro)
@@ -112,30 +152,15 @@ export function faturaCombinaFiltroStatus(
 ): boolean {
   const alvo = normalizarStatusFatura(statusFiltro)
   if (!alvo) return false
-  const canon = normalizarStatusFatura(statusFatura)
-
   if (alvo === "paga") return faturaEstaPaga(statusFatura, pagamentoData)
-  if (canon === "cancelada") return alvo === "cancelada"
-
-  // Status em aberto no banco prevalece sobre `pagamento_data` residual (sync/import).
-  if (faturaStatusEmAberto(statusFatura)) {
-    if (statusCanonicoEquivaleAoFiltro(statusFatura, alvo)) return true
-    if (
-      (alvo === "atrasada" || alvo === "vencida") &&
-      canon === "pendente" &&
-      faturaVencimentoAnteriorAHoje(vencimento)
-    ) {
-      return true
-    }
-    return false
-  }
-
   if (faturaEstaPaga(statusFatura, pagamentoData)) return false
-
+  const canon = normalizarStatusFatura(statusFatura)
+  if (canon === "cancelada") return alvo === "cancelada"
   if (!canon && (alvo === "pendente" || alvo === "vencida" || alvo === "atrasada")) {
     return true
   }
   if (statusCanonicoEquivaleAoFiltro(statusFatura, alvo)) return true
+  // Ainda `pendente` no banco, mas vencimento já passou (cron de atrasada não rodou).
   if (
     (alvo === "atrasada" || alvo === "vencida") &&
     (canon === "pendente" || !canon) &&
