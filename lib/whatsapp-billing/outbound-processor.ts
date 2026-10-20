@@ -32,7 +32,11 @@ export async function processarJobOutboundWhatsApp(payload: WhatsAppOutboundJobP
     .eq("idempotency_key", idempotencyKey)
     .maybeSingle()
 
-  if (existente && STATUS_SUCESSO.has(String(existente.status))) {
+  if (
+    existente &&
+    STATUS_SUCESSO.has(String(existente.status)) &&
+    !payload.envioManualPainel
+  ) {
     whatsappBillingLog.info("outbound.skip_idempotent", {
       idempotencyKey,
       messageSid: existente.message_sid,

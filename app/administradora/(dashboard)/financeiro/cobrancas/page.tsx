@@ -16,6 +16,8 @@ import { WhatsAppCobrancasConfig } from "@/components/administradora/whatsapp-co
 import { WhatsAppMensagensHistorico } from "@/components/administradora/whatsapp-mensagens-historico"
 import { WhatsAppTesteTemplates } from "@/components/administradora/whatsapp-teste-templates"
 import { WhatsAppRelatorioEnvios } from "@/components/administradora/whatsapp-relatorio-envios"
+import { WhatsAppEnvioManual } from "@/components/administradora/whatsapp-envio-manual"
+import { WhatsAppMensagensRecebidas } from "@/components/administradora/whatsapp-mensagens-recebidas"
 
 type FinanceiraOpcao = { id: string; nome: string }
 type CorretorOpcao = { id: string; nome: string }
@@ -202,8 +204,14 @@ export default function CobrancasFinanceiroPage() {
             <TabsTrigger value="whatsapp" className={cn(btnSquare, "text-sm px-4 py-2")}>
               WhatsApp automático
             </TabsTrigger>
+            <TabsTrigger value="envio-manual" className={cn(btnSquare, "text-sm px-4 py-2")}>
+              Envio manual
+            </TabsTrigger>
             <TabsTrigger value="historico" className={cn(btnSquare, "text-sm px-4 py-2")}>
               Histórico de envios
+            </TabsTrigger>
+            <TabsTrigger value="recebidas" className={cn(btnSquare, "text-sm px-4 py-2")}>
+              Mensagens recebidas
             </TabsTrigger>
             <TabsTrigger value="relatorio" className={cn(btnSquare, "text-sm px-4 py-2")}>
               Relatório de envios
@@ -333,8 +341,14 @@ export default function CobrancasFinanceiroPage() {
               <TabsContent value="whatsapp" className="mt-0">
                 <WhatsAppCobrancasConfig administradoraId={administradora.id} />
               </TabsContent>
+              <TabsContent value="envio-manual" className="mt-0">
+                <WhatsAppEnvioManual administradoraId={administradora.id} />
+              </TabsContent>
               <TabsContent value="historico" className="mt-0">
                 <WhatsAppMensagensHistorico administradoraId={administradora.id} />
+              </TabsContent>
+              <TabsContent value="recebidas" className="mt-0">
+                <WhatsAppMensagensRecebidas administradoraId={administradora.id} />
               </TabsContent>
               <TabsContent value="relatorio" className="mt-0">
                 <WhatsAppRelatorioEnvios administradoraId={administradora.id} />

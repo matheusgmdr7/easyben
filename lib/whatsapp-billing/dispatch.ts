@@ -147,7 +147,11 @@ export async function dispararNotificacaoWhatsApp(
     .eq("idempotency_key", idempotencyKeyBase)
     .maybeSingle()
 
-  if (existente && STATUS_SUCESSO_ENVIO.has(String(existente.status))) {
+  if (
+    existente &&
+    STATUS_SUCESSO_ENVIO.has(String(existente.status)) &&
+    !options?.ignorarAutomatico
+  ) {
     return { enqueued: false, reason: "ja_enviado" }
   }
 
@@ -164,7 +168,8 @@ export async function dispararNotificacaoWhatsApp(
 
   const suffix =
     options?.idempotencySuffix ||
-    (options?.somenteRetentativa ? "tarde" : undefined)
+    (options?.somenteRetentativa ? "tarde" : undefined) ||
+    (options?.ignorarAutomatico && existente ? `manual-${Date.now()}` : undefined)
   const jobId = idempotencyKeyBase + (suffix ? `:${suffix}` : "")
 
   try {
@@ -177,6 +182,7 @@ export async function dispararNotificacaoWhatsApp(
         faturaId: params.faturaId ?? null,
         referenceDate,
         variaveis,
+        ...(options?.ignorarAutomatico ? { envioManualPainel: true } : {}),
       },
       jobId,
       {

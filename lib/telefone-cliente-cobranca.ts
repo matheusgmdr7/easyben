@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "@/lib/supabase-admin"
+import { normalizarTelefoneWhatsApp } from "@/lib/whatsapp-cobranca"
 
 /** Telefone atual do cliente para cobranças — prioriza cadastro sobre snapshot da fatura. */
 
@@ -39,12 +40,12 @@ export function primeiroTelefoneDeVida(row: Record<string, unknown>): string | n
   return null
 }
 
-/** Ordem: vida importada → proposta/cadastro → snapshot da fatura. */
+/** Ordem: vida importada → proposta/cadastro → snapshot da fatura. Usa o primeiro número válido para WhatsApp. */
 export function resolverTelefoneClienteCobranca(
   ...fontes: Array<string | null | undefined>
 ): string | null {
   for (const fonte of fontes) {
-    const tel = String(fonte || "").trim()
+    const tel = normalizarTelefoneWhatsApp(fonte)
     if (tel) return tel
   }
   return null

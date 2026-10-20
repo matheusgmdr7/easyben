@@ -30,8 +30,24 @@ export const LABELS_MOTIVO_IGNORADO: Record<string, string> = {
   sem_cliente_vinculado: "Fatura sem cliente vinculado",
   fatura_nao_encontrada: "Fatura não encontrada",
   janela_tarde_desativada: "Retentativa da tarde desativada",
-  ja_enviado: "Já enviado com sucesso na janela da manhã",
+  ja_enviado: "Já enviado hoje (mesmo lembrete/cobrança para esta fatura)",
+  fila_indisponivel: "Fila WhatsApp indisponível (Redis/Upstash)",
   desconhecido: "Motivo não informado",
+}
+
+export function resumirMotivosIgnorados(
+  resultados: Array<{ reason?: string; enqueued?: boolean }>
+): string {
+  const counts = new Map<string, number>()
+  for (const r of resultados) {
+    if (r.enqueued) continue
+    const key = r.reason || "desconhecido"
+    counts.set(key, (counts.get(key) || 0) + 1)
+  }
+  if (!counts.size) return LABELS_MOTIVO_IGNORADO.desconhecido
+  return Array.from(counts.entries())
+    .map(([reason, n]) => `${n}× ${labelMotivoIgnorado(reason)}`)
+    .join(" · ")
 }
 
 export function labelMotivoIgnorado(reason: string | undefined): string {

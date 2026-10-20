@@ -25,12 +25,16 @@ export async function POST(request: NextRequest) {
     if (!result.enqueued) {
       const msg =
         result.reason === "telefone_invalido"
-          ? "Telefone do cliente inválido ou ausente"
+          ? "Telefone do cliente inválido ou ausente (cadastro/vida importada)"
           : result.reason === "fatura_nao_encontrada"
             ? "Fatura não encontrada"
             : result.reason === "template_indisponivel"
-              ? "Template WhatsApp indisponível"
-              : "Não foi possível enfileirar o envio"
+              ? `Template WhatsApp não configurado para o evento ${result.eventType || "desta fatura"}`
+              : result.reason === "ja_enviado"
+                ? "Esta cobrança já foi registrada hoje para esta fatura (lembrete automático ou envio anterior)"
+                : result.reason === "fila_indisponivel"
+                  ? "Fila WhatsApp indisponível. Verifique Redis (Upstash) e o worker no Railway."
+                  : "Não foi possível enfileirar o envio"
 
       return NextResponse.json({ enqueued: false, reason: result.reason, error: msg }, { status: 422 })
     }

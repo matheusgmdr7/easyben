@@ -62,6 +62,8 @@ export type WhatsAppOutboundJobPayload = {
   faturaId?: string | null
   referenceDate: string
   variaveis: Record<string, string>
+  /** Envio pelo painel Cobranças: não bloquear por idempotência do dia. */
+  envioManualPainel?: boolean
 }
 
 export type WhatsAppInboundJobPayload = {

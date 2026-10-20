@@ -15,6 +15,7 @@ import {
 } from "@/lib/whatsapp-cobranca"
 import { StatusEnvioWhatsApp, isStatusEnvioEmProgresso } from "@/components/administradora/whatsapp-status-envio"
 import { WhatsAppLimiteEnvios } from "@/components/administradora/whatsapp-limite-envios"
+import { resumirMotivosIgnorados } from "@/lib/whatsapp-billing/horarios-envio"
 import {
   carregarEnviosRecentes,
   filtrarEnviosAtivos,
@@ -392,7 +393,12 @@ export function FaturasPendentesPainel({
             : data.message || `${enfileirados} cobrança(s) enfileirada(s).`
         )
       } else {
-        toast.error("Nenhuma cobrança enfileirada. Verifique telefone, boleto ou envios já realizados hoje.")
+        const detalhe = resumirMotivosIgnorados(data.resultados || [])
+        toast.error(
+          detalhe
+            ? `Nenhuma cobrança enfileirada: ${detalhe}`
+            : "Nenhuma cobrança enfileirada. Verifique telefone, boleto ou envios já realizados hoje."
+        )
       }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Erro ao enviar lote")
