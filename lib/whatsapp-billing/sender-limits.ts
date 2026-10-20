@@ -24,6 +24,11 @@ export type WhatsAppLimitesPainel = {
   percentual_uso: number | null
   em_risco: boolean
   twilio_configurado: boolean
+  /** Limite numérico veio de fallback (Twilio retornou Unavailable). */
+  limite_estimado: boolean
+  /** Ex.: número de envio (.env) diferente do sender ONLINE na Twilio. */
+  aviso_configuracao: string | null
+  whatsapp_from_env: string | null
   atualizado_em: string
 }
 
@@ -35,11 +40,31 @@ const STATUS_CONTAM_QUOTA = new Set([
   "read",
 ])
 
+/** Após verificação Meta, a Twilio às veze retorna `Unavailable` por alguns dias. */
+export function fallbackLimiteMeta24h(): number {
+  const env = process.env.WHATSAPP_MESSAGING_LIMIT_FALLBACK?.trim()
+  if (env) {
+    const parsed = parseMessagingLimitMax(env)
+    if (parsed != null && parsed > 0) return parsed
+    const n = Number(env.replace(/\D/g, ""))
+    if (Number.isFinite(n) && n > 0) return Math.round(n)
+  }
+  return 1000
+}
+
+function limiteIndisponivelNaTwilio(raw: string | null | undefined): boolean {
+  const s = String(raw || "")
+    .trim()
+    .toLowerCase()
+  return s === "unavailable" || s === "indisponível" || s === "indisponivel" || s === "n/a"
+}
+
 /** Converte texto Twilio/Meta ("250 Customers/24hr", "10K Customers/24hr") em número. */
 export function parseMessagingLimitMax(raw: string | null | undefined): number | null {
   if (!raw) return null
   const s = raw.trim().toLowerCase()
   if (s.includes("unlimited") || s.includes("ilimitad")) return null
+  if (limiteIndisponivelNaTwilio(raw)) return null
 
   const tierMatch = s.match(/tier[_-]?(\d+(?:k|m)?)/i)
   if (tierMatch) {
@@ -145,25 +170,73 @@ function mapearSender(row: TwilioSenderApiRow | null | undefined): WhatsAppSende
   }
 }
 
-export async function consultarSenderWhatsAppTwilio(): Promise<WhatsAppSenderLimitInfo> {
+function senderEstaOnline(row: TwilioSenderApiRow | null | undefined): boolean {
+  return String(row?.status || "").toUpperCase() === "ONLINE"
+}
+
+/** Evita usar senders[0] quando for sandbox OFFLINE e existir número de produção ONLINE. */
+export function escolherSenderWhatsAppTwilio(
+  senders: TwilioSenderApiRow[],
+  whatsappFrom: string
+): { row: TwilioSenderApiRow | null; aviso: string | null } {
+  if (senders.length === 0) return { row: null, aviso: null }
+
+  const alvo = whatsappFrom.toLowerCase()
+  const digitsAlvo = alvo.replace(/\D/g, "")
+
+  const exato = senders.find((s) => String(s.sender_id || "").toLowerCase() === alvo)
+  if (exato) return { row: exato, aviso: null }
+
+  const porSufixo = senders.find((s) =>
+    String(s.sender_id || "")
+      .replace(/\D/g, "")
+      .endsWith(digitsAlvo.slice(-11))
+  )
+  if (porSufixo) return { row: porSufixo, aviso: null }
+
+  const online = senders.filter((s) => senderEstaOnline(s))
+  const producao =
+    online.find((s) => !String(s.sender_id || "").includes("14155238886")) || online[0] || null
+
+  if (producao) {
+    return {
+      row: producao,
+      aviso: `TWILIO_WHATSAPP_NUMBER (${whatsappFrom}) não bate com nenhum sender na Twilio. Painel usa ${producao.sender_id}. Defina TWILIO_WHATSAPP_NUMBER ou TWILIO_WHATSAPP_SENDER_SID para o número verificado.`,
+    }
+  }
+
+  return { row: senders[0], aviso: null }
+}
+
+export async function consultarSenderWhatsAppTwilio(): Promise<{
+  sender: WhatsAppSenderLimitInfo
+  aviso_configuracao: string | null
+  whatsapp_from_env: string
+}> {
   const cfg = getTwilioConfig()
   const senderSidEnv = process.env.TWILIO_WHATSAPP_SENDER_SID?.trim()
 
   if (senderSidEnv) {
     const row = await buscarSenderTwilioPorSid(senderSidEnv)
-    if (row) return mapearSender(row)
+    if (row) {
+      let aviso: string | null = null
+      const envNorm = cfg.whatsappFrom.toLowerCase()
+      const rowNorm = String(row.sender_id || "").toLowerCase()
+      if (rowNorm && envNorm !== rowNorm) {
+        aviso = `TWILIO_WHATSAPP_SENDER_SID aponta para ${row.sender_id}, mas TWILIO_WHATSAPP_NUMBER é ${cfg.whatsappFrom}. Os envios usam o número do .env — alinhe as variáveis.`
+      }
+      return { sender: mapearSender(row), aviso_configuracao: aviso, whatsapp_from_env: cfg.whatsappFrom }
+    }
   }
 
   const senders = await listarSendersTwilio()
-  const alvo = cfg.whatsappFrom.toLowerCase()
-  const digitsAlvo = alvo.replace(/\D/g, "")
+  const { row, aviso } = escolherSenderWhatsAppTwilio(senders, cfg.whatsappFrom)
 
-  const row =
-    senders.find((s) => String(s.sender_id || "").toLowerCase() === alvo) ||
-    senders.find((s) => String(s.sender_id || "").replace(/\D/g, "").endsWith(digitsAlvo.slice(-11))) ||
-    senders[0]
-
-  return mapearSender(row)
+  return {
+    sender: mapearSender(row),
+    aviso_configuracao: aviso,
+    whatsapp_from_env: cfg.whatsappFrom,
+  }
 }
 
 export async function contarDestinatariosUnicos24h(): Promise<WhatsAppUsage24h> {
@@ -215,8 +288,14 @@ export async function obterPainelLimitesWhatsApp(): Promise<WhatsAppLimitesPaine
     offline_reasons: null,
   }
 
+  let avisoConfiguracao: string | null = null
+  let whatsappFromEnv: string | null = null
+
   try {
-    sender = await consultarSenderWhatsAppTwilio()
+    const consulta = await consultarSenderWhatsAppTwilio()
+    sender = consulta.sender
+    avisoConfiguracao = consulta.aviso_configuracao
+    whatsappFromEnv = consulta.whatsapp_from_env
   } catch (err) {
     twilioConfigurado = false
     const msg = err instanceof Error ? err.message : String(err)
@@ -224,7 +303,14 @@ export async function obterPainelLimitesWhatsApp(): Promise<WhatsAppLimitesPaine
   }
 
   const uso_24h = await contarDestinatariosUnicos24h()
-  const max = sender.messaging_limit_max
+  let max = sender.messaging_limit_max
+  let limiteEstimado = false
+  if (max == null && limiteIndisponivelNaTwilio(sender.messaging_limit_raw)) {
+    max = fallbackLimiteMeta24h()
+    limiteEstimado = true
+    sender = { ...sender, messaging_limit_max: max }
+  }
+
   const usados = uso_24h.destinatarios_unicos
 
   let restantes: number | null = null
@@ -241,6 +327,8 @@ export async function obterPainelLimitesWhatsApp(): Promise<WhatsAppLimitesPaine
   if (statusUpper && statusUpper !== "ONLINE") em_risco = true
   if (String(sender.quality_rating || "").toUpperCase() === "LOW") em_risco = true
 
+  if (avisoConfiguracao) em_risco = true
+
   return {
     sender,
     uso_24h,
@@ -248,6 +336,9 @@ export async function obterPainelLimitesWhatsApp(): Promise<WhatsAppLimitesPaine
     percentual_uso,
     em_risco,
     twilio_configurado: twilioConfigurado,
+    limite_estimado: limiteEstimado,
+    aviso_configuracao: avisoConfiguracao,
+    whatsapp_from_env: whatsappFromEnv,
     atualizado_em: new Date().toISOString(),
   }
 }

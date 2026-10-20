@@ -11,12 +11,16 @@ type LimitesPayload = {
     messaging_limit_raw: string | null
     messaging_limit_max: number | null
     quality_rating: string | null
+    sender_id?: string | null
   }
   uso_24h: { destinatarios_unicos: number }
   restantes: number | null
   percentual_uso: number | null
   em_risco: boolean
   twilio_configurado: boolean
+  limite_estimado?: boolean
+  aviso_configuracao?: string | null
+  whatsapp_from_env?: string | null
   atualizado_em: string
 }
 
@@ -93,9 +97,12 @@ export function WhatsAppLimiteEnvios({ refreshToken = 0, className }: WhatsAppLi
   const pct = dados.percentual_uso ?? 0
   const qualidade = rotuloQualidade(dados.sender.quality_rating)
   const limiteLabel =
-    dados.sender.messaging_limit_raw ||
-    (max != null ? `${formatarNumero(max)}/24h` : "Ilimitado")
+    dados.limite_estimado && max != null
+      ? `~${formatarNumero(max)}/24h (estimado)`
+      : dados.sender.messaging_limit_raw ||
+        (max != null ? `${formatarNumero(max)}/24h` : "Ilimitado")
   const statusSender = String(dados.sender.status || "—")
+  const senderIdPainel = dados.sender.sender_id ? String(dados.sender.sender_id) : null
 
   return (
     <div
@@ -128,12 +135,25 @@ export function WhatsAppLimiteEnvios({ refreshToken = 0, className }: WhatsAppLi
                 <span className="tabular-nums">{formatarNumero(max)}</span>
               </>
             ) : (
-              <> · tier {limiteLabel}</>
+              <> · {limiteLabel}</>
             )}
           </p>
           <p className="text-xs text-slate-500">
-            Contagem por destinatário único nas últimas 24h (templates de cobrança). Status: {statusSender}
+            Contagem por destinatário único nas últimas 24h (templates de cobrança). Status sender:{" "}
+            {statusSender}
+            {senderIdPainel ? ` · ${senderIdPainel}` : null}
           </p>
+          {dados.aviso_configuracao ? (
+            <p className="text-xs text-amber-900 bg-amber-50/80 border border-amber-200 rounded-sm px-2 py-1.5 mt-2">
+              {dados.aviso_configuracao}
+            </p>
+          ) : null}
+          {dados.limite_estimado ? (
+            <p className="text-[11px] text-slate-500 mt-1">
+              A Meta/Twilio retornou limite &quot;Unavailable&quot; (comum após verificação). Ajuste{" "}
+              <span className="font-mono">WHATSAPP_MESSAGING_LIMIT_FALLBACK</span> se souber o tier atual.
+            </p>
+          ) : null}
         </div>
 
         <div className="flex flex-wrap items-center gap-2 shrink-0">
