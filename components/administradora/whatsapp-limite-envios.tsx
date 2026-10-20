@@ -18,7 +18,7 @@ type LimitesPayload = {
   percentual_uso: number | null
   em_risco: boolean
   twilio_configurado: boolean
-  limite_estimado?: boolean
+  tier_indisponivel_twilio?: boolean
   aviso_configuracao?: string | null
   whatsapp_from_env?: string | null
   atualizado_em: string
@@ -96,11 +96,11 @@ export function WhatsAppLimiteEnvios({ refreshToken = 0, className }: WhatsAppLi
   const restantes = dados.restantes
   const pct = dados.percentual_uso ?? 0
   const qualidade = rotuloQualidade(dados.sender.quality_rating)
-  const limiteLabel =
-    dados.limite_estimado && max != null
-      ? `~${formatarNumero(max)}/24h (estimado)`
-      : dados.sender.messaging_limit_raw ||
-        (max != null ? `${formatarNumero(max)}/24h` : "Ilimitado")
+  const tierPendente = Boolean(dados.tier_indisponivel_twilio)
+  const limiteLabel = tierPendente
+    ? "aguardando tier da Meta (Twilio: Unavailable)"
+    : dados.sender.messaging_limit_raw ||
+      (max != null ? `${formatarNumero(max)}/24h` : "Ilimitado")
   const statusSender = String(dados.sender.status || "—")
   const senderIdPainel = dados.sender.sender_id ? String(dados.sender.sender_id) : null
 
@@ -148,10 +148,10 @@ export function WhatsAppLimiteEnvios({ refreshToken = 0, className }: WhatsAppLi
               {dados.aviso_configuracao}
             </p>
           ) : null}
-          {dados.limite_estimado ? (
+          {tierPendente ? (
             <p className="text-[11px] text-slate-500 mt-1">
-              A Meta/Twilio retornou limite &quot;Unavailable&quot; (comum após verificação). Ajuste{" "}
-              <span className="font-mono">WHATSAPP_MESSAGING_LIMIT_FALLBACK</span> se souber o tier atual.
+              O limite numérico (250, 1K, 10K…) virá automaticamente quando a Twilio sincronizar com a Meta.
+              Use o botão atualizar; não há estimativa artificial neste painel.
             </p>
           ) : null}
         </div>

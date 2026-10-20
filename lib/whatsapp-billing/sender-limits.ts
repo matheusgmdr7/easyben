@@ -24,8 +24,8 @@ export type WhatsAppLimitesPainel = {
   percentual_uso: number | null
   em_risco: boolean
   twilio_configurado: boolean
-  /** Limite numérico veio de fallback (Twilio retornou Unavailable). */
-  limite_estimado: boolean
+  /** Twilio retornou messaging_limit Unavailable — tier ainda não sincronizado da Meta. */
+  tier_indisponivel_twilio: boolean
   /** Ex.: número de envio (.env) diferente do sender ONLINE na Twilio. */
   aviso_configuracao: string | null
   whatsapp_from_env: string | null
@@ -40,19 +40,7 @@ const STATUS_CONTAM_QUOTA = new Set([
   "read",
 ])
 
-/** Após verificação Meta, a Twilio às veze retorna `Unavailable` por alguns dias. */
-export function fallbackLimiteMeta24h(): number {
-  const env = process.env.WHATSAPP_MESSAGING_LIMIT_FALLBACK?.trim()
-  if (env) {
-    const parsed = parseMessagingLimitMax(env)
-    if (parsed != null && parsed > 0) return parsed
-    const n = Number(env.replace(/\D/g, ""))
-    if (Number.isFinite(n) && n > 0) return Math.round(n)
-  }
-  return 1000
-}
-
-function limiteIndisponivelNaTwilio(raw: string | null | undefined): boolean {
+export function limiteIndisponivelNaTwilio(raw: string | null | undefined): boolean {
   const s = String(raw || "")
     .trim()
     .toLowerCase()
@@ -303,13 +291,9 @@ export async function obterPainelLimitesWhatsApp(): Promise<WhatsAppLimitesPaine
   }
 
   const uso_24h = await contarDestinatariosUnicos24h()
-  let max = sender.messaging_limit_max
-  let limiteEstimado = false
-  if (max == null && limiteIndisponivelNaTwilio(sender.messaging_limit_raw)) {
-    max = fallbackLimiteMeta24h()
-    limiteEstimado = true
-    sender = { ...sender, messaging_limit_max: max }
-  }
+  const max = sender.messaging_limit_max
+  const tierIndisponivelTwilio =
+    max == null && limiteIndisponivelNaTwilio(sender.messaging_limit_raw)
 
   const usados = uso_24h.destinatarios_unicos
 
@@ -328,6 +312,7 @@ export async function obterPainelLimitesWhatsApp(): Promise<WhatsAppLimitesPaine
   if (String(sender.quality_rating || "").toUpperCase() === "LOW") em_risco = true
 
   if (avisoConfiguracao) em_risco = true
+  // tier Unavailable sozinho não indica esgotamento — só falta sync Meta→Twilio no painel.
 
   return {
     sender,
@@ -336,7 +321,7 @@ export async function obterPainelLimitesWhatsApp(): Promise<WhatsAppLimitesPaine
     percentual_uso,
     em_risco,
     twilio_configurado: twilioConfigurado,
-    limite_estimado: limiteEstimado,
+    tier_indisponivel_twilio: tierIndisponivelTwilio,
     aviso_configuracao: avisoConfiguracao,
     whatsapp_from_env: whatsappFromEnv,
     atualizado_em: new Date().toISOString(),
