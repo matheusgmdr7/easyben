@@ -45,6 +45,7 @@ function chunkArray<T>(arr: T[], size: number): T[][] {
 async function carregarVidasPorCpfs(
   administradoraId: string,
   tenantId: string,
+  grupoId: string,
   cpfsNorm: string[]
 ): Promise<Map<string, VidaRow[]>> {
   const map = new Map<string, VidaRow[]>()
@@ -65,6 +66,7 @@ async function carregarVidasPorCpfs(
       )
       .eq("tenant_id", tenantId)
       .eq("administradora_id", administradoraId)
+      .eq("grupo_id", grupoId)
       .in("cpf", termos)
       .order("created_at", { ascending: false })
 
@@ -85,17 +87,24 @@ async function carregarVidasPorCpfs(
 
 /**
  * POST /api/administradora/importacao-matriculas
- * Body: { administradora_id, linhas: [{ cpf, matricula?, matricula_saude?, matricula_odonto?, nome? }] }
- * Atualiza carteirinha saúde e/ou odonto por CPF: prioriza vidas_importadas; se não houver vida, tenta clientes_administradoras via proposta.
+ * Body: { administradora_id, grupo_id, modo?: "validar" | "aplicar", tratar_existentes?: "sobrescrever" | "pular", linhas }
+ * Localiza a vida pelo CPF dentro do grupo informado e grava a matrícula.
+ * Quem já tem matrícula no campo importado só é alterado com tratar_existentes = "sobrescrever".
  */
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json().catch(() => ({}))
     const administradoraId = typeof body?.administradora_id === "string" ? body.administradora_id.trim() : ""
+    const grupoId = typeof body?.grupo_id === "string" ? body.grupo_id.trim() : ""
+    const modo = body?.modo === "validar" ? "validar" : "aplicar"
+    const tratarExistentes = body?.tratar_existentes === "sobrescrever" ? "sobrescrever" : body?.tratar_existentes === "pular" ? "pular" : null
     const linhas = Array.isArray(body?.linhas) ? (body.linhas as LinhaEntrada[]) : []
 
     if (!administradoraId) {
       return NextResponse.json({ error: "administradora_id é obrigatório" }, { status: 400 })
+    }
+    if (!grupoId) {
+      return NextResponse.json({ error: "Selecione o grupo de beneficiários antes de importar." }, { status: 400 })
     }
     if (linhas.length === 0) {
       return NextResponse.json({ error: "Nenhuma linha para importar" }, { status: 400 })
@@ -118,6 +127,24 @@ export async function POST(request: NextRequest) {
     }
     const tenantId = String(adm.tenant_id)
 
+    const { data: grupo, error: grupoErr } = await supabaseAdmin
+      .from("grupos_beneficiarios")
+      .select("id, ativo")
+      .eq("id", grupoId)
+      .eq("administradora_id", administradoraId)
+      .eq("tenant_id", tenantId)
+      .maybeSingle()
+
+    if (grupoErr) {
+      return NextResponse.json({ error: grupoErr.message || "Erro ao validar o grupo" }, { status: 500 })
+    }
+    if (!grupo) {
+      return NextResponse.json({ error: "Grupo não encontrado para esta administradora." }, { status: 400 })
+    }
+    if (grupo.ativo === false) {
+      return NextResponse.json({ error: "O grupo selecionado está inativo." }, { status: 400 })
+    }
+
     const cpfsEntrada = Array.from(
       new Set(
         linhas
@@ -126,7 +153,7 @@ export async function POST(request: NextRequest) {
       )
     )
 
-    const vidasPorCpf = await carregarVidasPorCpfs(administradoraId, tenantId, cpfsEntrada)
+    const vidasPorCpf = await carregarVidasPorCpfs(administradoraId, tenantId, grupoId, cpfsEntrada)
 
     /** Carteirinhas já salvas no contrato (colunas), para cruzar com JSON da vida ao detectar "já cadastrado". */
     const carteirinhasContratoPorClienteId = new Map<string, { saude: string; odonto: string }>()
@@ -166,78 +193,19 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Pré-carrega propostas por CPF (com/sem máscara) para evitar consultas por linha.
-    const propostasPorCpf = new Map<string, Set<string>>()
-    if (cpfsEntrada.length > 0) {
-      const termosProposta = Array.from(
-        new Set(cpfsEntrada.flatMap((c) => [c, cpfFormatadoBr(c)]))
-      )
-      type PropostaRow = { id: string; cpf: string | null }
-      const propostasRows: PropostaRow[] = []
-      for (const termos of chunkArray(termosProposta, 300)) {
-        const { data: propData, error: propErr } = await supabaseAdmin
-          .from("propostas")
-          .select("id, cpf")
-          .eq("tenant_id", tenantId)
-          .in("cpf", termos)
-        if (propErr) {
-          return NextResponse.json(
-            { error: propErr.message || "Erro ao buscar propostas para importação" },
-            { status: 500 }
-          )
-        }
-        propostasRows.push(...((propData || []) as PropostaRow[]))
-      }
-
-      for (const p of propostasRows) {
-        const k = normalizarCpf(p.cpf)
-        if (!k || !p.id) continue
-        const set = propostasPorCpf.get(k) || new Set<string>()
-        set.add(p.id)
-        propostasPorCpf.set(k, set)
-      }
-    }
-
-    // Pré-carrega contratos por proposta para evitar consultas por linha.
-    const clientesPorProposta = new Map<string, string[]>()
-    const propostaIdsTodos = Array.from(
-      new Set(Array.from(propostasPorCpf.values()).flatMap((s) => Array.from(s)))
-    )
-    if (propostaIdsTodos.length > 0) {
-      type ClientePropostaRow = { id: string; proposta_id: string | null }
-      for (const ids of chunkArray(propostaIdsTodos, 300)) {
-        const { data: clientesRows, error: caErr } = await supabaseAdmin
-          .from("clientes_administradoras")
-          .select("id, proposta_id")
-          .eq("tenant_id", tenantId)
-          .eq("administradora_id", administradoraId)
-          .in("proposta_id", ids)
-        if (caErr) {
-          return NextResponse.json(
-            { error: caErr.message || "Erro ao buscar contratos para importação" },
-            { status: 500 }
-          )
-        }
-        for (const c of (clientesRows || []) as ClientePropostaRow[]) {
-          if (!c.proposta_id || !c.id) continue
-          const arr = clientesPorProposta.get(c.proposta_id) || []
-          arr.push(c.id)
-          clientesPorProposta.set(c.proposta_id, arr)
-        }
-      }
-    }
-
     type ItemResultado = {
       linha: number
       cpf: string
       nome_planilha?: string
-      status: "ok" | "erro" | "ignorado"
+      status: "ok" | "erro" | "ignorado" | "conflito" | "pronto"
       mensagem?: string
-      destino?: "vida_importada" | "cliente_administradora"
+      destino?: "vida_importada"
       beneficiario_nome?: string
       /** Indica se já existia valor antes desta linha (para saúde / odonto). */
       ja_tinha_saude?: boolean
       ja_tinha_odonto?: boolean
+      matricula_atual_saude?: string
+      matricula_atual_odonto?: string
     }
 
     const resultados: ItemResultado[] = []
@@ -287,7 +255,7 @@ export async function POST(request: NextRequest) {
           cpf,
           nome_planilha: nomePlan || undefined,
           status: "erro",
-          mensagem: `Mais de um beneficiário com este CPF na base (${pool.length}). Ajuste manualmente no grupo.`,
+          mensagem: `Mais de um beneficiário com este CPF neste grupo (${pool.length}). Ajuste manualmente no grupo.`,
         })
         continue
       }
@@ -309,8 +277,57 @@ export async function POST(request: NextRequest) {
           vida.cliente_administradora_id != null
             ? carteirinhasContratoPorClienteId.get(vida.cliente_administradora_id)
             : undefined
-        const ja_tinha_saude = Boolean(antesSaude) || Boolean(caCart?.saude)
-        const ja_tinha_odonto = Boolean(antesOdonto) || Boolean(caCart?.odonto)
+        const atualSaude = antesSaude || caCart?.saude || ""
+        const atualOdonto = antesOdonto || caCart?.odonto || ""
+        const ja_tinha_saude = Boolean(atualSaude)
+        const ja_tinha_odonto = Boolean(atualOdonto)
+        const conflitoSaude = Boolean(matSaude) && ja_tinha_saude
+        const conflitoOdonto = Boolean(matOdonto) && ja_tinha_odonto
+        const temConflito = conflitoSaude || conflitoOdonto
+
+        const partesConflito: string[] = []
+        if (conflitoSaude) partesConflito.push(`saúde já cadastrada (${atualSaude})`)
+        if (conflitoOdonto) partesConflito.push(`odonto já cadastrada (${atualOdonto})`)
+        const mensagemConflito = partesConflito.length
+          ? `Já possui matrícula: ${partesConflito.join("; ")}.`
+          : undefined
+
+        if (modo === "validar") {
+          resultados.push({
+            linha: linhaNum,
+            cpf,
+            nome_planilha: nomePlan || undefined,
+            status: temConflito ? "conflito" : "pronto",
+            destino: "vida_importada",
+            beneficiario_nome: vida.nome || undefined,
+            ja_tinha_saude,
+            ja_tinha_odonto,
+            matricula_atual_saude: atualSaude || undefined,
+            matricula_atual_odonto: atualOdonto || undefined,
+            mensagem: mensagemConflito,
+          })
+          continue
+        }
+
+        if (temConflito && tratarExistentes !== "sobrescrever") {
+          resultados.push({
+            linha: linhaNum,
+            cpf,
+            nome_planilha: nomePlan || undefined,
+            status: tratarExistentes === "pular" ? "ignorado" : "conflito",
+            destino: "vida_importada",
+            beneficiario_nome: vida.nome || undefined,
+            ja_tinha_saude,
+            ja_tinha_odonto,
+            matricula_atual_saude: atualSaude || undefined,
+            matricula_atual_odonto: atualOdonto || undefined,
+            mensagem:
+              tratarExistentes === "pular"
+                ? `${mensagemConflito} Linha pulada; a matrícula atual foi mantida.`
+                : mensagemConflito,
+          })
+          continue
+        }
 
         if (matSaude) da["numero_carteirinha"] = matSaude
         if (matOdonto) da["numero_carteirinha_odonto"] = matOdonto
@@ -321,6 +338,7 @@ export async function POST(request: NextRequest) {
           .eq("id", vida.id)
           .eq("tenant_id", tenantId)
           .eq("administradora_id", administradoraId)
+          .eq("grupo_id", grupoId)
 
         if (upErr) {
           resultados.push({
@@ -368,10 +386,8 @@ export async function POST(request: NextRequest) {
         }
 
         const notas: string[] = []
-        if (ja_tinha_saude || ja_tinha_odonto) {
-          notas.push(
-            `Já cadastrado: ${[ja_tinha_saude ? "saúde" : "", ja_tinha_odonto ? "odonto" : ""].filter(Boolean).join(" e ")}`
-          )
+        if (temConflito) {
+          notas.push("Matrícula anterior substituída.")
         }
 
         resultados.push({
@@ -383,101 +399,19 @@ export async function POST(request: NextRequest) {
           beneficiario_nome: vida.nome || undefined,
           ja_tinha_saude,
           ja_tinha_odonto,
+          matricula_atual_saude: atualSaude || undefined,
+          matricula_atual_odonto: atualOdonto || undefined,
           mensagem: notas[0],
         })
         continue
-      }
-
-      // Sem vida: tentar cliente_administradoras + proposta (mesmo CPF), usando mapas pré-carregados.
-      const propIds = Array.from(propostasPorCpf.get(cpf) || [])
-      if (propIds.length === 0) {
-        resultados.push({
-          linha: linhaNum,
-          cpf,
-          nome_planilha: nomePlan || undefined,
-          status: "erro",
-          mensagem: "Nenhum beneficiário encontrado com este CPF (vidas importadas ou proposta)",
-        })
-        continue
-      }
-
-      const listaCa = Array.from(
-        new Set(
-          propIds.flatMap((id) => clientesPorProposta.get(id) || [])
-        )
-      ).map((id) => ({ id }))
-      if (listaCa.length === 0) {
-        resultados.push({
-          linha: linhaNum,
-          cpf,
-          nome_planilha: nomePlan || undefined,
-          status: "erro",
-          mensagem: "Proposta encontrada, mas sem contrato nesta administradora",
-        })
-        continue
-      }
-
-      if (listaCa.length > 1) {
-        resultados.push({
-          linha: linhaNum,
-          cpf,
-          nome_planilha: nomePlan || undefined,
-          status: "erro",
-          mensagem: "Mais de um contrato vinculado a este CPF nesta administradora",
-        })
-        continue
-      }
-
-      const ca = listaCa[0] as { id: string }
-      const { data: rowCa } = await supabaseAdmin
-        .from("clientes_administradoras")
-        .select("numero_carteirinha, numero_carteirinha_odonto")
-        .eq("id", ca.id)
-        .eq("administradora_id", administradoraId)
-        .eq("tenant_id", tenantId)
-        .maybeSingle()
-      const jaS = Boolean(String((rowCa as { numero_carteirinha?: string } | null)?.numero_carteirinha || "").trim())
-      const jaO = Boolean(String((rowCa as { numero_carteirinha_odonto?: string } | null)?.numero_carteirinha_odonto || "").trim())
-
-      const updCa: Record<string, string> = {}
-      if (matSaude) updCa.numero_carteirinha = matSaude
-      if (matOdonto) updCa.numero_carteirinha_odonto = matOdonto
-
-      const { error: upCa } = await supabaseAdmin
-        .from("clientes_administradoras")
-        .update(updCa)
-        .eq("id", ca.id)
-        .eq("administradora_id", administradoraId)
-        .eq("tenant_id", tenantId)
-
-      if (upCa) {
-        resultados.push({
-          linha: linhaNum,
-          cpf,
-          nome_planilha: nomePlan || undefined,
-          status: "erro",
-          mensagem: upCa.message || "Erro ao atualizar cliente",
-        })
-        continue
-      }
-
-      const notasCa: string[] = []
-      if (jaS || jaO) {
-        notasCa.push(
-          `Já cadastrado: ${[jaS ? "saúde" : "", jaO ? "odonto" : ""].filter(Boolean).join(" e ")}`
-        )
       }
 
       resultados.push({
         linha: linhaNum,
         cpf,
         nome_planilha: nomePlan || undefined,
-        status: "ok",
-        destino: "cliente_administradora",
-        beneficiario_nome: nomePlan || undefined,
-        ja_tinha_saude: jaS,
-        ja_tinha_odonto: jaO,
-        mensagem: notasCa[0],
+        status: "erro",
+        mensagem: "Nenhum beneficiário encontrado com este CPF neste grupo",
       })
     }
 
@@ -492,10 +426,13 @@ export async function POST(request: NextRequest) {
 
     const ok = resultados.filter((r) => r.status === "ok").length
     const erros = resultados.filter((r) => r.status === "erro").length
+    const ignorados = resultados.filter((r) => r.status === "ignorado").length
+    const conflitos = resultados.filter((r) => r.status === "conflito").length
 
     return NextResponse.json({
       ok: true,
-      resumo: { total: linhas.length, atualizados: ok, erros },
+      modo,
+      resumo: { total: linhas.length, atualizados: ok, erros, ignorados, conflitos },
       resultados,
     })
   } catch (e: unknown) {

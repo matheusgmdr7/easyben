@@ -4,12 +4,22 @@ import { useEffect, useMemo, useState } from "react"
 import * as XLSX from "xlsx"
 import { toast } from "sonner"
 import { getAdministradoraLogada } from "@/services/auth-administradoras-service"
+import { GruposBeneficiariosService, type GrupoBeneficiarios } from "@/services/grupos-beneficiarios-service"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Download, FileSpreadsheet, Loader2, Upload } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { formatarCPF } from "@/utils/formatters"
@@ -133,7 +143,18 @@ export default function ImportacaoMatriculasPage() {
     totalEtapas: number
   } | null>(null)
   const [resultados, setResultados] = useState<ResultadoApi[] | null>(null)
-  const [resumo, setResumo] = useState<{ total: number; atualizados: number; erros: number } | null>(null)
+  const [resumo, setResumo] = useState<{
+    total: number
+    atualizados: number
+    erros: number
+    ignorados: number
+  } | null>(null)
+  const [grupos, setGrupos] = useState<GrupoBeneficiarios[]>([])
+  const [grupoId, setGrupoId] = useState("")
+  const [carregandoGrupos, setCarregandoGrupos] = useState(false)
+  const [dialogConflitosAberto, setDialogConflitosAberto] = useState(false)
+  const [conflitosPendentes, setConflitosPendentes] = useState<ResultadoApi[]>([])
+  const [faseImportacao, setFaseImportacao] = useState<"validar" | "aplicar" | null>(null)
 
   useEffect(() => {
     const adm = getAdministradoraLogada()
@@ -142,6 +163,11 @@ export default function ImportacaoMatriculasPage() {
       return
     }
     setAdministradoraId(adm.id)
+    setCarregandoGrupos(true)
+    GruposBeneficiariosService.buscarTodos(adm.id)
+      .then(setGrupos)
+      .catch(() => toast.error("Erro ao carregar grupos de beneficiários"))
+      .finally(() => setCarregandoGrupos(false))
   }, [])
 
   const previewLinhas = useMemo((): LinhaPreview[] => {
@@ -264,9 +290,102 @@ export default function ImportacaoMatriculasPage() {
     }
   }
 
-  async function executarImportacao() {
+  async function percorrerLotes(
+    modo: "validar" | "aplicar",
+    tratarExistentes?: "sobrescrever" | "pular"
+  ): Promise<{
+    resultados: ResultadoApi[]
+    atualizados: number
+    erros: number
+    ignorados: number
+    conflitos: number
+  }> {
+    const chunks: LinhaEnvio[][] = []
+    for (let i = 0; i < linhasParaEnvio.length; i += TAMANHO_CHUNK_IMPORTACAO) {
+      chunks.push(linhasParaEnvio.slice(i, i + TAMANHO_CHUNK_IMPORTACAO))
+    }
+
+    setFaseImportacao(modo)
+    setProgressoImportacao({
+      total: linhasParaEnvio.length,
+      processados: 0,
+      atualizados: 0,
+      erros: 0,
+      etapa: 1,
+      totalEtapas: chunks.length,
+    })
+
+    const resultadosTotais: ResultadoApi[] = []
+    let atualizadosTotais = 0
+    let errosTotais = 0
+    let ignoradosTotais = 0
+    let conflitosTotais = 0
+    let processados = 0
+
+    for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i]
+      setProgressoImportacao((prev) => (prev ? { ...prev, etapa: i + 1 } : null))
+      const res = await fetch("/api/administradora/importacao-matriculas", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          administradora_id: administradoraId,
+          grupo_id: grupoId,
+          modo,
+          ...(tratarExistentes ? { tratar_existentes: tratarExistentes } : {}),
+          linhas: chunk.map((l) => ({
+            nome: l.nome,
+            cpf: l.cpf,
+            matricula_saude: l.matricula_saude || undefined,
+            matricula_odonto: l.matricula_odonto || undefined,
+            ...(l.matricula_saude ? { matricula: l.matricula_saude } : {}),
+          })),
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data?.error || "Falha na importação")
+
+      const resultadosChunk = Array.isArray(data.resultados) ? (data.resultados as ResultadoApi[]) : []
+      const baseLinha = i * TAMANHO_CHUNK_IMPORTACAO
+      resultadosTotais.push(
+        ...resultadosChunk.map((r) => ({
+          ...r,
+          linha: Number(r.linha || 0) + baseLinha,
+        }))
+      )
+      atualizadosTotais += Number(data?.resumo?.atualizados || 0)
+      errosTotais += Number(data?.resumo?.erros || 0)
+      ignoradosTotais += Number(data?.resumo?.ignorados || 0)
+      conflitosTotais += Number(data?.resumo?.conflitos || 0)
+      processados += chunk.length
+      setProgressoImportacao((prev) =>
+        prev
+          ? {
+              ...prev,
+              processados,
+              atualizados: atualizadosTotais,
+              erros: errosTotais,
+            }
+          : null
+      )
+    }
+
+    return {
+      resultados: resultadosTotais,
+      atualizados: atualizadosTotais,
+      erros: errosTotais,
+      ignorados: ignoradosTotais,
+      conflitos: conflitosTotais,
+    }
+  }
+
+  async function executarImportacao(tratarExistentes?: "sobrescrever" | "pular") {
     if (!administradoraId) {
       toast.error("Administradora não identificada.")
+      return
+    }
+    if (!grupoId) {
+      toast.error("Selecione o grupo de beneficiários antes de importar.")
       return
     }
     if (!colCpf || (!colMatricula && !colMatriculaOdonto)) {
@@ -279,87 +398,36 @@ export default function ImportacaoMatriculasPage() {
     }
     try {
       setEnviando(true)
-      const chunks: LinhaEnvio[][] = []
-      for (let i = 0; i < linhasParaEnvio.length; i += TAMANHO_CHUNK_IMPORTACAO) {
-        chunks.push(linhasParaEnvio.slice(i, i + TAMANHO_CHUNK_IMPORTACAO))
+      setDialogConflitosAberto(false)
+      setResultados(null)
+      setResumo(null)
+
+      if (!tratarExistentes) {
+        const validacao = await percorrerLotes("validar")
+        const conflitos = validacao.resultados.filter((r) => r.status === "conflito")
+        if (conflitos.length > 0) {
+          setConflitosPendentes(conflitos)
+          setDialogConflitosAberto(true)
+          return
+        }
       }
 
-      setProgressoImportacao({
-        total: linhasParaEnvio.length,
-        processados: 0,
-        atualizados: 0,
-        erros: 0,
-        etapa: 1,
-        totalEtapas: chunks.length,
-      })
-
-      const resultadosTotais: ResultadoApi[] = []
-      let atualizadosTotais = 0
-      let errosTotais = 0
-      let processados = 0
-
-      for (let i = 0; i < chunks.length; i++) {
-        const chunk = chunks[i]
-        setProgressoImportacao((prev) =>
-          prev
-            ? { ...prev, etapa: i + 1 }
-            : null
-        )
-        const res = await fetch("/api/administradora/importacao-matriculas", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            administradora_id: administradoraId,
-            linhas: chunk.map((l) => ({
-              nome: l.nome,
-              cpf: l.cpf,
-              matricula_saude: l.matricula_saude || undefined,
-              matricula_odonto: l.matricula_odonto || undefined,
-              ...(l.matricula_saude ? { matricula: l.matricula_saude } : {}),
-            })),
-          }),
-        })
-        const data = await res.json().catch(() => ({}))
-        if (!res.ok) throw new Error(data?.error || "Falha na importação")
-
-        const resultadosChunk = Array.isArray(data.resultados) ? (data.resultados as ResultadoApi[]) : []
-        const baseLinha = i * TAMANHO_CHUNK_IMPORTACAO
-        resultadosTotais.push(
-          ...resultadosChunk.map((r) => ({
-            ...r,
-            linha: Number(r.linha || 0) + baseLinha,
-          }))
-        )
-        const okChunk = Number(data?.resumo?.atualizados || 0)
-        const errChunk = Number(data?.resumo?.erros || 0)
-        atualizadosTotais += okChunk
-        errosTotais += errChunk
-        processados += chunk.length
-        setProgressoImportacao((prev) =>
-          prev
-            ? {
-                ...prev,
-                processados,
-                atualizados: atualizadosTotais,
-                erros: errosTotais,
-              }
-            : null
-        )
-      }
-
-      setResultados(resultadosTotais)
+      const aplicado = await percorrerLotes("aplicar", tratarExistentes || "sobrescrever")
+      setResultados(aplicado.resultados)
       setResumo({
         total: linhasParaEnvio.length,
-        atualizados: atualizadosTotais,
-        erros: errosTotais,
+        atualizados: aplicado.atualizados,
+        erros: aplicado.erros,
+        ignorados: aplicado.ignorados,
       })
-      const ok = atualizadosTotais
-      const err = errosTotais
-      toast.success(`Importação concluída: ${ok} atualizado(s), ${err} erro(s).`)
+      toast.success(
+        `Importação concluída: ${aplicado.atualizados} atualizado(s), ${aplicado.ignorados} pulado(s), ${aplicado.erros} erro(s).`
+      )
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Erro ao importar")
     } finally {
       setEnviando(false)
+      setFaseImportacao(null)
       setProgressoImportacao(null)
     }
   }
@@ -369,15 +437,51 @@ export default function ImportacaoMatriculasPage() {
       <div>
         <h1 className="text-2xl font-bold tracking-tight text-slate-900">Importação de matrículas</h1>
         <p className="mt-1 text-sm text-slate-600">
-          Envie uma planilha com <strong>CPF</strong> e, conforme necessário, colunas de <strong>carteirinha saúde</strong>{" "}
-          e/ou <strong>carteirinha odonto</strong> (importação seletiva). O sistema localiza o beneficiário pelo CPF e
-          atualiza os números na vida/contrato, como na aba Contrato.
+          Escolha o grupo, depois envie a planilha com <strong>CPF</strong> e, conforme necessário, colunas de{" "}
+          <strong>carteirinha saúde</strong> e/ou <strong>carteirinha odonto</strong>. A busca fica só nas vidas desse
+          grupo. Quem já tem matrícula no campo importado pede confirmação antes de substituir.
         </p>
       </div>
 
       <Card className="border-slate-200/90 shadow-sm">
         <CardHeader>
-          <CardTitle className="text-lg">Arquivo Excel ou CSV</CardTitle>
+          <CardTitle className="text-lg">1. Grupo de beneficiários</CardTitle>
+          <CardDescription>
+            As matrículas são localizadas e gravadas apenas nas vidas deste grupo.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Select
+            value={grupoId || undefined}
+            onValueChange={(valor) => {
+              setGrupoId(valor)
+              setResultados(null)
+              setResumo(null)
+              setConflitosPendentes([])
+              setDialogConflitosAberto(false)
+            }}
+            disabled={!administradoraId || carregandoGrupos || enviando}
+          >
+            <SelectTrigger className="h-10 max-w-xl">
+              <SelectValue placeholder={carregandoGrupos ? "Carregando grupos…" : "Selecione o grupo"} />
+            </SelectTrigger>
+            <SelectContent>
+              {grupos.map((g) => (
+                <SelectItem key={g.id} value={g.id}>
+                  {g.nome}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {!carregandoGrupos && grupos.length === 0 && (
+            <p className="mt-2 text-xs text-slate-500">Nenhum grupo ativo encontrado.</p>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card className="border-slate-200/90 shadow-sm">
+        <CardHeader>
+          <CardTitle className="text-lg">2. Arquivo Excel ou CSV</CardTitle>
           <CardDescription>
             Primeira linha = cabeçalhos. Detecção automática para CPF, matrícula saúde e matrícula odonto (opcional).
           </CardDescription>
@@ -393,7 +497,8 @@ export default function ImportacaoMatriculasPage() {
           <div
             className={cn(
               "rounded-xl border-2 border-dashed px-4 py-10 text-center transition-colors",
-              drag ? "border-sky-400 bg-sky-50/50" : "border-slate-200 bg-slate-50/40"
+              !grupoId && "opacity-60",
+              drag && grupoId ? "border-sky-400 bg-sky-50/50" : "border-slate-200 bg-slate-50/40"
             )}
             onDragOver={(e) => {
               e.preventDefault()
@@ -403,19 +508,26 @@ export default function ImportacaoMatriculasPage() {
             onDrop={(e) => {
               e.preventDefault()
               setDrag(false)
+              if (!grupoId) {
+                toast.error("Selecione o grupo de beneficiários antes de enviar o arquivo.")
+                return
+              }
               const f = e.dataTransfer.files?.[0]
               if (f) void onFileSelected(f)
             }}
           >
             <FileSpreadsheet className="h-10 w-10 mx-auto text-slate-400" />
             <p className="mt-2 text-sm text-slate-600">
-              Arraste o arquivo ou clique para selecionar (.xlsx, .xls, .csv)
+              {grupoId
+                ? "Arraste o arquivo ou clique para selecionar (.xlsx, .xls, .csv)"
+                : "Selecione o grupo acima para enviar o arquivo."}
             </p>
             <Input
+              id="file-import-matriculas"
               type="file"
               accept=".xlsx,.xls,.csv"
               className="mt-4 max-w-xs mx-auto cursor-pointer"
-              disabled={loadingArquivo || !administradoraId}
+              disabled={loadingArquivo || !administradoraId || !grupoId}
               onChange={(e) => void onFileSelected(e.target.files?.[0] || null)}
             />
             {loadingArquivo && (
@@ -537,16 +649,17 @@ export default function ImportacaoMatriculasPage() {
             disabled={
               enviando ||
               !administradoraId ||
+              !grupoId ||
               !colCpf ||
               (!colMatricula && !colMatriculaOdonto) ||
               linhasParaEnvio.length === 0
             }
             onClick={() => void executarImportacao()}
           >
-            {enviando ? (
+                {enviando ? (
               <>
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                Importando…
+                {faseImportacao === "validar" ? "Verificando matrículas…" : "Importando…"}
               </>
             ) : (
               <>
@@ -558,7 +671,10 @@ export default function ImportacaoMatriculasPage() {
           {enviando && progressoImportacao && (
             <div className="w-full max-w-xl rounded-xl border border-slate-200 bg-slate-50/70 p-3 space-y-2">
               <div className="flex items-center justify-between gap-2 text-xs text-slate-600">
-                <span>Etapa {progressoImportacao.etapa} de {progressoImportacao.totalEtapas}</span>
+                <span>
+                  {faseImportacao === "validar" ? "Verificando quem já tem matrícula" : "Aplicando matrículas"} · etapa{" "}
+                  {progressoImportacao.etapa} de {progressoImportacao.totalEtapas}
+                </span>
                 <span className="tabular-nums">
                   {progressoImportacao.processados}/{progressoImportacao.total}
                 </span>
@@ -582,8 +698,8 @@ export default function ImportacaoMatriculasPage() {
 
           {resumo && (
             <div className="rounded-lg bg-slate-50 border border-slate-200 px-4 py-3 text-sm">
-              <strong>Resumo:</strong> {resumo.atualizados} atualizado(s), {resumo.erros} erro(s), total{" "}
-              {resumo.total} linha(s).
+              <strong>Resumo:</strong> {resumo.atualizados} atualizado(s), {resumo.ignorados} pulado(s), {resumo.erros}{" "}
+              erro(s), total {resumo.total} linha(s).
             </div>
           )}
 
@@ -608,16 +724,12 @@ export default function ImportacaoMatriculasPage() {
                           variant="outline"
                           className={cn(
                             r.status === "ok" && "border-emerald-200 bg-emerald-50 text-emerald-900",
+                            r.status === "ignorado" && "border-amber-200 bg-amber-50 text-amber-950",
                             r.status === "erro" && "border-red-200 bg-red-50 text-red-900"
                           )}
                         >
-                          {r.status === "ok" ? "OK" : "Erro"}
+                          {r.status === "ok" ? "OK" : r.status === "ignorado" ? "Pulado" : "Erro"}
                         </Badge>
-                        {r.destino ? (
-                          <span className="ml-2 text-xs text-slate-500">
-                            {r.destino === "vida_importada" ? "Vida importada" : "Cliente / proposta"}
-                          </span>
-                        ) : null}
                       </TableCell>
                       <TableCell className="text-sm text-slate-600">
                         {[r.mensagem, r.beneficiario_nome ? `Beneficiário: ${r.beneficiario_nome}` : ""]
@@ -632,6 +744,58 @@ export default function ImportacaoMatriculasPage() {
           )}
         </CardContent>
       </Card>
+
+      <AlertDialog open={dialogConflitosAberto} onOpenChange={setDialogConflitosAberto}>
+        <AlertDialogContent className="border-slate-200 bg-white shadow-lg sm:max-w-lg">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-lg font-semibold text-slate-900">
+              Beneficiários que já têm matrícula
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3 text-sm text-slate-600">
+                <p>
+                  {conflitosPendentes.length} beneficiário(s) deste grupo já possuem matrícula no campo que a planilha
+                  vai preencher. Substituir grava o valor da planilha. Pular mantém a matrícula atual e segue para quem
+                  ainda não tem.
+                </p>
+                <ul className="max-h-48 overflow-y-auto rounded-md border border-amber-200 bg-amber-50/80 px-3 py-2 text-xs text-amber-950 space-y-1.5">
+                  {conflitosPendentes.slice(0, 25).map((item) => (
+                    <li key={`${item.linha}-${item.cpf}`}>
+                      <span className="font-medium">
+                        Linha {item.linha}
+                        {item.beneficiario_nome || item.nome_planilha
+                          ? ` · ${item.beneficiario_nome || item.nome_planilha}`
+                          : ""}
+                      </span>
+                      {item.cpf ? ` · ${formatarCPF(item.cpf)}` : ""}
+                      {item.mensagem ? <span className="block text-amber-900">{item.mensagem}</span> : null}
+                    </li>
+                  ))}
+                  {conflitosPendentes.length > 25 && (
+                    <li>e mais {conflitosPendentes.length - 25} beneficiário(s).</li>
+                  )}
+                </ul>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="flex-col gap-2 sm:flex-col sm:space-x-0">
+            <Button type="button" disabled={enviando} onClick={() => void executarImportacao("sobrescrever")}>
+              Substituir e continuar
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={enviando}
+              onClick={() => void executarImportacao("pular")}
+            >
+              Pular estes e importar os demais
+            </Button>
+            <Button type="button" variant="ghost" disabled={enviando} onClick={() => setDialogConflitosAberto(false)}>
+              Cancelar
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
