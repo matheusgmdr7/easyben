@@ -194,6 +194,17 @@ export async function PUT(
         } else {
           updates.valor_mensal = null
         }
+        const antesValor = (atual as { valor_mensal?: unknown }).valor_mensal ?? null
+        const depoisValor = updates.valor_mensal ?? null
+        const antesNum = antesValor == null || antesValor === "" ? null : Number(antesValor)
+        const depoisNum = depoisValor == null || depoisValor === "" ? null : Number(depoisValor)
+        const valorMudou =
+          antesNum != null && depoisNum != null && Number.isFinite(antesNum) && Number.isFinite(depoisNum)
+            ? Math.abs(antesNum - depoisNum) > 0.001
+            : JSON.stringify(antesValor) !== JSON.stringify(depoisValor)
+        if (valorMudou) {
+          alteracoes.valor_mensal = { antes: antesValor, depois: depoisValor }
+        }
       } catch (err) {
         console.error("Recálculo de valor_mensal ignorado:", err)
         // Segue com o update sem alterar valor_mensal
@@ -238,14 +249,13 @@ export async function PUT(
     if (!data) return NextResponse.json({ error: "Não encontrado" }, { status: 404 })
 
     if (Object.keys(alteracoes).length > 0) {
-      try {
-        await supabaseAdmin.from("vidas_importadas_historico").insert({
-          vida_id: id,
-          tenant_id: tenantId,
-          alteracoes,
-        })
-      } catch {
-        // Tabela historico pode não existir; não quebra a atualização
+      const { error: erroHistorico } = await supabaseAdmin.from("vidas_importadas_historico").insert({
+        vida_id: id,
+        tenant_id: tenantId,
+        alteracoes,
+      })
+      if (erroHistorico) {
+        console.error("Erro ao registrar histórico da vida importada:", erroHistorico)
       }
     }
 

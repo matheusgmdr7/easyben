@@ -189,6 +189,23 @@ export default function BeneficiarioDetalhesPage() {
     return "-"
   }
 
+  function formatarValorHistorico(campo: string, valor: unknown): string {
+    if (valor == null || valor === "") return "—"
+    if (campo === "produto_id") {
+      const nome = produtosVinculo.find((p) => String(p.id) === String(valor))?.nome
+      return nome || String(valor)
+    }
+    if (typeof valor === "object") {
+      const rec = valor as Record<string, unknown>
+      const partes = Object.entries(rec)
+        .filter(([, v]) => v != null && String(v).trim() !== "")
+        .slice(0, 6)
+        .map(([k, v]) => `${k}: ${typeof v === "object" ? "…" : String(v)}`)
+      return partes.length ? partes.join(" · ") : "—"
+    }
+    return String(valor)
+  }
+
   function obterDataVigenciaBeneficiario(dados: any): string {
     const vigContrato = String(contrato?.data_vigencia || "").slice(0, 10)
     if (vigContrato) return vigContrato
@@ -855,12 +872,13 @@ export default function BeneficiarioDetalhesPage() {
   }, [clienteSelecionado])
 
   useEffect(() => {
-    if (!editandoContrato || !clienteSelecionado || clienteSelecionado.cliente_tipo !== "vida_importada") return
+    if (!clienteSelecionado || clienteSelecionado.cliente_tipo !== "vida_importada") return
     const adm = getAdministradoraLogada()
     if (!adm?.id) return
     const vida = clienteSelecionado._vida || clienteSelecionado.cliente || {}
     const produtoAtualId = String(vida?.produto_id || "").trim()
     void carregarContratosEProdutosParaVinculo(adm.id).then(({ produtos }) => {
+      if (!editandoContrato) return
       if (!produtoAtualId) {
         setContratoVinculoId("")
         setProdutoVinculoId("")
@@ -1359,6 +1377,12 @@ export default function BeneficiarioDetalhesPage() {
     const vidaAtual = clienteSelecionado.cliente_tipo === "vida_importada" ? (clienteSelecionado._vida || clienteSelecionado.cliente || {}) : {}
     const produtoAtualId = String((vidaAtual as any)?.produto_id || "").trim()
     const produtoSelecionadoFinal = String(produtoVinculoId || produtoAtualId || "").trim()
+    const produtoMudou =
+      clienteSelecionado.cliente_tipo === "vida_importada" &&
+      Boolean(produtoSelecionadoFinal) &&
+      produtoSelecionadoFinal !== produtoAtualId
+    const nomeProdutoNovo =
+      produtosVinculo.find((p) => String(p.id) === produtoSelecionadoFinal)?.nome || ""
 
     if (formContrato.valor_mensal.trim() && valor == null) {
       toast.error("Valor mensal inválido.")
@@ -1377,6 +1401,70 @@ export default function BeneficiarioDetalhesPage() {
     try {
       setSalvandoContrato(true)
       const clienteAdmId = await resolverClienteAdministradoraIdAtual(adm.id)
+      let valorAplicado = valor
+      const avisosFamilia: string[] = []
+      const atualizadosPorId = new Map<string, Record<string, unknown>>()
+      let precosFamilia: Array<{ id: string; valor: number }> = []
+      let acomodacaoFamiliaPersistida: "Apartamento" | "Enfermaria" | null = acomodacaoContrato
+
+      if (produtoMudou) {
+        const acomodacaoFamilia: "Apartamento" | "Enfermaria" =
+          acomodacaoContrato ||
+          (obterAcomodacaoBeneficiario(vidaAtual, produtoCliente?.nome) === "Apartamento" ? "Apartamento" : "Enfermaria")
+        const idadeAtual = resolverIdadeParaFaixa(vidaAtual as { data_nascimento?: string | null; idade?: unknown })
+        if (idadeAtual == null) {
+          throw new Error("Não foi possível identificar a idade para recalcular a mensalidade com o novo produto.")
+        }
+        const qAdmin = `&administradora_id=${encodeURIComponent(adm.id)}`
+        const buscarValorDoProduto = async (idade: number) => {
+          const res = await fetch(
+            `/api/administradora/produto/${encodeURIComponent(produtoSelecionadoFinal)}/valor?idade=${encodeURIComponent(String(idade))}&acomodacao=${encodeURIComponent(acomodacaoFamilia)}${qAdmin}`
+          )
+          const data = await res.json().catch(() => ({}))
+          if (!res.ok) {
+            throw new Error(String(data?.error || "Erro ao consultar a faixa do produto"))
+          }
+          const valorFaixa = normalizarEscalaValorMonetario(data?.valor)
+          if (valorFaixa == null || valorFaixa <= 0) {
+            throw new Error(String(data?.error || "Nenhuma faixa de valor para esta idade e acomodação."))
+          }
+          return valorFaixa
+        }
+        valorAplicado = await buscarValorDoProduto(idadeAtual)
+
+        const membros: Array<{ id: string; nome: string; idade: number | null }> = []
+        const idAtual = String(clienteSelecionado.id)
+        if (vidaTitularFamiliar?.id && String(vidaTitularFamiliar.id) !== idAtual) {
+          membros.push({
+            id: String(vidaTitularFamiliar.id),
+            nome: String(vidaTitularFamiliar.nome || "Titular"),
+            idade: resolverIdadeParaFaixa(vidaTitularFamiliar as { data_nascimento?: string | null; idade?: unknown }),
+          })
+        }
+        for (const dep of dependentes) {
+          if (!dep?.id || String(dep.id) === idAtual) continue
+          if (membros.some((m) => m.id === String(dep.id))) continue
+          membros.push({
+            id: String(dep.id),
+            nome: String(dep.nome || "Dependente"),
+            idade: resolverIdadeParaFaixa(dep),
+          })
+        }
+
+        acomodacaoFamiliaPersistida = acomodacaoFamilia
+        for (const membro of membros) {
+          if (membro.idade == null) {
+            avisosFamilia.push(`${membro.nome}: sem idade para recalcular`)
+            continue
+          }
+          try {
+            precosFamilia.push({ id: membro.id, valor: await buscarValorDoProduto(membro.idade) })
+          } catch (err: any) {
+            avisosFamilia.push(`${membro.nome}: ${err?.message || "sem faixa"}`)
+          }
+        }
+      }
+
       if (clienteSelecionado.cliente_tipo === "vida_importada") {
         const vida = clienteSelecionado._vida || clienteSelecionado.cliente || {}
         const dadosAdicionaisAtuais = vida?.dados_adicionais && typeof vida.dados_adicionais === "object"
@@ -1395,14 +1483,39 @@ export default function BeneficiarioDetalhesPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             administradora_id: adm.id,
-            ...(valor != null ? { valor_mensal: valor } : {}),
+            ...(valorAplicado != null ? { valor_mensal: valorAplicado } : {}),
             ...(acomodacaoContrato ? { acomodacao: acomodacaoContrato } : {}),
             ...(produtoSelecionadoFinal ? { produto_id: produtoSelecionadoFinal } : {}),
+            ...(produtoMudou && nomeProdutoNovo ? { plano: nomeProdutoNovo } : {}),
             dados_adicionais: novosDadosAdicionais,
           }),
         })
         const jsonVida = await resVida.json().catch(() => ({}))
         if (!resVida.ok) throw new Error(jsonVida?.error || "Erro ao salvar contrato no beneficiário")
+        if (jsonVida && typeof jsonVida === "object") {
+          atualizadosPorId.set(String(clienteSelecionado.id), jsonVida)
+        }
+
+        if (produtoMudou && precosFamilia.length > 0 && acomodacaoFamiliaPersistida) {
+          await Promise.all(
+            precosFamilia.map(async ({ id, valor: valorMembro }) => {
+              const resMembro = await fetch(`/api/administradora/vidas-importadas/${encodeURIComponent(id)}`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  administradora_id: adm.id,
+                  produto_id: produtoSelecionadoFinal,
+                  valor_mensal: valorMembro,
+                  acomodacao: acomodacaoFamiliaPersistida,
+                  ...(nomeProdutoNovo ? { plano: nomeProdutoNovo } : {}),
+                }),
+              })
+              const jsonMembro = await resMembro.json().catch(() => ({}))
+              if (!resMembro.ok) throw new Error(jsonMembro?.error || "Erro ao atualizar produto da família")
+              atualizadosPorId.set(id, jsonMembro)
+            })
+          )
+        }
       }
 
       if (clienteAdmId) {
@@ -1411,7 +1524,7 @@ export default function BeneficiarioDetalhesPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             administradora_id: adm.id,
-            ...(valor != null ? { valor_mensal: valor } : {}),
+            ...(valorAplicado != null ? { valor_mensal: valorAplicado } : {}),
             ...(dia ? { dia_vencimento: dia } : {}),
             ...(vig ? { data_vigencia: vig } : {}),
             ...(numeroCarteirinha || numeroOdonto
@@ -1426,14 +1539,43 @@ export default function BeneficiarioDetalhesPage() {
         if (!resCliente.ok) throw new Error(jsonCliente?.error || "Erro ao salvar dados contratuais do cliente")
       }
 
-      if (valor != null) setValorBaseFatura(valor)
+      if (produtoMudou && getTipoItem(clienteSelecionado) === "dependente" && vidaTitularFamiliar?.id) {
+        const titularAtualizado = atualizadosPorId.get(String(vidaTitularFamiliar.id))
+        const valorTitular = normalizarEscalaValorMonetario(titularAtualizado?.valor_mensal)
+        const clienteTitularId = await resolverClienteAdministradoraIdVida(vidaTitularFamiliar, adm.id)
+        if (clienteTitularId && valorTitular != null && clienteTitularId !== clienteAdmId) {
+          await fetch(`/api/administradora/clientes/${encodeURIComponent(clienteTitularId)}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              administradora_id: adm.id,
+              valor_mensal: valorTitular,
+            }),
+          })
+        }
+      }
+
+      if (valorAplicado != null) setValorBaseFatura(valorAplicado)
       if (dia) setDiaVencimentoVinculado(dia)
-      if (vig || valor != null) {
+      if (vig || valorAplicado != null) {
         setContrato((prev: any) => ({
           ...(prev || {}),
           ...(vig ? { data_vigencia: vig } : {}),
-          ...(valor != null ? { valor_mensal: valor } : {}),
+          ...(valorAplicado != null ? { valor_mensal: valorAplicado } : {}),
         }))
+      }
+      if (produtoMudou && nomeProdutoNovo) {
+        setProdutoCliente((prev: any) => ({ ...(prev || {}), id: produtoSelecionadoFinal, nome: nomeProdutoNovo }))
+        const contratoIdNovo = produtosVinculo.find((p) => String(p.id) === produtoSelecionadoFinal)?.contrato_id
+        if (contratoIdNovo && String(contrato?.id || "") !== String(contratoIdNovo)) {
+          const { supabase } = await import("@/lib/supabase")
+          const { data: contratoNovo } = await supabase
+            .from("contratos_administradora")
+            .select("*")
+            .eq("id", contratoIdNovo)
+            .maybeSingle()
+          if (contratoNovo) setContrato(contratoNovo)
+        }
       }
 
       setClienteSelecionado((prev: any) => {
@@ -1451,14 +1593,37 @@ export default function BeneficiarioDetalhesPage() {
         }
         const vidaNova = {
           ...vida,
-          ...(valor != null ? { valor_mensal: valor } : {}),
+          ...(valorAplicado != null ? { valor_mensal: valorAplicado } : {}),
           ...(acomodacaoContrato ? { acomodacao: acomodacaoContrato } : {}),
           ...(produtoSelecionadoFinal ? { produto_id: produtoSelecionadoFinal } : {}),
+          ...(produtoMudou && nomeProdutoNovo ? { plano: nomeProdutoNovo } : {}),
           ...(numeroCarteirinha ? { numero_carteirinha: numeroCarteirinha } : {}),
           dados_adicionais: dadosAdicionaisNovo,
         }
         return { ...prev, _vida: vidaNova, cliente: { ...(prev.cliente || {}), ...vidaNova } }
       })
+
+      if (atualizadosPorId.size > 0) {
+        setDependentes((prev) =>
+          prev.map((dep) => {
+            const upd = atualizadosPorId.get(String(dep?.id || ""))
+            return upd ? { ...dep, ...upd } : dep
+          })
+        )
+        setVidaTitularFamiliar((prev) => {
+          if (!prev?.id) return prev
+          const upd = atualizadosPorId.get(String(prev.id))
+          return upd ? { ...prev, ...upd } : prev
+        })
+      }
+
+      if (clienteSelecionado.cliente_tipo === "vida_importada") {
+        const histRes = await fetch(
+          `/api/administradora/vidas-importadas/${encodeURIComponent(clienteSelecionado.id)}/historico?administradora_id=${encodeURIComponent(adm.id)}`
+        )
+        const hist = await histRes.json().catch(() => [])
+        if (Array.isArray(hist)) setHistorico(hist)
+      }
 
       if (clienteAdmId) {
         await Promise.all([
@@ -1468,14 +1633,21 @@ export default function BeneficiarioDetalhesPage() {
       }
 
       const vigMsg = vig ? formatarData(vig) : "—"
-      const valorMsg = valor != null ? formatarMoeda(valor) : "—"
+      const valorMsg = valorAplicado != null ? formatarMoeda(valorAplicado) : "—"
       const diaMsg = dia || "—"
       const acomMsg = acomodacaoContrato || "—"
       const cartMsg =
         [numeroCarteirinha && `saúde ${numeroCarteirinha}`, numeroOdonto && `odonto ${numeroOdonto}`]
           .filter(Boolean)
           .join(" · ") || "—"
-      toast.success(`Contrato atualizado. Valor: ${valorMsg} | Vigência: ${vigMsg} | Vencimento: ${diaMsg} | Acomodação: ${acomMsg} | Carteirinhas: ${cartMsg}`)
+      const avisoFamilia = avisosFamilia.length
+        ? ` Alguns familiares não foram atualizados: ${avisosFamilia.slice(0, 3).join("; ")}${avisosFamilia.length > 3 ? "…" : ""}.`
+        : ""
+      toast.success(
+        produtoMudou
+          ? `Produto alterado para ${nomeProdutoNovo || "o selecionado"}. Mensalidade do titular e dos dependentes recalculada pela faixa etária e registrada no histórico. Valor desta vida: ${valorMsg}.${avisoFamilia}`
+          : `Contrato atualizado. Valor: ${valorMsg} | Vigência: ${vigMsg} | Vencimento: ${diaMsg} | Acomodação: ${acomMsg} | Carteirinhas: ${cartMsg}`
+      )
       setEditandoContrato(false)
     } catch (e: any) {
       toast.error(e?.message || "Erro ao salvar contrato")
@@ -2182,7 +2354,7 @@ export default function BeneficiarioDetalhesPage() {
                     </div>
                     <div className="p-3 bg-gray-50">
                       <span className="text-gray-500 block text-xs font-medium">Produto vinculado</span>
-                      {editandoContrato && clienteSelecionado?.cliente_tipo === "vida_importada" && semProdutoVinculado ? (
+                      {editandoContrato && clienteSelecionado?.cliente_tipo === "vida_importada" ? (
                         <div className="space-y-2 mt-1">
                           <Select
                             value={contratoVinculoId || "__todos__"}
@@ -2214,7 +2386,7 @@ export default function BeneficiarioDetalhesPage() {
                               <SelectValue placeholder="Selecione o produto do contrato" />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="__vazio__">Sem vínculo</SelectItem>
+                              <SelectItem value="__vazio__">{semProdutoVinculado ? "Sem vínculo" : "Selecione o produto"}</SelectItem>
                               {produtosVinculoFiltrados.map((p) => (
                                 <SelectItem key={p.id} value={p.id}>
                                   {p.nome}
@@ -2223,7 +2395,9 @@ export default function BeneficiarioDetalhesPage() {
                             </SelectContent>
                           </Select>
                           <p className="text-xs text-gray-500">
-                            Sem produto vinculado: selecione um contrato e o produto para habilitar cálculo por faixa etária.
+                            {semProdutoVinculado
+                              ? "Selecione um contrato e o produto para habilitar o cálculo por faixa etária."
+                              : "Escolha outro produto cadastrado. Ao salvar, a mensalidade do titular e dos dependentes é recalculada pela faixa etária e a alteração fica no histórico."}
                           </p>
                         </div>
                       ) : (
@@ -2331,9 +2505,9 @@ export default function BeneficiarioDetalhesPage() {
                               Object.entries(h.alteracoes).map(([campo, v]: [string, any]) => (
                                 <div key={campo} className="flex gap-2 flex-wrap">
                                   <span className="font-medium text-gray-600 capitalize">{campo.replace(/_/g, " ")}:</span>
-                                  <span className="text-red-600 line-through">{v?.antes != null ? String(v.antes) : "-"}</span>
+                                  <span className="text-red-600 line-through">{formatarValorHistorico(campo, v?.antes)}</span>
                                   <span className="text-gray-400">→</span>
-                                  <span className="text-green-700">{v?.depois != null ? String(v.depois) : "-"}</span>
+                                  <span className="text-green-700">{formatarValorHistorico(campo, v?.depois)}</span>
                                 </div>
                               ))}
                           </div>
