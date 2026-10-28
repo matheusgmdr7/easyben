@@ -223,13 +223,28 @@ export async function POST(request: NextRequest) {
     // e o gateway responde "Bad Request". 150 CPFs fica bem abaixo desse limite.
     const CHUNK_CPFS = 150
     if (cpfsImportados.length > 0 && !confirmar_cpfs_ativos) {
+      const { data: gruposAtivos, error: erroGruposAtivos } = await supabaseAdmin
+        .from("grupos_beneficiarios")
+        .select("id")
+        .eq("administradora_id", administradora_id)
+        .eq("tenant_id", tenantId)
+        .or("ativo.eq.true,ativo.is.null")
+
+      if (erroGruposAtivos) {
+        return NextResponse.json(
+          { error: `Erro ao validar grupos ativos: ${erroGruposAtivos.message}` },
+          { status: 500 }
+        )
+      }
+
+      const gruposAtivosIds = new Set((gruposAtivos || []).map((g) => String(g.id)))
       const existentes: Array<{ nome?: string | null; cpf?: string | null; tipo?: string | null }> = []
 
       for (let i = 0; i < cpfsImportados.length; i += CHUNK_CPFS) {
         const chunk = cpfsImportados.slice(i, i + CHUNK_CPFS)
         const { data, error: erroExistentes } = await supabaseAdmin
           .from("vidas_importadas")
-          .select("id, nome, cpf, tipo, ativo")
+          .select("id, nome, cpf, tipo, ativo, grupo_id")
           .eq("administradora_id", administradora_id)
           .eq("tenant_id", tenantId)
           .in("cpf", chunk)
@@ -241,7 +256,12 @@ export async function POST(request: NextRequest) {
             { status: 500 }
           )
         }
-        existentes.push(...(data || []))
+        existentes.push(
+          ...(data || []).filter((v) => {
+            const grupoId = String((v as { grupo_id?: string | null }).grupo_id || "")
+            return grupoId !== "" && gruposAtivosIds.has(grupoId)
+          })
+        )
         if (existentes.length >= 25) break
       }
 

@@ -344,7 +344,17 @@ export default function ImportacaoVidasPage() {
   const [manualOpen, setManualOpen] = useState(false)
   const [incluindoManual, setIncluindoManual] = useState(false)
   const [consultandoCepManual, setConsultandoCepManual] = useState(false)
-  const [cpfsAtivosSistema, setCpfsAtivosSistema] = useState<string[]>([])
+  const [vidasAtivasSistema, setVidasAtivasSistema] = useState<Array<{ cpf: string; grupoId: string }>>([])
+  const cpfsAtivosSistema = useMemo(() => {
+    const gruposAtivosIds = new Set(grupos.map((g) => g.id))
+    return Array.from(
+      new Set(
+        vidasAtivasSistema
+          .filter((v) => v.grupoId && gruposAtivosIds.has(v.grupoId))
+          .map((v) => v.cpf)
+      )
+    )
+  }, [vidasAtivasSistema, grupos])
   const [linhasExcluidasPreview, setLinhasExcluidasPreview] = useState<number[]>([])
   const [mostrarSomenteErros, setMostrarSomenteErros] = useState(false)
   const [indiceErroNavegacao, setIndiceErroNavegacao] = useState<number | null>(null)
@@ -393,7 +403,7 @@ export default function ImportacaoVidasPage() {
 
   useEffect(() => {
     if (!administradoraId) {
-      setCpfsAtivosSistema([])
+      setVidasAtivasSistema([])
       return
     }
 
@@ -406,18 +416,18 @@ export default function ImportacaoVidasPage() {
       .then((data) => {
         if (!ativo) return
         const lista = Array.isArray(data) ? data : []
-        const cpfs = Array.from(
-          new Set(
-            lista
-              .map((item: any) => normalizarCpf(item?.cpf))
-              .filter((cpf) => cpf.length === 11)
-          )
+        setVidasAtivasSistema(
+          lista
+            .map((item: { cpf?: string; grupo_id?: string | null }) => ({
+              cpf: normalizarCpf(item?.cpf),
+              grupoId: String(item?.grupo_id || ""),
+            }))
+            .filter((item) => item.cpf.length === 11 && item.grupoId)
         )
-        setCpfsAtivosSistema(cpfs)
       })
       .catch(() => {
         if (!ativo) return
-        setCpfsAtivosSistema([])
+        setVidasAtivasSistema([])
       })
 
     return () => {
