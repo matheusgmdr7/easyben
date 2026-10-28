@@ -27,6 +27,7 @@ interface FaixasPorAcomodacao {
 interface ProdutoContrato {
   id: string
   nome: string
+  nome_plano: string
   segmentacao: string
   /** Preços por faixa etária para Enfermaria e Apartamento */
   faixasEnfermaria: FaixaEtaria[]
@@ -110,6 +111,7 @@ export default function EditarContratoPage() {
       const prods = (data.produtos || []).map((p: {
         id: string
         nome: string
+        nome_plano?: string
         segmentacao?: string
         faixas?: FaixaEtaria[] | FaixasPorAcomodacao
       }) => {
@@ -117,6 +119,7 @@ export default function EditarContratoPage() {
         return {
           id: p.id || crypto.randomUUID(),
           nome: p.nome || "",
+          nome_plano: p.nome_plano || "",
           segmentacao: p.segmentacao || "Padrão",
           faixasEnfermaria: parsed.Enfermaria,
           faixasApartamento: parsed.Apartamento,
@@ -134,7 +137,7 @@ export default function EditarContratoPage() {
   function adicionarProduto() {
     setProdutos((prev) => [
       ...prev,
-      { id: crypto.randomUUID(), nome: "", segmentacao: "Padrão", faixasEnfermaria: [], faixasApartamento: [] },
+      { id: crypto.randomUUID(), nome: "", nome_plano: "", segmentacao: "Padrão", faixasEnfermaria: [], faixasApartamento: [] },
     ])
   }
 
@@ -162,7 +165,7 @@ export default function EditarContratoPage() {
     setExcluirContexto(null)
   }
 
-  function atualizarProduto(id: string, dados: Partial<Pick<ProdutoContrato, "nome" | "segmentacao">>) {
+  function atualizarProduto(id: string, dados: Partial<Pick<ProdutoContrato, "nome" | "nome_plano" | "segmentacao">>) {
     setProdutos((prev) => prev.map((p) => (p.id === id ? { ...p, ...dados } : p)))
   }
 
@@ -221,6 +224,7 @@ export default function EditarContratoPage() {
             .map((p) => ({
               id: p.id,
               nome: p.nome.trim(),
+              nome_plano: p.nome_plano.trim(),
               segmentacao: p.segmentacao,
               faixas_por_acomodacao: {
                 Enfermaria: p.faixasEnfermaria.map((f) => ({ faixa_etaria: f.faixa_etaria, valor: f.valor })),
@@ -450,9 +454,10 @@ export default function EditarContratoPage() {
                             <Input
                               value={prod.nome}
                               onChange={(e) => atualizarProduto(prod.id, { nome: e.target.value.toUpperCase() })}
-                              placeholder="Ex: Plano Básico"
+                              placeholder="Ex: NTNP ENF"
                               className="h-9 text-sm border-gray-300 rounded-sm"
                             />
+                            <p className="mt-1 text-[11px] text-gray-500">Uso interno. Não aparece na carteirinha do cliente.</p>
                           </div>
                           <div>
                             <label className="block text-xs text-gray-600 mb-1">Segmentação</label>
@@ -466,6 +471,18 @@ export default function EditarContratoPage() {
                                 ))}
                               </SelectContent>
                             </Select>
+                          </div>
+                          <div className="md:col-span-2">
+                            <label className="block text-xs text-gray-600 mb-1">Nome do plano</label>
+                            <Input
+                              value={prod.nome_plano}
+                              onChange={(e) => atualizarProduto(prod.id, { nome_plano: e.target.value })}
+                              placeholder="Ex: Nosso Plano Nacional"
+                              className="h-9 text-sm border-gray-300 rounded-sm"
+                            />
+                            <p className="mt-1 text-[11px] text-gray-500">
+                              Nome comercial exibido na aba Contrato do beneficiário e na carteirinha do portal do cliente.
+                            </p>
                           </div>
                         </div>
                         <Button

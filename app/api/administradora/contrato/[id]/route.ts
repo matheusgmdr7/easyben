@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase-admin"
 import { getCurrentTenantId } from "@/lib/tenant-query-helper"
+import { erroColunaNomePlano, faixasComNomePlano, lerNomePlanoProduto } from "@/lib/nome-plano-produto"
 
 /**
  * GET /api/administradora/contrato/[id]
@@ -45,12 +46,21 @@ export async function GET(
     let produtos: Array<Record<string, any>> = []
     let queryProdutos = supabaseAdmin
       .from("produtos_contrato_administradora")
-      .select("id, nome, segmentacao, acomodacao, faixas")
+      .select("id, nome, nome_plano, segmentacao, acomodacao, faixas")
       .eq("contrato_id", id)
       .order("created_at", { ascending: true })
     if (tenantContrato) queryProdutos = queryProdutos.eq("tenant_id", tenantContrato)
 
-    const produtosCompletos = await queryProdutos
+    let produtosCompletos = await queryProdutos
+    if (erroColunaNomePlano(produtosCompletos.error)) {
+      let querySemNomePlano = supabaseAdmin
+        .from("produtos_contrato_administradora")
+        .select("id, nome, segmentacao, acomodacao, faixas")
+        .eq("contrato_id", id)
+        .order("created_at", { ascending: true })
+      if (tenantContrato) querySemNomePlano = querySemNomePlano.eq("tenant_id", tenantContrato)
+      produtosCompletos = await querySemNomePlano
+    }
     if (!produtosCompletos.error) {
       produtos = (produtosCompletos.data as Array<Record<string, any>>) || []
     } else {
@@ -109,6 +119,7 @@ export async function GET(
 
     type FaixasPorAcomodacao = { Enfermaria: Array<{ faixa_etaria: string; valor: string }>; Apartamento: Array<{ faixa_etaria: string; valor: string }> }
     const faixasParsed = (produtos || []).map((p) => {
+      const nomePlano = lerNomePlanoProduto(p)
       let faixas: unknown = p.faixas
       if (typeof p.faixas === "string") {
         try {
@@ -117,13 +128,18 @@ export async function GET(
           faixas = []
         }
       }
+      if (faixas && typeof faixas === "object" && !Array.isArray(faixas)) {
+        const { nome_plano: _nomePlano, ...resto } = faixas as Record<string, unknown>
+        faixas = resto
+      }
+      const base = { ...p, nome_plano: nomePlano }
       if (Array.isArray(faixas)) {
-        return { ...p, faixas: { Enfermaria: faixas, Apartamento: [] } as FaixasPorAcomodacao }
+        return { ...base, faixas: { Enfermaria: faixas, Apartamento: [] } as FaixasPorAcomodacao }
       }
       if (faixas && typeof faixas === "object" && "Enfermaria" in faixas && "Apartamento" in faixas) {
-        return { ...p, faixas: faixas as FaixasPorAcomodacao }
+        return { ...base, faixas: faixas as FaixasPorAcomodacao }
       }
-      return { ...p, faixas: { Enfermaria: [], Apartamento: [] } as FaixasPorAcomodacao }
+      return { ...base, faixas: { Enfermaria: [], Apartamento: [] } as FaixasPorAcomodacao }
     })
 
     let opcoesDiaVencimento: string[] = []
@@ -186,6 +202,7 @@ export async function PUT(
       produtos?: Array<{
         id?: string
         nome: string
+        nome_plano?: string
         segmentacao?: string
         acomodacao?: string
         faixas?: Array<{ faixa_etaria: string; valor: string }>
@@ -312,23 +329,33 @@ export async function PUT(
         } else {
           faixasDb = { Enfermaria: [], Apartamento: [] }
         }
+        const nomePlano = String(p.nome_plano || "").trim().slice(0, 255)
+        const faixasParaSalvar = faixasComNomePlano(faixasDb, nomePlano)
 
         const produtoId = typeof p.id === "string" ? p.id.trim() : undefined
         const existeEValido = produtoId && idsExistentes.has(produtoId)
 
         if (existeEValido) {
-          let queryAtualizarProduto = supabaseAdmin
-            .from("produtos_contrato_administradora")
-            .update({
-              nome,
-              segmentacao,
-              acomodacao: "Enfermaria",
-              faixas: faixasDb,
-            })
-            .eq("id", produtoId)
-            .eq("contrato_id", id)
-          if (tenantContrato) queryAtualizarProduto = queryAtualizarProduto.eq("tenant_id", tenantContrato)
-          const { error: errUpd } = await queryAtualizarProduto
+          const atualizarProduto = async (comColuna: boolean) => {
+            let queryAtualizarProduto = supabaseAdmin
+              .from("produtos_contrato_administradora")
+              .update({
+                nome,
+                segmentacao,
+                acomodacao: "Enfermaria",
+                faixas: faixasParaSalvar,
+                ...(comColuna ? { nome_plano: nomePlano || null } : {}),
+              })
+              .eq("id", produtoId)
+              .eq("contrato_id", id)
+            if (tenantContrato) queryAtualizarProduto = queryAtualizarProduto.eq("tenant_id", tenantContrato)
+            return queryAtualizarProduto
+          }
+          let { error: errUpd } = await atualizarProduto(true)
+          if (erroColunaNomePlano(errUpd)) {
+            const retry = await atualizarProduto(false)
+            errUpd = retry.error
+          }
 
           if (errUpd) {
             console.error("Erro ao atualizar produto:", errUpd)
@@ -336,18 +363,26 @@ export async function PUT(
           }
           idsMantidos.push(produtoId)
         } else {
-          const { data: inserted, error: errIns } = await supabaseAdmin
-            .from("produtos_contrato_administradora")
-            .insert({
-              contrato_id: id,
-              tenant_id: tenantContrato || tenantIdAtual,
-              nome,
-              segmentacao,
-              acomodacao: "Enfermaria",
-              faixas: faixasDb,
-            })
-            .select("id")
-            .single()
+          const inserirProduto = async (comColuna: boolean) =>
+            supabaseAdmin
+              .from("produtos_contrato_administradora")
+              .insert({
+                contrato_id: id,
+                tenant_id: tenantContrato || tenantIdAtual,
+                nome,
+                segmentacao,
+                acomodacao: "Enfermaria",
+                faixas: faixasParaSalvar,
+                ...(comColuna ? { nome_plano: nomePlano || null } : {}),
+              })
+              .select("id")
+              .single()
+          let { data: inserted, error: errIns } = await inserirProduto(true)
+          if (erroColunaNomePlano(errIns)) {
+            const retry = await inserirProduto(false)
+            inserted = retry.data
+            errIns = retry.error
+          }
 
           if (errIns) {
             console.error("Erro ao inserir produto:", errIns)

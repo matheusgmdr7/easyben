@@ -14,9 +14,10 @@ import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import { formatarCPF, formatarData, formatarMoeda } from "@/utils/formatters"
 
-/** Suporte via WhatsApp (Easyben) — número sem formatação para wa.me */
+/** Suporte via WhatsApp — 21 98055-3681 */
+const WHATSAPP_SUPORTE_EXIBICAO = "21 98055-3681"
 const WHATSAPP_SUPORTE_HREF =
-  "https://wa.me/551151231925?text=" +
+  "https://wa.me/5521980553681?text=" +
   encodeURIComponent("Olá! Preciso de ajuda no portal do cliente.")
 
 interface ClienteDashboardPageProps {
@@ -277,7 +278,7 @@ export default function ClienteDashboardPage({ params }: ClienteDashboardPagePro
           </div>
         </div>
       ) : (
-        <div className="min-h-screen bg-gradient-to-b from-slate-100/90 via-slate-50 to-white py-4 sm:py-8">
+        <div className="min-h-screen overflow-x-hidden bg-gradient-to-b from-slate-100/90 via-slate-50 to-white py-4 sm:py-8">
           <div className="container max-w-5xl px-3 sm:px-4 md:px-6 space-y-5 sm:space-y-6">
             {resultado && cliente && (
               <>
@@ -375,130 +376,98 @@ export default function ClienteDashboardPage({ params }: ClienteDashboardPagePro
                                   ? "Dependente"
                                   : ben.tipo || "Beneficiário"
                             return (
-                              <div
+                              <article
                                 key={`${ben.cpf}-${idx}`}
                                 className={cn(
-                                  "relative w-full max-w-full min-w-0 overflow-hidden rounded-2xl shadow-lg ring-1 ring-white/10",
-                                  ben.cpf_login && "ring-2 ring-sky-400/40"
+                                  "relative w-full max-w-full min-w-0 overflow-hidden rounded-2xl bg-gradient-to-br from-[#0c1929] via-[#0F172A] to-[#1e3a5f] text-white shadow-lg ring-1 ring-white/10",
+                                  ben.cpf_login && "ring-2 ring-sky-300/50"
                                 )}
                               >
-                                <div
-                                  className="absolute inset-0 bg-gradient-to-br from-[#0c1929] via-[#0F172A] to-[#172554]"
-                                  aria-hidden
-                                />
-                                <div
-                                  className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/20 to-transparent"
-                                  aria-hidden
-                                />
-                                <div className="relative w-full min-w-0 px-3 pb-5 pt-4 text-white sm:px-8 sm:pb-8 sm:pt-7">
-                                  {/* Mobile: coluna com operadora em destaque; Desktop (sm+): linha como antes */}
-                                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
-                                    <div className="min-w-0 shrink-0">
-                                      <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/55">
-                                        {rotuloTipo}
-                                      </p>
-                                    </div>
-                                    <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-end sm:gap-2">
+                                <div className="pointer-events-none absolute -right-10 -top-12 h-36 w-36 rounded-full bg-sky-400/10 blur-2xl" aria-hidden />
+                                <div className="relative min-w-0 px-4 py-4 sm:px-6 sm:py-6">
+                                  <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
+                                    <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/55">
+                                      {rotuloTipo}
+                                    </p>
+                                    <div className="flex max-w-full flex-wrap items-center justify-end gap-2">
                                       {ben.cpf_login ? (
-                                        <span className="w-fit rounded-full bg-white/15 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
+                                        <span className="rounded-full bg-white/15 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
                                           Seu acesso
                                         </span>
                                       ) : null}
-                                      <div
-                                        className={cn(
-                                          "min-w-0 max-w-full text-left",
-                                          "rounded-xl border border-white/15 bg-white/[0.06] px-3 py-2.5",
-                                          "sm:rounded-none sm:border-0 sm:bg-transparent sm:p-0 sm:text-right sm:max-w-[min(100%,18rem)]"
-                                        )}
-                                      >
-                                        <p className="text-[10px] font-medium uppercase tracking-wide text-white/45">
-                                          Operadora
-                                        </p>
-                                        <p className="mt-0.5 break-words text-sm font-semibold leading-snug text-white sm:text-xs">
-                                          {ben.operadora ||
-                                            resultado?.tenant?.nome_marca ||
-                                            resultado?.tenant?.nome ||
-                                            "—"}
-                                        </p>
-                                      </div>
+                                      <p className="max-w-full break-words text-right text-xs font-semibold leading-snug text-white/90 sm:max-w-[14rem]">
+                                        {ben.operadora ||
+                                          resultado?.tenant?.nome_marca ||
+                                          resultado?.tenant?.nome ||
+                                          "—"}
+                                      </p>
                                     </div>
                                   </div>
 
-                                  <h3 className="mt-4 break-words text-lg font-bold leading-snug tracking-tight sm:mt-5 sm:text-xl md:text-2xl">
+                                  <h3 className="mt-4 break-words text-xl font-bold leading-tight tracking-tight sm:text-2xl">
                                     {ben.nome || "Beneficiário"}
                                   </h3>
-                                  <p className="mt-1 font-mono text-sm text-white/85 tabular-nums">
+                                  <p className="mt-1 break-all font-mono text-sm text-white/80">
                                     {formatarCPF(ben.cpf || "") || "—"}
                                   </p>
-                                  <p className="mt-2 text-[10px] leading-relaxed text-white/40">
+                                  <p className="mt-2 text-[11px] leading-relaxed text-white/45">
                                     Vigência{" "}
-                                    <span className="tabular-nums text-white/65">
+                                    <span className="tabular-nums text-white/70">
                                       {cliente?.data_vigencia
                                         ? formatarData(String(cliente.data_vigencia).slice(0, 10))
                                         : "—"}
                                     </span>
                                   </p>
 
-                                  <div className="mt-4 space-y-3 border-t border-white/10 pt-4 sm:mt-5 sm:space-y-4 sm:pt-5">
-                                    <div className="relative w-full min-w-0 overflow-hidden rounded-2xl border border-slate-200/90 bg-gradient-to-b from-white to-slate-50/95 p-3 shadow-[0_2px_12px_rgba(15,23,42,0.06)] sm:p-5">
-                                      <div
-                                        className="pointer-events-none absolute -right-8 top-0 h-20 w-20 rounded-full bg-sky-400/10 blur-2xl"
-                                        aria-hidden
-                                      />
-                                      <p className="relative text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                                        Nº da carteirinha (saúde)
+                                  <div
+                                    className={cn(
+                                      "mt-4 grid grid-cols-1 gap-3",
+                                      ben.numero_carteirinha_odonto?.trim() && "sm:grid-cols-2"
+                                    )}
+                                  >
+                                    <div className="min-w-0 rounded-xl bg-white px-3 py-3 text-slate-900 shadow-sm">
+                                      <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                                        Carteirinha saúde
                                       </p>
-                                      <p className="relative mt-2 break-words text-lg font-bold leading-tight text-slate-900 [overflow-wrap:anywhere] sm:mt-3 sm:text-xl md:text-2xl">
+                                      <p className="mt-1 break-all font-mono text-base font-bold leading-tight sm:text-lg">
                                         {ben.numero_carteirinha?.trim() ? ben.numero_carteirinha.trim() : "—"}
                                       </p>
                                     </div>
                                     {ben.numero_carteirinha_odonto?.trim() ? (
-                                      <div className="relative w-full min-w-0 overflow-hidden rounded-2xl border border-slate-200/90 bg-gradient-to-b from-white to-slate-50/95 p-3 shadow-[0_2px_12px_rgba(15,23,42,0.06)] sm:p-5">
-                                        <div
-                                          className="pointer-events-none absolute -right-8 top-0 h-20 w-20 rounded-full bg-emerald-400/10 blur-2xl"
-                                          aria-hidden
-                                        />
-                                        <p className="relative text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                                          Nº da carteirinha (odonto)
+                                      <div className="min-w-0 rounded-xl bg-white px-3 py-3 text-slate-900 shadow-sm">
+                                        <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                                          Carteirinha odonto
                                         </p>
-                                        <p className="relative mt-2 break-words text-lg font-bold leading-tight text-slate-900 [overflow-wrap:anywhere] sm:mt-3 sm:text-xl md:text-2xl">
+                                        <p className="mt-1 break-all font-mono text-base font-bold leading-tight sm:text-lg">
                                           {ben.numero_carteirinha_odonto.trim()}
                                         </p>
                                       </div>
                                     ) : null}
-                                    <div className="flex min-w-0 gap-2.5 rounded-lg border border-white/15 bg-white/[0.07] px-2.5 py-2.5 sm:gap-3 sm:px-3 sm:py-3">
-                                      <div
-                                        className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-white/10 text-white/55"
-                                        aria-hidden
-                                      >
-                                        <Info className="h-3.5 w-3.5" strokeWidth={1.6} />
-                                      </div>
-                                      <p className="min-w-0 flex-1 hyphens-auto text-[10px] leading-snug text-white/80 [overflow-wrap:anywhere] sm:text-[11px]">
-                                        Uso apenas para consulta: trata-se de uma carteirinha provisória neste portal. O documento
-                                        oficial é emitido pela operadora. Para solicitar a carteirinha permanente, acesse o site ou o
-                                        aplicativo da sua operadora de saúde.
+                                  </div>
+
+                                  <div className="mt-4 grid grid-cols-1 gap-3 border-t border-white/10 pt-4 min-[420px]:grid-cols-[minmax(0,1fr)_auto] min-[420px]:items-end">
+                                    <div className="min-w-0">
+                                      <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-white/45">Plano</p>
+                                      <p className="mt-1 break-words text-base font-semibold leading-snug sm:text-lg">
+                                        {ben.plano || "—"}
+                                      </p>
+                                    </div>
+                                    <div className="min-w-0 min-[420px]:text-right">
+                                      <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-white/45">Mensalidade</p>
+                                      <p className="mt-1 text-lg font-bold tabular-nums">
+                                        {ben.valor_mensal != null ? formatarMoeda(Number(ben.valor_mensal)) : "—"}
                                       </p>
                                     </div>
                                   </div>
 
-                                  <div className="mt-4 flex min-w-0 flex-col gap-0 rounded-xl bg-black/20 px-3 py-3 ring-1 ring-white/10 sm:mt-5 sm:flex-row sm:items-end sm:justify-between sm:gap-4 sm:px-4">
-                                    <div className="min-w-0 flex-1 pb-3 sm:pb-0">
-                                      <p className="text-[10px] uppercase tracking-wide text-white/45">Plano</p>
-                                      <p className="mt-0.5 break-words text-sm font-semibold leading-snug text-white">
-                                        {ben.plano || "—"}
-                                      </p>
-                                    </div>
-                                    <div className="min-w-0 border-t border-white/10 pt-3 text-left sm:border-0 sm:pt-0 sm:text-right">
-                                      <p className="text-[10px] uppercase tracking-wide text-white/45">Mensalidade</p>
-                                      <p className="mt-0.5 text-base font-bold tabular-nums text-white sm:text-sm">
-                                        {ben.valor_mensal != null
-                                          ? formatarMoeda(Number(ben.valor_mensal))
-                                          : "—"}
-                                      </p>
-                                    </div>
-                                  </div>
+                                  <p className="mt-4 flex gap-2 text-[11px] leading-relaxed text-white/55">
+                                    <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" strokeWidth={1.6} aria-hidden />
+                                    <span>
+                                      Carteirinha provisória para consulta neste portal. O documento oficial é emitido pela operadora.
+                                    </span>
+                                  </p>
                                 </div>
-                              </div>
+                              </article>
                             )
                           })}
                         </div>
@@ -799,8 +768,11 @@ export default function ClienteDashboardPage({ params }: ClienteDashboardPagePro
                         <div className="rounded-2xl border border-slate-200/90 border-l-4 border-l-[#25D366] bg-gradient-to-br from-slate-50/95 via-white to-emerald-50/30 p-4 sm:p-6">
                           <h3 className="text-sm font-semibold text-slate-900 sm:text-base">Fale com o suporte</h3>
                           <p className="mt-2 text-sm leading-relaxed text-slate-600">
-                            Nossa equipe atende pelo WhatsApp em horário comercial. Toque no botão para abrir a conversa
-                            no aplicativo.
+                            Nossa equipe atende pelo WhatsApp{" "}
+                            <a href={WHATSAPP_SUPORTE_HREF} className="font-semibold text-slate-900 underline-offset-2 hover:underline">
+                              {WHATSAPP_SUPORTE_EXIBICAO}
+                            </a>{" "}
+                            em horário comercial. Toque no botão para abrir a conversa no aplicativo.
                           </p>
                           <a
                             href={WHATSAPP_SUPORTE_HREF}

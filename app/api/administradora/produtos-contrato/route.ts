@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase-admin"
 import { getCurrentTenantId } from "@/lib/tenant-query-helper"
+import { erroColunaNomePlano, lerNomePlanoProduto } from "@/lib/nome-plano-produto"
 
 /**
  * GET /api/administradora/produtos-contrato?administradora_id=xxx
@@ -29,7 +30,7 @@ export async function GET(request: NextRequest) {
     } else {
       tenantId = await getCurrentTenantId()
     }
-    const result: { id: string; nome: string; contrato_id: string }[] = []
+    const result: { id: string; nome: string; contrato_id: string; nome_plano: string }[] = []
     let contratoIds: string[] = []
 
     if (contratoId) {
@@ -71,25 +72,48 @@ export async function GET(request: NextRequest) {
     }
 
     if (contratoIds.length > 0) {
-      let { data: prodsContrato } = await supabaseAdmin
+      let { data: prodsContrato, error: erroProdutos } = await supabaseAdmin
         .from("produtos_contrato_administradora")
-        .select("id, nome, contrato_id")
+        .select("id, nome, nome_plano, contrato_id, faixas")
         .in("contrato_id", contratoIds)
         .eq("tenant_id", tenantId)
         .order("nome", { ascending: true })
 
+      if (erroColunaNomePlano(erroProdutos)) {
+        const retry = await supabaseAdmin
+          .from("produtos_contrato_administradora")
+          .select("id, nome, contrato_id, faixas")
+          .in("contrato_id", contratoIds)
+          .eq("tenant_id", tenantId)
+          .order("nome", { ascending: true })
+        prodsContrato = retry.data
+        erroProdutos = retry.error
+      }
+
       if (!prodsContrato || prodsContrato.length === 0) {
         // Fallback para dados legados sem tenant_id preenchido
-        const { data: prodsContratoLegado } = await supabaseAdmin
+        let legado = await supabaseAdmin
           .from("produtos_contrato_administradora")
-          .select("id, nome, contrato_id")
+          .select("id, nome, nome_plano, contrato_id, faixas")
           .in("contrato_id", contratoIds)
           .order("nome", { ascending: true })
-        prodsContrato = prodsContratoLegado || []
+        if (erroColunaNomePlano(legado.error)) {
+          legado = await supabaseAdmin
+            .from("produtos_contrato_administradora")
+            .select("id, nome, contrato_id, faixas")
+            .in("contrato_id", contratoIds)
+            .order("nome", { ascending: true })
+        }
+        prodsContrato = legado.data || []
       }
 
       ;(prodsContrato || []).forEach((p) => {
-        result.push({ id: p.id, nome: p.nome || "-", contrato_id: p.contrato_id })
+        result.push({
+          id: p.id,
+          nome: p.nome || "-",
+          contrato_id: p.contrato_id,
+          nome_plano: lerNomePlanoProduto(p),
+        })
       })
     }
 
@@ -118,24 +142,45 @@ export async function GET(request: NextRequest) {
       )
 
       if (produtoIdsVidas.length > 0) {
-        let { data: prodsPorVida } = await supabaseAdmin
+        let { data: prodsPorVida, error: erroPorVida } = await supabaseAdmin
           .from("produtos_contrato_administradora")
-          .select("id, nome, contrato_id")
+          .select("id, nome, nome_plano, contrato_id, faixas")
           .in("id", produtoIdsVidas)
           .eq("tenant_id", tenantId)
           .order("nome", { ascending: true })
+        if (erroColunaNomePlano(erroPorVida)) {
+          const retry = await supabaseAdmin
+            .from("produtos_contrato_administradora")
+            .select("id, nome, contrato_id, faixas")
+            .in("id", produtoIdsVidas)
+            .eq("tenant_id", tenantId)
+            .order("nome", { ascending: true })
+          prodsPorVida = retry.data
+        }
 
         if (!prodsPorVida || prodsPorVida.length === 0) {
-          const { data: prodsPorVidaLegado } = await supabaseAdmin
+          let legado = await supabaseAdmin
             .from("produtos_contrato_administradora")
-            .select("id, nome, contrato_id")
+            .select("id, nome, nome_plano, contrato_id, faixas")
             .in("id", produtoIdsVidas)
             .order("nome", { ascending: true })
-          prodsPorVida = prodsPorVidaLegado || []
+          if (erroColunaNomePlano(legado.error)) {
+            legado = await supabaseAdmin
+              .from("produtos_contrato_administradora")
+              .select("id, nome, contrato_id, faixas")
+              .in("id", produtoIdsVidas)
+              .order("nome", { ascending: true })
+          }
+          prodsPorVida = legado.data || []
         }
 
         ;(prodsPorVida || []).forEach((p) => {
-          result.push({ id: p.id, nome: p.nome || "-", contrato_id: p.contrato_id })
+          result.push({
+            id: p.id,
+            nome: p.nome || "-",
+            contrato_id: p.contrato_id,
+            nome_plano: lerNomePlanoProduto(p),
+          })
         })
       }
     }

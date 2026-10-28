@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase-admin"
 import { getCurrentTenantId } from "@/lib/tenant-query-helper"
+import { erroColunaNomePlano, lerNomePlanoProduto } from "@/lib/nome-plano-produto"
 
 /**
  * GET /api/administradora/produto/[id]
@@ -17,24 +18,30 @@ export async function GET(
 
     const tenantId = await getCurrentTenantId()
 
-    let { data: pca } = await supabaseAdmin
-      .from("produtos_contrato_administradora")
-      .select("id, nome, segmentacao, acomodacao, faixas")
-      .eq("id", id)
-      .eq("tenant_id", tenantId)
-      .maybeSingle()
+    const selecionar = async (comNomePlano: boolean, filtrarTenant: boolean) => {
+      let query = supabaseAdmin
+        .from("produtos_contrato_administradora")
+        .select(comNomePlano ? "id, nome, nome_plano, segmentacao, acomodacao, faixas" : "id, nome, segmentacao, acomodacao, faixas")
+        .eq("id", id)
+      if (filtrarTenant) query = query.eq("tenant_id", tenantId)
+      return query.maybeSingle()
+    }
+
+    let { data: pca, error } = await selecionar(true, true)
+    if (erroColunaNomePlano(error)) {
+      const retry = await selecionar(false, true)
+      pca = retry.data
+      error = retry.error
+    }
 
     if (!pca) {
-      const fallback = await supabaseAdmin
-        .from("produtos_contrato_administradora")
-        .select("id, nome, segmentacao, acomodacao, faixas")
-        .eq("id", id)
-        .maybeSingle()
+      let fallback = await selecionar(true, false)
+      if (erroColunaNomePlano(fallback.error)) fallback = await selecionar(false, false)
       pca = fallback.data || null
     }
 
     if (pca) {
-      return NextResponse.json(pca)
+      return NextResponse.json({ ...pca, nome_plano: lerNomePlanoProduto(pca) })
     }
 
     return NextResponse.json({ error: "Produto não encontrado" }, { status: 404 })

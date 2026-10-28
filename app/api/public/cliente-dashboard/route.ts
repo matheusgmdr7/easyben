@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase-admin"
 import { getBoletoLinkFromFatura } from "@/lib/fatura-boleto-link"
+import { erroColunaNomePlano, lerNomePlanoProduto } from "@/lib/nome-plano-produto"
 
 function normalizarCpf(cpf: string | null): string {
   return String(cpf || "").replace(/\D/g, "")
@@ -25,15 +26,32 @@ function normalizarEscalaValorMonetario(valor: unknown): number | null {
   return n
 }
 
-async function buscarProdutoNome(produtoId: string | null | undefined, tenantId: string): Promise<string | null> {
-  if (!produtoId) return null
-  const { data } = await supabaseAdmin
+type RotuloProduto = { nome: string | null; nomePlano: string | null }
+
+async function buscarRotulosProdutos(produtoIds: string[]): Promise<Map<string, RotuloProduto>> {
+  const mapa = new Map<string, RotuloProduto>()
+  const ids = Array.from(new Set(produtoIds.map((id) => String(id || "").trim()).filter(Boolean)))
+  if (ids.length === 0) return mapa
+
+  let consulta = await supabaseAdmin
     .from("produtos_contrato_administradora")
-    .select("nome")
-    .eq("id", produtoId)
-    .eq("tenant_id", tenantId)
-    .maybeSingle()
-  return data?.nome || null
+    .select("id, nome, nome_plano, faixas")
+    .in("id", ids)
+  if (erroColunaNomePlano(consulta.error)) {
+    consulta = await supabaseAdmin
+      .from("produtos_contrato_administradora")
+      .select("id, nome, faixas")
+      .in("id", ids)
+  }
+
+  for (const row of consulta.data || []) {
+    const nomePlano = lerNomePlanoProduto(row)
+    mapa.set(String(row.id), {
+      nome: String(row.nome || "").trim() || null,
+      nomePlano: nomePlano || null,
+    })
+  }
+  return mapa
 }
 
 /** Carteirinha do plano de saúde (campo principal). */
@@ -218,15 +236,16 @@ export async function GET(request: NextRequest) {
     }
 
     const produtoId = (vida?.produto_id || proposta?.produto_id || null) as string | null
-    const produtoNomeDb = await buscarProdutoNome(produtoId, tenantId)
+    const rotulosIniciais = await buscarRotulosProdutos(produtoId ? [String(produtoId)] : [])
+    const rotuloProduto = produtoId ? rotulosIniciais.get(String(produtoId)) : undefined
     const produtoNome =
-      produtoNomeDb ||
+      rotuloProduto?.nome ||
       proposta?.produto ||
       proposta?.plano ||
       proposta?.produto_nome ||
       null
 
-    const planoNome =
+    const planoImportado =
       (vida?.plano as string | null) ||
       (vida?.dados_adicionais && typeof vida.dados_adicionais === "object"
         ? String(
@@ -237,6 +256,7 @@ export async function GET(request: NextRequest) {
         : null) ||
       produtoNome ||
       null
+    const planoNome = rotuloProduto?.nomePlano || planoImportado
 
     const vidaRec = (vida as Record<string, unknown> | null | undefined) ?? null
     const numeroCarteirinha =
@@ -443,6 +463,10 @@ export async function GET(request: NextRequest) {
         return String(a.nome || "").localeCompare(String(b.nome || ""), "pt-BR")
       })
 
+      const rotulosFamilia = await buscarRotulosProdutos(
+        familia.map((row) => String(row.produto_id || ""))
+      )
+
       for (const row of familia) {
         const isTitular = String(row.tipo || "").toLowerCase() === "titular"
         const rowCpf = normalizarCpf(String(row.cpf || ""))
@@ -451,13 +475,14 @@ export async function GET(request: NextRequest) {
         const valorMensalCard = isTitular
           ? valorMensal ?? valorNaVida
           : valorNaVida ?? valorMensal
+        const rotuloMembro = rotulosFamilia.get(String(row.produto_id || ""))
         beneficiariosCarteirinha.push({
           cpf: rowCpf,
           nome: (row.nome as string) || null,
           tipo: String(row.tipo || "titular"),
           numero_carteirinha: numeroCarteirinhaSaudeDeVida(row),
           numero_carteirinha_odonto: numeroCarteirinhaOdontoDeVida(row),
-          plano: planoDeVida(row, planoNome),
+          plano: rotuloMembro?.nomePlano || planoDeVida(row, rotuloMembro?.nome || planoNome),
           operadora: operadoraNome,
           valor_mensal: valorMensalCard,
           cpf_login: rowCpf === cpf,

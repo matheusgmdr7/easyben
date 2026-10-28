@@ -57,7 +57,7 @@ export default function BeneficiarioDetalhesPage() {
     numero_carteirinha_odonto: "",
   })
   const [contratosVinculo, setContratosVinculo] = useState<Array<{ id: string; numero?: string; operadora_nome?: string }>>([])
-  const [produtosVinculo, setProdutosVinculo] = useState<Array<{ id: string; nome: string; contrato_id: string }>>([])
+  const [produtosVinculo, setProdutosVinculo] = useState<Array<{ id: string; nome: string; contrato_id: string; nome_plano?: string }>>([])
   const [contratoVinculoId, setContratoVinculoId] = useState("")
   const [produtoVinculoId, setProdutoVinculoId] = useState("")
   const [carregandoVinculoProduto, setCarregandoVinculoProduto] = useState(false)
@@ -109,7 +109,9 @@ export default function BeneficiarioDetalhesPage() {
     return dia === "01" || dia === "10" ? dia : null
   }
 
-  function obterPlanoBeneficiario(dados: any, produtoFallback?: string | null): string {
+  function obterPlanoBeneficiario(dados: any, produtoFallback?: string | null, nomePlanoComercial?: string | null): string {
+    const comercial = String(nomePlanoComercial || "").trim()
+    if (comercial) return comercial
     const planoDireto = String(
       dados?.plano ??
       dados?.plano_nome ??
@@ -1381,8 +1383,9 @@ export default function BeneficiarioDetalhesPage() {
       clienteSelecionado.cliente_tipo === "vida_importada" &&
       Boolean(produtoSelecionadoFinal) &&
       produtoSelecionadoFinal !== produtoAtualId
-    const nomeProdutoNovo =
-      produtosVinculo.find((p) => String(p.id) === produtoSelecionadoFinal)?.nome || ""
+    const produtoEscolhido = produtosVinculo.find((p) => String(p.id) === produtoSelecionadoFinal)
+    const nomeProdutoNovo = produtoEscolhido?.nome || ""
+    const nomePlanoNovo = String(produtoEscolhido?.nome_plano || "").trim()
 
     if (formContrato.valor_mensal.trim() && valor == null) {
       toast.error("Valor mensal inválido.")
@@ -1486,7 +1489,7 @@ export default function BeneficiarioDetalhesPage() {
             ...(valorAplicado != null ? { valor_mensal: valorAplicado } : {}),
             ...(acomodacaoContrato ? { acomodacao: acomodacaoContrato } : {}),
             ...(produtoSelecionadoFinal ? { produto_id: produtoSelecionadoFinal } : {}),
-            ...(produtoMudou && nomeProdutoNovo ? { plano: nomeProdutoNovo } : {}),
+            ...(produtoMudou && nomePlanoNovo ? { plano: nomePlanoNovo } : {}),
             dados_adicionais: novosDadosAdicionais,
           }),
         })
@@ -1507,7 +1510,7 @@ export default function BeneficiarioDetalhesPage() {
                   produto_id: produtoSelecionadoFinal,
                   valor_mensal: valorMembro,
                   acomodacao: acomodacaoFamiliaPersistida,
-                  ...(nomeProdutoNovo ? { plano: nomeProdutoNovo } : {}),
+                  ...(nomePlanoNovo ? { plano: nomePlanoNovo } : {}),
                 }),
               })
               const jsonMembro = await resMembro.json().catch(() => ({}))
@@ -1565,7 +1568,12 @@ export default function BeneficiarioDetalhesPage() {
         }))
       }
       if (produtoMudou && nomeProdutoNovo) {
-        setProdutoCliente((prev: any) => ({ ...(prev || {}), id: produtoSelecionadoFinal, nome: nomeProdutoNovo }))
+        setProdutoCliente((prev: any) => ({
+          ...(prev || {}),
+          id: produtoSelecionadoFinal,
+          nome: nomeProdutoNovo,
+          nome_plano: nomePlanoNovo,
+        }))
         const contratoIdNovo = produtosVinculo.find((p) => String(p.id) === produtoSelecionadoFinal)?.contrato_id
         if (contratoIdNovo && String(contrato?.id || "") !== String(contratoIdNovo)) {
           const { supabase } = await import("@/lib/supabase")
@@ -1596,7 +1604,7 @@ export default function BeneficiarioDetalhesPage() {
           ...(valorAplicado != null ? { valor_mensal: valorAplicado } : {}),
           ...(acomodacaoContrato ? { acomodacao: acomodacaoContrato } : {}),
           ...(produtoSelecionadoFinal ? { produto_id: produtoSelecionadoFinal } : {}),
-          ...(produtoMudou && nomeProdutoNovo ? { plano: nomeProdutoNovo } : {}),
+          ...(produtoMudou && nomePlanoNovo ? { plano: nomePlanoNovo } : {}),
           ...(numeroCarteirinha ? { numero_carteirinha: numeroCarteirinha } : {}),
           dados_adicionais: dadosAdicionaisNovo,
         }
@@ -2406,7 +2414,7 @@ export default function BeneficiarioDetalhesPage() {
                     </div>
                     <div className="p-3 bg-gray-50">
                       <span className="text-gray-500 block text-xs font-medium">Plano</span>
-                      <span className="text-gray-900">{obterPlanoBeneficiario(d, produtoCliente?.nome)}</span>
+                      <span className="text-gray-900">{obterPlanoBeneficiario(d, produtoCliente?.nome, produtoCliente?.nome_plano)}</span>
                     </div>
                     <div className="p-3 bg-white">
                       <span className="text-gray-500 block text-xs font-medium">Corretor</span>
