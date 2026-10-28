@@ -201,6 +201,26 @@ function compararFaturaMaisRecente(a: FaturaResumoRow, b: FaturaResumoRow): numb
   return String(b.created_at || "").localeCompare(String(a.created_at || ""))
 }
 
+const TAMANHO_LOTE_CONSULTA = 100
+const LOTES_EM_PARALELO = 4
+
+async function consultarEmLotes<T>(
+  ids: string[],
+  buscar: (lote: string[]) => Promise<T[]>
+): Promise<T[]> {
+  const lotes: string[][] = []
+  for (let i = 0; i < ids.length; i += TAMANHO_LOTE_CONSULTA) {
+    lotes.push(ids.slice(i, i + TAMANHO_LOTE_CONSULTA))
+  }
+  const saida: T[] = []
+  for (let i = 0; i < lotes.length; i += LOTES_EM_PARALELO) {
+    const parte = lotes.slice(i, i + LOTES_EM_PARALELO)
+    const resultados = await Promise.all(parte.map((lote) => buscar(lote)))
+    for (const lista of resultados) saida.push(...lista)
+  }
+  return saida
+}
+
 async function enriquecerMatriculaContrato(itens: any[], supabaseClient: { from: (t: string) => any }): Promise<any[]> {
   const caIds = [
     ...new Set(
@@ -212,16 +232,16 @@ async function enriquecerMatriculaContrato(itens: any[], supabaseClient: { from:
   if (caIds.length === 0) return itens
 
   const matriculaPorCa = new Map<string, string>()
-  for (let i = 0; i < caIds.length; i += 100) {
-    const chunk = caIds.slice(i, i + 100)
+  const linhas = await consultarEmLotes(caIds, async (chunk) => {
     const { data } = await supabaseClient
       .from("clientes_administradoras")
       .select("id, numero_carteirinha")
       .in("id", chunk)
-    for (const row of data || []) {
-      const m = String((row as { numero_carteirinha?: string }).numero_carteirinha || "").trim()
-      if (m) matriculaPorCa.set(String((row as { id: string }).id), m)
-    }
+    return (data || []) as { id: string; numero_carteirinha?: string }[]
+  })
+  for (const row of linhas) {
+    const m = String(row.numero_carteirinha || "").trim()
+    if (m) matriculaPorCa.set(String(row.id), m)
   }
 
   return itens.map((item) => {
@@ -252,20 +272,20 @@ async function enriquecerDadosFaturasCliente(
   }
 
   const faturasPorCa = new Map<string, FaturaResumoRow[]>()
-  for (let i = 0; i < caIds.length; i += 100) {
-    const chunk = caIds.slice(i, i + 100)
+  const linhasFatura = await consultarEmLotes(caIds, async (chunk) => {
     const { data } = await supabaseClient
       .from("faturas")
       .select("cliente_administradora_id, status, pagamento_data, vencimento, created_at")
       .in("cliente_administradora_id", chunk)
       .eq("administradora_id", administradoraId)
-    for (const row of data || []) {
-      const ca = String((row as FaturaResumoRow).cliente_administradora_id || "").trim()
-      if (!ca) continue
-      const lista = faturasPorCa.get(ca) || []
-      lista.push(row as FaturaResumoRow)
-      faturasPorCa.set(ca, lista)
-    }
+    return (data || []) as FaturaResumoRow[]
+  })
+  for (const row of linhasFatura) {
+    const ca = String(row.cliente_administradora_id || "").trim()
+    if (!ca) continue
+    const lista = faturasPorCa.get(ca) || []
+    lista.push(row)
+    faturasPorCa.set(ca, lista)
   }
 
   return itens.map((item) => {
@@ -293,16 +313,16 @@ async function enriquecerCorretorContrato(itens: any[], supabaseClient: { from: 
   if (caIds.length === 0) return itens
 
   const corretorPorCa = new Map<string, string>()
-  for (let i = 0; i < caIds.length; i += 100) {
-    const chunk = caIds.slice(i, i + 100)
+  const linhasCorretor = await consultarEmLotes(caIds, async (chunk) => {
     const { data } = await supabaseClient
       .from("clientes_administradoras")
       .select("id, corretor_id")
       .in("id", chunk)
-    for (const row of data || []) {
-      const cor = String((row as { corretor_id?: string }).corretor_id || "").trim()
-      if (cor) corretorPorCa.set(String((row as { id: string }).id), cor)
-    }
+    return (data || []) as { id: string; corretor_id?: string }[]
+  })
+  for (const row of linhasCorretor) {
+    const cor = String(row.corretor_id || "").trim()
+    if (cor) corretorPorCa.set(String(row.id), cor)
   }
 
   return itens.map((item) => {
@@ -319,6 +339,71 @@ async function enriquecerCorretorContrato(itens: any[], supabaseClient: { from: 
   })
 }
 
+function aplicarEnriquecimentos(
+  base: any[],
+  matricula: any[],
+  corretor: any[],
+  faturas: any[] | null
+) {
+  return base.map((item, indice) => {
+    const comMatricula = matricula[indice]
+    const comCorretor = corretor[indice]
+    const comFatura = faturas?.[indice]
+    const proximo: any = {
+      ...item,
+      cliente: {
+        ...item.cliente,
+        ...(comMatricula?.cliente?.numero_carteirinha
+          ? { numero_carteirinha: comMatricula.cliente.numero_carteirinha }
+          : {}),
+        ...(comCorretor?.cliente?.corretor_id ? { corretor_id: comCorretor.cliente.corretor_id } : {}),
+      },
+      _vida: {
+        ...item._vida,
+        ...(comCorretor?._vida?.corretor_id ? { corretor_id: comCorretor._vida.corretor_id } : {}),
+      },
+    }
+    if (comFatura && ("_qtdBoletos" in comFatura || "_ultimaFaturaPaga" in comFatura)) {
+      proximo._qtdBoletos = comFatura._qtdBoletos
+      proximo._ultimaFaturaPaga = comFatura._ultimaFaturaPaga
+    }
+    return proximo
+  })
+}
+
+async function enriquecerListasEmParalelo(
+  ativos: any[],
+  cancelados: any[],
+  supabaseClient: { from: (t: string) => any },
+  administradoraId: string
+) {
+  const consultasFatura = Boolean(administradoraId)
+  const [parMatricula, parCorretor, parFatura] = await Promise.all([
+    (async () => [
+      await enriquecerMatriculaContrato(ativos, supabaseClient),
+      await enriquecerMatriculaContrato(cancelados, supabaseClient),
+    ])(),
+    (async () => [
+      await enriquecerCorretorContrato(ativos, supabaseClient),
+      await enriquecerCorretorContrato(cancelados, supabaseClient),
+    ])(),
+    consultasFatura
+      ? (async () => [
+          await enriquecerDadosFaturasCliente(ativos, supabaseClient, administradoraId),
+          await enriquecerDadosFaturasCliente(cancelados, supabaseClient, administradoraId),
+        ])()
+      : Promise.resolve([null, null] as [null, null]),
+  ])
+  const [ativosMatricula, canceladosMatricula] = parMatricula
+  const [ativosCorretor, canceladosCorretor] = parCorretor
+  const [ativosFatura, canceladosFatura] = parFatura
+
+  return {
+    ativos: aplicarEnriquecimentos(ativos, ativosMatricula, ativosCorretor, ativosFatura),
+    cancelados: aplicarEnriquecimentos(cancelados, canceladosMatricula, canceladosCorretor, canceladosFatura),
+  }
+}
+
 export default function DetalhesGrupoPage() {
   const params = useParams()
   const router = useRouter()
@@ -328,6 +413,7 @@ export default function DetalhesGrupoPage() {
   const [grupo, setGrupo] = useState<GrupoBeneficiarios | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadingClientes, setLoadingClientes] = useState(false)
+  const [cargaInicialConcluida, setCargaInicialConcluida] = useState(false)
   const [clientes, setClientes] = useState<any[]>([])
   const [clientesCancelados, setClientesCancelados] = useState<any[]>([])
   const [modoLista, setModoLista] = useState<ModoListaGrupo>("ativos")
@@ -510,21 +596,14 @@ export default function DetalhesGrupoPage() {
   async function carregarClientes() {
     try {
       setLoadingClientes(true)
-      const { supabase } = await import("@/lib/supabase")
-      
-      // Buscar clientes vinculados ao grupo
-      const { data, error } = await supabase
-        .from("clientes_grupos")
-        .select("*")
-        .eq("grupo_id", grupoId)
-
-      if (error) throw error
-
       const adm = getAdministradoraLogada()
       const admId = adm?.id || ""
       const qAdmin = admId ? `&administradora_id=${encodeURIComponent(admId)}` : ""
       const urlVidasBase = `/api/administradora/vidas-importadas?grupo_id=${encodeURIComponent(grupoId)}${qAdmin}&lista=1`
-      const resVidas = await fetch(urlVidasBase)
+      const [{ supabase }, resVidas] = await Promise.all([
+        import("@/lib/supabase"),
+        fetch(urlVidasBase),
+      ])
       const vidasTodas = (await resVidas.json().catch(() => [])) || []
       const vidasLista = Array.isArray(vidasTodas) ? (vidasTodas as Record<string, unknown>[]) : []
       const grupoPossuiVidasImportadas = vidasLista.length > 0
@@ -545,7 +624,17 @@ export default function DetalhesGrupoPage() {
       if (grupoPossuiVidasImportadas) {
         if (admId) sincronizarInativosDoGrupoEmBackground(admId)
 
-        const cancelamentosGrupo = admId ? await buscarCancelamentosDoGrupo(admId) : []
+        const cancelamentosPromise = admId ? buscarCancelamentosDoGrupo(admId) : Promise.resolve([])
+        const enriquecimentoPromise = enriquecerListasEmParalelo(
+          vidasAtivasItens,
+          vidasInativasItens,
+          supabase,
+          admId
+        )
+        const [cancelamentosGrupo, enriquecidosBrutos] = await Promise.all([
+          cancelamentosPromise,
+          enriquecimentoPromise,
+        ])
         const idsComCancelamentoAberto = new Set(
           cancelamentosGrupo.map((c) =>
             String(
@@ -556,21 +645,22 @@ export default function DetalhesGrupoPage() {
           ).filter(Boolean)
         )
 
-        let ativos = vidasAtivasItens.filter((c) => !idsComCancelamentoAberto.has(String(c.id)))
-        let cancelados = vidasInativasItens
-        ativos = await enriquecerMatriculaContrato(ativos, supabase)
-        cancelados = await enriquecerMatriculaContrato(cancelados, supabase)
-        ativos = await enriquecerCorretorContrato(ativos, supabase)
-        cancelados = await enriquecerCorretorContrato(cancelados, supabase)
+        let ativos = enriquecidosBrutos.ativos.filter((c) => !idsComCancelamentoAberto.has(String(c.id)))
+        let cancelados = enriquecidosBrutos.cancelados
         if (admId) {
-          ativos = await enriquecerDadosFaturasCliente(ativos, supabase, admId)
-          cancelados = await enriquecerDadosFaturasCliente(cancelados, supabase, admId)
           cancelados = await enriquecerComCancelamentos(cancelados, cancelamentosGrupo)
         }
         setClientes(ativos)
         setClientesCancelados(cancelados)
         return
       }
+
+      const { data, error } = await supabase
+        .from("clientes_grupos")
+        .select("*")
+        .eq("grupo_id", grupoId)
+
+      if (error) throw error
 
       // Buscar dados completos dos clientes
       const clientesCompletos = await Promise.all(
@@ -664,13 +754,10 @@ export default function DetalhesGrupoPage() {
         (c) => isBeneficiarioAtivo(c) && !idsComCancelamentoAberto.has(String(c.id))
       )
       let cancelados = comCliente.filter((c) => !isBeneficiarioAtivo(c))
-      ativos = await enriquecerMatriculaContrato(ativos, supabase)
-      cancelados = await enriquecerMatriculaContrato(cancelados, supabase)
-      ativos = await enriquecerCorretorContrato(ativos, supabase)
-      cancelados = await enriquecerCorretorContrato(cancelados, supabase)
+      const enriquecidos = await enriquecerListasEmParalelo(ativos, cancelados, supabase, admId)
+      ativos = enriquecidos.ativos
+      cancelados = enriquecidos.cancelados
       if (admId) {
-        ativos = await enriquecerDadosFaturasCliente(ativos, supabase, admId)
-        cancelados = await enriquecerDadosFaturasCliente(cancelados, supabase, admId)
         cancelados = await enriquecerComCancelamentos(cancelados, cancelamentosGrupo)
       }
       setClientes(ativos)
@@ -680,6 +767,7 @@ export default function DetalhesGrupoPage() {
       toast.error("Erro ao carregar clientes")
     } finally {
       setLoadingClientes(false)
+      setCargaInicialConcluida(true)
     }
   }
 
@@ -1245,10 +1333,16 @@ export default function DetalhesGrupoPage() {
     )
   }
 
-  if (loading) {
+  if (loading || !cargaInicialConcluida) {
     return (
-      <div className="flex justify-center items-center h-64">
-        <div className="loading-corporate"></div>
+      <div className="flex min-h-[50vh] sm:min-h-[60vh] w-full flex-col items-center justify-center gap-4 px-4 py-16">
+        <div className="loading-corporate" />
+        <div className="max-w-sm text-center">
+          <p className="text-sm font-semibold text-slate-700">
+            {grupo?.nome ? grupo.nome : "Carregando grupo"}
+          </p>
+          <p className="mt-1 text-sm text-slate-500">Buscando beneficiários e matrículas…</p>
+        </div>
       </div>
     )
   }
@@ -1268,18 +1362,27 @@ export default function DetalhesGrupoPage() {
     <div className="space-y-6">
       {/* Header */}
       <div className="bg-gradient-to-r from-gray-50 to-white rounded-lg border border-gray-200 shadow-sm p-4 md:p-6">
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900 tracking-tight font-sans">
-              {grupo.nome}
-            </h1>
-            {grupo.descricao && (
-              <p className="text-gray-600 mt-1 font-medium">{grupo.descricao}</p>
-            )}
+        <div className="flex flex-col gap-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h1 className="text-xl sm:text-2xl font-bold text-gray-900 tracking-tight font-sans break-words">
+                {grupo.nome}
+              </h1>
+              {grupo.descricao && (
+                <p className="text-gray-600 mt-1 font-medium break-words">{grupo.descricao}</p>
+              )}
+            </div>
+            <Button
+              onClick={() => router.push("/administradora/grupos-beneficiarios")}
+              className="bg-[#0F172A] hover:bg-[#1E293B] text-white font-bold px-3 sm:px-4 py-2 h-10 shadow-lg rounded shrink-0"
+            >
+              <ArrowLeft className="h-4 w-4 sm:mr-2" />
+              <span className="hidden sm:inline">Voltar</span>
+            </Button>
           </div>
-          <div className="flex flex-col sm:flex-row gap-2 items-center flex-wrap">
-            <div className="flex items-center gap-2 flex-wrap">
-              <Label className="text-xs text-gray-600 whitespace-nowrap">Matrícula:</Label>
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+            <div className="flex flex-col gap-1 min-w-0">
+              <Label className="text-xs text-gray-600">Matrícula</Label>
               <Select
                 value={filtroPrefixoMatricula}
                 onValueChange={(valor) => {
@@ -1290,7 +1393,7 @@ export default function DetalhesGrupoPage() {
                   }
                 }}
               >
-                <SelectTrigger className="h-10 w-[240px] rounded-md border border-gray-300 bg-background px-3 py-2 text-sm">
+                <SelectTrigger className="h-10 w-full rounded-md border border-gray-300 bg-background px-3 py-2 text-sm">
                   <SelectValue placeholder="Todas as matrículas" />
                 </SelectTrigger>
                 <SelectContent className="max-h-72">
@@ -1303,10 +1406,10 @@ export default function DetalhesGrupoPage() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <Label className="text-xs text-gray-600 whitespace-nowrap">Corretora:</Label>
+            <div className="flex flex-col gap-1 min-w-0">
+              <Label className="text-xs text-gray-600">Corretora</Label>
               <Select value={filtroCorretora} onValueChange={setFiltroCorretora}>
-                <SelectTrigger className="h-10 w-[200px] rounded-md border border-gray-300 bg-background px-3 py-2 text-sm">
+                <SelectTrigger className="h-10 w-full rounded-md border border-gray-300 bg-background px-3 py-2 text-sm">
                   <SelectValue placeholder="Todas as corretoras" />
                 </SelectTrigger>
                 <SelectContent>
@@ -1319,31 +1422,30 @@ export default function DetalhesGrupoPage() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="relative w-full sm:w-[280px]">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-              <Input
-                placeholder="Buscar por nome ou CPF..."
-                value={filtro}
-                onChange={(e) => setFiltro(e.target.value)}
-                className="pl-10 h-10 border-2 border-gray-300 focus:border-[#0F172A] rounded-lg"
-              />
+            <div className="flex flex-col gap-1 min-w-0">
+              <Label className="text-xs text-gray-600">Busca</Label>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <Input
+                  placeholder="Nome ou CPF"
+                  value={filtro}
+                  onChange={(e) => setFiltro(e.target.value)}
+                  className="pl-10 h-10 w-full border-2 border-gray-300 focus:border-[#0F172A] rounded-lg"
+                />
+              </div>
             </div>
-            <Select value={filtroTipo} onValueChange={(v) => setFiltroTipo(v as "titular" | "todos")}>
-              <SelectTrigger className="h-10 w-[140px] rounded-md border border-gray-300 bg-background px-3 py-2 text-sm">
-                <SelectValue placeholder="Tipo" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="titular">Titular</SelectItem>
-                <SelectItem value="todos">Titular e Dependentes</SelectItem>
-              </SelectContent>
-            </Select>
-            <Button
-              onClick={() => router.push("/administradora/grupos-beneficiarios")}
-              className="bg-[#0F172A] hover:bg-[#1E293B] text-white font-bold px-4 py-2 h-10 shadow-lg rounded"
-            >
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              Voltar
-            </Button>
+            <div className="flex flex-col gap-1 min-w-0">
+              <Label className="text-xs text-gray-600">Tipo</Label>
+              <Select value={filtroTipo} onValueChange={(v) => setFiltroTipo(v as "titular" | "todos")}>
+                <SelectTrigger className="h-10 w-full rounded-md border border-gray-300 bg-background px-3 py-2 text-sm">
+                  <SelectValue placeholder="Tipo" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="titular">Titular</SelectItem>
+                  <SelectItem value="todos">Titular e Dependentes</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         </div>
         {(contagemFiltrosRapidos.semCorretor > 0 ||
@@ -1642,10 +1744,10 @@ export default function DetalhesGrupoPage() {
                           Matrícula: {obterMatriculaItem(item)}
                         </p>
                       </TableCell>
-                      <TableCell className="hidden md:table-cell text-sm text-gray-700 tabular-nums">
+                      <TableCell className="hidden md:table-cell text-sm text-gray-700 tabular-nums whitespace-nowrap">
                         {obterMatriculaItem(item)}
                       </TableCell>
-                      <TableCell>{formatarCpf(item.cliente?.cpf || item.cliente?.cnpj) || "—"}</TableCell>
+                      <TableCell className="whitespace-nowrap">{formatarCpf(item.cliente?.cpf || item.cliente?.cnpj) || "—"}</TableCell>
                       <TableCell>
                         <span className="inline-flex items-center px-2 py-0.5 text-xs font-semibold rounded-sm border bg-gray-100 text-gray-700 border-gray-200">
                           {getTipoItem(item) === "titular" ? "Titular" : "Dependente"}
@@ -1751,10 +1853,10 @@ export default function DetalhesGrupoPage() {
                         </p>
                       </div>
                     </TableCell>
-                    <TableCell className="hidden md:table-cell text-sm text-gray-700 tabular-nums">
+                    <TableCell className="hidden md:table-cell text-sm text-gray-700 tabular-nums whitespace-nowrap">
                       {obterMatriculaItem(item)}
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="whitespace-nowrap">
                       {formatarCpf(item.cliente?.cpf || item.cliente?.cnpj) || "-"}
                     </TableCell>
                     <TableCell>

@@ -45,19 +45,18 @@ export async function GET(request: NextRequest) {
       "id, nome, cpf, nome_mae, tipo, data_nascimento, idade, parentesco, cpf_titular, produto_id, plano, acomodacao, ativo, valor_mensal, cliente_administradora_id, corretor_id, emails, telefones, dados_adicionais, grupo_id, administradora_id"
     const selectCols = modoLista ? COLS_LISTA : "*"
 
-    // Buscar todas as vidas em lotes (Supabase/PostgREST limitam a 1000 por request)
+    // Buscar todas as vidas em lotes (Supabase/PostgREST limitam a 1000 por request).
+    // A primeira página sai sozinha; as seguintes vão juntas para não somar a espera.
     const PAGE_SIZE = 1000
-    const allData: any[] = []
-    let from = 0
-    let hasMore = true
-    while (hasMore) {
+    const PAGINAS_EM_PARALELO = 3
+
+    function montarConsulta() {
       let query = supabaseAdmin
         .from("vidas_importadas")
         .select(selectCols)
         .eq("tenant_id", tenantId)
         .order("tipo", { ascending: true })
         .order("nome", { ascending: true })
-        .range(from, from + PAGE_SIZE - 1)
       if (grupoIds.length > 0) {
         query = query.in("grupo_id", grupoIds)
       } else if (grupoId) {
@@ -71,17 +70,36 @@ export async function GET(request: NextRequest) {
       } else if (somenteInativos) {
         query = query.eq("ativo", false)
       }
-      const { data: chunk, error } = await query
+      return query
+    }
 
+    async function buscarPagina(from: number) {
+      const { data, error } = await montarConsulta().range(from, from + PAGE_SIZE - 1)
       if (error) {
         console.error("Erro ao buscar vidas importadas:", error)
-        return NextResponse.json({ error: "Erro ao buscar vidas importadas" }, { status: 500 })
+        throw new Error("Erro ao buscar vidas importadas")
       }
+      return data || []
+    }
 
-      const list = chunk || []
-      allData.push(...list)
-      hasMore = list.length === PAGE_SIZE
-      from += PAGE_SIZE
+    const allData: any[] = []
+    const primeira = await buscarPagina(0)
+    allData.push(...primeira)
+    let from = PAGE_SIZE
+    while (allData.length > 0 && allData.length % PAGE_SIZE === 0) {
+      const paginas = await Promise.all(
+        Array.from({ length: PAGINAS_EM_PARALELO }, (_, indice) => buscarPagina(from + indice * PAGE_SIZE))
+      )
+      let acabou = false
+      for (const pagina of paginas) {
+        allData.push(...pagina)
+        if (pagina.length < PAGE_SIZE) {
+          acabou = true
+          break
+        }
+      }
+      if (acabou) break
+      from += PAGINAS_EM_PARALELO * PAGE_SIZE
     }
 
     return NextResponse.json(allData)
