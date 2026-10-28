@@ -83,6 +83,12 @@ export default function BeneficiariosDependentesPage() {
       const filtroCpf = cpf.replace(/\D/g, "")
       const filtroNome = nome.trim().toLowerCase()
       const filtroTitular = titular.trim().toLowerCase()
+      const gruposAtivosIds = grupos.map((g) => g.id)
+      if (!grupoId && gruposAtivosIds.length === 0) {
+        toast.info("Nenhum grupo de beneficiários ativo.")
+        setResultados([])
+        return
+      }
 
       let queryVidasDependentes = supabase
         .from("vidas_importadas")
@@ -90,6 +96,7 @@ export default function BeneficiariosDependentesPage() {
         .eq("administradora_id", administradoraId)
         .eq("tipo", "dependente")
       if (grupoId) queryVidasDependentes = queryVidasDependentes.eq("grupo_id", grupoId)
+      else queryVidasDependentes = queryVidasDependentes.in("grupo_id", gruposAtivosIds)
 
       let queryVidasTitulares = supabase
         .from("vidas_importadas")
@@ -97,9 +104,11 @@ export default function BeneficiariosDependentesPage() {
         .eq("administradora_id", administradoraId)
         .eq("tipo", "titular")
       if (grupoId) queryVidasTitulares = queryVidasTitulares.eq("grupo_id", grupoId)
+      else queryVidasTitulares = queryVidasTitulares.in("grupo_id", gruposAtivosIds)
 
       let queryVinculos = supabase.from("clientes_grupos").select("id, grupo_id, cliente_id, cliente_tipo")
       if (grupoId) queryVinculos = queryVinculos.eq("grupo_id", grupoId)
+      else queryVinculos = queryVinculos.in("grupo_id", gruposAtivosIds)
 
       const [{ data: vidasDependentes, error: errVidasDep }, { data: vidasTitulares, error: errVidasTit }, { data: vinculos, error: errVinculos }] =
         await Promise.all([queryVidasDependentes, queryVidasTitulares, queryVinculos])

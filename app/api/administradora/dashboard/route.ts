@@ -180,22 +180,39 @@ export async function GET(request: NextRequest) {
     const fimMesAnterior = new Date(Date.UTC(prevYearNum, prevMonthNum, 0, 23, 59, 59, 999))
     const fimMesAnteriorIso = fimMesAnterior.toISOString()
 
+    const { data: gruposInativos, error: erroGruposInativos } = await supabaseAdmin
+      .from("grupos_beneficiarios")
+      .select("id")
+      .eq("administradora_id", administradoraId)
+      .eq("tenant_id", tenantId)
+      .eq("ativo", false)
+    if (erroGruposInativos) throw erroGruposInativos
+    const idsGruposInativos = (gruposInativos || []).map((g) => String(g.id)).filter(Boolean)
+
     const [{ count: vidasCount }, { count: vidasAteMesAnterior }, { data: grupos }, { data: corretores }] = await Promise.all([
-      supabaseAdmin
-        .from("vidas_importadas")
-        .select("id", { count: "exact", head: true })
-        .eq("administradora_id", administradoraId)
-        .eq("tenant_id", tenantId)
-        .neq("ativo", false)
-        .not("grupo_id", "is", null),
-      supabaseAdmin
-        .from("vidas_importadas")
-        .select("id", { count: "exact", head: true })
-        .eq("administradora_id", administradoraId)
-        .eq("tenant_id", tenantId)
-        .neq("ativo", false)
-        .not("grupo_id", "is", null)
-        .lte("created_at", fimMesAnteriorIso),
+      (() => {
+        let q = supabaseAdmin
+          .from("vidas_importadas")
+          .select("id", { count: "exact", head: true })
+          .eq("administradora_id", administradoraId)
+          .eq("tenant_id", tenantId)
+          .neq("ativo", false)
+          .not("grupo_id", "is", null)
+        if (idsGruposInativos.length > 0) q = q.not("grupo_id", "in", `(${idsGruposInativos.join(",")})`)
+        return q
+      })(),
+      (() => {
+        let q = supabaseAdmin
+          .from("vidas_importadas")
+          .select("id", { count: "exact", head: true })
+          .eq("administradora_id", administradoraId)
+          .eq("tenant_id", tenantId)
+          .neq("ativo", false)
+          .not("grupo_id", "is", null)
+          .lte("created_at", fimMesAnteriorIso)
+        if (idsGruposInativos.length > 0) q = q.not("grupo_id", "in", `(${idsGruposInativos.join(",")})`)
+        return q
+      })(),
       supabaseAdmin
         .from("grupos_beneficiarios")
         .select("id, nome")

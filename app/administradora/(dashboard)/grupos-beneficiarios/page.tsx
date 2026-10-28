@@ -122,6 +122,13 @@ export default function GruposBeneficiariosPage() {
             <p className="text-gray-600 mt-1 font-medium">
               Gerencie grupos de beneficiários e configure métodos de faturamento
             </p>
+            <button
+              type="button"
+              onClick={() => router.push("/administradora/grupos-beneficiarios/inativos")}
+              className="mt-1.5 text-xs text-gray-400 hover:text-gray-600 hover:underline"
+            >
+              Grupos inativos
+            </button>
           </div>
           <div className="flex flex-col sm:flex-row gap-2 items-center">
             <div className="relative w-full sm:w-[300px]">
@@ -261,7 +268,7 @@ export default function GruposBeneficiariosPage() {
         titulo={grupoParaStatus ? (grupoParaStatus.ativo ? "Desativar grupo" : "Ativar grupo") : ""}
         descricao={grupoParaStatus
           ? grupoParaStatus.ativo
-            ? `Tem certeza que deseja desativar o grupo "${grupoParaStatus.nome}"? O grupo não aparecerá em listas ativas até ser ativado novamente.`
+            ? `Tem certeza que deseja inativar o grupo "${grupoParaStatus.nome}"? Ele sai desta lista e os beneficiários deixam de entrar nas contagens de clientes ativos.`
             : `Tem certeza que deseja ativar o grupo "${grupoParaStatus.nome}"?`
           : ""}
         textoConfirmar={grupoParaStatus?.ativo ? "Desativar" : "Ativar"}

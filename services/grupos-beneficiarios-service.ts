@@ -177,18 +177,38 @@ async function contarBeneficiariosAtivosPorGrupo(
  */
 export class GruposBeneficiariosService {
   /**
-   * Buscar todos os grupos de uma administradora
+   * Grupos ativos (ou sem status definido) de uma administradora.
+   * Grupos inativados ficam de fora e são listados em `buscarInativos`.
    */
   static async buscarTodos(administradoraId: string): Promise<GrupoBeneficiarios[]> {
+    return this.listarPorSituacao(administradoraId, "ativos")
+  }
+
+  /** Grupos explicitamente inativados. */
+  static async buscarInativos(administradoraId: string): Promise<GrupoBeneficiarios[]> {
+    return this.listarPorSituacao(administradoraId, "inativos")
+  }
+
+  private static async listarPorSituacao(
+    administradoraId: string,
+    situacao: "ativos" | "inativos"
+  ): Promise<GrupoBeneficiarios[]> {
     try {
       const tenantId = await getCurrentTenantId()
-      
-      const { data: gruposData, error } = await supabase
+
+      let query = supabase
         .from("grupos_beneficiarios")
         .select("*")
         .eq("administradora_id", administradoraId)
         .eq("tenant_id", tenantId)
         .order("created_at", { ascending: false })
+
+      query =
+        situacao === "inativos"
+          ? query.eq("ativo", false)
+          : query.or("ativo.eq.true,ativo.is.null")
+
+      const { data: gruposData, error } = await query
 
       if (error) throw error
 
