@@ -153,6 +153,15 @@ function itemTemMatricula(item: any): boolean {
   return m !== "—" && m.trim() !== ""
 }
 
+const TAMANHO_PREFIXO_MATRICULA = 5
+
+/** Agrupa matrículas pelos 5 primeiros caracteres, sem diferenciar maiúsculas. */
+function prefixoGrupoMatricula(matricula: string): string | null {
+  const valor = String(matricula || "").trim()
+  if (!valor || valor === "—" || valor.length < TAMANHO_PREFIXO_MATRICULA) return null
+  return valor.slice(0, TAMANHO_PREFIXO_MATRICULA).toUpperCase()
+}
+
 function obterClienteAdministradoraIdItem(item: any): string | null {
   if (!item) return null
   if (item.cliente_tipo === "vida_importada") {
@@ -338,6 +347,7 @@ export default function DetalhesGrupoPage() {
   const [filtroClientesNovos, setFiltroClientesNovos] = useState(false)
   const [filtroClientesAntigos, setFiltroClientesAntigos] = useState(false)
   const [filtroPagos, setFiltroPagos] = useState(false)
+  const [filtroPrefixoMatricula, setFiltroPrefixoMatricula] = useState("todas")
   const [paginaAtual, setPaginaAtual] = useState(1)
   const [itensPorPagina, setItensPorPagina] = useState(25)
   const [confirmSolicitarCancelamentoOpen, setConfirmSolicitarCancelamentoOpen] = useState(false)
@@ -1056,6 +1066,18 @@ export default function DetalhesGrupoPage() {
 
   const listaBaseModo = modoLista === "ativos" ? clientesAtivos : clientesCancelados
 
+  const gruposPrefixoMatricula = useMemo(() => {
+    const contagem = new Map<string, number>()
+    for (const item of listaBaseModo) {
+      const prefixo = prefixoGrupoMatricula(obterMatriculaItem(item))
+      if (!prefixo) continue
+      contagem.set(prefixo, (contagem.get(prefixo) || 0) + 1)
+    }
+    return Array.from(contagem.entries())
+      .map(([prefixo, total]) => ({ prefixo, total }))
+      .sort((a, b) => a.prefixo.localeCompare(b.prefixo, "pt-BR"))
+  }, [listaBaseModo])
+
   /** Mesma base visível na tabela antes dos chips (respeita aba Ativos/Cancelados + tipo Titular/Todos). */
   const listaBaseContagemFiltros = useMemo(() => {
     if (filtroTipo === "titular") {
@@ -1090,6 +1112,9 @@ export default function DetalhesGrupoPage() {
       if ((corretorId || "") !== filtroCorretora) return false
     }
     if (filtroSemMatricula && itemTemMatricula(item)) return false
+    if (filtroPrefixoMatricula !== "todas") {
+      if (prefixoGrupoMatricula(obterMatriculaItem(item)) !== filtroPrefixoMatricula) return false
+    }
     if (filtroClientesNovos && !itemEhClienteNovo(item)) return false
     if (filtroClientesAntigos && !itemEhClienteAntigo(item)) return false
     if (filtroPagos && !itemUltimaFaturaPaga(item)) return false
@@ -1120,9 +1145,20 @@ export default function DetalhesGrupoPage() {
   const paginaParcialmenteSelecionada =
     chavesPaginaAtual.some((k) => selecionadosLote.has(k)) && !paginaInteiraSelecionada
 
+  const chaveSelecaoPrefixo =
+    filtroPrefixoMatricula === "todas"
+      ? ""
+      : clientesFiltrados.map((item) => chaveSelecaoItem(item)).join("\n")
+
+  useEffect(() => {
+    if (modoLista !== "ativos" || filtroPrefixoMatricula === "todas") return
+    setModoSelecaoCorretorLote(true)
+    setSelecionadosLote(new Set(chaveSelecaoPrefixo ? chaveSelecaoPrefixo.split("\n") : []))
+  }, [filtroPrefixoMatricula, chaveSelecaoPrefixo, modoLista])
+
   useEffect(() => {
     setPaginaAtual(1)
-  }, [filtro, filtroTipo, filtroCorretora, filtroSemCorretor, filtroSemMatricula, filtroClientesNovos, filtroClientesAntigos, filtroPagos, modoLista])
+  }, [filtro, filtroTipo, filtroCorretora, filtroSemCorretor, filtroSemMatricula, filtroClientesNovos, filtroClientesAntigos, filtroPagos, filtroPrefixoMatricula, modoLista])
 
   useEffect(() => {
     if (modoLista === "cancelados") {
@@ -1242,6 +1278,31 @@ export default function DetalhesGrupoPage() {
             )}
           </div>
           <div className="flex flex-col sm:flex-row gap-2 items-center flex-wrap">
+            <div className="flex items-center gap-2 flex-wrap">
+              <Label className="text-xs text-gray-600 whitespace-nowrap">Matrícula:</Label>
+              <Select
+                value={filtroPrefixoMatricula}
+                onValueChange={(valor) => {
+                  setFiltroPrefixoMatricula(valor)
+                  if (valor !== "todas") {
+                    setFiltroSemMatricula(false)
+                    setFiltroTipo("todos")
+                  }
+                }}
+              >
+                <SelectTrigger className="h-10 w-[240px] rounded-md border border-gray-300 bg-background px-3 py-2 text-sm">
+                  <SelectValue placeholder="Todas as matrículas" />
+                </SelectTrigger>
+                <SelectContent className="max-h-72">
+                  <SelectItem value="todas">Todas as matrículas</SelectItem>
+                  {gruposPrefixoMatricula.map((grupoMatricula) => (
+                    <SelectItem key={grupoMatricula.prefixo} value={grupoMatricula.prefixo}>
+                      Grupo {grupoMatricula.prefixo} ({grupoMatricula.total})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <div className="flex items-center gap-2 flex-wrap">
               <Label className="text-xs text-gray-600 whitespace-nowrap">Corretora:</Label>
               <Select value={filtroCorretora} onValueChange={setFiltroCorretora}>
@@ -1535,12 +1596,14 @@ export default function DetalhesGrupoPage() {
               ? filtro.trim() ||
                   filtroTipo !== "titular" ||
                   filtroCorretora !== "todas" ||
+                  filtroPrefixoMatricula !== "todas" ||
                   filtrosRapidosAtivos
                 ? "Nenhum cancelado encontrado com os filtros aplicados"
                 : "Nenhum beneficiário cancelado neste grupo"
               : filtro.trim() ||
                   filtroTipo !== "titular" ||
                   filtroCorretora !== "todas" ||
+                  filtroPrefixoMatricula !== "todas" ||
                   filtrosRapidosAtivos
                 ? "Nenhum cliente encontrado com os filtros aplicados"
                 : "Nenhum cliente ativo vinculado a este grupo"}
