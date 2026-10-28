@@ -26,32 +26,93 @@ function normalizarEscalaValorMonetario(valor: unknown): number | null {
   return n
 }
 
-type RotuloProduto = { nome: string | null; nomePlano: string | null }
+type RotuloProduto = {
+  nome: string | null
+  nomePlano: string | null
+  contratoNome: string | null
+  operadoraId: string | null
+}
+
+/** Evita repetir a consulta que falha enquanto a coluna nome_plano ainda não existe. */
+let nomePlanoColunaDisponivel: boolean | null = null
+
+const SELECT_PRODUTO =
+  "id, nome, faixas, contrato_id, contratos_administradora(nome_fantasia, razao_social, operadora_id)"
+const SELECT_PRODUTO_COM_PLANO =
+  "id, nome, nome_plano, faixas, contrato_id, contratos_administradora(nome_fantasia, razao_social, operadora_id)"
+
+function contratoDoProduto(row: { contratos_administradora?: unknown }): { nome: string | null; operadoraId: string | null } {
+  const emb = row.contratos_administradora
+  const contrato = (Array.isArray(emb) ? emb[0] : emb) as
+    | { nome_fantasia?: string | null; razao_social?: string | null; operadora_id?: string | null }
+    | null
+    | undefined
+  if (!contrato) return { nome: null, operadoraId: null }
+  return {
+    nome: String(contrato.nome_fantasia || "").trim() || String(contrato.razao_social || "").trim() || null,
+    operadoraId: contrato.operadora_id ? String(contrato.operadora_id) : null,
+  }
+}
 
 async function buscarRotulosProdutos(produtoIds: string[]): Promise<Map<string, RotuloProduto>> {
   const mapa = new Map<string, RotuloProduto>()
   const ids = Array.from(new Set(produtoIds.map((id) => String(id || "").trim()).filter(Boolean)))
   if (ids.length === 0) return mapa
 
-  let consulta = await supabaseAdmin
-    .from("produtos_contrato_administradora")
-    .select("id, nome, nome_plano, faixas")
-    .in("id", ids)
+  const consultar = (colunas: string) =>
+    supabaseAdmin.from("produtos_contrato_administradora").select(colunas).in("id", ids)
+
+  let consulta =
+    nomePlanoColunaDisponivel === false ? await consultar(SELECT_PRODUTO) : await consultar(SELECT_PRODUTO_COM_PLANO)
   if (erroColunaNomePlano(consulta.error)) {
-    consulta = await supabaseAdmin
-      .from("produtos_contrato_administradora")
-      .select("id, nome, faixas")
-      .in("id", ids)
+    nomePlanoColunaDisponivel = false
+    consulta = await consultar(SELECT_PRODUTO)
+  } else if (!consulta.error) {
+    nomePlanoColunaDisponivel = true
   }
 
   for (const row of consulta.data || []) {
+    const contrato = contratoDoProduto(row as { contratos_administradora?: unknown })
     const nomePlano = lerNomePlanoProduto(row)
     mapa.set(String(row.id), {
       nome: String(row.nome || "").trim() || null,
       nomePlano: nomePlano || null,
+      contratoNome: contrato.nome,
+      operadoraId: contrato.operadoraId,
     })
   }
   return mapa
+}
+
+const SELECT_FAMILIA =
+  "id, cpf, nome, tipo, cpf_titular, produto_id, valor_mensal, plano, dados_adicionais"
+
+async function buscarFamiliaNoGrupo(
+  tenantId: string,
+  grupoId: string,
+  cpfAlvo: string
+): Promise<Record<string, unknown>[]> {
+  const digitos = normalizarCpf(cpfAlvo)
+  if (digitos.length !== 11) return []
+  const mascarado = formatarCpfMascara(digitos)
+  const filtro = [
+    `cpf.eq.${digitos}`,
+    `cpf.eq."${mascarado}"`,
+    `cpf_titular.eq.${digitos}`,
+    `cpf_titular.eq."${mascarado}"`,
+  ].join(",")
+  const { data, error } = await supabaseAdmin
+    .from("vidas_importadas")
+    .select(SELECT_FAMILIA)
+    .eq("tenant_id", tenantId)
+    .eq("grupo_id", grupoId)
+    .or(filtro)
+    .limit(200)
+  if (error) {
+    console.error("Erro ao buscar família do cliente:", error)
+    return []
+  }
+  return (data || []) as Record<string, unknown>[]
 }
 
 /** Carteirinha do plano de saúde (campo principal). */
@@ -179,84 +240,75 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Cliente não encontrado para este CPF nesta plataforma." }, { status: 404 })
     }
 
-    let proposta = propostaDireta || null
-    let clienteAdm: any = null
-    let clienteAdmId: string | null = null
+    const proposta = propostaDireta || null
+    const cpfMascarado = formatarCpfMascara(cpf)
+    const tipoVidaLogin = String(vida?.tipo || "").toLowerCase()
+    const titularCpf =
+      tipoVidaLogin === "dependente"
+        ? normalizarCpf(String(vida?.cpf_titular || ""))
+        : normalizarCpf(String(vida?.cpf || cpf))
+    const cpfFamilia = titularCpf.length === 11 ? titularCpf : cpf
+    const selectClienteAdm =
+      "id, administradora_id, proposta_id, status, valor_mensal, numero_contrato, data_vigencia, numero_carteirinha, numero_carteirinha_odonto"
 
-    if (vida?.cliente_administradora_id) {
-      clienteAdmId = String(vida.cliente_administradora_id)
-    }
-
-    if (!proposta) {
-      const { data: propostaPorCpf } = await supabaseAdmin
-        .from("propostas")
-        .select("*")
-        .eq("tenant_id", tenantId)
-        .eq("cpf", cpf)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle()
-      proposta = propostaPorCpf || null
-    }
-
-    if (!clienteAdmId && proposta?.id) {
-      const { data: clienteAdmPorProposta } = await supabaseAdmin
-        .from("clientes_administradoras")
-        .select("id, administradora_id, proposta_id, status, valor_mensal, numero_contrato, data_vigencia, numero_carteirinha, numero_carteirinha_odonto")
-        .eq("tenant_id", tenantId)
-        .eq("proposta_id", proposta.id)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle()
-      if (clienteAdmPorProposta?.id) {
-        clienteAdmId = String(clienteAdmPorProposta.id)
-        clienteAdm = clienteAdmPorProposta
+    const clienteAdmPromise = (async () => {
+      let clienteAdmId: string | null = vida?.cliente_administradora_id ? String(vida.cliente_administradora_id) : null
+      let clienteAdm: any = null
+      if (!clienteAdmId && proposta?.id) {
+        const { data: clienteAdmPorProposta } = await supabaseAdmin
+          .from("clientes_administradoras")
+          .select(selectClienteAdm)
+          .eq("tenant_id", tenantId)
+          .eq("proposta_id", proposta.id)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        if (clienteAdmPorProposta?.id) {
+          clienteAdmId = String(clienteAdmPorProposta.id)
+          clienteAdm = clienteAdmPorProposta
+        }
       }
-    }
+      if (clienteAdmId && !clienteAdm) {
+        const { data: clienteAdmDireto } = await supabaseAdmin
+          .from("clientes_administradoras")
+          .select(selectClienteAdm)
+          .eq("tenant_id", tenantId)
+          .eq("id", clienteAdmId)
+          .maybeSingle()
+        clienteAdm = clienteAdmDireto || null
+      }
+      return { clienteAdmId, clienteAdm }
+    })()
 
-    if (clienteAdmId && !clienteAdm) {
-      const { data: clienteAdmDireto } = await supabaseAdmin
-        .from("clientes_administradoras")
-        .select("id, administradora_id, proposta_id, status, valor_mensal, numero_contrato, data_vigencia, numero_carteirinha, numero_carteirinha_odonto")
+    const [clienteAdmPack, grupoRes, vidasFamilia, vidasCpfRes, clientesAdmCpfRes] = await Promise.all([
+      clienteAdmPromise,
+      vida?.grupo_id
+        ? supabaseAdmin
+            .from("grupos_beneficiarios")
+            .select("nome")
+            .eq("tenant_id", tenantId)
+            .eq("id", vida.grupo_id)
+            .maybeSingle()
+        : Promise.resolve({ data: null }),
+      vida?.grupo_id ? buscarFamiliaNoGrupo(tenantId, String(vida.grupo_id), cpfFamilia) : Promise.resolve([]),
+      supabaseAdmin
+        .from("vidas_importadas")
+        .select("id, cliente_administradora_id")
         .eq("tenant_id", tenantId)
-        .eq("id", clienteAdmId)
-        .maybeSingle()
-      clienteAdm = clienteAdmDireto || null
-    }
+        .in("cpf", [cpf, cpfMascarado])
+        .limit(200),
+      supabaseAdmin
+        .from("vw_clientes_administradoras_completo")
+        .select("id, administradora_id")
+        .in("cliente_cpf", [cpf, cpfMascarado])
+        .limit(200),
+    ])
 
-    let grupoNome: string | null = null
-    if (vida?.grupo_id) {
-      const { data: grupo } = await supabaseAdmin
-        .from("grupos_beneficiarios")
-        .select("nome")
-        .eq("tenant_id", tenantId)
-        .eq("id", vida.grupo_id)
-        .maybeSingle()
-      grupoNome = grupo?.nome || null
-    }
+    const clienteAdm = clienteAdmPack.clienteAdm
+    const clienteAdmId = clienteAdmPack.clienteAdmId
+    const grupoNome = grupoRes.data?.nome || null
 
     const produtoId = (vida?.produto_id || proposta?.produto_id || null) as string | null
-    const rotulosIniciais = await buscarRotulosProdutos(produtoId ? [String(produtoId)] : [])
-    const rotuloProduto = produtoId ? rotulosIniciais.get(String(produtoId)) : undefined
-    const produtoNome =
-      rotuloProduto?.nome ||
-      proposta?.produto ||
-      proposta?.plano ||
-      proposta?.produto_nome ||
-      null
-
-    const planoImportado =
-      (vida?.plano as string | null) ||
-      (vida?.dados_adicionais && typeof vida.dados_adicionais === "object"
-        ? String(
-            (vida.dados_adicionais as Record<string, unknown>)["Plano"] ??
-              (vida.dados_adicionais as Record<string, unknown>)["plano"] ??
-              ""
-          ).trim() || null
-        : null) ||
-      produtoNome ||
-      null
-    const planoNome = rotuloProduto?.nomePlano || planoImportado
 
     const vidaRec = (vida as Record<string, unknown> | null | undefined) ?? null
     const numeroCarteirinha =
@@ -287,42 +339,86 @@ export async function GET(request: NextRequest) {
       (clienteAdm?.administradora_id as string | undefined) ||
       ((vida as { administradora_id?: string } | null)?.administradora_id ?? null)
 
-    /** Nome exibido como operadora: prioriza o contrato vinculado ao produto (contratos_administradora / operadoras). */
-    let operadoraNome: string | null = null
-
-    if (produtoId) {
-      const { data: prodContrato } = await supabaseAdmin
-        .from("produtos_contrato_administradora")
-        .select("contrato_id")
-        .eq("id", produtoId)
-        .maybeSingle()
-
-      if (prodContrato?.contrato_id) {
-        const { data: contratoRow } = await supabaseAdmin
-          .from("contratos_administradora")
-          .select("nome_fantasia, razao_social, operadora_id")
-          .eq("id", prodContrato.contrato_id)
-          .maybeSingle()
-
-        operadoraNome =
-          String(contratoRow?.nome_fantasia || "").trim() ||
-          String(contratoRow?.razao_social || "").trim() ||
-          null
-
-        if (!operadoraNome && contratoRow?.operadora_id) {
-          const { data: opRow } = await supabaseAdmin
-            .from("operadoras")
-            .select("fantasia, nome")
-            .eq("id", contratoRow.operadora_id)
-            .maybeSingle()
-          operadoraNome =
-            String(opRow?.fantasia || "").trim() ||
-            String(opRow?.nome || "").trim() ||
-            null
-        }
-      }
+    const idsFatura = new Set<string>()
+    if (isUuid(clienteAdmId)) idsFatura.add(String(clienteAdmId))
+    const administradoraIdsFatura = new Set<string>()
+    if (clienteAdm?.administradora_id) administradoraIdsFatura.add(String(clienteAdm.administradora_id))
+    for (const v of vidasCpfRes.data || []) {
+      if (isUuid(v?.cliente_administradora_id)) idsFatura.add(String(v.cliente_administradora_id))
+    }
+    for (const ca of clientesAdmCpfRes.data || []) {
+      if (isUuid(ca?.id)) idsFatura.add(String(ca.id))
+      if (ca?.administradora_id) administradoraIdsFatura.add(String(ca.administradora_id))
     }
 
+    const produtoIdsFamilia = vidasFamilia.map((row) => String(row.produto_id || ""))
+    const [rotulosProdutos, faturasCarregadas] = await Promise.all([
+      buscarRotulosProdutos([...(produtoId ? [String(produtoId)] : []), ...produtoIdsFamilia]),
+      (async () => {
+        if (idsFatura.size === 0) return [] as any[]
+        let query = supabaseAdmin
+          .from("faturas")
+          .select(
+            "id, numero_fatura, valor, vencimento, status, pagamento_data, asaas_boleto_url, boleto_url, gateway_id, asaas_charge_id, cliente_administradora_id, administradora_id"
+          )
+          .eq("tenant_id", tenantId)
+          .in("cliente_administradora_id", Array.from(idsFatura))
+          .order("vencimento", { ascending: false })
+          .limit(100)
+        if (administradoraIdsFatura.size > 0) {
+          query = query.in("administradora_id", Array.from(administradoraIdsFatura))
+        }
+        const { data: dataFaturas, error: faturasError } = await query
+        if (faturasError) {
+          console.error("Erro ao buscar faturas no dashboard cliente:", faturasError)
+          return []
+        }
+        return (dataFaturas || []).map((f: any) => ({
+          id: f.id,
+          numero_fatura: f.numero_fatura,
+          valor: f.valor,
+          valor_total: Number(f.valor ?? 0),
+          vencimento: f.vencimento,
+          data_vencimento: f.vencimento,
+          status: f.status,
+          pagamento_data: f.pagamento_data,
+          asaas_boleto_url: f.asaas_boleto_url,
+          boleto_url: f.boleto_url,
+          boleto_link: getBoletoLinkFromFatura(f),
+          cliente_administradora_id: f.cliente_administradora_id,
+          administradora_id: f.administradora_id,
+        }))
+      })(),
+    ])
+
+    const rotuloProduto = produtoId ? rotulosProdutos.get(String(produtoId)) : undefined
+    const produtoNome =
+      rotuloProduto?.nome ||
+      proposta?.produto ||
+      proposta?.plano ||
+      proposta?.produto_nome ||
+      null
+    const planoImportado =
+      (vida?.plano as string | null) ||
+      (vida?.dados_adicionais && typeof vida.dados_adicionais === "object"
+        ? String(
+            (vida.dados_adicionais as Record<string, unknown>)["Plano"] ??
+              (vida.dados_adicionais as Record<string, unknown>)["plano"] ??
+              ""
+          ).trim() || null
+        : null) ||
+      produtoNome ||
+      null
+    const planoNome = rotuloProduto?.nomePlano || planoImportado
+    let operadoraNome = rotuloProduto?.contratoNome || null
+    if (!operadoraNome && rotuloProduto?.operadoraId) {
+      const { data: opRow } = await supabaseAdmin
+        .from("operadoras")
+        .select("fantasia, nome")
+        .eq("id", rotuloProduto.operadoraId)
+        .maybeSingle()
+      operadoraNome = String(opRow?.fantasia || "").trim() || String(opRow?.nome || "").trim() || null
+    }
     if (!operadoraNome && administradoraIdOperadora) {
       const { data: admRow } = await supabaseAdmin
         .from("administradoras")
@@ -338,78 +434,7 @@ export async function GET(request: NextRequest) {
     if (!operadoraNome) {
       operadoraNome = String(tenant.nome_marca || tenant.nome || "").trim() || null
     }
-
-    // Busca de faturas alinhada ao fluxo administrativo:
-    // - usa cliente_administradora_id válido (UUID)
-    // - considera múltiplos vínculos possíveis do mesmo CPF no tenant
-    let faturas: any[] = []
-    const idsFatura = new Set<string>()
-    if (isUuid(clienteAdmId)) idsFatura.add(String(clienteAdmId))
-
-    const cpfMascarado = formatarCpfMascara(cpf)
-    const [{ data: vidasCpfRows }, { data: clientesAdmCpfRows }] = await Promise.all([
-      supabaseAdmin
-        .from("vidas_importadas")
-        .select("id, cliente_administradora_id")
-        .eq("tenant_id", tenantId)
-        .in("cpf", [cpf, cpfMascarado])
-        .limit(200),
-      supabaseAdmin
-        .from("vw_clientes_administradoras_completo")
-        .select("id, administradora_id")
-        .eq("tenant_id", tenantId)
-        .in("cliente_cpf", [cpf, cpfMascarado])
-        .limit(200),
-    ])
-
-    const administradoraIdsFatura = new Set<string>()
-    if (clienteAdm?.administradora_id) administradoraIdsFatura.add(String(clienteAdm.administradora_id))
-
-    for (const v of vidasCpfRows || []) {
-      // Mantém apenas IDs UUID para evitar erro quando a coluna é do tipo uuid.
-      if (isUuid(v?.cliente_administradora_id)) idsFatura.add(String(v.cliente_administradora_id))
-    }
-    for (const ca of clientesAdmCpfRows || []) {
-      if (isUuid(ca?.id)) idsFatura.add(String(ca.id))
-      if (ca?.administradora_id) administradoraIdsFatura.add(String(ca.administradora_id))
-    }
-
-    if (idsFatura.size > 0) {
-      let query = supabaseAdmin
-        .from("faturas")
-        .select(
-          "id, numero_fatura, valor, vencimento, status, pagamento_data, asaas_boleto_url, boleto_url, gateway_id, asaas_charge_id, cliente_administradora_id, administradora_id"
-        )
-        .eq("tenant_id", tenantId)
-        .in("cliente_administradora_id", Array.from(idsFatura))
-        .order("vencimento", { ascending: false })
-        .limit(100)
-
-      if (administradoraIdsFatura.size > 0) {
-        query = query.in("administradora_id", Array.from(administradoraIdsFatura))
-      }
-
-      const { data: dataFaturas, error: faturasError } = await query
-      if (faturasError) {
-        console.error("Erro ao buscar faturas no dashboard cliente:", faturasError)
-      } else {
-        faturas = (dataFaturas || []).map((f: any) => ({
-          id: f.id,
-          numero_fatura: f.numero_fatura,
-          valor: f.valor,
-          valor_total: Number(f.valor ?? 0),
-          vencimento: f.vencimento,
-          data_vencimento: f.vencimento,
-          status: f.status,
-          pagamento_data: f.pagamento_data,
-          asaas_boleto_url: f.asaas_boleto_url,
-          boleto_url: f.boleto_url,
-          boleto_link: getBoletoLinkFromFatura(f),
-          cliente_administradora_id: f.cliente_administradora_id,
-          administradora_id: f.administradora_id,
-        }))
-      }
-    }
+    const faturas = faturasCarregadas
 
     type BenefCart = {
       cpf: string
@@ -428,17 +453,7 @@ export async function GET(request: NextRequest) {
     const beneficiariosCarteirinha: BenefCart[] = []
 
     if (vida?.grupo_id) {
-      const { data: todasVidasGrupo } = await supabaseAdmin
-        .from("vidas_importadas")
-        .select("*")
-        .eq("tenant_id", tenantId)
-        .eq("grupo_id", vida.grupo_id)
-
-      const tipoV = String(vida.tipo || "").toLowerCase()
-      const titularCpf =
-        tipoV === "dependente"
-          ? normalizarCpf(String(vida.cpf_titular || ""))
-          : normalizarCpf(String(vida.cpf || cpf))
+      const todasVidasGrupo = vidasFamilia
 
       let familia: Record<string, unknown>[] = []
       if (titularCpf.length !== 11) {
@@ -463,9 +478,7 @@ export async function GET(request: NextRequest) {
         return String(a.nome || "").localeCompare(String(b.nome || ""), "pt-BR")
       })
 
-      const rotulosFamilia = await buscarRotulosProdutos(
-        familia.map((row) => String(row.produto_id || ""))
-      )
+      const rotulosFamilia = rotulosProdutos
 
       for (const row of familia) {
         const isTitular = String(row.tipo || "").toLowerCase() === "titular"
