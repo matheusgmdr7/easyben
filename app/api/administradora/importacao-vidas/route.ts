@@ -219,24 +219,34 @@ export async function POST(request: NextRequest) {
       )
     )
 
-    if (cpfsImportados.length > 0) {
-      const { data: existentes, error: erroExistentes } = await supabaseAdmin
-        .from("vidas_importadas")
-        .select("id, nome, cpf, tipo, ativo")
-        .eq("administradora_id", administradora_id)
-        .eq("tenant_id", tenantId)
-        .in("cpf", cpfsImportados)
-        .neq("ativo", false)
+    // PostgREST envia o .in() na query string. Listas grandes estouram o limite da URL
+    // e o gateway responde "Bad Request". 150 CPFs fica bem abaixo desse limite.
+    const CHUNK_CPFS = 150
+    if (cpfsImportados.length > 0 && !confirmar_cpfs_ativos) {
+      const existentes: Array<{ nome?: string | null; cpf?: string | null; tipo?: string | null }> = []
 
-      if (erroExistentes) {
-        return NextResponse.json(
-          { error: `Erro ao validar CPFs existentes: ${erroExistentes.message}` },
-          { status: 500 }
-        )
+      for (let i = 0; i < cpfsImportados.length; i += CHUNK_CPFS) {
+        const chunk = cpfsImportados.slice(i, i + CHUNK_CPFS)
+        const { data, error: erroExistentes } = await supabaseAdmin
+          .from("vidas_importadas")
+          .select("id, nome, cpf, tipo, ativo")
+          .eq("administradora_id", administradora_id)
+          .eq("tenant_id", tenantId)
+          .in("cpf", chunk)
+          .neq("ativo", false)
+
+        if (erroExistentes) {
+          return NextResponse.json(
+            { error: `Erro ao validar CPFs existentes: ${erroExistentes.message}` },
+            { status: 500 }
+          )
+        }
+        existentes.push(...(data || []))
+        if (existentes.length >= 25) break
       }
 
-      if ((existentes || []).length > 0 && !confirmar_cpfs_ativos) {
-        const repetidos = (existentes || [])
+      if (existentes.length > 0) {
+        const repetidos = existentes
           .slice(0, 25)
           .map((v) => `${normalizarCpf(v.cpf)} (${String(v.nome || "-")} - ${String(v.tipo || "-")})`)
         return NextResponse.json(

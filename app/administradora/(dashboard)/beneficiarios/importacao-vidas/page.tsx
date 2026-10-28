@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback, useMemo } from "react"
+import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { getAdministradoraLogada } from "@/services/auth-administradoras-service"
 import { GruposBeneficiariosService, type GrupoBeneficiarios } from "@/services/grupos-beneficiarios-service"
@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { formatarCEP, formatarTelefone } from "@/utils/formatters"
 import * as XLSX from "xlsx"
-import { AlertTriangle, Info } from "lucide-react"
+import { AlertTriangle, ChevronLeft, ChevronRight, Info } from "lucide-react"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -277,6 +277,23 @@ type ErrosLinhaPreview = {
   idade?: string
 }
 
+type CampoErroPreview = "nome" | "cpf" | "cpf_titular" | "idade"
+
+type ErroLocalizado = {
+  idxOriginal: number
+  linhaPlanilha: number
+  nome: string
+  mensagens: string[]
+  campo: CampoErroPreview
+}
+
+function campoPrincipalDoErro(erros: ErrosLinhaPreview): CampoErroPreview {
+  if (erros.nome) return "nome"
+  if (erros.cpf) return "cpf"
+  if (erros.cpf_titular) return "cpf_titular"
+  return "idade"
+}
+
 type AvisosLinhaPreview = {
   cpf?: string
 }
@@ -329,6 +346,11 @@ export default function ImportacaoVidasPage() {
   const [consultandoCepManual, setConsultandoCepManual] = useState(false)
   const [cpfsAtivosSistema, setCpfsAtivosSistema] = useState<string[]>([])
   const [linhasExcluidasPreview, setLinhasExcluidasPreview] = useState<number[]>([])
+  const [mostrarSomenteErros, setMostrarSomenteErros] = useState(false)
+  const [indiceErroNavegacao, setIndiceErroNavegacao] = useState<number | null>(null)
+  const [linhaErroDestacada, setLinhaErroDestacada] = useState<number | null>(null)
+  const previewScrollRef = useRef<HTMLDivElement>(null)
+  const pedidoRolagemPreviewRef = useRef<{ idx: number; campo: CampoErroPreview } | null>(null)
   const [confirmacaoCpfsAtivosOpen, setConfirmacaoCpfsAtivosOpen] = useState(false)
   const [acaoPendenteCpfsAtivos, setAcaoPendenteCpfsAtivos] = useState<"import" | "manual" | null>(null)
   const [manualForm, setManualForm] = useState<Record<string, string>>({
@@ -493,6 +515,10 @@ export default function ImportacaoVidasPage() {
     setEditedOverrides({})
     setEditingCell(null)
     setLinhasExcluidasPreview([])
+    setMostrarSomenteErros(false)
+    setIndiceErroNavegacao(null)
+    setLinhaErroDestacada(null)
+    pedidoRolagemPreviewRef.current = null
     if (!f) {
       setCamposAdicionais([])
       setFile(null)
@@ -732,6 +758,79 @@ export default function ImportacaoVidasPage() {
         .filter((x) => !linhasExcluidasPreview.includes(x.idxOriginal)),
     [linhasParaImportar, linhasExcluidasPreview]
   )
+
+  const errosLocalizados = useMemo((): ErroLocalizado[] => {
+    return Object.entries(validacaoPreview.porLinha)
+      .map(([chave, erros]) => {
+        const idxOriginal = Number(chave)
+        const mensagens = [erros.nome, erros.cpf, erros.cpf_titular, erros.idade].filter(
+          (msg): msg is string => !!msg
+        )
+        const nome = String(linhasParaImportar[idxOriginal]?.nome || "").trim() || "(sem nome)"
+        return {
+          idxOriginal,
+          linhaPlanilha: idxOriginal + 2,
+          nome,
+          mensagens,
+          campo: campoPrincipalDoErro(erros),
+        }
+      })
+      .sort((a, b) => a.idxOriginal - b.idxOriginal)
+  }, [validacaoPreview.porLinha, linhasParaImportar])
+
+  const linhasVisiveisPreview = useMemo(() => {
+    if (!mostrarSomenteErros) return linhasAtivasComIndice
+    const comErro = new Set(errosLocalizados.map((erro) => erro.idxOriginal))
+    return linhasAtivasComIndice.filter(({ idxOriginal }) => comErro.has(idxOriginal))
+  }, [mostrarSomenteErros, linhasAtivasComIndice, errosLocalizados])
+
+  const irParaErro = useCallback((indice: number) => {
+    const total = errosLocalizados.length
+    if (total === 0) return
+    const next = ((indice % total) + total) % total
+    const alvo = errosLocalizados[next]
+    pedidoRolagemPreviewRef.current = { idx: alvo.idxOriginal, campo: alvo.campo }
+    setIndiceErroNavegacao(next)
+    setLinhaErroDestacada(alvo.idxOriginal)
+  }, [errosLocalizados])
+
+  useEffect(() => {
+    if (errosLocalizados.length === 0) {
+      setIndiceErroNavegacao(null)
+      setLinhaErroDestacada(null)
+      return
+    }
+    if (linhaErroDestacada == null) return
+    const novoIndice = errosLocalizados.findIndex((erro) => erro.idxOriginal === linhaErroDestacada)
+    if (novoIndice === -1) {
+      setLinhaErroDestacada(null)
+      setIndiceErroNavegacao(null)
+      return
+    }
+    if (novoIndice !== indiceErroNavegacao) setIndiceErroNavegacao(novoIndice)
+  }, [errosLocalizados, linhaErroDestacada, indiceErroNavegacao])
+
+  useLayoutEffect(() => {
+    const pedido = pedidoRolagemPreviewRef.current
+    if (!pedido || linhaErroDestacada !== pedido.idx) return
+    const container = previewScrollRef.current
+    if (!container) return
+    const row = container.querySelector<HTMLElement>(`[data-preview-linha="${pedido.idx}"]`)
+    if (!row) return
+    const containerRect = container.getBoundingClientRect()
+    const rowRect = row.getBoundingClientRect()
+    let top = container.scrollTop + (rowRect.top - containerRect.top) - container.clientHeight / 2 + rowRect.height / 2
+    let left = container.scrollLeft
+    const cell = row.querySelector<HTMLElement>(`[data-preview-campo="${pedido.campo}"]`)
+    if (cell) {
+      const cellRect = cell.getBoundingClientRect()
+      if (cellRect.left < containerRect.left + 8 || cellRect.right > containerRect.right - 8) {
+        left = container.scrollLeft + (cellRect.left - containerRect.left) - 72
+      }
+    }
+    container.scrollTo({ top: Math.max(0, top), left: Math.max(0, left), behavior: "auto" })
+    pedidoRolagemPreviewRef.current = null
+  }, [linhaErroDestacada, mostrarSomenteErros])
 
   const possuiErrosCriticosImportacao = validacaoPreview.linhasComErro > 0
 
@@ -1456,9 +1555,73 @@ export default function ImportacaoVidasPage() {
                   <div className="mb-3 space-y-2">
                     <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-700">
                       {validacaoPreview.linhasComErro > 0 ? (
-                        <span className="text-red-700">
-                          Foram encontrados {validacaoPreview.totalErros} erro(s) em {validacaoPreview.linhasComErro} linha(s). Corrija os campos destacados em vermelho antes de importar.
-                        </span>
+                        <div className="space-y-2">
+                          <p className="text-red-700">
+                            Foram encontrados {validacaoPreview.totalErros} erro(s) em {validacaoPreview.linhasComErro} linha(s). Corrija os campos destacados em vermelho antes de importar.
+                          </p>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="h-8 text-xs"
+                              onClick={() => irParaErro(indiceErroNavegacao == null ? errosLocalizados.length - 1 : indiceErroNavegacao - 1)}
+                            >
+                              <ChevronLeft className="h-3.5 w-3.5 mr-1" />
+                              Anterior
+                            </Button>
+                            <select
+                              aria-label="Ir para a linha com erro"
+                              className="h-8 max-w-[min(100%,320px)] rounded-md border border-red-200 bg-white px-2 text-xs text-red-900"
+                              value={indiceErroNavegacao == null ? "" : String(indiceErroNavegacao)}
+                              onChange={(e) => irParaErro(Number(e.target.value))}
+                            >
+                              {indiceErroNavegacao == null ? (
+                                <option value="">Escolher linha com erro</option>
+                              ) : null}
+                              {errosLocalizados.map((erro, indice) => (
+                                <option key={erro.idxOriginal} value={indice}>
+                                  Linha {erro.linhaPlanilha} — {erro.nome} — {erro.mensagens[0]}
+                                </option>
+                              ))}
+                            </select>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="h-8 border-red-200 text-xs text-red-800 hover:bg-red-50"
+                              onClick={() => irParaErro(indiceErroNavegacao == null ? 0 : indiceErroNavegacao + 1)}
+                            >
+                              Próximo erro
+                              <ChevronRight className="h-3.5 w-3.5 ml-1" />
+                            </Button>
+                            <span className="text-xs text-red-800">
+                              {indiceErroNavegacao == null
+                                ? `${errosLocalizados.length} erro(s)`
+                                : `${indiceErroNavegacao + 1} / ${errosLocalizados.length}`}
+                            </span>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant={mostrarSomenteErros ? "default" : "outline"}
+                              className="h-8 text-xs"
+                              onClick={() => {
+                                const erro = errosLocalizados[indiceErroNavegacao ?? 0]
+                                if (erro && linhaErroDestacada != null) {
+                                  pedidoRolagemPreviewRef.current = { idx: erro.idxOriginal, campo: erro.campo }
+                                }
+                                setMostrarSomenteErros((atual) => !atual)
+                              }}
+                            >
+                              {mostrarSomenteErros ? "Mostrar todas as linhas" : "Mostrar só erros"}
+                            </Button>
+                          </div>
+                          {indiceErroNavegacao != null && errosLocalizados[indiceErroNavegacao] ? (
+                            <p className="text-[11px] text-red-800">
+                              Planilha, linha {errosLocalizados[indiceErroNavegacao].linhaPlanilha}: {errosLocalizados[indiceErroNavegacao].nome}. {errosLocalizados[indiceErroNavegacao].mensagens.join(" · ")}
+                            </p>
+                          ) : null}
+                        </div>
                       ) : (
                         <span className="text-emerald-700">Prévia validada: não há erros críticos de CPF/nome para importação.</span>
                       )}
@@ -1477,6 +1640,9 @@ export default function ImportacaoVidasPage() {
                   <div className="mb-3 flex items-center justify-between gap-2">
                     <p className="text-xs text-gray-500">
                       Linhas ativas para importação: <strong>{linhasAtivasComIndice.length}</strong>
+                      {mostrarSomenteErros ? (
+                        <span> | Exibindo só erros: <strong>{linhasVisiveisPreview.length}</strong></span>
+                      ) : null}
                       {linhasExcluidasPreview.length > 0 ? (
                         <span> | Excluídas na prévia: <strong>{linhasExcluidasPreview.length}</strong></span>
                       ) : null}
@@ -1493,10 +1659,11 @@ export default function ImportacaoVidasPage() {
                       </Button>
                     )}
                   </div>
-                  <div className="overflow-x-auto max-h-[340px] overflow-y-auto border border-gray-200 rounded-md">
+                  <div ref={previewScrollRef} className="overflow-x-auto max-h-[340px] overflow-y-auto border border-gray-200 rounded-md">
                     <table className="w-full text-sm border-collapse min-w-[800px]">
                       <thead className="sticky top-0 bg-gray-100 z-10">
                         <tr>
+                          <th className="sticky left-0 z-20 bg-gray-100 px-2 py-2 text-left font-medium text-gray-700 whitespace-nowrap">Linha</th>
                           {CAMPOS_TABELA.map((field) => (
                             <th key={field} className="px-2 py-2 text-left font-medium text-gray-700 whitespace-nowrap">{LABEL_CAMPO[field]}</th>
                           ))}
@@ -1511,8 +1678,17 @@ export default function ImportacaoVidasPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {linhasAtivasComIndice.map(({ linha: l, idxOriginal: i }) => (
-                          <tr key={i} className="border-t border-gray-200 hover:bg-gray-50/50">
+                        {linhasVisiveisPreview.map(({ linha: l, idxOriginal: i }) => {
+                          const linhaDestacada = linhaErroDestacada === i
+                          return (
+                          <tr
+                            key={i}
+                            data-preview-linha={i}
+                            className={`group border-t border-gray-200 ${linhaDestacada ? "bg-red-50 shadow-[inset_4px_0_0_0_#b91c1c]" : "hover:bg-gray-50/50"}`}
+                          >
+                            <td className={`sticky left-0 z-10 px-2 py-1.5 align-top text-xs font-medium whitespace-nowrap ${linhaDestacada ? "bg-red-50 text-red-800" : "bg-white text-gray-500 group-hover:bg-gray-50"}`}>
+                              {i + 2}
+                            </td>
                             {CAMPOS_TABELA.map((field) => {
                               const isEditing = editingCell?.i === i && editingCell?.field === field
                               const errosLinha = validacaoPreview.porLinha[i] || {}
@@ -1540,6 +1716,7 @@ export default function ImportacaoVidasPage() {
                               return (
                                 <td
                                   key={field}
+                                  data-preview-campo={field}
                                   className={`px-3 py-1.5 align-top ${
                                     temErroNoCampo ? "bg-red-50" : temAvisoNoCampo ? "bg-amber-50" : ""
                                   }`}
@@ -1616,7 +1793,8 @@ export default function ImportacaoVidasPage() {
                               </Button>
                             </td>
                           </tr>
-                        ))}
+                          )
+                        })}
                       </tbody>
                     </table>
                   </div>
