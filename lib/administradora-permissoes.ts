@@ -55,6 +55,11 @@ export const MENU_ADMINISTRADORA: ItemMenuAdministradora[] = [
         path: "/administradora/beneficiarios/importacao-matriculas",
       },
       {
+        id: "beneficiarios_importacao_vinculos_corretor",
+        label: "Importação de vínculo de corretor",
+        path: "/administradora/beneficiarios/importacao-vinculos-corretor",
+      },
+      {
         id: "beneficiarios_comparacao_planilhas",
         label: "Comparação de planilhas",
         path: "/administradora/beneficiarios/comparacao-planilhas",
@@ -123,6 +128,7 @@ const LEGADO_PARA_GRANULAR: Record<string, string[]> = {
     "beneficiarios_cancelados",
     "beneficiarios_importacao_vidas",
     "beneficiarios_importacao_matriculas",
+    "beneficiarios_importacao_vinculos_corretor",
     "beneficiarios_comparacao_planilhas",
     "beneficiarios_vinculos",
   ],
@@ -278,6 +284,10 @@ const ROTAS_PERMISSAO: Array<{ prefixo: string; permissao: string }> = [
   {
     prefixo: "/administradora/beneficiarios/importacao-matriculas",
     permissao: "beneficiarios_importacao_matriculas",
+  },
+  {
+    prefixo: "/administradora/beneficiarios/importacao-vinculos-corretor",
+    permissao: "beneficiarios_importacao_vinculos_corretor",
   },
   {
     prefixo: "/administradora/beneficiarios/comparacao-planilhas",

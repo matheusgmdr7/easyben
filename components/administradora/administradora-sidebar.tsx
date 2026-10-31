@@ -803,6 +803,23 @@ export default function AdministradoraSidebar() {
                       </Link>
                     </li>
                     )}
+                    {podeAcessarItem("beneficiarios_importacao_vinculos_corretor") && (
+                    <li>
+                      <Link
+                        href="/administradora/beneficiarios/importacao-vinculos-corretor"
+                        className={cn(
+                          "flex items-center gap-2 px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm rounded-md transition-all duration-300",
+                          isActive("/administradora/beneficiarios/importacao-vinculos-corretor")
+                            ? "bg-[#1E293B]/80 text-white"
+                            : "text-gray-300 hover:bg-[#1E293B]/50 hover:text-white"
+                        )}
+                        onClick={closeSidebar}
+                      >
+                        <ArrowUpTrayIcon className="h-4 w-4" />
+                        <span>Importação de vínculo de corretor</span>
+                      </Link>
+                    </li>
+                    )}
                     {podeAcessarItem("beneficiarios_comparacao_planilhas") && (
                     <li>
                       <Link
