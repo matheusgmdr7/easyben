@@ -8,6 +8,8 @@ import {
   Clock,
   DollarSign,
   ExternalLink,
+  Eye,
+  EyeOff,
   FileDown,
   FileSpreadsheet,
   Minus,
@@ -97,6 +99,10 @@ export default function AdministradoraDashboard() {
     faturas_pendentes: 0,
     valor_em_aberto: 0,
     valor_recebido_mes: 0,
+    boletos_gerados: 0,
+    boletos_gerados_mes_anterior: 0,
+    boletos_variacao_abs: 0,
+    boletos_variacao_percent: 0 as number | null,
   })
   const [pendenciasFaturas, setPendenciasFaturas] = useState<PendenciaFatura[]>([])
   const [ultimaSincronizacao, setUltimaSincronizacao] = useState<UltimaSincronizacao | null>(null)
@@ -113,6 +119,7 @@ export default function AdministradoraDashboard() {
   })
   /** API indica que não foi possível ler filtrar por gateway (falta coluna gateway_nome, etc.). */
   const [alertaFiltroGateway, setAlertaFiltroGateway] = useState(false)
+  const [mostrarValoresFinanceiros, setMostrarValoresFinanceiros] = useState(false)
 
   async function carregarDashboard(administradoraId: string, ano: string, mes: string, financeiraIdParam?: string) {
     const fin = financeiraIdParam !== undefined ? financeiraIdParam : financeiraId
@@ -140,6 +147,13 @@ export default function AdministradoraDashboard() {
       faturas_pendentes: Number(c.faturas_pendentes ?? 0),
       valor_em_aberto: Number(c.valor_em_aberto ?? 0),
       valor_recebido_mes: Number(c.valor_recebido_mes ?? 0),
+      boletos_gerados: Number(c.boletos_gerados ?? 0),
+      boletos_gerados_mes_anterior: Number(c.boletos_gerados_mes_anterior ?? 0),
+      boletos_variacao_abs: Number(c.boletos_variacao_abs ?? 0),
+      boletos_variacao_percent:
+        c.boletos_variacao_percent != null && c.boletos_variacao_percent !== ""
+          ? Number(c.boletos_variacao_percent)
+          : null,
     })
     setPendenciasFaturas(Array.isArray(payload?.pendencias_faturas) ? payload.pendencias_faturas : [])
     setPaginaPendencias(1)
@@ -376,8 +390,22 @@ export default function AdministradoraDashboard() {
 
   if (loading) {
     return (
-      <div className="flex justify-center items-center h-screen">
-        <div className="loading-corporate"></div>
+      <div className="space-y-6 md:space-y-8" aria-busy="true" aria-live="polite">
+        <div className="rounded-sm border border-slate-200/90 bg-white p-5 shadow-[0_1px_3px_rgba(15,23,42,0.06)] md:p-6">
+          <div className="flex items-center gap-4">
+            <div className="loading-corporate shrink-0" />
+            <div>
+              <p className="text-sm font-semibold text-slate-800">Carregando o dashboard</p>
+              <p className="mt-1 text-xs text-slate-500">Os cards e a lista aparecem juntos quando a consulta terminar.</p>
+            </div>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="h-36 animate-pulse rounded-sm border border-slate-200 bg-slate-100/90" />
+          ))}
+        </div>
+        <div className="h-72 animate-pulse rounded-sm border border-slate-200 bg-slate-100/90" />
       </div>
     )
   }
@@ -659,10 +687,22 @@ export default function AdministradoraDashboard() {
         </div>
       </div>
 
-      <p className="text-xs text-slate-500 border-l-2 border-slate-300 pl-3">
-        Faturas: <span className="font-medium text-slate-700">{mesRef}/{anoRef}</span> · Clientes: evolução vs fim de{" "}
-        <span className="font-medium text-slate-700">{refMesTituloCompleto}</span>.
-      </p>
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs text-slate-500 border-l-2 border-slate-300 pl-3">
+          Recebido: <span className="font-medium text-slate-700">{mesRef}/{anoRef}</span> · Clientes: evolução vs fim de{" "}
+          <span className="font-medium text-slate-700">{refMesTituloCompleto}</span>.
+        </p>
+        <button
+          type="button"
+          onClick={() => setMostrarValoresFinanceiros((visivel) => !visivel)}
+          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-sm text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
+          aria-pressed={mostrarValoresFinanceiros}
+          aria-label={mostrarValoresFinanceiros ? "Ocultar valores financeiros" : "Mostrar valores financeiros"}
+          title={mostrarValoresFinanceiros ? "Ocultar valores" : "Mostrar valores"}
+        >
+          {mostrarValoresFinanceiros ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+        </button>
+      </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {/* Clientes ativos + evolução */}
@@ -751,7 +791,7 @@ export default function AdministradoraDashboard() {
             <div className="min-w-0 flex-1">
               <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-500">Faturas pendentes</p>
               <p className="mt-2 text-3xl font-bold tabular-nums tracking-tight text-slate-900">
-                {dashboardData.faturas_pendentes.toLocaleString("pt-BR")}
+                {mostrarValoresFinanceiros ? dashboardData.faturas_pendentes.toLocaleString("pt-BR") : "••••"}
               </p>
             </div>
             <div
@@ -768,7 +808,7 @@ export default function AdministradoraDashboard() {
             </div>
           </div>
           <p className="mt-4 text-xs leading-relaxed text-slate-500 pt-3 border-t border-slate-100/90">
-            Quantidade no período com status pendente, vencida ou atrasada (vencimento no mês selecionado).
+            Quantidade de faturas com vencimento no mês selecionado que ainda não foram pagas.
           </p>
         </div>
 
@@ -785,7 +825,7 @@ export default function AdministradoraDashboard() {
             <div className="min-w-0 flex-1">
               <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-500">Valor em aberto</p>
               <p className="mt-2 text-2xl sm:text-3xl font-bold tabular-nums tracking-tight text-slate-900">
-                {formatarMoeda(dashboardData.valor_em_aberto || 0)}
+                {mostrarValoresFinanceiros ? formatarMoeda(dashboardData.valor_em_aberto || 0) : "R$ ••••••"}
               </p>
             </div>
             <div
@@ -802,7 +842,7 @@ export default function AdministradoraDashboard() {
             </div>
           </div>
           <p className="mt-4 text-xs leading-relaxed text-slate-500 pt-3 border-t border-slate-100/90">
-            Soma dos valores de todas as faturas não pagas no período (vencimento no mês selecionado).
+            Soma das mesmas faturas pendentes do mês selecionado.
           </p>
         </div>
 
@@ -819,7 +859,49 @@ export default function AdministradoraDashboard() {
             <div className="min-w-0 flex-1">
               <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-500">Recebido este mês</p>
               <p className="mt-2 text-2xl sm:text-3xl font-bold tabular-nums tracking-tight text-slate-900">
-                {formatarMoeda(dashboardData.valor_recebido_mes || 0)}
+                {mostrarValoresFinanceiros ? formatarMoeda(dashboardData.valor_recebido_mes || 0) : "R$ ••••••"}
+              </p>
+              <p className="mt-2 text-sm text-slate-600">
+                Boletos gerados:{" "}
+                <span className="font-semibold tabular-nums text-slate-800">
+                  {dashboardData.boletos_gerados.toLocaleString("pt-BR")}
+                </span>
+              </p>
+              <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500">
+                <span>
+                  {refMesTituloCompleto}:{" "}
+                  <span className="tabular-nums font-medium text-slate-700">
+                    {dashboardData.boletos_gerados_mes_anterior.toLocaleString("pt-BR")}
+                  </span>
+                </span>
+                <span
+                  className={cn(
+                    "inline-flex items-center gap-1 font-semibold tabular-nums",
+                    dashboardData.boletos_variacao_abs > 0 && "text-emerald-800",
+                    dashboardData.boletos_variacao_abs < 0 && "text-rose-800"
+                  )}
+                >
+                  {dashboardData.boletos_variacao_abs > 0 ? (
+                    <ArrowUpRight className="h-3.5 w-3.5 shrink-0" strokeWidth={2.25} aria-hidden />
+                  ) : dashboardData.boletos_variacao_abs < 0 ? (
+                    <ArrowDownRight className="h-3.5 w-3.5 shrink-0" strokeWidth={2.25} aria-hidden />
+                  ) : (
+                    <Minus className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                  )}
+                  {dashboardData.boletos_variacao_abs > 0 ? "+" : ""}
+                  {dashboardData.boletos_variacao_abs.toLocaleString("pt-BR")}
+                  {dashboardData.boletos_variacao_percent != null ? (
+                    <span className="font-medium text-slate-600">
+                      {" "}
+                      ({dashboardData.boletos_variacao_percent > 0 ? "+" : ""}
+                      {dashboardData.boletos_variacao_percent.toLocaleString("pt-BR", {
+                        minimumFractionDigits: 0,
+                        maximumFractionDigits: 1,
+                      })}
+                      %)
+                    </span>
+                  ) : null}
+                </span>
               </p>
             </div>
             <div
@@ -836,7 +918,7 @@ export default function AdministradoraDashboard() {
             </div>
           </div>
           <p className="mt-4 text-xs leading-relaxed text-slate-500 pt-3 border-t border-slate-100/90">
-            Total das faturas pagas com data de pagamento no mês do período.
+            Pagamentos do mês, contando cada cobrança uma vez. Os boletos gerados são os do vencimento deste mês.
           </p>
         </div>
       </div>

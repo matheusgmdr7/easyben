@@ -52,6 +52,7 @@ export async function contarHistoricoFaturasPorCliente(
       .select("cliente_administradora_id, status")
       .eq("administradora_id", administradoraId)
       .not("cliente_administradora_id", "is", null)
+      .order("id", { ascending: true })
       .range(from, from + PAGE - 1)
 
     const tid = String(tenantId || "").trim()
@@ -106,6 +107,7 @@ export async function contarFaturasAtrasadasTotaisPorCliente(
       .eq("administradora_id", administradoraId)
       .eq("status", "atrasada")
       .not("cliente_administradora_id", "is", null)
+      .order("id", { ascending: true })
       .range(from, from + PAGE - 1)
 
     const tid = String(tenantId || "").trim()

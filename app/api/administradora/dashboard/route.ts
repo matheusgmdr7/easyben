@@ -11,6 +11,7 @@ import {
   montarResumoAtrasadasNoPeriodo,
   type SegmentoAtraso,
 } from "@/lib/dashboard-pendencias-atrasadas"
+import { faturaEstaPaga, normalizarStatusFatura } from "@/lib/fatura-status"
 import {
   primeiroTelefoneDeVida,
   resolverTelefoneClienteCobranca,
@@ -32,10 +33,12 @@ type FaturaRow = {
   asaas_payment_link?: string | null
   gateway_nome?: string | null
   financeira_id?: string | null
+  pagamento_valor?: number | null
+  asaas_charge_id?: string | null
 }
 
 const FATURAS_SELECT_SEM_GATEWAY =
-  "id, cliente_administradora_id, cliente_nome, cliente_telefone, numero_fatura, valor, status, vencimento, pagamento_data, boleto_url, asaas_boleto_url, asaas_invoice_url, asaas_payment_link"
+  "id, cliente_administradora_id, cliente_nome, cliente_telefone, numero_fatura, valor, status, vencimento, pagamento_data, boleto_url, asaas_boleto_url, asaas_invoice_url, asaas_payment_link, asaas_charge_id"
 const FATURAS_SELECT_COM_GATEWAY = `${FATURAS_SELECT_SEM_GATEWAY}, gateway_nome`
 const FATURAS_SELECT_COM_GATEWAY_FIN = `${FATURAS_SELECT_COM_GATEWAY}, financeira_id`
 
@@ -100,33 +103,34 @@ type VidaMap = {
   corretor_id: string | null
 }
 
-const ASAAS_TO_INTERNO: Record<string, string> = {
-  PENDING: "pendente",
-  RECEIVED: "paga",
-  CONFIRMED: "paga",
-  RECEIVED_IN_CASH: "paga",
-  OVERDUE: "atrasada",
-  REFUNDED: "cancelada",
-  REFUND_REQUESTED: "cancelada",
-  CHARGEBACK_REQUESTED: "cancelada",
-  CHARGEBACK_DISPUTE: "cancelada",
-  AWAITING_CHARGEBACK_REVERSAL: "cancelada",
-  DELETED: "cancelada",
-  CANCELED: "cancelada",
-  CANCELLED: "cancelada",
-  AWAITING_RISK_ANALYSIS: "pendente",
+function normalizarStatus(status: string | null | undefined): string {
+  return normalizarStatusFatura(status)
 }
 
-function normalizarStatus(status: string | null | undefined): string {
-  const bruto = String(status || "").trim()
-  if (!bruto) return ""
-  const upper = bruto.toUpperCase()
-  if (ASAAS_TO_INTERNO[upper]) return ASAAS_TO_INTERNO[upper]
-  const lower = bruto.toLowerCase()
-  if (lower === "paid") return "paga"
-  if (lower === "overdue") return "atrasada"
-  if (lower === "cancelled" || lower === "canceled") return "cancelada"
-  return lower
+function valorNumerico(valor: unknown): number {
+  const n = Number(valor ?? 0)
+  return Number.isFinite(n) ? n : 0
+}
+
+/** Valor que entrou no caixa: o pago quando existe, senão o valor da fatura. */
+function valorRecebidoDaFatura(f: FaturaRow): number {
+  const pago = valorNumerico(f.pagamento_valor)
+  if (pago > 0) return pago
+  return valorNumerico(f.valor)
+}
+
+/** A mesma cobrança do gateway às vezes está em duas linhas. Conta só a primeira. */
+function cobrancasUnicas(rows: FaturaRow[]): FaturaRow[] {
+  const vistas = new Set<string>()
+  const unicas: FaturaRow[] = []
+  for (const f of rows) {
+    const charge = String(f.asaas_charge_id || "").trim()
+    const chave = charge || `id:${String(f.id || "")}`
+    if (!chave || vistas.has(chave)) continue
+    vistas.add(chave)
+    unicas.push(f)
+  }
+  return unicas
 }
 
 export async function GET(request: NextRequest) {
@@ -226,30 +230,40 @@ export async function GET(request: NextRequest) {
     ])
 
     const PAGE_SIZE = 1000
+    const anoProximo = mes === 12 ? ano + 1 : ano
+    const mesProximo = mes === 12 ? 1 : mes + 1
+    const inicioProximoMes = `${anoProximo}-${String(mesProximo).padStart(2, "0")}-01`
+    const inicioMesAnterior = `${prevYearNum}-${String(prevMonthNum).padStart(2, "0")}-01`
+    const fimMesAnteriorData = `${prevYearNum}-${String(prevMonthNum).padStart(2, "0")}-${String(
+      new Date(Date.UTC(prevYearNum, prevMonthNum, 0)).getUTCDate()
+    ).padStart(2, "0")}`
 
-    async function buscarFaturasPaginado(colunas: string, aplicarExtra?: (q: any) => any): Promise<FaturaRow[]> {
+    async function buscarFaturasPaginado(
+      colunas: string,
+      filtro: "vencimento" | "pagamento",
+      intervalo?: { inicio: string; fim: string }
+    ): Promise<FaturaRow[]> {
       const acumulado: FaturaRow[] = []
       let from = 0
       while (true) {
-        let qFat = supabaseAdmin
-          .from("faturas")
-          .select(colunas)
-          .eq("administradora_id", administradoraId)
-          .gte("vencimento", inicioPeriodo)
-          .lte("vencimento", fimPeriodoIso)
+        let qFat = supabaseAdmin.from("faturas").select(colunas).eq("administradora_id", administradoraId)
+        if (filtro === "vencimento") {
+          qFat = qFat
+            .gte("vencimento", intervalo?.inicio || inicioPeriodo)
+            .lte("vencimento", intervalo?.fim || fimPeriodoIso)
+        } else {
+          qFat = qFat.gte("pagamento_data", inicioPeriodo).lt("pagamento_data", inicioProximoMes)
+        }
         const tidFat = String(tenantId || "").trim()
         if (tidFat) {
           qFat = qFat.or(`tenant_id.eq.${tidFat},tenant_id.is.null`)
         } else {
           qFat = qFat.is("tenant_id", null)
         }
-        if (aplicarExtra) qFat = aplicarExtra(qFat)
-        const { data: chunk, error } = await qFat
-          .order("vencimento", { ascending: false })
-          .range(from, from + PAGE_SIZE - 1)
+        const { data: chunk, error } = await qFat.order("id", { ascending: true }).range(from, from + PAGE_SIZE - 1)
 
         if (error) throw error
-        const lista = (chunk || []) as FaturaRow[]
+        const lista = (chunk || []) as unknown as FaturaRow[]
         acumulado.push(...lista)
         if (lista.length < PAGE_SIZE) break
         from += PAGE_SIZE
@@ -257,8 +271,40 @@ export async function GET(request: NextRequest) {
       return acumulado
     }
 
+    async function listarFaturas(
+      filtro: "vencimento" | "pagamento",
+      intervalo?: { inicio: string; fim: string }
+    ): Promise<FaturaRow[]> {
+      const comFinanceira = Boolean(financeiraIdParam && financeiraFiltroNome)
+      const tentativas = comFinanceira
+        ? filtro === "pagamento"
+          ? [
+              `${FATURAS_SELECT_COM_GATEWAY_FIN}, pagamento_valor`,
+              `${FATURAS_SELECT_COM_GATEWAY}, pagamento_valor`,
+              FATURAS_SELECT_COM_GATEWAY_FIN,
+              FATURAS_SELECT_COM_GATEWAY,
+            ]
+          : [FATURAS_SELECT_COM_GATEWAY_FIN, FATURAS_SELECT_COM_GATEWAY, FATURAS_SELECT_SEM_GATEWAY]
+        : filtro === "pagamento"
+          ? [`${FATURAS_SELECT_SEM_GATEWAY}, pagamento_valor`, FATURAS_SELECT_SEM_GATEWAY]
+          : [FATURAS_SELECT_SEM_GATEWAY]
+
+      let ultimoErro: unknown = null
+      for (const colunas of tentativas) {
+        try {
+          const rows = await buscarFaturasPaginado(colunas, filtro, intervalo)
+          if (comFinanceira) return filtrarFaturasPorFinanceiraEmMemoria(rows)
+          return rows
+        } catch (e) {
+          ultimoErro = e
+          const msg = e instanceof Error ? e.message : String(e)
+          if (!/column/i.test(msg)) throw e
+        }
+      }
+      throw ultimoErro instanceof Error ? ultimoErro : new Error("Erro ao listar faturas")
+    }
+
     let filtroFinanceiraIndisponivel = false
-    let faturas: FaturaRow[] = []
 
     async function filtrarFaturasPorFinanceiraEmMemoria(todas: FaturaRow[]): Promise<FaturaRow[]> {
       const fins = await FinanceirasService.listar(administradoraId)
@@ -275,30 +321,60 @@ export async function GET(request: NextRequest) {
     }
 
     /**
-     * Sempre carrega todas as faturas do período e filtra em memória com `faturaPertenceAFinanceira`.
-     * A busca composta por SQL (eq financeira_id + eq gateway) omitia legado com gateway truncado diferente
-     * ou só fuzzy-match; quando vinha algum resultado, o fallback em memória nem rodava e os cards ficavam errados.
+     * Pendentes e valor em aberto: só faturas com vencimento no mês que ainda não foram pagas.
+     * Recebido: pagamentos cuja data cai no mês, mesmo com vencimento em outro mês.
+     * O filtro de financeira roda em memória para não perder boleto legado com gateway truncado.
      */
-    if (gatewayNomeFiltro && financeiraFiltroNome && financeiraIdParam) {
-      try {
-        let todas: FaturaRow[] = []
-        try {
-          todas = await buscarFaturasPaginado(FATURAS_SELECT_COM_GATEWAY_FIN)
-        } catch {
-          todas = await buscarFaturasPaginado(FATURAS_SELECT_COM_GATEWAY)
-        }
-        faturas = await filtrarFaturasPorFinanceiraEmMemoria(todas)
-      } catch (e) {
+    let faturas: FaturaRow[] = []
+    let faturasRecebidas: FaturaRow[] = []
+    let boletosMesAnterior = 0
+    let atrasadasTotaisPorCliente = new Map<string, number>()
+    let historicoPorCliente = new Map<string, { total: number; pagas: number }>()
+    const intervaloMesAnterior = { inicio: inicioMesAnterior, fim: fimMesAnteriorData }
+
+    try {
+      const [mesRows, recebidoRows, anteriorRows, atrasadasMap, historicoMap] = await Promise.all([
+        listarFaturas("vencimento"),
+        listarFaturas("pagamento"),
+        financeiraIdParam
+          ? listarFaturas("vencimento", intervaloMesAnterior)
+          : buscarFaturasPaginado("id, asaas_charge_id", "vencimento", intervaloMesAnterior),
+        contarFaturasAtrasadasTotaisPorCliente(administradoraId, tenantId),
+        contarHistoricoFaturasPorCliente(administradoraId, tenantId),
+      ])
+      faturas = cobrancasUnicas(mesRows)
+      faturasRecebidas = cobrancasUnicas(recebidoRows)
+      boletosMesAnterior = cobrancasUnicas(anteriorRows).length
+      atrasadasTotaisPorCliente = atrasadasMap
+      historicoPorCliente = historicoMap
+    } catch (e) {
+      if (financeiraIdParam) {
         console.warn(
           "dashboard: não foi possível listar faturas com gateway_nome/financeira_id; filtro por financeira desativado",
           e
         )
-        faturas = await buscarFaturasPaginado(FATURAS_SELECT_SEM_GATEWAY)
         filtroFinanceiraIndisponivel = true
+        const [mesRows, recebidoRows, anteriorRows, atrasadasMap, historicoMap] = await Promise.all([
+          buscarFaturasPaginado(FATURAS_SELECT_SEM_GATEWAY, "vencimento"),
+          buscarFaturasPaginado(FATURAS_SELECT_SEM_GATEWAY, "pagamento"),
+          buscarFaturasPaginado("id, asaas_charge_id", "vencimento", intervaloMesAnterior),
+          contarFaturasAtrasadasTotaisPorCliente(administradoraId, tenantId),
+          contarHistoricoFaturasPorCliente(administradoraId, tenantId),
+        ])
+        faturas = cobrancasUnicas(mesRows)
+        faturasRecebidas = cobrancasUnicas(recebidoRows)
+        boletosMesAnterior = cobrancasUnicas(anteriorRows).length
+        atrasadasTotaisPorCliente = atrasadasMap
+        historicoPorCliente = historicoMap
+      } else {
+        throw e
       }
-    } else {
-      faturas = await buscarFaturasPaginado(FATURAS_SELECT_SEM_GATEWAY)
     }
+
+    const boletosGerados = faturas.length
+    const boletosVariacaoAbs = boletosGerados - boletosMesAnterior
+    const boletosVariacaoPercent: number | null =
+      boletosMesAnterior > 0 ? Number(((boletosVariacaoAbs / boletosMesAnterior) * 100).toFixed(1)) : null
 
     const clientesAtivos = Number(vidasCount || 0)
     const clientesBaseMesAnterior = Number(vidasAteMesAnterior || 0)
@@ -319,21 +395,34 @@ export async function GET(request: NextRequest) {
     }
 
     const clienteAdmIds = Array.from(
-      new Set(faturas.map((f) => String(f.cliente_administradora_id || "").trim()).filter(Boolean))
+      new Set(
+        faturas
+          .filter((f) => {
+            if (faturaEstaPaga(f.status, f.pagamento_data)) return false
+            const status = normalizarStatus(f.status)
+            return status === "pendente" || status === "atrasada" || status === "vencida"
+          })
+          .map((f) => String(f.cliente_administradora_id || "").trim())
+          .filter(Boolean)
+      )
     )
     const vidaByClienteAdmId = new Map<string, VidaMap>()
     const telefoneVidaPorClienteAdm = new Map<string, string>()
     const telefoneCadastroPorClienteAdm = new Map<string, string>()
     if (clienteAdmIds.length > 0) {
-      for (let i = 0; i < clienteAdmIds.length; i += 500) {
-        const lote = clienteAdmIds.slice(i, i + 500)
-        const { data: vidasLote } = await supabaseAdmin
-          .from("vidas_importadas")
-          .select("cliente_administradora_id, grupo_id, corretor_id, tipo, telefones, dados_adicionais")
-          .eq("administradora_id", administradoraId)
-          .eq("tenant_id", tenantId)
-          .in("cliente_administradora_id", lote)
-
+      const lotes = []
+      for (let i = 0; i < clienteAdmIds.length; i += 500) lotes.push(clienteAdmIds.slice(i, i + 500))
+      const vidasPorLote = await Promise.all(
+        lotes.map((lote) =>
+          supabaseAdmin
+            .from("vidas_importadas")
+            .select("cliente_administradora_id, grupo_id, corretor_id, tipo, telefones, dados_adicionais")
+            .eq("administradora_id", administradoraId)
+            .eq("tenant_id", tenantId)
+            .in("cliente_administradora_id", lote)
+        )
+      )
+      for (const { data: vidasLote } of vidasPorLote) {
         for (const v of vidasLote || []) {
           const clienteAdmId = String((v as any)?.cliente_administradora_id || "").trim()
           if (!clienteAdmId) continue
@@ -375,9 +464,14 @@ export async function GET(request: NextRequest) {
     }
 
     let faturasPendentes = 0
-    /** Soma de faturas não pagas no período (igual ao comportamento anterior do card). */
     let valorEmAberto = 0
     let recebidoMes = 0
+    for (const f of faturasRecebidas) {
+      if (!faturaEstaPaga(f.status, f.pagamento_data)) continue
+      const pagoEm = String(f.pagamento_data || "").slice(0, 7)
+      if (pagoEm !== periodoRef) continue
+      recebidoMes += valorRecebidoDaFatura(f)
+    }
 
     const pendenciasFaturas: Array<{
       fatura_id: string
@@ -402,29 +496,15 @@ export async function GET(request: NextRequest) {
 
     for (const f of faturas) {
       const status = normalizarStatus(f.status)
-      const valor = Number(f.valor || 0)
-
-      const isPaga = status === "paga"
+      const valor = valorNumerico(f.valor)
+      const isPaga = faturaEstaPaga(f.status, f.pagamento_data)
       const isPendente = status === "pendente"
       const isAtrasada = status === "atrasada"
       const isVencida = status === "vencida"
 
-      if (isPendente || isAtrasada || isVencida) {
+      if (!isPaga && (isPendente || isAtrasada || isVencida)) {
         faturasPendentes += 1
-      }
-
-      if (!isPaga) {
         valorEmAberto += valor
-      }
-
-      if (isPaga) {
-        const dataPagamento = String(f.pagamento_data || "")
-        if (dataPagamento.slice(0, 7) === periodoRef) {
-          recebidoMes += valor
-        }
-      }
-
-      if (isPendente || isAtrasada || isVencida) {
         const clienteAdmId = String(f.cliente_administradora_id || "").trim()
         const vidaCtx = clienteAdmId ? vidaByClienteAdmId.get(clienteAdmId) : undefined
         const corretora = vidaCtx?.corretor_id ? corretorNomeById.get(vidaCtx.corretor_id) || "—" : "—"
@@ -452,13 +532,6 @@ export async function GET(request: NextRequest) {
         })
       }
     }
-
-    const atrasadasTotaisPorCliente = await contarFaturasAtrasadasTotaisPorCliente(
-      administradoraId,
-      tenantId
-    )
-
-    const historicoPorCliente = await contarHistoricoFaturasPorCliente(administradoraId, tenantId)
 
     const clientesComDuasOuMaisAtrasadas = Array.from(atrasadasTotaisPorCliente.entries())
       .filter(([, n]) => n >= 2)
@@ -528,6 +601,10 @@ export async function GET(request: NextRequest) {
         faturas_pendentes: faturasPendentes,
         valor_em_aberto: Number(valorEmAberto.toFixed(2)),
         valor_recebido_mes: Number(recebidoMes.toFixed(2)),
+        boletos_gerados: boletosGerados,
+        boletos_gerados_mes_anterior: boletosMesAnterior,
+        boletos_variacao_abs: boletosVariacaoAbs,
+        boletos_variacao_percent: boletosVariacaoPercent,
       },
       pendencias_faturas: pendenciasFaturas,
       pendencias_total: totalPendenciasPeriodo,
