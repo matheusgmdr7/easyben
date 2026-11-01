@@ -126,6 +126,32 @@ export async function enviarWhatsAppTemplateTwilio(params: {
   }
 }
 
+/** Resposta livre na janela de 24h aberta pela última mensagem do cliente. */
+export async function enviarWhatsAppTextoTwilio(params: {
+  to: string
+  body: string
+}): Promise<{ messageSid: string; status: string }> {
+  const cfg = getTwilioConfig()
+  const twilio = getTwilioClient()
+  const statusCallback = cfg.webhookBaseUrl
+    ? `${cfg.webhookBaseUrl.replace(/\/$/, "")}/api/webhooks/whatsapp/status`
+    : undefined
+
+  const message = await Promise.race([
+    twilio.messages.create({
+      from: cfg.whatsappFrom,
+      to: params.to,
+      body: params.body,
+      ...(statusCallback ? { statusCallback } : {}),
+    }),
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("Timeout Twilio após 10s")), TWILIO_REQUEST_TIMEOUT_MS)
+    ),
+  ])
+
+  return { messageSid: message.sid, status: message.status || "queued" }
+}
+
 export function validarAssinaturaTwilio(params: {
   signature: string | null
   url: string

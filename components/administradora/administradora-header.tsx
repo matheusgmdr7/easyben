@@ -8,6 +8,7 @@ import { Settings, User, LogOut, Bell, AlertTriangle, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { getAdministradoraLogada } from "@/services/auth-administradoras-service"
 import { limparEstadoNotificacoesChamados } from "@/lib/chamados-notificacoes-storage"
+import { limparEstadoNotificacoesRespostas } from "@/lib/whatsapp-respostas-notificacoes"
 import { carregarNomeMarcaExibicao, nomeMarcaFallbackLocal } from "@/lib/administradora-marca"
 import {
   listarAlertasSistema,
@@ -111,7 +112,10 @@ export default function AdministradoraHeader({ sidebarCollapsed = false }: Admin
   const handleLogout = async () => {
     try {
       const adm = getAdministradoraLogada()
-      if (adm?.id) limparEstadoNotificacoesChamados(adm.id)
+      if (adm?.id) {
+        limparEstadoNotificacoesChamados(adm.id)
+        limparEstadoNotificacoesRespostas(adm.id)
+      }
       // Limpar dados do localStorage e sessionStorage
       if (typeof window !== 'undefined') {
         localStorage.removeItem('administradoraLogada')
@@ -229,7 +233,9 @@ export default function AdministradoraHeader({ sidebarCollapsed = false }: Admin
                               >
                                 <p className="text-sm font-semibold text-gray-900 truncate">{alerta.titulo}</p>
                                 <p className="text-xs text-gray-700 mt-1 whitespace-pre-line">{alerta.mensagem}</p>
-                                <p className="text-[11px] text-blue-600 mt-1">Ver chamado →</p>
+                                <p className="text-[11px] text-blue-600 mt-1">
+                                  {alerta.refTipo === "whatsapp" ? "Ver conversa →" : "Ver chamado →"}
+                                </p>
                               </Link>
                             ) : (
                               <>

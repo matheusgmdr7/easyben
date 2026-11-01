@@ -80,6 +80,7 @@ CREATE TABLE IF NOT EXISTS whatsapp_inbound_messages (
 
 CREATE INDEX IF NOT EXISTS idx_whatsapp_inbound_telefone ON whatsapp_inbound_messages(telefone);
 CREATE INDEX IF NOT EXISTS idx_whatsapp_inbound_processed ON whatsapp_inbound_messages(processed_at) WHERE processed_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_whatsapp_inbound_adm_created ON whatsapp_inbound_messages(administradora_id, created_at);
 
 -- updated_at automático
 CREATE OR REPLACE FUNCTION update_whatsapp_billing_updated_at()

@@ -1,5 +1,7 @@
 "use client"
 
+import { aplicarPrefixoTenantNaRota } from "@/lib/administradora-permissoes"
+
 export type AlertaSistemaTipo = "warning" | "info"
 
 export interface AlertaSistema {
@@ -9,7 +11,7 @@ export interface AlertaSistema {
   tipo: AlertaSistemaTipo
   criadoEm: string
   lido: boolean
-  refTipo?: "chamado"
+  refTipo?: "chamado" | "whatsapp"
   refId?: string
   href?: string
 }
@@ -49,7 +51,7 @@ export function adicionarAlertaSistema(input: {
   titulo: string
   mensagem: string
   tipo?: AlertaSistemaTipo
-  refTipo?: "chamado"
+  refTipo?: "chamado" | "whatsapp"
   refId?: string
   href?: string
 }) {
@@ -86,6 +88,24 @@ export function adicionarAlertaChamadoAberto(input: {
     refTipo: "chamado",
     refId: input.chamadoId,
     href: `/administradora/chamados/${input.chamadoId}`,
+  })
+}
+
+export function adicionarAlertaRespostaWhatsApp(input: {
+  mensagemId: string
+  clienteNome: string
+  preview: string
+}) {
+  adicionarAlertaSistema({
+    titulo: "Resposta no WhatsApp",
+    mensagem: `${input.clienteNome}\n${input.preview}`,
+    tipo: "info",
+    refTipo: "whatsapp",
+    refId: input.mensagemId,
+    href: aplicarPrefixoTenantNaRota(
+      typeof window !== "undefined" ? window.location.pathname : "/administradora",
+      `/administradora/financeiro/cobrancas?aba=recebidas&conversa=${input.mensagemId}`
+    ),
   })
 }
 

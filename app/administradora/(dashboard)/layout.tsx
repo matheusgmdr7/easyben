@@ -9,6 +9,7 @@ import AdministradoraHeader from "@/components/administradora/administradora-hea
 import { RecursoGuard } from "@/components/tenant/recurso-guard"
 import { AdministradoraPermissaoGuard } from "@/components/administradora/administradora-permissao-guard"
 import { ChamadosNotificacoesListener } from "@/components/administradora/chamados-notificacoes-listener"
+import { WhatsappRespostasNotificacoesListener } from "@/components/administradora/whatsapp-respostas-notificacoes-listener"
 
 export default function AdministradoraLayout({
   children,
@@ -108,6 +109,7 @@ export default function AdministradoraLayout({
     <RecursoGuard codigoRecurso="portal_administradora" redirectTo="/" showError={true}>
       <div className="min-h-screen bg-gray-100" style={{ fontFamily: "'Inter', sans-serif" }}>
       <ChamadosNotificacoesListener />
+      <WhatsappRespostasNotificacoesListener />
       <AdministradoraSidebar />
       <div 
         className={`flex flex-col transition-all duration-300 ease-in-out bg-gray-100 ${

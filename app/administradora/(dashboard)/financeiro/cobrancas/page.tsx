@@ -1,6 +1,7 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
+import { useSearchParams } from "next/navigation"
 import { Loader2 } from "lucide-react"
 import { getAdministradoraLogada } from "@/services/auth-administradoras-service"
 import { Button } from "@/components/ui/button"
@@ -26,6 +27,9 @@ const btnSquare = "rounded-sm"
 
 export default function CobrancasFinanceiroPage() {
   const agora = new Date()
+  const searchParams = useSearchParams()
+  const buscaAplicadaRef = useRef("")
+  const [aba, setAba] = useState("pendencias")
   const [administradora, setAdministradora] = useState<{
     id: string
     nome?: string
@@ -179,6 +183,14 @@ export default function CobrancasFinanceiroPage() {
   }
 
   const periodoLabel = `${mesRef}/${anoRef}`
+  const conversaInicial = searchParams.get("conversa")
+
+  useEffect(() => {
+    const chave = searchParams.toString()
+    if (buscaAplicadaRef.current === chave) return
+    buscaAplicadaRef.current = chave
+    if (searchParams.get("aba") === "recebidas") setAba("recebidas")
+  }, [searchParams])
 
   if (loading && pendencias.length === 0) {
     return (
@@ -196,7 +208,7 @@ export default function CobrancasFinanceiroPage() {
       </div>
 
       <div className="px-6 py-6 space-y-6 max-w-[min(100%,80rem)]">
-        <Tabs defaultValue="pendencias" className="space-y-4">
+        <Tabs value={aba} onValueChange={setAba} className="space-y-4">
           <TabsList className={cn(btnSquare, "bg-white border border-slate-200 p-1 h-auto flex-wrap")}>
             <TabsTrigger value="pendencias" className={cn(btnSquare, "text-sm px-4 py-2")}>
               Faturas pendentes
@@ -348,7 +360,10 @@ export default function CobrancasFinanceiroPage() {
                 <WhatsAppMensagensHistorico administradoraId={administradora.id} />
               </TabsContent>
               <TabsContent value="recebidas" className="mt-0">
-                <WhatsAppMensagensRecebidas administradoraId={administradora.id} />
+                <WhatsAppMensagensRecebidas
+                  administradoraId={administradora.id}
+                  conversaInicial={aba === "recebidas" ? conversaInicial : null}
+                />
               </TabsContent>
               <TabsContent value="relatorio" className="mt-0">
                 <WhatsAppRelatorioEnvios administradoraId={administradora.id} />
