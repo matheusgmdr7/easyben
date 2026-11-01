@@ -160,6 +160,7 @@ export async function executarCronLembretesWhatsApp(options?: {
           /** Tarde e manhã enfileiram pendentes; retentativas de falha ficam a cargo do catch-up/recovery. */
           somenteRetentativa: false,
           staggerInicial: Math.floor(delayBase / 3000),
+          deadlineMs: inicioMs + timeBudgetMs,
         })
 
         resumoEvento.enfileirados += resultado.enfileirados

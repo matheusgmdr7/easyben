@@ -146,6 +146,7 @@ export function FaturasPendentesPainel({
   const [limitesRefreshToken, setLimitesRefreshToken] = useState(0)
   const [selecionados, setSelecionados] = useState<Set<string>>(() => new Set())
   const [enviandoLote, setEnviandoLote] = useState(false)
+  const [progressoLote, setProgressoLote] = useState<{ feitos: number; total: number } | null>(null)
 
   const enviosPorFaturaId = useMemo(
     () => new Map(enviosRecentes.map((e) => [e.fatura_id, e])),
@@ -160,7 +161,7 @@ export function FaturasPendentesPainel({
 
   useEffect(() => {
     setSelecionados(new Set())
-  }, [paginaPendencias, filtroPendencias, corretorIdFiltro, pendencias.length])
+  }, [filtroPendencias, corretorIdFiltro, pendencias.length])
 
   useEffect(() => {
     if (!mostrarEnvioWhatsApp || !administradoraId?.trim()) {
@@ -248,16 +249,16 @@ export function FaturasPendentesPainel({
     paginaAtual * itensPorPagina
   )
 
-  const elegiveisPagina = useMemo(
-    () => pendenciasPaginadas.filter(itemElegivelEnvioTwilio),
-    [pendenciasPaginadas]
+  const elegiveisAba = useMemo(
+    () => pendenciasFiltradas.filter(itemElegivelEnvioTwilio),
+    [pendenciasFiltradas]
   )
 
   const qtdSelecionados = selecionados.size
-  const todosSelecionadosPagina =
-    elegiveisPagina.length > 0 && elegiveisPagina.every((i) => selecionados.has(i.fatura_id))
-  const algunsSelecionadosPagina =
-    elegiveisPagina.some((i) => selecionados.has(i.fatura_id)) && !todosSelecionadosPagina
+  const todosSelecionadosAba =
+    elegiveisAba.length > 0 && elegiveisAba.every((i) => selecionados.has(i.fatura_id))
+  const algunsSelecionadosAba =
+    elegiveisAba.some((i) => selecionados.has(i.fatura_id)) && !todosSelecionadosAba
 
   function alternarSelecao(faturaId: string, checked: boolean) {
     setSelecionados((atual) => {
@@ -268,18 +269,18 @@ export function FaturasPendentesPainel({
     })
   }
 
-  function selecionarPaginaInteira(checked: boolean) {
+  function selecionarAbaInteira(checked: boolean) {
     if (!checked) {
       setSelecionados((atual) => {
         const next = new Set(atual)
-        for (const item of elegiveisPagina) next.delete(item.fatura_id)
+        for (const item of elegiveisAba) next.delete(item.fatura_id)
         return next
       })
       return
     }
     setSelecionados((atual) => {
       const next = new Set(atual)
-      for (const item of elegiveisPagina) next.add(item.fatura_id)
+      for (const item of elegiveisAba) next.add(item.fatura_id)
       return next
     })
   }
@@ -348,52 +349,64 @@ export function FaturasPendentesPainel({
       /* segue sem bloquear */
     }
 
+    const TAMANHO_LOTE = 40
     setEnviandoLote(true)
+    setProgressoLote({ feitos: 0, total: ids.length })
+    let feitos = 0
+    let enfileirados = 0
+    let falhas = 0
+    const sucesso = new Set<string>()
+    const motivos: Array<{ reason?: string }> = []
     try {
-      const res = await fetch("/api/administradora/whatsapp/enviar-cobranca-lote", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          administradora_id: administradoraId,
-          fatura_ids: ids,
-        }),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || "Erro ao enfileirar lote")
+      for (let i = 0; i < ids.length; i += TAMANHO_LOTE) {
+        const lote = ids.slice(i, i + TAMANHO_LOTE)
+        const res = await fetch("/api/administradora/whatsapp/enviar-cobranca-lote", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            administradora_id: administradoraId,
+            fatura_ids: lote,
+          }),
+        })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error || "Erro ao enfileirar lote")
 
-      const enfileirados = Number(data.enfileirados || 0)
-      const falhas = (data.resultados || []).filter(
-        (r: { enqueued?: boolean }) => !r.enqueued
-      ).length
+        enfileirados += Number(data.enfileirados || 0)
+        const resultados = (data.resultados || []) as Array<{
+          fatura_id: string
+          enqueued?: boolean
+          reason?: string
+        }>
+        falhas += resultados.filter((r) => !r.enqueued).length
+        for (const r of resultados) {
+          if (r.enqueued) sucesso.add(r.fatura_id)
+          else motivos.push(r)
+        }
+
+        feitos += lote.length
+        setProgressoLote({ feitos, total: ids.length })
+      }
 
       for (const item of pendenciasFiltradas) {
-        if (ids.includes(item.fatura_id)) {
-          const ok = (data.resultados || []).find(
-            (r: { fatura_id: string; enqueued?: boolean }) =>
-              r.fatura_id === item.fatura_id && r.enqueued
-          )
-          if (ok) marcarEnvioRecente(item)
-        }
+        if (sucesso.has(item.fatura_id)) marcarEnvioRecente(item)
       }
-
-      for (const id of ids) {
-        const ok = (data.resultados || []).find(
-          (r: { fatura_id: string; enqueued?: boolean }) => r.fatura_id === id && r.enqueued
-        )
-        if (ok) onEnvioWhatsApp?.(id)
-      }
+      for (const id of sucesso) onEnvioWhatsApp?.(id)
 
       setLimitesRefreshToken((n) => n + 1)
-      setSelecionados(new Set())
+      setSelecionados((atual) => {
+        const next = new Set(atual)
+        for (const id of sucesso) next.delete(id)
+        return next
+      })
 
       if (enfileirados > 0) {
         toast.success(
           falhas > 0
             ? `${enfileirados} enfileirada(s), ${falhas} ignorada(s) (já enviadas ou inválidas).`
-            : data.message || `${enfileirados} cobrança(s) enfileirada(s).`
+            : `${enfileirados} cobrança(s) enfileirada(s). Os envios seguem em sequência.`
         )
       } else {
-        const detalhe = resumirMotivosIgnorados(data.resultados || [])
+        const detalhe = resumirMotivosIgnorados(motivos)
         toast.error(
           detalhe
             ? `Nenhuma cobrança enfileirada: ${detalhe}`
@@ -402,8 +415,16 @@ export function FaturasPendentesPainel({
       }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Erro ao enviar lote")
+      if (sucesso.size > 0) {
+        setSelecionados((atual) => {
+          const next = new Set(atual)
+          for (const id of sucesso) next.delete(id)
+          return next
+        })
+      }
     } finally {
       setEnviandoLote(false)
+      setProgressoLote(null)
     }
   }
 
@@ -628,7 +649,9 @@ export function FaturasPendentesPainel({
                 <Send className="h-3.5 w-3.5 mr-1.5" />
               )}
               {enviandoLote
-                ? "Enfileirando…"
+                ? progressoLote
+                  ? `Enviando ${progressoLote.feitos.toLocaleString("pt-BR")} de ${progressoLote.total.toLocaleString("pt-BR")}`
+                  : "Enfileirando…"
                 : qtdSelecionados > 0
                   ? `Envio direto (${qtdSelecionados})`
                   : "Envio direto em lote"}
@@ -658,6 +681,41 @@ export function FaturasPendentesPainel({
           </Button>
         </div>
       </div>
+      {whatsappModoTwilio && enviandoLote && progressoLote ? (
+        <div
+          className="border-b border-emerald-200 bg-emerald-50/90 px-5 py-4"
+          role="status"
+          aria-live="polite"
+          aria-busy="true"
+        >
+          <div className="flex items-center gap-4">
+            <div className="loading-corporate shrink-0" aria-hidden />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold text-slate-800">Enviando cobranças da aba</p>
+              <p className="mt-0.5 text-xs text-slate-600">
+                {progressoLote.feitos.toLocaleString("pt-BR")} de{" "}
+                {progressoLote.total.toLocaleString("pt-BR")} faturas. O envio segue sozinho até o fim da seleção.
+              </p>
+              <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-emerald-100">
+                <div
+                  className="h-full rounded-full bg-emerald-600 transition-[width] duration-300 ease-out"
+                  style={{
+                    width: `${Math.min(100, Math.round((progressoLote.feitos / Math.max(progressoLote.total, 1)) * 100))}%`,
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : whatsappModoTwilio && totalPaginas > 1 ? (
+        <p className="border-b border-slate-100 bg-slate-50/80 px-5 py-2 text-xs text-slate-500">
+          A caixa marca todas as faturas elegíveis desta aba (
+          <span className="font-medium tabular-nums text-slate-700">
+            {elegiveisAba.length.toLocaleString("pt-BR")}
+          </span>
+          ), em todas as páginas.
+        </p>
+      ) : null}
       <div className="overflow-x-auto">
         <table className="min-w-full text-sm">
           <thead>
@@ -666,15 +724,11 @@ export function FaturasPendentesPainel({
                 <th className="w-10 px-3 py-3">
                   <Checkbox
                     checked={
-                      todosSelecionadosPagina
-                        ? true
-                        : algunsSelecionadosPagina
-                          ? "indeterminate"
-                          : false
+                      todosSelecionadosAba ? true : algunsSelecionadosAba ? "indeterminate" : false
                     }
-                    disabled={elegiveisPagina.length === 0 || enviandoLote}
-                    aria-label="Selecionar todas as faturas elegíveis desta página"
-                    onCheckedChange={(v) => selecionarPaginaInteira(v === true)}
+                    disabled={elegiveisAba.length === 0 || enviandoLote}
+                    aria-label="Selecionar todas as faturas elegíveis desta aba"
+                    onCheckedChange={(v) => selecionarAbaInteira(v === true)}
                   />
                 </th>
               ) : null}

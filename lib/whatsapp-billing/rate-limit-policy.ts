@@ -15,7 +15,15 @@ export const WHATSAPP_CRON_PAGE_SIZE = 100
 export const WHATSAPP_CRON_FATURAS_POR_LOTE = 100
 
 /** Catch-up: faturas enfileiradas por evento em um run (todos os lembretes). */
-export const WHATSAPP_CATCHUP_FATURAS_POR_LOTE = 150
+export const WHATSAPP_CATCHUP_FATURAS_POR_LOTE = 100
+
+/** Cada rodada do catch-up para no orçamento e a próxima continua de onde ficou. */
+export const WHATSAPP_CATCHUP_TIME_BUDGET_MS = Number(
+  process.env.WHATSAPP_CATCHUP_TIME_BUDGET_MS || process.env.WHATSAPP_CRON_TIME_BUDGET_MS || 22_000
+)
+
+/** Reenvia o mesmo lembrete nos dias seguintes se a tentativa do dia falhou ou não saiu. */
+export const WHATSAPP_LEMBRETE_FOLGA_DIAS = 2
 
 /** Orçamento de tempo do cron paginado (Netlify ~26s; Vercel até 300s). */
 export const WHATSAPP_CRON_TIME_BUDGET_MS = Number(

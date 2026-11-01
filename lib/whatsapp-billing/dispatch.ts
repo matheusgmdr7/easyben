@@ -166,9 +166,16 @@ export async function dispararNotificacaoWhatsApp(
   })
   const variaveis = mapearParaContentVariablesTwilio(variaveisInternas, variaveisMap)
 
+  const statusExistente = String(existente?.status || "")
+  const reenvioDeFalha =
+    Boolean(existente) &&
+    (statusExistente === "failed" ||
+      statusExistente === "failed_permanent" ||
+      statusExistente === "undelivered")
   const suffix =
     options?.idempotencySuffix ||
     (options?.somenteRetentativa ? "tarde" : undefined) ||
+    (reenvioDeFalha ? `retry-${Date.now()}` : undefined) ||
     (options?.ignorarAutomatico && existente ? `manual-${Date.now()}` : undefined)
   const jobId = idempotencyKeyBase + (suffix ? `:${suffix}` : "")
 
@@ -413,6 +420,8 @@ export async function dispararLembreteFatura(
     delayMs?: number
     somenteRetentativa?: boolean
     ctx?: LembreteDispatchCache
+    /** Já resolvido em lote; evita uma consulta por fatura. */
+    telefoneResolvido?: string
   }
 ): Promise<{ enqueued: boolean; reason?: string }> {
   const administradoraNome = await carregarNomeAdministradoraCached(
@@ -428,12 +437,14 @@ export async function dispararLembreteFatura(
   }
 
   const telefone =
-    (await carregarTelefoneAtualClienteCobranca({
-      administradoraId: fatura.administradora_id,
-      clienteAdministradoraId: fatura.cliente_administradora_id,
-      telefoneFatura: fatura.cliente_telefone,
-      tenantId,
-    })) || ""
+    options?.telefoneResolvido !== undefined
+      ? options.telefoneResolvido
+      : (await carregarTelefoneAtualClienteCobranca({
+          administradoraId: fatura.administradora_id,
+          clienteAdministradoraId: fatura.cliente_administradora_id,
+          telefoneFatura: fatura.cliente_telefone,
+          tenantId,
+        })) || ""
 
   return dispararNotificacaoWhatsApp(
     {

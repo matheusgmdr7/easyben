@@ -16,6 +16,12 @@ export type ReenfileirarFalhasOptions = {
   errorCodes?: string[]
   /** Processa primeiro estes eventos (ex.: D0, D-1). */
   eventTypesPrioritarios?: string[]
+  /** Restringe aos clientes deste ciclo (ex.: boletos de novembro). */
+  clienteIds?: string[]
+  /** Restringe às faturas deste ciclo, para não reenviar boleto de outro mês. */
+  faturaIds?: string[]
+  /** Não reenfileira quem já estourou esta quantidade de tentativas. */
+  maxTentativas?: number
   /** Exclui estes event_types (segunda passagem do recovery). */
   excluirEventTypes?: string[]
   dryRun?: boolean
@@ -80,6 +86,15 @@ export async function reenfileirarMensagensWhatsAppFalhas(
 
   if (options.eventTypesPrioritarios?.length) {
     query = query.in("event_type", options.eventTypesPrioritarios)
+  }
+  if (options.clienteIds?.length) {
+    query = query.in("cliente_administradora_id", options.clienteIds)
+  }
+  if (options.faturaIds?.length) {
+    query = query.in("fatura_id", options.faturaIds)
+  }
+  if (options.maxTentativas && options.maxTentativas > 0) {
+    query = query.lt("attempt_count", options.maxTentativas)
   }
   if (options.excluirEventTypes?.length) {
     for (const et of options.excluirEventTypes) {

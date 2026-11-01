@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "@/lib/supabase-admin"
+import { carregarTelefonesCobrancaEmLote } from "@/lib/telefone-cliente-cobranca"
 import {
   criarLembreteDispatchCache,
   dispararLembreteFatura,
@@ -6,6 +7,7 @@ import {
   type LembreteDispatchCache,
 } from "./dispatch"
 import { montarIdempotencyKey } from "./idempotency"
+import { dataComOffset } from "./reminder-rules"
 import { WHATSAPP_LEMBRETE_STAGGER_MS } from "./rate-limit-policy"
 import type { WhatsAppBillingEventType } from "./event-types"
 
@@ -50,6 +52,8 @@ export type ProcessarPendentesParams = {
   /** Na janela da tarde: só reenvia quem já tentou e falhou (não quem nunca tentou). */
   somenteRetentativa?: boolean
   staggerInicial?: number
+  /** Interrompe a leva quando o cron está no fim do orçamento de tempo. */
+  deadlineMs?: number
 }
 
 export type ProcessarPendentesResultado = {
@@ -74,89 +78,128 @@ export async function processarLembretesPendentes(
   let pendentesRestantes = 0
   let stagger = params.staggerInicial ?? 0
 
-  const { data: faturas, error } = await supabaseAdmin
-    .from("faturas")
-    .select(FATURA_SELECT)
-    .eq("administradora_id", params.administradoraId)
-    .eq("vencimento", params.vencimentoAlvo)
-    .in("status", ["pendente", "atrasada", "vencida"])
-    .order("id", { ascending: true })
-    .limit(3000)
+  const fimVencimento = dataComOffset(params.vencimentoAlvo, 1)
+  const PAGE = 200
+  let from = 0
+  let parouNoPrazo = false
 
-  if (error) {
-    throw new Error(`Erro ao buscar faturas pendentes: ${error.message}`)
-  }
+  for (;;) {
+    if (params.deadlineMs && Date.now() >= params.deadlineMs) {
+      parouNoPrazo = true
+      break
+    }
+    if (enfileirados >= params.maxEnfileirar) break
 
-  const lista = (faturas || []) as FaturaLembreteRow[]
-  const ids = lista.map((f) => String(f.id))
-  const jaEnviadas = await faturasComEnvioSucesso(params.eventType, params.referenceDate, ids)
+    const { data: faturas, error } = await supabaseAdmin
+      .from("faturas")
+      .select(FATURA_SELECT)
+      .eq("administradora_id", params.administradoraId)
+      .gte("vencimento", params.vencimentoAlvo)
+      .lt("vencimento", fimVencimento)
+      .in("status", ["pendente", "atrasada", "vencida"])
+      .order("id", { ascending: true })
+      .range(from, from + PAGE - 1)
 
-  for (const row of lista) {
-    const faturaId = String(row.id)
-
-    if (!row.cliente_administradora_id) {
-      ignorados++
-      registrarMotivo(motivos, "sem_cliente_vinculado")
-      continue
+    if (error) {
+      throw new Error(`Erro ao buscar faturas pendentes: ${error.message}`)
     }
 
-    if (jaEnviadas.has(faturaId)) {
-      ignorados++
-      registrarMotivo(motivos, "ja_enviado")
-      continue
-    }
+    const lista = (faturas || []) as FaturaLembreteRow[]
+    if (!lista.length) break
 
-    if (params.somenteRetentativa) {
-      const idempotencyKey = montarIdempotencyKey({
-        eventType: params.eventType,
-        clienteId: row.cliente_administradora_id,
-        referenceDate: params.referenceDate,
-        faturaId: row.id,
-      })
-      const { data: tentativa } = await supabaseAdmin
-        .from("whatsapp_messages")
-        .select("status")
-        .eq("idempotency_key", idempotencyKey)
-        .maybeSingle()
+    const ids = lista.map((f) => String(f.id))
+    const jaEnviadas = await faturasComEnvioSucesso(params.eventType, params.referenceDate, ids)
+    const candidatos: FaturaLembreteRow[] = []
 
-      if (!tentativa) {
+    for (const row of lista) {
+      const faturaId = String(row.id)
+      if (!row.cliente_administradora_id) {
         ignorados++
-        registrarMotivo(motivos, "nao_tentado_manha")
+        registrarMotivo(motivos, "sem_cliente_vinculado")
         continue
       }
-      if (STATUS_SUCESSO_LEMBRETE.has(String(tentativa.status))) {
+      if (jaEnviadas.has(faturaId)) {
         ignorados++
         registrarMotivo(motivos, "ja_enviado")
         continue
       }
-    }
-
-    if (enfileirados >= params.maxEnfileirar) {
-      pendentesRestantes++
-      continue
-    }
-
-    try {
-      const delayMs = stagger * WHATSAPP_LEMBRETE_STAGGER_MS
-      stagger++
-
-      const result = await dispararLembreteFatura(row, params.eventType, {
-        delayMs,
-        somenteRetentativa: params.somenteRetentativa,
-        ctx,
-      })
-
-      if (result.enqueued) {
-        enfileirados++
-      } else {
-        ignorados++
-        registrarMotivo(motivos, result.reason)
+      if (params.somenteRetentativa) {
+        const idempotencyKey = montarIdempotencyKey({
+          eventType: params.eventType,
+          clienteId: row.cliente_administradora_id,
+          referenceDate: params.referenceDate,
+          faturaId: row.id,
+        })
+        const { data: tentativa } = await supabaseAdmin
+          .from("whatsapp_messages")
+          .select("status")
+          .eq("idempotency_key", idempotencyKey)
+          .maybeSingle()
+        if (!tentativa) {
+          ignorados++
+          registrarMotivo(motivos, "nao_tentado_manha")
+          continue
+        }
+        if (STATUS_SUCESSO_LEMBRETE.has(String(tentativa.status))) {
+          ignorados++
+          registrarMotivo(motivos, "ja_enviado")
+          continue
+        }
       }
-    } catch {
-      ignorados++
-      registrarMotivo(motivos, "erro_dispatch")
+      candidatos.push(row)
     }
+
+    const vaga = params.maxEnfileirar - enfileirados
+    const leva = candidatos.slice(0, vaga)
+    if (candidatos.length > leva.length) pendentesRestantes += candidatos.length - leva.length
+
+    let tenantId = ctx.tenantId.get(params.administradoraId)
+    if (!tenantId) {
+      const { resolveTenantIdForAdministradora } = await import("@/lib/resolve-tenant-administradora")
+      tenantId = await resolveTenantIdForAdministradora(params.administradoraId)
+      ctx.tenantId.set(params.administradoraId, tenantId)
+    }
+    const telefones = await carregarTelefonesCobrancaEmLote({
+      administradoraId: params.administradoraId,
+      tenantId,
+      clientes: leva.map((row) => ({
+        clienteAdministradoraId: row.cliente_administradora_id,
+        telefoneFatura: row.cliente_telefone,
+      })),
+    })
+
+    for (const row of leva) {
+      if (params.deadlineMs && Date.now() >= params.deadlineMs) {
+        parouNoPrazo = true
+        pendentesRestantes++
+        continue
+      }
+      try {
+        const delayMs = stagger * WHATSAPP_LEMBRETE_STAGGER_MS
+        stagger++
+        const result = await dispararLembreteFatura(row, params.eventType, {
+          delayMs,
+          somenteRetentativa: params.somenteRetentativa,
+          ctx,
+          telefoneResolvido: telefones.get(row.cliente_administradora_id) || "",
+        })
+        if (result.enqueued) enfileirados++
+        else {
+          ignorados++
+          registrarMotivo(motivos, result.reason)
+        }
+      } catch {
+        ignorados++
+        registrarMotivo(motivos, "erro_dispatch")
+      }
+    }
+
+    if (parouNoPrazo || lista.length < PAGE) break
+    from += PAGE
+    if (from > 20_000) break
   }
+
+  if (parouNoPrazo) pendentesRestantes = Math.max(pendentesRestantes, 1)
 
   return {
     enfileirados,

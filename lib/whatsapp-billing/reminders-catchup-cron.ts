@@ -1,8 +1,12 @@
 import { supabaseAdmin } from "@/lib/supabase-admin"
 import { criarLembreteDispatchCache } from "./dispatch"
 import { whatsappBillingLog } from "./logger"
-import { WHATSAPP_CATCHUP_FATURAS_POR_LOTE } from "./rate-limit-policy"
-import { REGRAS_LEMBRETE_COBRANCA, vencimentoAlvoParaEvento } from "./reminder-rules"
+import {
+  WHATSAPP_CATCHUP_FATURAS_POR_LOTE,
+  WHATSAPP_CATCHUP_TIME_BUDGET_MS,
+  WHATSAPP_LEMBRETE_FOLGA_DIAS,
+} from "./rate-limit-policy"
+import { REGRAS_LEMBRETE_COBRANCA, dataComOffset, vencimentoAlvoParaEvento } from "./reminder-rules"
 import { referenceDateHoje } from "./idempotency"
 import { processarLembretesPendentes } from "./reminders-pending"
 import type { WhatsAppBillingEventType } from "./event-types"
@@ -50,9 +54,12 @@ function regrasCatchupOrdenadas() {
 export async function executarCronCatchupLembretesVencimento(options?: {
   hoje?: string
   maxPorEvento?: number
+  timeBudgetMs?: number
 }): Promise<ResultadoCatchupLembretes> {
+  const inicioMs = Date.now()
   const hoje = options?.hoje || referenceDateHoje()
   const maxPorEvento = options?.maxPorEvento ?? WHATSAPP_CATCHUP_FATURAS_POR_LOTE
+  const deadlineMs = inicioMs + (options?.timeBudgetMs ?? WHATSAPP_CATCHUP_TIME_BUDGET_MS)
   const ctx = criarLembreteDispatchCache()
 
   let totalEnfileirados = 0
@@ -66,35 +73,44 @@ export async function executarCronCatchupLembretesVencimento(options?: {
     .eq("whatsapp_automatico_ativo", true)
 
   for (const regra of regrasCatchupOrdenadas()) {
-    const vencimentoAlvo = vencimentoAlvoParaEvento(regra.dayOffset, hoje)
+    if (Date.now() >= deadlineMs) break
+
     let enfileiradosEvento = 0
     let ignoradosEvento = 0
     let pendentesEvento = 0
     const motivosEvento: Record<string, number> = {}
+    let vencimentoAlvo = vencimentoAlvoParaEvento(regra.dayOffset, hoje)
 
-    for (const settings of settingsRows || []) {
-      if (enfileiradosEvento >= maxPorEvento) break
+    for (let folga = 0; folga <= WHATSAPP_LEMBRETE_FOLGA_DIAS; folga++) {
+      if (Date.now() >= deadlineMs || enfileiradosEvento >= maxPorEvento) break
+      const dia = dataComOffset(hoje, -folga)
+      vencimentoAlvo = vencimentoAlvoParaEvento(regra.dayOffset, dia)
 
-      const admId = String(settings.administradora_id)
-      if (!eventoAtivo(settings, regra.eventType)) continue
+      for (const settings of settingsRows || []) {
+        if (Date.now() >= deadlineMs || enfileiradosEvento >= maxPorEvento) break
+        const admId = String(settings.administradora_id)
+        if (!eventoAtivo(settings, regra.eventType)) continue
 
-      const restante = maxPorEvento - enfileiradosEvento
-      const resultado = await processarLembretesPendentes({
-        administradoraId: admId,
-        eventType: regra.eventType,
-        vencimentoAlvo,
-        referenceDate: hoje,
-        maxEnfileirar: restante,
-        ctx,
-      })
+        const resultado = await processarLembretesPendentes({
+          administradoraId: admId,
+          eventType: regra.eventType,
+          vencimentoAlvo,
+          referenceDate: dia,
+          maxEnfileirar: maxPorEvento - enfileiradosEvento,
+          ctx,
+          deadlineMs,
+        })
 
-      enfileiradosEvento += resultado.enfileirados
-      ignoradosEvento += resultado.ignorados
-      pendentesEvento += resultado.pendentes_restantes
+        enfileiradosEvento += resultado.enfileirados
+        ignoradosEvento += resultado.ignorados
+        pendentesEvento += resultado.pendentes_restantes
 
-      for (const [k, v] of Object.entries(resultado.motivos_ignorados)) {
-        motivosEvento[k] = (motivosEvento[k] || 0) + v
+        for (const [k, v] of Object.entries(resultado.motivos_ignorados)) {
+          motivosEvento[k] = (motivosEvento[k] || 0) + v
+        }
       }
+
+      if (folga === 0 && pendentesEvento > 0) break
     }
 
     totalEnfileirados += enfileiradosEvento

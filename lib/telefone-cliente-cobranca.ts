@@ -95,3 +95,65 @@ export async function carregarTelefoneAtualClienteCobranca(params: {
     telefoneFatura
   )
 }
+
+/** Telefones de vários clientes numa leva — mesma ordem da busca individual. */
+export async function carregarTelefonesCobrancaEmLote(params: {
+  administradoraId: string
+  tenantId?: string | null
+  clientes: Array<{ clienteAdministradoraId: string; telefoneFatura?: string | null }>
+}): Promise<Map<string, string>> {
+  const porCliente = new Map<string, string | null>()
+  for (const c of params.clientes) {
+    const id = String(c.clienteAdministradoraId || "").trim()
+    if (!id || porCliente.has(id)) continue
+    porCliente.set(id, c.telefoneFatura ?? null)
+  }
+  const ids = Array.from(porCliente.keys())
+  const telVida = new Map<string, string>()
+  const telCadastro = new Map<string, string>()
+
+  for (let i = 0; i < ids.length; i += 200) {
+    const lote = ids.slice(i, i + 200)
+    let query = supabaseAdmin
+      .from("vidas_importadas")
+      .select("cliente_administradora_id, telefones, dados_adicionais, tipo")
+      .eq("administradora_id", params.administradoraId)
+      .in("cliente_administradora_id", lote)
+    if (params.tenantId) {
+      query = query.or(`tenant_id.eq.${params.tenantId},tenant_id.is.null`)
+    }
+    const { data: vidas } = await query
+    const titular = new Set<string>()
+    for (const vida of vidas || []) {
+      const clienteId = String((vida as { cliente_administradora_id?: string }).cliente_administradora_id || "").trim()
+      if (!clienteId || titular.has(clienteId)) continue
+      const tel = primeiroTelefoneDeVida(vida as Record<string, unknown>)
+      if (!tel) continue
+      const ehTitular = String((vida as { tipo?: string }).tipo || "").toLowerCase() === "titular"
+      if (ehTitular) {
+        telVida.set(clienteId, tel)
+        titular.add(clienteId)
+      } else if (!telVida.has(clienteId)) {
+        telVida.set(clienteId, tel)
+      }
+    }
+
+    const { data: cadastros } = await supabaseAdmin
+      .from("vw_clientes_administradoras_completo")
+      .select("id, cliente_telefone")
+      .eq("administradora_id", params.administradoraId)
+      .in("id", lote)
+    for (const row of cadastros || []) {
+      const id = String((row as { id?: string }).id || "").trim()
+      const tel = (row as { cliente_telefone?: string | null }).cliente_telefone
+      if (id && tel) telCadastro.set(id, tel)
+    }
+  }
+
+  const resolvidos = new Map<string, string>()
+  for (const [id, telefoneFatura] of porCliente) {
+    const tel = resolverTelefoneClienteCobranca(telVida.get(id), telCadastro.get(id), telefoneFatura)
+    if (tel) resolvidos.set(id, tel)
+  }
+  return resolvidos
+}
