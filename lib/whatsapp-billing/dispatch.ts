@@ -108,6 +108,8 @@ export async function dispararNotificacaoWhatsApp(
     idempotencySuffix?: string
     /** Na janela da tarde: só reenvia se a manhã falhou ou não registrou envio. */
     somenteRetentativa?: boolean
+    /** Painel de cobertura: ignora a trava do automático e não duplica quem já está na fila. */
+    envioOperador?: boolean
     ctx?: LembreteDispatchCache
   }
 ): Promise<{ enqueued: boolean; reason?: string; jobId?: string }> {
@@ -124,7 +126,7 @@ export async function dispararNotificacaoWhatsApp(
     options?.ctx?.settings.set(params.administradoraId, settings)
   }
 
-  if (!options?.ignorarAutomatico && !eventoAtivo(settings, params.eventType)) {
+  if (!options?.ignorarAutomatico && !options?.envioOperador && !eventoAtivo(settings, params.eventType)) {
     return { enqueued: false, reason: "evento_desativado" }
   }
 
@@ -147,11 +149,11 @@ export async function dispararNotificacaoWhatsApp(
     .eq("idempotency_key", idempotencyKeyBase)
     .maybeSingle()
 
-  if (
-    existente &&
-    STATUS_SUCESSO_ENVIO.has(String(existente.status)) &&
-    !options?.ignorarAutomatico
-  ) {
+  const statusExistente = String(existente?.status || "")
+  const jaEncaminhado =
+    STATUS_SUCESSO_ENVIO.has(statusExistente) ||
+    (options?.envioOperador && statusExistente === "pending")
+  if (existente && jaEncaminhado && !options?.ignorarAutomatico) {
     return { enqueued: false, reason: "ja_enviado" }
   }
 
@@ -166,7 +168,6 @@ export async function dispararNotificacaoWhatsApp(
   })
   const variaveis = mapearParaContentVariablesTwilio(variaveisInternas, variaveisMap)
 
-  const statusExistente = String(existente?.status || "")
   const reenvioDeFalha =
     Boolean(existente) &&
     (statusExistente === "failed" ||
@@ -201,6 +202,9 @@ export async function dispararNotificacaoWhatsApp(
     const message = err instanceof Error ? err.message : String(err)
     if (message.includes("Redis não configurado") || message.includes("max requests")) {
       return { enqueued: false, reason: "fila_indisponivel" }
+    }
+    if (/already exists|job.?id/i.test(message)) {
+      return { enqueued: false, reason: "ja_na_fila" }
     }
     throw err
   }
@@ -419,6 +423,8 @@ export async function dispararLembreteFatura(
     ignorarAutomatico?: boolean
     delayMs?: number
     somenteRetentativa?: boolean
+    referenceDate?: string
+    envioOperador?: boolean
     ctx?: LembreteDispatchCache
     /** Já resolvido em lote; evita uma consulta por fatura. */
     telefoneResolvido?: string
@@ -454,6 +460,7 @@ export async function dispararLembreteFatura(
       telefone,
       faturaId: fatura.id,
       delayMs: options?.delayMs,
+      referenceDate: options?.referenceDate,
       dados: {
         clienteNome: String(fatura.cliente_nome || "Cliente"),
         administradoraNome,
@@ -466,6 +473,7 @@ export async function dispararLembreteFatura(
     {
       ...(options?.ignorarAutomatico ? { ignorarAutomatico: true } : {}),
       ...(options?.somenteRetentativa ? { somenteRetentativa: true } : {}),
+      ...(options?.envioOperador ? { envioOperador: true } : {}),
       ctx: options?.ctx,
     }
   )
