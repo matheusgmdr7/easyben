@@ -17,7 +17,16 @@ import {
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Loader2 } from "lucide-react"
+
+type DependenteReativacaoPreview = {
+  id: string
+  nome?: string | null
+  tipo?: "titular" | "dependente"
+  valor_mensal?: number | null
+  cpf?: string | null
+}
 
 type RegistroCancelamento = {
   id: string
@@ -124,6 +133,10 @@ export default function BeneficiariosCanceladosPage() {
   const [salvandoReativacao, setSalvandoReativacao] = useState(false)
   const [processamentoLoteOpen, setProcessamentoLoteOpen] = useState(false)
   const [reativacaoLoteOpen, setReativacaoLoteOpen] = useState(false)
+  const [depsReativacaoPreview, setDepsReativacaoPreview] = useState<DependenteReativacaoPreview[]>([])
+  const [carregandoDepsReativacao, setCarregandoDepsReativacao] = useState(false)
+  const [reativarDependentesJunto, setReativarDependentesJunto] = useState(true)
+  const [reativarDependentesLote, setReativarDependentesLote] = useState(true)
 
   useEffect(() => {
     const adm = getAdministradoraLogada()
@@ -500,6 +513,44 @@ export default function BeneficiariosCanceladosPage() {
     }
   }
 
+  function fecharDialogReativacao() {
+    setRegistroReativar(null)
+    setGrupoDestinoId("")
+    setObsReativacao("")
+    setDepsReativacaoPreview([])
+    setReativarDependentesJunto(true)
+  }
+
+  async function abrirReativacao(registro: RegistroCancelamento) {
+    setRegistroReativar(registro)
+    setGrupoDestinoId(registro.grupo_origem?.id || "")
+    setObsReativacao("")
+    setDepsReativacaoPreview([])
+    setReativarDependentesJunto(true)
+    if (!administradoraId || registro.tipo_registro !== "titular") return
+    try {
+      setCarregandoDepsReativacao(true)
+      const res = await fetch("/api/administradora/beneficiarios/cancelamentos/reativar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          administradora_id: administradoraId,
+          cancelamento_id: registro.id,
+          preview: true,
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data?.error || "Erro ao consultar dependentes")
+      const deps = Array.isArray(data?.dependentes_vinculados) ? data.dependentes_vinculados : []
+      setDepsReativacaoPreview(deps)
+      setReativarDependentesJunto(deps.length > 0)
+    } catch (e: any) {
+      toast.error(e?.message || "Não foi possível verificar dependentes vinculados")
+    } finally {
+      setCarregandoDepsReativacao(false)
+    }
+  }
+
   async function reativarBeneficiario() {
     if (!administradoraId || !registroReativar?.id || !grupoDestinoId) {
       toast.error("Selecione o grupo de destino.")
@@ -507,6 +558,7 @@ export default function BeneficiariosCanceladosPage() {
     }
     try {
       setSalvandoReativacao(true)
+      const temDeps = depsReativacaoPreview.length > 0 && registroReativar.tipo_registro === "titular"
       const res = await fetch("/api/administradora/beneficiarios/cancelamentos/reativar", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -515,14 +567,22 @@ export default function BeneficiariosCanceladosPage() {
           cancelamento_id: registroReativar.id,
           grupo_destino_id: grupoDestinoId,
           observacao_reativacao: obsReativacao || undefined,
+          ...(temDeps
+            ? reativarDependentesJunto
+              ? { reativar_dependentes: true }
+              : { somente_titular: true }
+            : {}),
         }),
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data?.error || "Erro ao reativar beneficiário")
-      toast.success("Beneficiário reativado com sucesso.")
-      setRegistroReativar(null)
-      setGrupoDestinoId("")
-      setObsReativacao("")
+      const qtd = Number(data?.vidas_reativadas || 1)
+      toast.success(
+        qtd > 1
+          ? `Titular e ${qtd - 1} dependente(s) reativados com sucesso.`
+          : "Beneficiário reativado com sucesso."
+      )
+      fecharDialogReativacao()
       await carregar()
     } catch (e: any) {
       toast.error(e?.message || "Erro ao reativar beneficiário")
@@ -548,6 +608,11 @@ export default function BeneficiariosCanceladosPage() {
               cancelamento_id: r.id,
               grupo_destino_id: grupoDestinoId,
               observacao_reativacao: obsReativacao || undefined,
+              ...(r.tipo_registro === "titular"
+                ? reativarDependentesLote
+                  ? { reativar_dependentes: true }
+                  : { somente_titular: true }
+                : {}),
             }),
           }).then(async (res) => {
             const data = await res.json().catch(() => ({}))
@@ -558,10 +623,18 @@ export default function BeneficiariosCanceladosPage() {
       )
       const sucesso = resultados.filter((r) => r.status === "fulfilled").length
       const erro = resultados.length - sucesso
-      toast.success(`${sucesso} registro(s) reativado(s)${erro > 0 ? ` | ${erro} com erro` : ""}.`)
+      const vidasExtra = resultados
+        .filter((r): r is PromiseFulfilledResult<any> => r.status === "fulfilled")
+        .reduce((acc, r) => acc + Math.max(0, Number(r.value?.vidas_reativadas || 1) - 1), 0)
+      toast.success(
+        `${sucesso} registro(s) reativado(s)${vidasExtra > 0 ? ` (+${vidasExtra} dependente(s))` : ""}${
+          erro > 0 ? ` | ${erro} com erro` : ""
+        }.`
+      )
       setReativacaoLoteOpen(false)
       setGrupoDestinoId("")
       setObsReativacao("")
+      setReativarDependentesLote(true)
       setSelecionados(new Set())
       await carregar()
     } catch (e: any) {
@@ -794,14 +867,7 @@ export default function BeneficiariosCanceladosPage() {
                             </Button>
                           )}
                           {r.status_fluxo !== "reativado" && (
-                            <Button
-                              size="sm"
-                              onClick={() => {
-                                setRegistroReativar(r)
-                                setGrupoDestinoId(r.grupo_origem?.id || "")
-                                setObsReativacao("")
-                              }}
-                            >
+                            <Button size="sm" onClick={() => void abrirReativacao(r)}>
                               Reativar
                             </Button>
                           )}
@@ -900,14 +966,19 @@ export default function BeneficiariosCanceladosPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!registroReativar} onOpenChange={(open) => !open && setRegistroReativar(null)}>
-        <DialogContent className="sm:max-w-md">
+      <Dialog open={!!registroReativar} onOpenChange={(open) => !open && fecharDialogReativacao()}>
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Reativar beneficiário</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 py-2">
             <p className="text-sm text-gray-600">
               Beneficiário: <span className="font-medium text-gray-900">{registroReativar?.vida?.nome || "—"}</span>
+              {registroReativar?.tipo_registro === "titular" ? (
+                <span className="ml-1 text-xs text-gray-500">(titular)</span>
+              ) : (
+                <span className="ml-1 text-xs text-gray-500">(dependente)</span>
+              )}
             </p>
             <div>
               <Label>Grupo de destino *</Label>
@@ -924,13 +995,51 @@ export default function BeneficiariosCanceladosPage() {
                 </SelectContent>
               </Select>
             </div>
+            {registroReativar?.tipo_registro === "titular" && (
+              <div className="rounded-md border border-amber-200 bg-amber-50 p-3 space-y-2">
+                {carregandoDepsReativacao ? (
+                  <p className="text-sm text-amber-900 flex items-center gap-2">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    Verificando dependentes vinculados...
+                  </p>
+                ) : depsReativacaoPreview.length > 0 ? (
+                  <>
+                    <p className="text-sm text-amber-900">
+                      Foram encontrados <strong>{depsReativacaoPreview.length}</strong> dependente(s)
+                      ainda inativo(s) vinculados a este titular. Sem reativá-los, o boleto usará só o
+                      valor do titular.
+                    </p>
+                    <ul className="text-xs text-amber-900/90 list-disc pl-4 max-h-28 overflow-auto space-y-0.5">
+                      {depsReativacaoPreview.map((d) => (
+                        <li key={d.id}>
+                          {d.nome || "Dependente"}
+                          {d.valor_mensal != null ? ` — ${formatarMoeda(d.valor_mensal)}` : ""}
+                        </li>
+                      ))}
+                    </ul>
+                    <label className="flex items-start gap-2 text-sm text-amber-950 cursor-pointer">
+                      <Checkbox
+                        checked={reativarDependentesJunto}
+                        onCheckedChange={(v) => setReativarDependentesJunto(v === true)}
+                        className="mt-0.5"
+                      />
+                      <span>Reativar também os dependentes listados (recomendado)</span>
+                    </label>
+                  </>
+                ) : (
+                  <p className="text-sm text-amber-900">
+                    Nenhum dependente inativo vinculado foi encontrado para este titular.
+                  </p>
+                )}
+              </div>
+            )}
             <div>
               <Label>Observação (opcional)</Label>
               <Input value={obsReativacao} onChange={(e) => setObsReativacao(e.target.value)} className="mt-1.5" />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setRegistroReativar(null)} disabled={salvandoReativacao}>
+            <Button variant="outline" onClick={fecharDialogReativacao} disabled={salvandoReativacao}>
               Cancelar
             </Button>
             <Button onClick={reativarBeneficiario} disabled={salvandoReativacao || !grupoDestinoId}>
@@ -939,6 +1048,8 @@ export default function BeneficiariosCanceladosPage() {
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                   Reativando...
                 </>
+              ) : depsReativacaoPreview.length > 0 && reativarDependentesJunto ? (
+                "Reativar titular + dependentes"
               ) : (
                 "Confirmar reativação"
               )}
@@ -1007,6 +1118,19 @@ export default function BeneficiariosCanceladosPage() {
                 </SelectContent>
               </Select>
             </div>
+            {selecionadosReativaveis.some((r) => r.tipo_registro === "titular") && (
+              <label className="flex items-start gap-2 text-sm text-gray-800 cursor-pointer rounded-md border border-amber-200 bg-amber-50 p-3">
+                <Checkbox
+                  checked={reativarDependentesLote}
+                  onCheckedChange={(v) => setReativarDependentesLote(v === true)}
+                  className="mt-0.5"
+                />
+                <span>
+                  Para titulares selecionados, reativar também os dependentes vinculados ainda
+                  inativos (recomendado para o boleto sair com valor completo).
+                </span>
+              </label>
+            )}
             <div>
               <Label>Observação (opcional)</Label>
               <Input value={obsReativacao} onChange={(e) => setObsReativacao(e.target.value)} className="mt-1.5" />

@@ -78,6 +78,85 @@ async function limparAsaasCustomerIdSalvo(clienteAdministradoraId: string, tenan
     .eq("tenant_id", tenantId)
 }
 
+type DependenteValor = { nome: string; valor_mensal: number }
+
+/**
+ * Dependentes ATIVOS vinculados ao CPF do titular (só entram no boleto se ativos).
+ * Prefere o mesmo grupo; se não houver, usa ativos do mesmo CPF na administradora.
+ */
+async function buscarDependentesValorFamiliar(params: {
+  administradoraId: string
+  tenantId: string
+  cpfTitularDigitos: string
+  grupoIdPreferencial?: string | null
+}): Promise<DependenteValor[]> {
+  const cpf = String(params.cpfTitularDigitos || "").replace(/\D/g, "")
+  if (cpf.length !== 11) return []
+
+  const base = () =>
+    supabaseAdmin
+      .from("vidas_importadas")
+      .select("nome, valor_mensal, cpf_titular, grupo_id, ativo")
+      .eq("administradora_id", params.administradoraId)
+      .eq("tenant_id", params.tenantId)
+      .eq("tipo", "dependente")
+      .neq("ativo", false)
+
+  let { data: deps } = await base().eq("cpf_titular", cpf)
+
+  // Fallback: cpf_titular com máscara no banco
+  if (!deps?.length) {
+    const amplo = await base().limit(5000)
+    deps = (amplo.data || []).filter(
+      (d) => String((d as { cpf_titular?: string }).cpf_titular || "").replace(/\D/g, "") === cpf
+    )
+  }
+
+  const lista = (deps || []) as Array<{
+    nome?: string
+    valor_mensal?: number | null
+    grupo_id?: string | null
+  }>
+
+  const grupoPref = params.grupoIdPreferencial ? String(params.grupoIdPreferencial) : ""
+  const noGrupo = grupoPref ? lista.filter((d) => String(d.grupo_id || "") === grupoPref) : []
+  const escolhidos = noGrupo.length > 0 ? noGrupo : lista
+
+  return escolhidos.map((d) => ({
+    nome: String(d.nome || "").trim(),
+    valor_mensal: Number(d.valor_mensal) || 0,
+  }))
+}
+
+/** Valor base do boleto = titular + dependentes (quando houver vidas importadas). */
+async function resolverValorFamiliarBoleto(params: {
+  administradoraId: string
+  tenantId: string
+  valorTitular: number
+  cpfTitularDigitos: string
+  grupoIdPreferencial?: string | null
+  log: (msg: string, data?: unknown) => void
+}): Promise<{ valorBase: number; dependentesNomes: string[] }> {
+  const deps = await buscarDependentesValorFamiliar({
+    administradoraId: params.administradoraId,
+    tenantId: params.tenantId,
+    cpfTitularDigitos: params.cpfTitularDigitos,
+    grupoIdPreferencial: params.grupoIdPreferencial,
+  })
+  const somaDeps = deps.reduce((acc, d) => acc + (Number(d.valor_mensal) || 0), 0)
+  const valorTitular = Number(params.valorTitular) || 0
+  const valorBase = valorTitular + somaDeps
+  const dependentesNomes = deps.map((d) => d.nome).filter(Boolean)
+  params.log("Valor familiar (titular + dependentes)", {
+    valor_titular: valorTitular,
+    qtd_dependentes: deps.length,
+    soma_dependentes: somaDeps,
+    valor_base: valorBase,
+    dependentes: dependentesNomes,
+  })
+  return { valorBase: valorBase > 0 ? valorBase : valorTitular, dependentesNomes }
+}
+
 /** Se o customer existir mas estiver removido no Asaas, tenta restaurar; senão retorna null. */
 async function validarOuRestaurarCustomerAsaas(
   customerId: string,
@@ -411,21 +490,27 @@ export async function gerarBoletoAdministradora(body: Record<string, unknown>): 
           .maybeSingle()
         if (prod && (prod as any).nome) produtoNome = (prod as any).nome
       }
-      let valorBaseVida = Number(vidaAny.valor_mensal) || 0
-      if (grupoIdVida && cpf) {
-        const { data: deps } = await supabaseAdmin
-          .from("vidas_importadas")
-          .select("nome, valor_mensal")
-          .eq("grupo_id", grupoIdVida)
-          .eq("administradora_id", administradora_id)
-          .eq("tenant_id", tenantId)
-          .eq("tipo", "dependente")
-          .eq("cpf_titular", cpf)
-        if (deps && Array.isArray(deps)) {
-          dependentesNomes = deps.map((d: any) => d.nome || "").filter(Boolean)
-          for (const d of deps) valorBaseVida += Number((d as any).valor_mensal) || 0
-        }
-        if (valorBaseVida > 0) valorTotalBoleto = valorBaseVida + taxaAdministracao
+      // Valor do boleto: titular + dependentes ativos (não exige mesmo grupo — pós-reativação)
+      const valorTitularVida = Number(vidaAny.valor_mensal) || 0
+      if (cpf && valorTitularVida > 0) {
+        const familiar = await resolverValorFamiliarBoleto({
+          administradoraId: String(administradora_id),
+          tenantId,
+          valorTitular: valorTitularVida,
+          cpfTitularDigitos: cpf,
+          grupoIdPreferencial: grupoIdVida,
+          log,
+        })
+        dependentesNomes = familiar.dependentesNomes
+        if (familiar.valorBase > 0) valorTotalBoleto = familiar.valorBase + taxaAdministracao
+      } else if (cpf) {
+        const deps = await buscarDependentesValorFamiliar({
+          administradoraId: String(administradora_id),
+          tenantId,
+          cpfTitularDigitos: cpf,
+          grupoIdPreferencial: grupoIdVida,
+        })
+        dependentesNomes = deps.map((d) => d.nome).filter(Boolean)
       }
       const emls = vidaAny.emails
       if (Array.isArray(emls) && emls[0]) email = String(emls[0])
@@ -451,7 +536,11 @@ export async function gerarBoletoAdministradora(body: Record<string, unknown>): 
           clienteAdm = ca as { id: string; administradora_id: string; proposta_id: string | null }
           idParaFatura = ca.id
           const syncPayload: Record<string, unknown> = {
-            valor_mensal: Number(vidaAny.valor_mensal) || valorNum,
+            // Persiste o valor familiar (titular + deps) quando já calculado; senão o do titular
+            valor_mensal:
+              valorTotalBoleto > taxaAdministracao
+                ? Number((valorTotalBoleto - taxaAdministracao).toFixed(2))
+                : Number(vidaAny.valor_mensal) || valorNum,
           }
           if (diaVencimentoVida) syncPayload.dia_vencimento = diaVencimentoVida
           if (dataVigenciaVida) syncPayload.data_vigencia = dataVigenciaVida
@@ -474,7 +563,10 @@ export async function gerarBoletoAdministradora(body: Record<string, unknown>): 
           data_vencimento: dataVen.toISOString().slice(0, 10),
           dia_vencimento: diaVencimentoVida ?? Number(vencimentoIso.slice(8, 10)),
           data_vigencia: dataVigenciaVida ?? dataVig.toISOString().slice(0, 10),
-          valor_mensal: Number(vidaAny.valor_mensal) || valorNum,
+          valor_mensal:
+            valorTotalBoleto > taxaAdministracao
+              ? Number((valorTotalBoleto - taxaAdministracao).toFixed(2))
+              : Number(vidaAny.valor_mensal) || valorNum,
           status: "ativo",
           corretor_id: vidaAny.corretor_id || null,
         }
@@ -552,17 +644,26 @@ export async function gerarBoletoAdministradora(body: Record<string, unknown>): 
           .single()
         nome = (caNum as any)?.numero_contrato ? `Cliente ${(caNum as any).numero_contrato}` : "Cliente"
       }
-      // Cliente pode ser de vida importada (sem proposta_id): buscar CPF/nome/email/telefone na vida
-      if (!cpf || cpf.length !== 11 || !telefone) {
+      // Cliente pode ser de vida importada (sem proposta_id): buscar CPF/nome/email/telefone + valor familiar
+      {
         const { data: vidaVinculada } = await supabaseAdmin
           .from("vidas_importadas")
-          .select("id, nome, cpf, emails, telefones, dados_adicionais")
+          .select(
+            "id, nome, cpf, emails, telefones, dados_adicionais, valor_mensal, grupo_id, tipo, produto_id"
+          )
           .eq("cliente_administradora_id", cliente_administradora_id)
           .eq("administradora_id", administradora_id)
           .eq("tenant_id", tenantId)
-          .maybeSingle()
-        if (vidaVinculada) {
-          const v = vidaVinculada as Record<string, unknown>
+          .neq("ativo", false)
+          .order("tipo", { ascending: false }) // 'titular' depois de 'dependente' em ASC... preferir titular
+          .limit(5)
+
+        const vidasCa = (vidaVinculada || []) as Array<Record<string, unknown>>
+        const vidaTitular =
+          vidasCa.find((v) => String(v.tipo || "").toLowerCase() === "titular") || vidasCa[0] || null
+
+        if (vidaTitular) {
+          const v = vidaTitular
           if (!nome || nome.startsWith("Cliente ")) nome = (v.nome as string) || nome
           let cpfVida = v.cpf ? String(v.cpf).replace(/\D/g, "") : ""
           if (!cpfVida || cpfVida.length !== 11) {
@@ -583,6 +684,46 @@ export async function gerarBoletoAdministradora(body: Record<string, unknown>): 
           if (!telefone) {
             const t = extrairTelefoneBeneficiario(v.telefones, v.dados_adicionais)
             if (t) telefone = t
+          }
+          if (!produtoNome && v.produto_id) {
+            const { data: prod } = await supabaseAdmin
+              .from("produtos_contrato_administradora")
+              .select("nome")
+              .eq("id", v.produto_id)
+              .maybeSingle()
+            if (prod && (prod as { nome?: string }).nome) produtoNome = (prod as { nome: string }).nome
+          }
+
+          // Fonte de verdade: valor_mensal do titular na vida + dependentes ativos.
+          // Só recalcula quando o titular tem valor_mensal na vida (evita somar deps em cima de body já familiar).
+          const valorTitularVida = Number(v.valor_mensal) || 0
+          if (cpf && cpf.length === 11 && valorTitularVida > 0) {
+            const familiar = await resolverValorFamiliarBoleto({
+              administradoraId: String(administradora_id),
+              tenantId,
+              valorTitular: valorTitularVida,
+              cpfTitularDigitos: cpf,
+              grupoIdPreferencial: (v.grupo_id as string) || null,
+              log,
+            })
+            dependentesNomes = familiar.dependentesNomes
+            if (familiar.valorBase > 0) {
+              valorTotalBoleto = familiar.valorBase + taxaAdministracao
+              await supabaseAdmin
+                .from("clientes_administradoras")
+                .update({ valor_mensal: Number(familiar.valorBase.toFixed(2)) })
+                .eq("id", cliente_administradora_id)
+                .eq("tenant_id", tenantId)
+            }
+          } else if (cpf && cpf.length === 11) {
+            // Sem valor na vida: só preenche nomes dos dependentes na descrição (mantém valor do body)
+            const deps = await buscarDependentesValorFamiliar({
+              administradoraId: String(administradora_id),
+              tenantId,
+              cpfTitularDigitos: cpf,
+              grupoIdPreferencial: (v.grupo_id as string) || null,
+            })
+            dependentesNomes = deps.map((d) => d.nome).filter(Boolean)
           }
         }
       }
