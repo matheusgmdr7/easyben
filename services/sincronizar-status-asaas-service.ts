@@ -28,6 +28,18 @@ export interface ResultadoSincronizacaoAsaas {
     de: string
     para: string
   }>
+  /** Detalhe do sync pontual (numero_fatura / fatura_id) para suporte. */
+  diagnostico_pontual?: {
+    fatura_id: string | null
+    numero_fatura: string | null
+    status_local: string | null
+    asaas_charge_id_local: string | null
+    cliente_administradora_id: string | null
+    asaas_customer_id: string | null
+    charge_encontrada: boolean
+    status_asaas: string | null
+    motivo_sem_atualizacao: string | null
+  }
 }
 
 type FaturaSyncRow = {
@@ -49,8 +61,14 @@ type FaturaSyncRow = {
 
 function extrairColunaInexistente(mensagem: string | undefined): string | null {
   const txt = String(mensagem || "")
-  const m = txt.match(/column\s+"?([a-zA-Z0-9_]+)"?\s+of relation/i)
-  return m?.[1] || null
+  // Postgres clássico: column "x" of relation "faturas"
+  const m1 = txt.match(/column\s+"?([a-zA-Z0-9_]+)"?\s+of relation/i)
+  if (m1?.[1]) return m1[1]
+  // PostgREST / schema cache: Could not find the 'data_vencimento' column of 'faturas'
+  const m2 = txt.match(/Could not find the ['"]([a-zA-Z0-9_]+)['"] column/i)
+  if (m2?.[1]) return m2[1]
+  const m3 = txt.match(/['"]([a-zA-Z0-9_]+)['"] column of ['"]/i)
+  return m3?.[1] || null
 }
 
 async function atualizarFaturaComFallback(
@@ -508,6 +526,7 @@ export async function sincronizarStatusFaturasComAsaas(opcoes: {
     proximo_offset: null,
     erros: [],
     alteracoes_status: [],
+    diagnostico_pontual: undefined,
   }
 
   const configsBusca = await buscarTodasConfigsAsaasAtivas(administradoraId)
@@ -563,6 +582,19 @@ export async function sincronizarStatusFaturasComAsaas(opcoes: {
       resultado.faturas_verificadas++
 
       const idBase = String(fatura.asaas_charge_id || fatura.gateway_id || "").trim()
+      const caIdFatura = String(fatura.cliente_administradora_id || "").trim()
+      let asaasCustomerIdDiag: string | null = null
+      if (alvoPontual && caIdFatura) {
+        const { data: caDiag } = await supabaseAdmin
+          .from("clientes_administradoras")
+          .select("asaas_customer_id")
+          .eq("id", caIdFatura)
+          .maybeSingle()
+        asaasCustomerIdDiag = String(
+          (caDiag as { asaas_customer_id?: string } | null)?.asaas_customer_id || ""
+        ).trim() || null
+      }
+
       let charge: Record<string, unknown> | null = null
       let ultimoStatusHttp: number | null = null
 
@@ -575,20 +607,35 @@ export async function sincronizarStatusFaturasComAsaas(opcoes: {
       // Sem charge id, charge não achado, ou sync pontual: tenta pelo número Asaas + customer do cliente
       if (!charge) {
         const numero = String(fatura.numero_fatura || "").trim()
-        const caId = String(fatura.cliente_administradora_id || "").trim()
-        if (numero && caId) {
-          charge = await buscarChargePorNumeroNoCliente(configsBusca, caId, numero)
+        if (numero && caIdFatura) {
+          charge = await buscarChargePorNumeroNoCliente(configsBusca, caIdFatura, numero)
+        }
+      }
+
+      if (alvoPontual) {
+        resultado.diagnostico_pontual = {
+          fatura_id: String(fatura.id),
+          numero_fatura: fatura.numero_fatura ?? null,
+          status_local: fatura.status ?? null,
+          asaas_charge_id_local: idBase || null,
+          cliente_administradora_id: caIdFatura || null,
+          asaas_customer_id: asaasCustomerIdDiag,
+          charge_encontrada: Boolean(charge),
+          status_asaas: charge?.status != null ? String(charge.status) : null,
+          motivo_sem_atualizacao: null,
         }
       }
 
       if (!charge) {
         resultado.cobrancas_nao_encontradas++
-        if (resultado.erros.length < 8) {
-          resultado.erros.push(
-            idBase
-              ? `Cobrança ${idBase} (fatura ${fatura.numero_fatura || fatura.id}) não encontrada no Asaas (HTTP ${ultimoStatusHttp ?? "?"})`
-              : `Fatura ${fatura.numero_fatura || fatura.id} sem asaas_charge_id e cobrança não localizada pelo número no customer.`
-          )
+        const motivo = idBase
+          ? `Cobrança ${idBase} (fatura ${fatura.numero_fatura || fatura.id}) não encontrada no Asaas (HTTP ${ultimoStatusHttp ?? "?"})`
+          : !asaasCustomerIdDiag && alvoPontual
+            ? `Fatura ${fatura.numero_fatura || fatura.id} sem asaas_charge_id e cliente sem asaas_customer_id — não foi possível listar cobranças no Asaas.`
+            : `Fatura ${fatura.numero_fatura || fatura.id} sem asaas_charge_id e cobrança não localizada pelo número no customer.`
+        if (resultado.erros.length < 8) resultado.erros.push(motivo)
+        if (resultado.diagnostico_pontual) {
+          resultado.diagnostico_pontual.motivo_sem_atualizacao = motivo
         }
         continue
       }
@@ -597,7 +644,13 @@ export async function sincronizarStatusFaturasComAsaas(opcoes: {
       const statusAtualNormalizado = normalizarStatusFatura(fatura.status)
       const chargeIdAsaas = String(charge.id || "").trim()
 
-      if (deveBloquearRegressaoStatus(statusAtualNormalizado, novoStatus)) continue
+      if (deveBloquearRegressaoStatus(statusAtualNormalizado, novoStatus)) {
+        if (resultado.diagnostico_pontual) {
+          resultado.diagnostico_pontual.motivo_sem_atualizacao =
+            "Bloqueado: fatura já está paga localmente; Asaas sugeriu status não-pago."
+        }
+        continue
+      }
 
       const valorAtualLocal = Number(fatura.valor ?? fatura.valor_total ?? 0)
       const vencimentoAtualLocal = String(fatura.vencimento ?? fatura.data_vencimento ?? "")
@@ -609,14 +662,22 @@ export async function sincronizarStatusFaturasComAsaas(opcoes: {
         chargeIdAsaas !== String(fatura.asaas_charge_id || "").trim() &&
         chargeIdAsaas !== String(fatura.gateway_id || "").trim()
 
-      if (!statusMudou && !valorMudou && !vencimentoMudou && !chargeIdMudou) continue
+      if (!statusMudou && !valorMudou && !vencimentoMudou && !chargeIdMudou) {
+        if (resultado.diagnostico_pontual) {
+          resultado.diagnostico_pontual.motivo_sem_atualizacao =
+            novoStatus === "pendente" || novoStatus === "atrasada"
+              ? `Cobrança encontrada no Asaas com status ${String(charge.status)} (ainda não paga no gateway).`
+              : `Nada a atualizar: local já está ${statusAtualNormalizado || fatura.status} e bate com o Asaas (${String(charge.status)}).`
+        }
+        continue
+      }
 
+      // Schema Easyben usa `vencimento` (não `data_vencimento`). valor_total/pagamento_*
+      // podem não existir em todos os ambientes — o fallback remove colunas inexistentes.
       const updateData: Record<string, unknown> = {
         status: novoStatus,
         valor: charge.value,
         vencimento: charge.dueDate,
-        valor_total: charge.value,
-        data_vencimento: charge.dueDate,
         asaas_boleto_url: charge.bankSlipUrl || null,
         asaas_invoice_url: charge.invoiceUrl || null,
         asaas_payment_link: charge.invoiceUrl || charge.paymentLink || null,
