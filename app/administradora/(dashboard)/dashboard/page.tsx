@@ -263,13 +263,21 @@ export default function AdministradoraDashboard() {
       const avisos: string[] = []
       let cobrancasNaoEncontradas = 0
       let rodadas = 0
-      const maxRodadas = 8
+      // Varredura mais longa: captura pendentes que no Asaas já estão RECEIVED (ex.: após falha de update)
+      const maxRodadas = 25
 
       while (rodadas < maxRodadas) {
-        const body: { administradora_id: string; financeira_id?: string; offset: number; modo: string } = {
+        const body: {
+          administradora_id: string
+          financeira_id?: string
+          offset: number
+          modo: string
+          limite?: number
+        } = {
           administradora_id: administradora.id,
           offset,
-          modo: "padrao",
+          modo: "reconciliare",
+          limite: 40,
         }
         if (financeiraId.trim()) body.financeira_id = financeiraId.trim()
 
@@ -326,8 +334,11 @@ export default function AdministradoraDashboard() {
       setUltimaSincronizacao(resumoSync)
       localStorage.setItem(`administradora_dashboard_ultima_sync_${administradora.id}`, JSON.stringify(resumoSync))
 
+      const pagasCorrigidas = alteracoes.filter((a) => String(a?.para || "") === "paga").length
       toast.success(
-        `Sincronização concluída: ${atualizadas} atualizada(s), ${alteradas} status alterado(s), ${verificadas} verificada(s).`
+        `Sincronização concluída: ${atualizadas} atualizada(s), ${alteradas} status alterado(s)` +
+          (pagasCorrigidas > 0 ? `, ${pagasCorrigidas} marcada(s) como paga` : "") +
+          `, ${verificadas} verificada(s).`
       )
 
       if (cobrancasNaoEncontradas > 0) {
@@ -661,7 +672,9 @@ export default function AdministradoraDashboard() {
                     onClick={sincronizarStatusAgora}
                   >
                     <RefreshCw className={`h-4 w-4 mr-2 shrink-0 ${sincronizando ? "animate-spin" : ""}`} />
-                    {sincronizando ? "Sincronizando..." : "Sincronizar com gateway"}
+                    {sincronizando
+                      ? "Sincronizando (varredura Asaas)..."
+                      : "Sincronizar com gateway"}
                   </Button>
                 </div>
                 {alertaFiltroGateway && financeiraId.trim() ? (

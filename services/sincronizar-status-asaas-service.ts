@@ -10,7 +10,8 @@ import {
 /** Lote pequeno para caber no maxDuration (60s) da Vercel por requisição. */
 export const LIMITE_FATURAS_POR_EXECUCAO = 40
 
-export type ModoSincronizacaoAsaas = "padrao" | "inconsistentes" | "todos"
+/** reconciliare = mesma fila do padrao (em aberto + inconsistentes), pensado para varredura pós-falha de update. */
+export type ModoSincronizacaoAsaas = "padrao" | "inconsistentes" | "todos" | "reconciliare"
 
 export interface ResultadoSincronizacaoAsaas {
   faturas_atualizadas: number
@@ -143,6 +144,7 @@ function montarFila(
     )
   }
 
+  // padrao + reconciliare: em aberto / inconsistentes com charge + sem charge reconciliável
   return ordenarFilaSincronizacao([
     ...comCharge.filter(
       (f) =>
@@ -509,7 +511,11 @@ export async function sincronizarStatusFaturasComAsaas(opcoes: {
     opcoes.financeiraId != null && String(opcoes.financeiraId).trim() !== ""
       ? String(opcoes.financeiraId).trim()
       : null
-  const modo: ModoSincronizacaoAsaas = opcoes.modo || "padrao"
+  const modoRaw = opcoes.modo || "padrao"
+  const modo: ModoSincronizacaoAsaas =
+    modoRaw === "inconsistentes" || modoRaw === "todos" || modoRaw === "reconciliare"
+      ? modoRaw
+      : "padrao"
   const offset = Math.max(0, Number(opcoes.offset || 0))
   const limite = Math.max(1, Number(opcoes.limite || LIMITE_FATURAS_POR_EXECUCAO))
   const numeroFaturaFiltro = String(opcoes.numeroFatura || "").trim() || null
@@ -689,6 +695,14 @@ export async function sincronizarStatusFaturasComAsaas(opcoes: {
       if (chargeIdAsaas) {
         updateData.asaas_charge_id = chargeIdAsaas
         updateData.gateway_id = chargeIdAsaas
+      }
+
+      // Faturas órfãs / import sem vínculo: externalReference no Asaas costuma ser o UUID do CA
+      if (!caIdFatura) {
+        const ref = String(charge.externalReference || "").trim()
+        if (/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(ref)) {
+          updateData.cliente_administradora_id = ref
+        }
       }
 
       if (novoStatus === "paga") {

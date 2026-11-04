@@ -178,31 +178,38 @@ export default function FinanceiroPage() {
       // Atualizar faturas vencidas para atrasadas
       const quantidadeAtrasadas = await FaturasService.atualizarFaturasVencidas()
 
-      // Sincronizar status com o Asaas
-      const response = await fetch('/api/sincronizar-status-asaas', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          administradora_id: administradora.id
+      // Varredura Asaas: em aberto / inconsistentes (vários lotes)
+      let offset = 0
+      let sincronizadas = 0
+      let pagasCorrigidas = 0
+      for (let rodada = 0; rodada < 25; rodada++) {
+        const response = await fetch("/api/sincronizar-status-asaas", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            administradora_id: administradora.id,
+            modo: "reconciliare",
+            offset,
+            limite: 40,
+          }),
         })
-      })
-
-      if (response.ok) {
+        if (!response.ok) break
         const resultado = await response.json()
-        if (resultado.faturas_atualizadas > 0) {
-          toast.success(
-            `✅ Atualização concluída! ${quantidadeAtrasadas} marcadas como atrasadas e ${resultado.faturas_atualizadas} sincronizadas com o Asaas`
-          )
-        } else {
-          toast.success(
-            `✅ Atualização concluída! ${quantidadeAtrasadas} faturas marcadas como atrasadas`
-          )
+        sincronizadas += Number(resultado.faturas_atualizadas || 0)
+        if (Array.isArray(resultado.alteracoes_status)) {
+          pagasCorrigidas += resultado.alteracoes_status.filter(
+            (a: { para?: string }) => String(a?.para || "") === "paga"
+          ).length
         }
-      } else {
-        toast.success(`✅ ${quantidadeAtrasadas} faturas marcadas como atrasadas`)
+        if (resultado.proximo_offset == null) break
+        offset = Number(resultado.proximo_offset)
       }
+
+      toast.success(
+        `Atualização concluída! ${quantidadeAtrasadas} atrasada(s)` +
+          (sincronizadas > 0 ? `, ${sincronizadas} sincronizada(s) com o Asaas` : "") +
+          (pagasCorrigidas > 0 ? `, ${pagasCorrigidas} marcada(s) como paga` : "")
+      )
 
       await carregarFaturas()
     } catch (error: any) {

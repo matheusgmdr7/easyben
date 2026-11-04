@@ -28,7 +28,11 @@ export async function POST(request: NextRequest) {
         : null
     const modoRaw = String(body?.modo || "padrao").trim().toLowerCase()
     const modo: ModoSincronizacaoAsaas =
-      modoRaw === "inconsistentes" || modoRaw === "todos" ? modoRaw : "padrao"
+      modoRaw === "inconsistentes" ||
+      modoRaw === "todos" ||
+      modoRaw === "reconciliare"
+        ? (modoRaw as ModoSincronizacaoAsaas)
+        : "padrao"
     const offset = Math.max(0, Number(body?.offset || 0))
     const limite = Math.max(1, Number(body?.limite || LIMITE_FATURAS_POR_EXECUCAO))
     const numero_fatura =
