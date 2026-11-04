@@ -34,6 +34,7 @@ type FaturaSyncRow = {
   id: string
   numero_fatura?: string | null
   cliente_nome?: string | null
+  cliente_administradora_id?: string | null
   asaas_charge_id?: string | null
   gateway_id?: string | null
   status?: string | null
@@ -102,13 +103,21 @@ function ordenarFilaSincronizacao(faturas: FaturaSyncRow[]): FaturaSyncRow[] {
   return [...faturas].sort((a, b) => prioridadeSincronizacao(a) - prioridadeSincronizacao(b))
 }
 
+/** Em aberto sem charge id, mas com número Asaas — ainda dá para reconciliar via customer. */
+function elegivelSemCharge(f: FaturaSyncRow): boolean {
+  if (temChargeId(f)) return false
+  if (!faturaStatusEmAberto(f.status)) return false
+  return Boolean(String(f.numero_fatura || "").trim() && String(f.cliente_administradora_id || "").trim())
+}
+
 function montarFila(
   todas: FaturaSyncRow[],
   modo: ModoSincronizacaoAsaas
 ): FaturaSyncRow[] {
   const comCharge = todas.filter(temChargeId)
+  const semCharge = todas.filter(elegivelSemCharge)
 
-  if (modo === "todos") return ordenarFilaSincronizacao(comCharge)
+  if (modo === "todos") return ordenarFilaSincronizacao([...comCharge, ...semCharge])
 
   if (modo === "inconsistentes") {
     return ordenarFilaSincronizacao(
@@ -116,13 +125,14 @@ function montarFila(
     )
   }
 
-  return ordenarFilaSincronizacao(
-    comCharge.filter(
+  return ordenarFilaSincronizacao([
+    ...comCharge.filter(
       (f) =>
         faturaStatusPareceInconsistente(f.status, f.pagamento_data) ||
         faturaStatusEmAberto(f.status)
-    )
-  )
+    ),
+    ...semCharge,
+  ])
 }
 
 type ConfigAsaas = { api_key: string; ambiente: string; nome?: string }
@@ -239,54 +249,83 @@ async function buscarFaturasComCobranca(
   administradoraId: string,
   financeiraId: string | null,
   nomeFinanceiraSync: string,
-  erros: string[]
+  erros: string[],
+  filtros?: { numeroFatura?: string | null; faturaId?: string | null }
 ): Promise<FaturaSyncRow[]> {
   const selectComFin =
-    "id, numero_fatura, cliente_nome, asaas_charge_id, gateway_id, status, pagamento_data, gateway_nome, financeira_id, valor, valor_total, vencimento"
+    "id, numero_fatura, cliente_nome, cliente_administradora_id, asaas_charge_id, gateway_id, status, pagamento_data, gateway_nome, financeira_id, valor, valor_total, vencimento"
   const selectSemFin =
-    "id, numero_fatura, cliente_nome, asaas_charge_id, gateway_id, status, pagamento_data, gateway_nome, valor, valor_total, vencimento"
+    "id, numero_fatura, cliente_nome, cliente_administradora_id, asaas_charge_id, gateway_id, status, pagamento_data, gateway_nome, valor, valor_total, vencimento"
   const selectMin =
-    "id, numero_fatura, cliente_nome, asaas_charge_id, gateway_id, status, pagamento_data, valor, valor_total, vencimento"
+    "id, numero_fatura, cliente_nome, cliente_administradora_id, asaas_charge_id, gateway_id, status, pagamento_data, valor, valor_total, vencimento"
 
-  let qF = supabaseAdmin
-    .from("faturas")
-    .select(selectComFin)
-    .eq("administradora_id", administradoraId)
-    .or("asaas_charge_id.not.is.null,gateway_id.not.is.null")
+  const numeroFatura = String(filtros?.numeroFatura || "").trim()
+  const faturaId = String(filtros?.faturaId || "").trim()
+  const alvoPontual = Boolean(numeroFatura || faturaId)
+
+  // Alvo pontual: não exige charge id (caso típico de fatura órfã / insert manual).
+  let qF = supabaseAdmin.from("faturas").select(selectComFin).eq("administradora_id", administradoraId)
+  if (faturaId) qF = qF.eq("id", faturaId)
+  else if (numeroFatura) qF = qF.eq("numero_fatura", numeroFatura)
+  else qF = qF.or("asaas_charge_id.not.is.null,gateway_id.not.is.null")
 
   let { data: faturas, error: faturasError } = await qF
 
   if (faturasError && extrairColunaInexistente(faturasError.message) === "financeira_id") {
-    const retry = await supabaseAdmin
+    let retryQ = supabaseAdmin
       .from("faturas")
       .select(selectSemFin)
       .eq("administradora_id", administradoraId)
-      .or("asaas_charge_id.not.is.null,gateway_id.not.is.null")
+    if (faturaId) retryQ = retryQ.eq("id", faturaId)
+    else if (numeroFatura) retryQ = retryQ.eq("numero_fatura", numeroFatura)
+    else {
+      retryQ = retryQ.or("asaas_charge_id.not.is.null,gateway_id.not.is.null")
+    }
+    const retry = await retryQ
     faturas = retry.data as FaturaSyncRow[] | null
     faturasError = retry.error
   }
 
   if (faturasError && extrairColunaInexistente(faturasError.message) === "gateway_nome") {
-    const retry = await supabaseAdmin
+    let retryQ = supabaseAdmin
       .from("faturas")
       .select(selectMin)
       .eq("administradora_id", administradoraId)
-      .or("asaas_charge_id.not.is.null,gateway_id.not.is.null")
+    if (faturaId) retryQ = retryQ.eq("id", faturaId)
+    else if (numeroFatura) retryQ = retryQ.eq("numero_fatura", numeroFatura)
+    else retryQ = retryQ.or("asaas_charge_id.not.is.null,gateway_id.not.is.null")
+    const retry = await retryQ
     faturas = retry.data as FaturaSyncRow[] | null
     faturasError = retry.error
   }
 
   if (faturasError && extrairColunaInexistente(faturasError.message) === "pagamento_data") {
-    const retry = await supabaseAdmin
+    let retryQ = supabaseAdmin
       .from("faturas")
       .select(selectMin.replace(", pagamento_data", ""))
       .eq("administradora_id", administradoraId)
-      .or("asaas_charge_id.not.is.null,gateway_id.not.is.null")
+    if (faturaId) retryQ = retryQ.eq("id", faturaId)
+    else if (numeroFatura) retryQ = retryQ.eq("numero_fatura", numeroFatura)
+    else retryQ = retryQ.or("asaas_charge_id.not.is.null,gateway_id.not.is.null")
+    const retry = await retryQ
     faturas = retry.data as FaturaSyncRow[] | null
     faturasError = retry.error
   }
 
-  if (!faturasError && financeiraId && Array.isArray(faturas) && faturas.length > 0) {
+  if (faturasError && extrairColunaInexistente(faturasError.message) === "cliente_administradora_id") {
+    let retryQ = supabaseAdmin
+      .from("faturas")
+      .select(selectMin.replace(", cliente_administradora_id", ""))
+      .eq("administradora_id", administradoraId)
+    if (faturaId) retryQ = retryQ.eq("id", faturaId)
+    else if (numeroFatura) retryQ = retryQ.eq("numero_fatura", numeroFatura)
+    else retryQ = retryQ.or("asaas_charge_id.not.is.null,gateway_id.not.is.null")
+    const retry = await retryQ
+    faturas = retry.data as FaturaSyncRow[] | null
+    faturasError = retry.error
+  }
+
+  if (!faturasError && financeiraId && Array.isArray(faturas) && faturas.length > 0 && !alvoPontual) {
     const amostra = faturas[0] as Record<string, unknown>
     const podeFiltrarPorFinanceira =
       Object.prototype.hasOwnProperty.call(amostra, "financeira_id") ||
@@ -305,21 +344,102 @@ async function buscarFaturasComCobranca(
   }
 
   if (faturasError) {
-    const fallback = await supabaseAdmin
+    let fallbackQ = supabaseAdmin
       .from("faturas")
       .select("id, numero_fatura, cliente_nome, asaas_charge_id, gateway_id, status")
       .eq("administradora_id", administradoraId)
-      .or("asaas_charge_id.not.is.null,gateway_id.not.is.null")
+    if (faturaId) fallbackQ = fallbackQ.eq("id", faturaId)
+    else if (numeroFatura) fallbackQ = fallbackQ.eq("numero_fatura", numeroFatura)
+    else fallbackQ = fallbackQ.or("asaas_charge_id.not.is.null,gateway_id.not.is.null")
+    const fallback = await fallbackQ
     if (fallback.error) throw new Error(`Erro ao buscar faturas: ${fallback.error.message}`)
     faturas = fallback.data as FaturaSyncRow[] | null
-    if (financeiraId) {
+    if (financeiraId && !alvoPontual) {
       erros.push(
         "Aviso: não foi possível filtrar por financeira (colunas indisponíveis); sincronização considerou todas as faturas com cobrança."
       )
     }
   }
 
-  return Array.isArray(faturas) ? faturas : []
+  let lista = Array.isArray(faturas) ? faturas : []
+
+  // Complemento: em aberto sem charge id, com número — reconciliáveis via customer/invoiceNumber
+  if (!alvoPontual && !faturasError) {
+    const { data: semCharge } = await supabaseAdmin
+      .from("faturas")
+      .select(selectComFin)
+      .eq("administradora_id", administradoraId)
+      .in("status", ["pendente", "atrasada", "vencida"])
+      .not("numero_fatura", "is", null)
+      .is("asaas_charge_id", null)
+      .is("gateway_id", null)
+      .limit(80)
+
+    if (Array.isArray(semCharge) && semCharge.length > 0) {
+      const ids = new Set(lista.map((f) => String(f.id)))
+      for (const row of semCharge as FaturaSyncRow[]) {
+        if (!ids.has(String(row.id))) lista.push(row)
+      }
+    }
+  }
+
+  return lista
+}
+
+function invoiceNumberBate(a: unknown, b: unknown): boolean {
+  const na = String(a || "").trim()
+  const nb = String(b || "").trim()
+  if (!na || !nb) return false
+  if (na === nb) return true
+  const da = na.replace(/\D/g, "")
+  const db = nb.replace(/\D/g, "")
+  return Boolean(da && db && da === db)
+}
+
+async function buscarChargePorNumeroNoCliente(
+  configs: Array<{ api_key: string; ambiente: string }>,
+  clienteAdministradoraId: string,
+  numeroFatura: string
+): Promise<Record<string, unknown> | null> {
+  const caId = String(clienteAdministradoraId || "").trim()
+  const numero = String(numeroFatura || "").trim()
+  if (!caId || !numero) return null
+
+  const { data: ca } = await supabaseAdmin
+    .from("clientes_administradoras")
+    .select("asaas_customer_id")
+    .eq("id", caId)
+    .maybeSingle()
+
+  const customerId = String((ca as { asaas_customer_id?: string } | null)?.asaas_customer_id || "").trim()
+  if (!customerId) return null
+
+  for (const conf of configs) {
+    const baseUrl =
+      conf.ambiente === "sandbox" ? "https://sandbox.asaas.com/api/v3" : "https://api.asaas.com/v3"
+    let offset = 0
+    for (let page = 0; page < 5; page++) {
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), 8000)
+      const url = `${baseUrl}/payments?customer=${encodeURIComponent(customerId)}&offset=${offset}&limit=100`
+      const response = await fetch(url, {
+        headers: {
+          access_token: conf.api_key,
+          "Content-Type": "application/json",
+        },
+        signal: controller.signal,
+      }).finally(() => clearTimeout(timeout))
+
+      if (!response.ok) break
+      const json = (await response.json()) as { data?: Array<Record<string, unknown>>; hasMore?: boolean }
+      const data = Array.isArray(json.data) ? json.data : []
+      const match = data.find((c) => invoiceNumberBate(c.invoiceNumber, numero) || invoiceNumberBate(c.id, numero))
+      if (match) return match
+      if (!json.hasMore || data.length === 0) break
+      offset += data.length
+    }
+  }
+  return null
 }
 
 async function buscarChargeNoAsaas(
@@ -362,6 +482,9 @@ export async function sincronizarStatusFaturasComAsaas(opcoes: {
   modo?: ModoSincronizacaoAsaas
   offset?: number
   limite?: number
+  /** Sync pontual (ex.: fatura paga no banco e ainda pendente no sistema). */
+  numeroFatura?: string | null
+  faturaId?: string | null
 }): Promise<ResultadoSincronizacaoAsaas> {
   const administradoraId = opcoes.administradoraId
   const financeiraId =
@@ -371,6 +494,9 @@ export async function sincronizarStatusFaturasComAsaas(opcoes: {
   const modo: ModoSincronizacaoAsaas = opcoes.modo || "padrao"
   const offset = Math.max(0, Number(opcoes.offset || 0))
   const limite = Math.max(1, Number(opcoes.limite || LIMITE_FATURAS_POR_EXECUCAO))
+  const numeroFaturaFiltro = String(opcoes.numeroFatura || "").trim() || null
+  const faturaIdFiltro = String(opcoes.faturaId || "").trim() || null
+  const alvoPontual = Boolean(numeroFaturaFiltro || faturaIdFiltro)
 
   const resultado: ResultadoSincronizacaoAsaas = {
     faturas_atualizadas: 0,
@@ -408,14 +534,23 @@ export async function sincronizarStatusFaturasComAsaas(opcoes: {
     administradoraId,
     financeiraId,
     nomeFinanceiraSync,
-    resultado.erros
+    resultado.erros,
+    { numeroFatura: numeroFaturaFiltro, faturaId: faturaIdFiltro }
   )
+
+  if (alvoPontual && todas.length === 0) {
+    throw new Error(
+      numeroFaturaFiltro
+        ? `Fatura número ${numeroFaturaFiltro} não encontrada nesta administradora.`
+        : `Fatura ${faturaIdFiltro} não encontrada nesta administradora.`
+    )
+  }
 
   resultado.faturas_inconsistentes_encontradas = todas.filter((f) =>
     faturaStatusPareceInconsistente(f.status, f.pagamento_data)
   ).length
 
-  const filaOrdenada = montarFila(todas, modo)
+  const filaOrdenada = alvoPontual ? ordenarFilaSincronizacao(todas) : montarFila(todas, modo)
   const fila = filaOrdenada.slice(offset, offset + limite)
   const restantes = Math.max(0, filaOrdenada.length - (offset + fila.length))
 
@@ -428,14 +563,31 @@ export async function sincronizarStatusFaturasComAsaas(opcoes: {
       resultado.faturas_verificadas++
 
       const idBase = String(fatura.asaas_charge_id || fatura.gateway_id || "").trim()
-      if (!idBase) continue
+      let charge: Record<string, unknown> | null = null
+      let ultimoStatusHttp: number | null = null
 
-      const { charge, ultimoStatusHttp } = await buscarChargeNoAsaas(configsBusca, obterChargeIds(idBase))
+      if (idBase) {
+        const busca = await buscarChargeNoAsaas(configsBusca, obterChargeIds(idBase))
+        charge = busca.charge
+        ultimoStatusHttp = busca.ultimoStatusHttp
+      }
+
+      // Sem charge id, charge não achado, ou sync pontual: tenta pelo número Asaas + customer do cliente
+      if (!charge) {
+        const numero = String(fatura.numero_fatura || "").trim()
+        const caId = String(fatura.cliente_administradora_id || "").trim()
+        if (numero && caId) {
+          charge = await buscarChargePorNumeroNoCliente(configsBusca, caId, numero)
+        }
+      }
+
       if (!charge) {
         resultado.cobrancas_nao_encontradas++
         if (resultado.erros.length < 8) {
           resultado.erros.push(
-            `Cobrança ${idBase} não encontrada no Asaas (HTTP ${ultimoStatusHttp ?? "?"})`
+            idBase
+              ? `Cobrança ${idBase} (fatura ${fatura.numero_fatura || fatura.id}) não encontrada no Asaas (HTTP ${ultimoStatusHttp ?? "?"})`
+              : `Fatura ${fatura.numero_fatura || fatura.id} sem asaas_charge_id e cobrança não localizada pelo número no customer.`
           )
         }
         continue
@@ -443,6 +595,7 @@ export async function sincronizarStatusFaturasComAsaas(opcoes: {
 
       const novoStatus = mapearStatusAsaas(String(charge.status || ""))
       const statusAtualNormalizado = normalizarStatusFatura(fatura.status)
+      const chargeIdAsaas = String(charge.id || "").trim()
 
       if (deveBloquearRegressaoStatus(statusAtualNormalizado, novoStatus)) continue
 
@@ -451,8 +604,12 @@ export async function sincronizarStatusFaturasComAsaas(opcoes: {
       const valorMudou = Math.abs(Number(charge.value || 0) - valorAtualLocal) > 0.01
       const statusMudou = novoStatus !== statusAtualNormalizado
       const vencimentoMudou = String(charge.dueDate || "") !== vencimentoAtualLocal
+      const chargeIdMudou =
+        Boolean(chargeIdAsaas) &&
+        chargeIdAsaas !== String(fatura.asaas_charge_id || "").trim() &&
+        chargeIdAsaas !== String(fatura.gateway_id || "").trim()
 
-      if (!statusMudou && !valorMudou && !vencimentoMudou) continue
+      if (!statusMudou && !valorMudou && !vencimentoMudou && !chargeIdMudou) continue
 
       const updateData: Record<string, unknown> = {
         status: novoStatus,
@@ -462,14 +619,23 @@ export async function sincronizarStatusFaturasComAsaas(opcoes: {
         data_vencimento: charge.dueDate,
         asaas_boleto_url: charge.bankSlipUrl || null,
         asaas_invoice_url: charge.invoiceUrl || null,
-        asaas_payment_link: charge.invoiceUrl || null,
+        asaas_payment_link: charge.invoiceUrl || charge.paymentLink || null,
         boleto_codigo: charge.nossoNumero || null,
         boleto_linha_digitavel: charge.identificationField || null,
         updated_at: new Date().toISOString(),
       }
 
-      if (novoStatus === "paga" && charge.paymentDate) {
-        updateData.pagamento_data = charge.paymentDate
+      if (chargeIdAsaas) {
+        updateData.asaas_charge_id = chargeIdAsaas
+        updateData.gateway_id = chargeIdAsaas
+      }
+
+      if (novoStatus === "paga") {
+        updateData.pagamento_data =
+          charge.paymentDate ||
+          charge.clientPaymentDate ||
+          fatura.pagamento_data ||
+          new Date().toISOString().slice(0, 10)
         updateData.pagamento_valor = charge.value
       }
 

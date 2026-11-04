@@ -10,6 +10,10 @@ export const maxDuration = 60
 /**
  * Sincroniza status das faturas com o Asaas.
  * Prioriza faturas inconsistentes (ex.: pendente com pagamento_data) e em aberto.
+ *
+ * Body opcional para caso pontual (ex.: paga no banco, ainda pendente no sistema):
+ *   { administradora_id, numero_fatura: "946680321" }
+ *   { administradora_id, fatura_id: "<uuid>" }
  */
 export async function POST(request: NextRequest) {
   try {
@@ -27,6 +31,14 @@ export async function POST(request: NextRequest) {
       modoRaw === "inconsistentes" || modoRaw === "todos" ? modoRaw : "padrao"
     const offset = Math.max(0, Number(body?.offset || 0))
     const limite = Math.max(1, Number(body?.limite || LIMITE_FATURAS_POR_EXECUCAO))
+    const numero_fatura =
+      body?.numero_fatura != null && String(body.numero_fatura).trim() !== ""
+        ? String(body.numero_fatura).trim()
+        : null
+    const fatura_id =
+      body?.fatura_id != null && String(body.fatura_id).trim() !== ""
+        ? String(body.fatura_id).trim()
+        : null
 
     if (!administradora_id) {
       return NextResponse.json({ error: "administradora_id é obrigatório" }, { status: 400 })
@@ -38,6 +50,8 @@ export async function POST(request: NextRequest) {
       modo,
       offset,
       limite,
+      numeroFatura: numero_fatura,
+      faturaId: fatura_id,
     })
 
     return NextResponse.json(resultado)

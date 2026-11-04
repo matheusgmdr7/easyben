@@ -198,9 +198,43 @@ export async function processarWebhookAsaas(body: AsaasWebhookPayload): Promise<
         .select("id, status")
         .eq("numero_fatura", invoiceNumber)
 
-      if (candNumero?.length) {
+      let candidatasNum = candNumero || []
+      // Fallback: número só com dígitos (ex.: máscara / espaços no banco)
+      if (!candidatasNum.length) {
+        const soDigitos = invoiceNumber.replace(/\D/g, "")
+        if (soDigitos && soDigitos !== invoiceNumber) {
+          const { data: candDig } = await supabaseAdmin
+            .from("faturas")
+            .select("id, status")
+            .eq("numero_fatura", soDigitos)
+          candidatasNum = candDig || []
+        }
+      }
+
+      if (candidatasNum.length) {
         totalAtualizadas += await processarFaturasCandidatas(
-          candNumero as Array<{ id: string; status: string | null }>,
+          candidatasNum as Array<{ id: string; status: string | null }>,
+          statusInterno,
+          updateData
+        )
+      }
+    }
+  }
+
+  // Match por nosso número / código de barras (legado sem asaas_charge_id)
+  if (totalAtualizadas === 0) {
+    const nosso = String(payment?.nossoNumero || "").trim()
+    if (nosso) {
+      const { data: candNosso } = await supabaseAdmin
+        .from("faturas")
+        .select("id, status")
+        .eq("boleto_codigo", nosso)
+        .in("status", ["pendente", "atrasada", "vencida"])
+        .limit(5)
+
+      if (candNosso?.length) {
+        totalAtualizadas += await processarFaturasCandidatas(
+          candNosso as Array<{ id: string; status: string | null }>,
           statusInterno,
           updateData
         )
@@ -245,6 +279,15 @@ export async function processarWebhookAsaas(body: AsaasWebhookPayload): Promise<
         )
       }
     }
+  }
+
+  if (totalAtualizadas === 0) {
+    console.warn("[webhook-asaas] nenhuma fatura atualizada", {
+      chargeId,
+      statusAsaas: payment?.status ?? null,
+      invoiceNumber: payment?.invoiceNumber ?? null,
+      externalReference: payment?.externalReference ?? null,
+    })
   }
 
   return {
