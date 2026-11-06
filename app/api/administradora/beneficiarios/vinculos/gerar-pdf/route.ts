@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { gerarFichaAdmissaoAptiPdf } from "@/lib/ficha-admissao-apti-pdf"
+import { gerarPdfVinculo } from "@/lib/vinculos-gerar-pdf"
 import {
   carregarVidaParaVinculos,
   mapearVidaParaFichaAdmissao,
@@ -9,6 +9,8 @@ import {
   aplicarPreenchimentoSintetico,
   parseConfigPreenchimentoSintetico,
 } from "@/lib/vinculos-dados-sinteticos"
+import { obterModeloVinculo } from "@/lib/vinculos-modelos"
+import { contentDispositionAnexo, nomeArquivoVinculoUsuario } from "@/lib/vinculos-constants"
 
 export async function POST(request: NextRequest) {
   try {
@@ -21,6 +23,11 @@ export async function POST(request: NextRequest) {
         { error: "administradora_id e vida_importada_id são obrigatórios" },
         { status: 400 }
       )
+    }
+
+    const modelo = obterModeloVinculo(body.modelo_id)
+    if (!modelo) {
+      return NextResponse.json({ error: "Modelo de documento inválido" }, { status: 400 })
     }
 
     const vida = await carregarVidaParaVinculos(vidaImportadaId, administradoraId)
@@ -50,14 +57,19 @@ export async function POST(request: NextRequest) {
       opcionais = aplicado.opcionais
     }
 
-    const pdfBytes = await gerarFichaAdmissaoAptiPdf(automaticos, opcionais)
-    const nomeArquivo = `ficha-admissao-${automaticos.nome.replace(/\s+/g, "-").slice(0, 40)}.pdf`
+    const pdfBytes = await gerarPdfVinculo({
+      modeloId: modelo.id,
+      automaticos,
+      opcionais,
+      vida,
+    })
+    const nomeArquivo = nomeArquivoVinculoUsuario(automaticos.nome, vidaImportadaId.slice(0, 8))
 
     return new NextResponse(Buffer.from(pdfBytes), {
       status: 200,
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename="${nomeArquivo}"`,
+        "Content-Disposition": contentDispositionAnexo(nomeArquivo),
       },
     })
   } catch (e: unknown) {

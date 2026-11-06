@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
 
     let query = supabaseAdmin
       .from("vidas_importadas")
-      .select("id, nome, cpf, tipo, ativo, data_nascimento, grupo_id")
+      .select("id, nome, cpf, tipo, ativo, data_nascimento, grupo_id, cpf_titular")
       .eq("grupo_id", grupoId)
       .eq("administradora_id", administradoraId)
       .order("tipo", { ascending: true })
@@ -34,6 +34,14 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Erro ao listar beneficiários do grupo" }, { status: 500 })
     }
 
+    const digitosCpf = (valor: unknown) => String(valor || "").replace(/\D/g, "")
+    const cpfsComDependente = new Set<string>()
+    for (const vida of data || []) {
+      if (String(vida.tipo || "").toLowerCase() !== "dependente") continue
+      const titular = digitosCpf(vida.cpf_titular)
+      if (titular.length === 11) cpfsComDependente.add(titular)
+    }
+
     const lista = (data || []).map((v) => {
       const auto = mapearVidaParaFichaAdmissao(v as Record<string, unknown>)
       const faltando: string[] = []
@@ -41,6 +49,8 @@ export async function GET(request: NextRequest) {
       if (!auto.rg) faltando.push("rg")
       if (!auto.orgao_emissor) faltando.push("orgao_emissor")
       if (!auto.local_nascimento) faltando.push("local_nascimento")
+      const titular = String(v.tipo || "").toLowerCase() !== "dependente"
+      const temDependentes = titular && cpfsComDependente.has(digitosCpf(v.cpf))
       return {
         id: v.id,
         nome: v.nome,
@@ -48,6 +58,7 @@ export async function GET(request: NextRequest) {
         tipo: v.tipo,
         ativo: v.ativo !== false,
         faltando,
+        tem_dependentes: temDependentes ? "sim" : "nao",
       }
     })
 

@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -14,6 +14,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Progress } from "@/components/ui/progress"
 import { Download, FileSpreadsheet, Loader2 } from "lucide-react"
 import * as XLSX from "xlsx"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -36,6 +37,7 @@ import {
 import { VinculosGeracaoProgresso } from "@/components/administradora/vinculos-geracao-progresso"
 import { VinculosPreenchimentoForm } from "@/components/administradora/vinculos-preenchimento-form"
 import type { ConfigPreenchimentoSintetico } from "@/lib/vinculos-dados-sinteticos"
+import { ID_MODELO_FICHA_CARTAO_APTI } from "@/lib/vinculos-modelos"
 
 type GrupoItem = { id: string; nome: string; ativo?: boolean | null }
 
@@ -46,6 +48,7 @@ type VidaGrupoItem = {
   tipo: string | null
   ativo: boolean
   faltando: string[]
+  tem_dependentes?: "sim" | "nao"
 }
 
 type OpcionaisLote = {
@@ -61,6 +64,7 @@ type OpcionaisLote = {
 
 type Props = {
   administradoraId: string
+  modeloId: string
   opcionais: OpcionaisLote
   onOpcionaisChange: (opcionais: OpcionaisLote) => void
   onAlterarSalario: (e: React.ChangeEvent<HTMLInputElement>) => void
@@ -83,18 +87,105 @@ function extrairMensagemErroLote(payload: unknown): string | null {
   return null
 }
 
+type ParteDownloadLote = { nome_arquivo: string; download_url: string }
+
+function baixarArquivoLote(url: string, nome: string) {
+  const a = document.createElement("a")
+  a.href = url
+  a.download = nome
+  a.target = "_blank"
+  a.rel = "noopener noreferrer"
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+}
+
+function aguardar(ms: number) {
+  return new Promise((resolver) => setTimeout(resolver, ms))
+}
+
+function fatiarIds(ids: string[], tamanho: number): string[][] {
+  const lotes: string[][] = []
+  for (let indice = 0; indice < ids.length; indice += tamanho) {
+    lotes.push(ids.slice(indice, indice + tamanho))
+  }
+  return lotes
+}
+
+type PastaArquivos = {
+  getFileHandle: (
+    nome: string,
+    opcoes?: { create?: boolean }
+  ) => Promise<{
+    createWritable: () => Promise<{
+      write: (dados: Blob) => Promise<void>
+      close: () => Promise<void>
+    }>
+  }>
+}
+
+type FilaAutomatica = {
+  status: "rodando" | "pausada" | "interrompida" | "concluida" | "erro"
+  total: number
+  concluidos: number
+  loteAtual: number
+  totalLotes: number
+  mensagem: string
+  pastaEscolhida: boolean
+}
+
+async function escolherPastaDownloads(): Promise<PastaArquivos | null> {
+  const picker = (
+    window as Window & {
+      showDirectoryPicker?: (opcoes?: { mode?: "readwrite"; id?: string }) => Promise<PastaArquivos>
+    }
+  ).showDirectoryPicker
+  if (!picker) return null
+  return picker({ mode: "readwrite", id: "vinculos-fichas" })
+}
+
+async function gravarArquivosLote(
+  arquivos: Array<{ nome: string; blob: Blob }>,
+  pasta: PastaArquivos | null
+) {
+  for (let indice = 0; indice < arquivos.length; indice++) {
+    const arquivo = arquivos[indice]
+    if (pasta) {
+      const handle = await pasta.getFileHandle(arquivo.nome, { create: true })
+      const gravador = await handle.createWritable()
+      await gravador.write(arquivo.blob)
+      await gravador.close()
+      continue
+    }
+    const url = URL.createObjectURL(arquivo.blob)
+    baixarArquivoLote(url, arquivo.nome)
+    setTimeout(() => URL.revokeObjectURL(url), 30_000)
+    if (indice < arquivos.length - 1) await aguardar(700)
+  }
+}
+
 function aplicarPosGeracaoLote(params: {
   gerados: number
   geradosIds: string[]
   falhas: Array<{ nome: string; motivo: string }>
+  partes?: ParteDownloadLote[]
   fonteId: string
   administradoraId: string
   vidas: VidaGrupoItem[]
   setGeradosLocal: (s: Set<string>) => void
   setSelecionados: (s: Set<string>) => void
-  setUltimoRelatorio: (r: { gerados: number; falhas: Array<{ nome: string; motivo: string }> }) => void
+  setUltimoRelatorio: (r: {
+    gerados: number
+    falhas: Array<{ nome: string; motivo: string }>
+    partes?: ParteDownloadLote[]
+  }) => void
+  silencioso?: boolean
 }) {
-  params.setUltimoRelatorio({ gerados: params.gerados, falhas: params.falhas })
+  params.setUltimoRelatorio({
+    gerados: params.gerados,
+    falhas: params.falhas,
+    partes: params.partes,
+  })
 
   if (params.geradosIds.length > 0 && params.fonteId) {
     const atualizado = marcarGeradosVinculosLocal(params.administradoraId, params.fonteId, params.geradosIds)
@@ -102,30 +193,39 @@ function aplicarPosGeracaoLote(params: {
     const restantes = params.vidas.filter((v) => !atualizado.has(v.id))
     const proximos = restantes.slice(0, VINCULOS_LOTE_MAX_PDFS).map((v) => v.id)
     params.setSelecionados(new Set(proximos))
-    if (restantes.length > 0) {
+    if (restantes.length > 0 && !params.silencioso) {
       toast.info(
         `${params.geradosIds.length} ficha(s) marcada(s) como geradas. ${proximos.length} pendente(s) pré-selecionado(s) para o próximo lote.`
       )
     }
   }
 
+  if (params.silencioso) return
+
   if (params.falhas.length > 0) {
     toast.warning(
       `ZIP gerado com ${params.gerados} PDF(s). ${params.falhas.length} beneficiário(s) não incluído(s).`
     )
   } else {
-    toast.success(`${params.gerados} PDF(s) gerados e baixados em ZIP`)
+    const partes = params.partes?.length ?? 1
+    toast.success(
+      partes > 1
+        ? `${params.gerados} PDF(s) gerados em ${partes} arquivos ZIP`
+        : `${params.gerados} PDF(s) gerados e baixados em ZIP`
+    )
   }
 }
 
 export function VinculosLotePanel({
   administradoraId,
+  modeloId,
   opcionais,
   onOpcionaisChange,
   onAlterarSalario,
   preenchimentoSintetico,
   onPreenchimentoSinteticoChange,
 }: Props) {
+  const fichaCartao = modeloId === ID_MODELO_FICHA_CARTAO_APTI
   const [grupos, setGrupos] = useState<GrupoItem[]>([])
   const [grupoId, setGrupoId] = useState("")
   const [vidas, setVidas] = useState<VidaGrupoItem[]>([])
@@ -133,11 +233,15 @@ export function VinculosLotePanel({
   const [carregandoGrupos, setCarregandoGrupos] = useState(true)
   const [carregandoVidas, setCarregandoVidas] = useState(false)
   const [gerando, setGerando] = useState(false)
+  const [fila, setFila] = useState<FilaAutomatica | null>(null)
+  const filaParar = useRef(false)
+  const filaPausar = useRef(false)
   const [geradosLocal, setGeradosLocal] = useState<Set<string>>(new Set())
   const [somentePendentes, setSomentePendentes] = useState(false)
   const [ultimoRelatorio, setUltimoRelatorio] = useState<{
     gerados: number
     falhas: Array<{ nome: string; motivo: string }>
+    partes?: ParteDownloadLote[]
   } | null>(null)
   const [modoSelecao, setModoSelecao] = useState<"grupo" | "planilha">("grupo")
   const [planilhaFile, setPlanilhaFile] = useState<File | null>(null)
@@ -219,6 +323,16 @@ export function VinculosLotePanel({
   useEffect(() => {
     if (modoSelecao === "grupo" && grupoId) void carregarVidasGrupo(grupoId)
   }, [grupoId, carregarVidasGrupo, modoSelecao])
+
+  useEffect(() => {
+    if (!gerando) return
+    const avisarSaida = (evento: BeforeUnloadEvent) => {
+      evento.preventDefault()
+      evento.returnValue = ""
+    }
+    window.addEventListener("beforeunload", avisarSaida)
+    return () => window.removeEventListener("beforeunload", avisarSaida)
+  }, [gerando])
 
   function parseArquivoPlanilha(file: File): Promise<{ headers: string[]; rows: LinhaPlanilhaVinculos[] }> {
     return new Promise((resolve, reject) => {
@@ -335,6 +449,7 @@ export function VinculosLotePanel({
       tipo: null,
       ativo: true,
       faltando: item.faltando,
+      tem_dependentes: item.opcionais.possui_dependentes === "sim" ? "sim" : "nao",
     }))
   }
 
@@ -420,6 +535,10 @@ export function VinculosLotePanel({
         "Bairro",
         "Cidade",
         "UF",
+        "Telefone",
+        "E-mail",
+        "Profissão",
+        "Tem dependentes",
       ],
       [
         "MARIA DA SILVA",
@@ -435,8 +554,12 @@ export function VinculosLotePanel({
         "Bela Vista",
         "São Paulo",
         "SP",
+        "11988887777",
+        "maria@exemplo.com",
+        "ANALISTA",
+        "Sim",
       ],
-      ["JOAO SANTOS", "98765432100", "", "", "", "", "", "", "", "", "", "", ""],
+      ["JOAO SANTOS", "98765432100", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "Não"],
     ])
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, "Beneficiarios")
@@ -527,142 +650,310 @@ export function VinculosLotePanel({
     )
   }
 
+  function validarPreenchimentoAntesDeGerar(ids: string[]): string | null {
+    if (!preenchimentoSintetico.ativo || fichaCartao) return null
+    const precisaEndereco = vidas.some(
+      (v) =>
+        ids.includes(v.id) &&
+        (v.faltando.includes("endereco") || v.faltando.includes("local_nascimento"))
+    )
+    if (
+      precisaEndereco &&
+      (!preenchimentoSintetico.endereco_cidade?.trim() || !preenchimentoSintetico.endereco_uf?.trim())
+    ) {
+      return "Informe cidade e UF para o preenchimento automático de endereço"
+    }
+    return null
+  }
+
+  async function executarLote(ids: string[]): Promise<{
+    gerados: number
+    geradosIds: string[]
+    falhas: Array<{ nome: string; motivo: string }>
+    partes: ParteDownloadLote[]
+    arquivos: Array<{ nome: string; blob: Blob }>
+  }> {
+    const bodyPlanilha =
+      modoSelecao === "planilha"
+        ? {
+            linhas_planilha: linhasFichaPlanilha
+              .filter((l) => ids.includes(l.id))
+              .map((l) => ({
+                linha: l.linha,
+                automaticos: l.automaticos,
+                opcionais: l.opcionais,
+                partesEndereco: l.partesEndereco,
+              })),
+          }
+        : { vida_importada_ids: ids }
+
+    const res = await fetch("/api/administradora/beneficiarios/vinculos/gerar-pdf-lote", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        administradora_id: administradoraId,
+        modelo_id: modeloId,
+        ...bodyPlanilha,
+        ...(fichaCartao ? {} : opcionais),
+        preenchimento_sintetico: fichaCartao
+          ? { ...preenchimentoSintetico, ativo: false }
+          : preenchimentoSintetico,
+      }),
+    })
+
+    const contentType = res.headers.get("content-type") || ""
+
+    if (!res.ok) {
+      let mensagem = "Erro ao gerar lote"
+      if (contentType.includes("application/json")) {
+        const err = await res.json().catch(() => ({}))
+        mensagem = extrairMensagemErroLote(err) || mensagem
+      } else {
+        const texto = await res.text().catch(() => "")
+        try {
+          const parsed = texto ? JSON.parse(texto) : null
+          mensagem = extrairMensagemErroLote(parsed) || texto.slice(0, 300) || mensagem
+        } catch {
+          if (texto) mensagem = texto.slice(0, 300)
+        }
+      }
+      throw new Error(mensagem)
+    }
+
+    if (contentType.includes("application/json")) {
+      const data = await res.json().catch(() => ({}))
+      if (!data.download_url) {
+        throw new Error(extrairMensagemErroLote(data) || "Link de download não retornado")
+      }
+
+      const partes: ParteDownloadLote[] = Array.isArray(data.downloads)
+        ? data.downloads.flatMap((item: { download_url?: string; nome_arquivo?: string }) =>
+            item?.download_url && item?.nome_arquivo
+              ? [{ download_url: item.download_url, nome_arquivo: item.nome_arquivo }]
+              : []
+          )
+        : [{ download_url: data.download_url, nome_arquivo: data.nome_arquivo || "fichas-admissao-lote.zip" }]
+
+      const arquivos: Array<{ nome: string; blob: Blob }> = []
+      for (const parte of partes) {
+        const resposta = await fetch(parte.download_url)
+        if (!resposta.ok) throw new Error(`Não foi possível baixar ${parte.nome_arquivo}`)
+        arquivos.push({ nome: parte.nome_arquivo, blob: await resposta.blob() })
+      }
+
+      const geradosIds = Array.isArray(data.gerados_ids) ? data.gerados_ids : []
+      const falhas = Array.isArray(data.falhas)
+        ? data.falhas.map((f: { nome: string; motivo: string }) => ({
+            nome: f.nome,
+            motivo: f.motivo,
+          }))
+        : []
+
+      return { gerados: data.gerados ?? geradosIds.length, geradosIds, falhas, partes, arquivos }
+    }
+
+    if (!contentType.includes("application/zip")) {
+      const data = await res.json().catch(() => ({}))
+      throw new Error(extrairMensagemErroLote(data) || "Resposta inesperada ao gerar lote")
+    }
+
+    const gerados = Number(res.headers.get("X-Vinculos-Gerados") || 0)
+    const nomeArquivo = res.headers.get("X-Vinculos-Nome-Arquivo") || "fichas-admissao-lote.zip"
+    const geradosIds = JSON.parse(res.headers.get("X-Vinculos-Gerados-Ids") || "[]") as string[]
+    const falhas = JSON.parse(res.headers.get("X-Vinculos-Falhas") || "[]") as Array<{
+      nome: string
+      motivo: string
+    }>
+    const blob = await res.blob()
+    return {
+      gerados,
+      geradosIds,
+      falhas,
+      partes: [],
+      arquivos: [{ nome: nomeArquivo, blob }],
+    }
+  }
+
+  function registrarLoteGerado(params: {
+    gerados: number
+    geradosIds: string[]
+    falhas: Array<{ nome: string; motivo: string }>
+    partes?: ParteDownloadLote[]
+    silencioso?: boolean
+  }) {
+    aplicarPosGeracaoLote({
+      ...params,
+      fonteId,
+      administradoraId,
+      vidas,
+      setGeradosLocal,
+      setSelecionados,
+      setUltimoRelatorio,
+    })
+  }
+
   async function gerarLote() {
     if (selecionados.size === 0) {
       toast.error("Selecione ao menos um beneficiário")
       return
     }
-
-    if (preenchimentoSintetico.ativo) {
-      const precisaEndereco = comDadosFaltando.some(
-        (v) => v.faltando.includes("endereco") || v.faltando.includes("local_nascimento")
-      )
-      if (
-        precisaEndereco &&
-        (!preenchimentoSintetico.endereco_cidade?.trim() || !preenchimentoSintetico.endereco_uf?.trim())
-      ) {
-        toast.error("Informe cidade e UF para o preenchimento automático de endereço")
-        return
-      }
+    const erroPreenchimento = validarPreenchimentoAntesDeGerar(Array.from(selecionados))
+    if (erroPreenchimento) {
+      toast.error(erroPreenchimento)
+      return
     }
 
     try {
       setGerando(true)
+      setFila(null)
       setUltimoRelatorio(null)
-
-      const bodyPlanilha =
-        modoSelecao === "planilha"
-          ? {
-              linhas_planilha: linhasFichaPlanilha
-                .filter((l) => selecionados.has(l.id))
-                .map((l) => ({
-                  linha: l.linha,
-                  automaticos: l.automaticos,
-                  opcionais: l.opcionais,
-                })),
-            }
-          : { vida_importada_ids: Array.from(selecionados) }
-
-      const res = await fetch("/api/administradora/beneficiarios/vinculos/gerar-pdf-lote", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          administradora_id: administradoraId,
-          ...bodyPlanilha,
-          ...opcionais,
-          preenchimento_sintetico: preenchimentoSintetico,
-        }),
-      })
-
-      const contentType = res.headers.get("content-type") || ""
-
-      if (!res.ok) {
-        let mensagem = "Erro ao gerar lote"
-        if (contentType.includes("application/json")) {
-          const err = await res.json().catch(() => ({}))
-          mensagem = extrairMensagemErroLote(err) || mensagem
-        } else {
-          const texto = await res.text().catch(() => "")
-          try {
-            const parsed = texto ? JSON.parse(texto) : null
-            mensagem = extrairMensagemErroLote(parsed) || texto.slice(0, 300) || mensagem
-          } catch {
-            if (texto) mensagem = texto.slice(0, 300)
-          }
-        }
-        throw new Error(mensagem)
-      }
-
-      if (contentType.includes("application/json")) {
-        const data = await res.json().catch(() => ({}))
-        if (!data.download_url) {
-          throw new Error(extrairMensagemErroLote(data) || "Link de download não retornado")
-        }
-
-        const a = document.createElement("a")
-        a.href = data.download_url
-        a.download = data.nome_arquivo || "fichas-admissao-lote.zip"
-        a.target = "_blank"
-        a.rel = "noopener noreferrer"
-        a.click()
-
-        const geradosIds = Array.isArray(data.gerados_ids) ? data.gerados_ids : []
-        const falhas = Array.isArray(data.falhas)
-          ? data.falhas.map((f: { nome: string; motivo: string }) => ({
-              nome: f.nome,
-              motivo: f.motivo,
-            }))
-          : []
-
-        aplicarPosGeracaoLote({
-          gerados: data.gerados ?? 0,
-          geradosIds,
-          falhas,
-          fonteId,
-          administradoraId,
-          vidas,
-          setGeradosLocal,
-          setSelecionados,
-          setUltimoRelatorio,
-        })
-        return
-      }
-
-      if (!contentType.includes("application/zip")) {
-        const data = await res.json().catch(() => ({}))
-        throw new Error(extrairMensagemErroLote(data) || "Resposta inesperada ao gerar lote")
-      }
-
-      const gerados = Number(res.headers.get("X-Vinculos-Gerados") || 0)
-      const nomeArquivo = res.headers.get("X-Vinculos-Nome-Arquivo") || "fichas-admissao-lote.zip"
-      const geradosIds = JSON.parse(res.headers.get("X-Vinculos-Gerados-Ids") || "[]") as string[]
-      const falhas = JSON.parse(res.headers.get("X-Vinculos-Falhas") || "[]") as Array<{
-        vida_importada_id: string
-        nome: string
-        motivo: string
-      }>
-
-      const blob = await res.blob()
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement("a")
-      a.href = url
-      a.download = nomeArquivo
-      a.click()
-      URL.revokeObjectURL(url)
-
-      aplicarPosGeracaoLote({
-        gerados,
-        geradosIds,
-        falhas: falhas.map((f) => ({ nome: f.nome, motivo: f.motivo })),
-        fonteId,
-        administradoraId,
-        vidas,
-        setGeradosLocal,
-        setSelecionados,
-        setUltimoRelatorio,
-      })
+      const resultado = await executarLote(Array.from(selecionados))
+      await gravarArquivosLote(resultado.arquivos, null)
+      registrarLoteGerado(resultado)
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Erro ao gerar lote")
+    } finally {
+      setGerando(false)
+    }
+  }
+
+  async function gerarTodosPendentes() {
+    const idsPendentes = vidas.filter((v) => !geradosLocal.has(v.id)).map((v) => v.id)
+    if (idsPendentes.length === 0) {
+      toast.info("Não há fichas pendentes neste grupo ou planilha")
+      return
+    }
+    const erroPreenchimento = validarPreenchimentoAntesDeGerar(idsPendentes)
+    if (erroPreenchimento) {
+      toast.error(erroPreenchimento)
+      return
+    }
+
+    let pasta: PastaArquivos | null = null
+    try {
+      pasta = await escolherPastaDownloads()
+    } catch (e: unknown) {
+      if (e instanceof DOMException && e.name === "AbortError") return
+      pasta = null
+    }
+    if (!pasta) {
+      toast.info(
+        "Sem pasta escolhida, os ZIPs vão para Downloads. Se o navegador pedir, permita vários downloads."
+      )
+    }
+
+    const lotes = fatiarIds(idsPendentes, VINCULOS_LOTE_MAX_PDFS)
+    filaParar.current = false
+    filaPausar.current = false
+    setGerando(true)
+    setUltimoRelatorio(null)
+    setFila({
+      status: "rodando",
+      total: idsPendentes.length,
+      concluidos: 0,
+      loteAtual: 0,
+      totalLotes: lotes.length,
+      mensagem: pasta
+        ? "Os ZIPs serão gravados na pasta escolhida."
+        : "Os ZIPs serão baixados pelo navegador.",
+      pastaEscolhida: Boolean(pasta),
+    })
+
+    let concluidos = 0
+    try {
+      for (let indice = 0; indice < lotes.length; indice++) {
+        while (filaPausar.current && !filaParar.current) {
+          await aguardar(300)
+        }
+        if (filaParar.current) {
+          setFila((atual) =>
+            atual
+              ? {
+                  ...atual,
+                  status: "interrompida",
+                  concluidos,
+                  mensagem: "Interrompido. As fichas já salvas continuam marcadas. Gere de novo para seguir os pendentes.",
+                }
+              : atual
+          )
+          toast.info("Fila interrompida. O que já foi salvo permanece marcado como gerado.")
+          return
+        }
+
+        const idsLote = lotes[indice]
+        setFila((atual) =>
+          atual
+            ? {
+                ...atual,
+                status: "rodando",
+                loteAtual: indice + 1,
+                concluidos,
+                mensagem: `Gerando lote ${indice + 1} de ${lotes.length} (${idsLote.length} fichas)...`,
+              }
+            : atual
+        )
+
+        const resultado = await executarLote(idsLote)
+        const arquivosNumerados = resultado.arquivos.map((arquivo) => ({
+          ...arquivo,
+          nome: `lote-${String(indice + 1).padStart(3, "0")}-${arquivo.nome}`,
+        }))
+        try {
+          await gravarArquivosLote(arquivosNumerados, pasta)
+        } catch (erro) {
+          setUltimoRelatorio({
+            gerados: resultado.gerados,
+            falhas: resultado.falhas,
+            partes: resultado.partes,
+          })
+          throw erro
+        }
+        registrarLoteGerado({
+          gerados: resultado.gerados,
+          geradosIds: resultado.geradosIds,
+          falhas: resultado.falhas,
+          partes: resultado.partes,
+          silencioso: true,
+        })
+        concluidos += resultado.geradosIds.length
+        setFila((atual) =>
+          atual
+            ? {
+                ...atual,
+                concluidos,
+                mensagem: filaPausar.current
+                  ? `Lote ${indice + 1} salvo. Fila pausada.`
+                  : `Lote ${indice + 1} de ${lotes.length} salvo.`,
+              }
+            : atual
+        )
+      }
+
+      setFila((atual) =>
+        atual
+          ? {
+              ...atual,
+              status: "concluida",
+              concluidos,
+              loteAtual: lotes.length,
+              mensagem: "Todos os pendentes foram processados.",
+            }
+          : atual
+      )
+      toast.success(`${concluidos} ficha(s) geradas em ${lotes.length} lote(s)`)
+    } catch (e: unknown) {
+      const mensagem = e instanceof Error ? e.message : "Erro ao gerar a fila"
+      setFila((atual) =>
+        atual
+          ? {
+              ...atual,
+              status: "erro",
+              concluidos,
+              mensagem: `${mensagem} As fichas já salvas continuam marcadas. Clique de novo para continuar pelos pendentes.`,
+            }
+          : atual
+      )
+      toast.error(mensagem)
     } finally {
       setGerando(false)
     }
@@ -673,17 +964,24 @@ export function VinculosLotePanel({
       <Alert className="border-blue-200 bg-blue-50/80">
         <AlertDescription className="text-sm text-blue-900 space-y-1">
           <p>
-            Gere até <strong>{VINCULOS_LOTE_MAX_PDFS} fichas por lote</strong>. Grupos maiores exigem vários
-            lotes — o sistema marca no navegador quem já foi gerado e pré-seleciona os próximos pendentes.
+            Cada lote gera até <strong>{VINCULOS_LOTE_MAX_PDFS} fichas</strong>. Em listas grandes, use{" "}
+            <strong>Gerar todos os pendentes</strong>: a fila segue sozinha, grava os ZIPs e marca quem já foi
+            feito. Se parar ou a página for atualizada, o próximo clique continua só pelos que faltam.
           </p>
           <p className="text-xs text-blue-800">
-            Lotes com ZIP grande (&gt;3,5 MB) são salvos no Storage com link de download. A seleção respeita o
-            limite de {VINCULOS_LOTE_MAX_PDFS} por vez.
+            Lotes grandes são salvos no Storage. Se o ZIP passar de 40 MB, o download vem em mais de um arquivo.
+            A seleção respeita o limite de {VINCULOS_LOTE_MAX_PDFS} por vez.
           </p>
         </AlertDescription>
       </Alert>
 
-      <Tabs value={modoSelecao} onValueChange={(v) => aoMudarModoSelecao(v as "grupo" | "planilha")}>
+      <Tabs
+        value={modoSelecao}
+        onValueChange={(v) => {
+          if (gerando) return
+          aoMudarModoSelecao(v as "grupo" | "planilha")
+        }}
+      >
         <TabsList className="grid w-full grid-cols-2 max-w-lg">
           <TabsTrigger value="grupo">Por grupo</TabsTrigger>
           <TabsTrigger value="planilha">Por planilha</TabsTrigger>
@@ -976,6 +1274,7 @@ export function VinculosLotePanel({
                     <p className="text-xs text-gray-600">
                       {formatarCpf(v.cpf)}
                       {v.tipo ? ` · ${v.tipo}` : ""}
+                      {fichaCartao ? ` · Tem dependentes: ${v.tem_dependentes === "sim" ? "Sim" : "Não"}` : ""}
                     </p>
                     {v.faltando.length > 0 && (
                       <p className="text-xs text-amber-700 mt-0.5">
@@ -995,14 +1294,18 @@ export function VinculosLotePanel({
           <AlertDescription className="text-sm text-amber-900">
             {comDadosFaltando.length} selecionado(s) têm dados incompletos
             {modoSelecao === "grupo" ? " no cadastro" : " na planilha"}.
-            {preenchimentoSintetico.ativo
-              ? " O preenchimento automático tentará completar endereço, órgão emissor e opcionais vazios."
-              : " O PDF será gerado com os campos disponíveis; ative o preenchimento automático abaixo se necessário."}{" "}
+            {fichaCartao
+              ? " O PDF usa os dados do cadastro ou da planilha."
+              : preenchimentoSintetico.ativo
+                ? " O preenchimento automático tentará completar endereço, órgão emissor e opcionais vazios."
+                : " O PDF será gerado com os campos disponíveis; ative o preenchimento automático abaixo se necessário."}{" "}
             Beneficiários sem nome ou CPF válido serão ignorados no ZIP.
           </AlertDescription>
         </Alert>
       )}
 
+      {!fichaCartao && (
+        <>
       <div className="border border-gray-200 rounded-lg p-4 bg-white">
         <p className="text-sm font-medium text-gray-900 mb-3">Preenchimento automático (todo o lote)</p>
         <VinculosPreenchimentoForm
@@ -1087,16 +1390,37 @@ export function VinculosLotePanel({
           </Select>
         </div>
       </div>
+        </>
+      )}
 
       {ultimoRelatorio && (
         <Alert className="border-gray-200">
           <AlertDescription className="text-sm space-y-1">
             <p>
-              <strong>{ultimoRelatorio.gerados}</strong> PDF(s) no ZIP.
+              <strong>{ultimoRelatorio.gerados}</strong> PDF(s)
+              {ultimoRelatorio.partes && ultimoRelatorio.partes.length > 1
+                ? ` em ${ultimoRelatorio.partes.length} arquivos ZIP.`
+                : " no ZIP."}
               {ultimoRelatorio.falhas.length > 0 && (
                 <> <strong>{ultimoRelatorio.falhas.length}</strong> não gerado(s):</>
               )}
             </p>
+            {ultimoRelatorio.partes && ultimoRelatorio.partes.length > 1 && (
+              <div className="space-y-1">
+                {ultimoRelatorio.partes.map((parte) => (
+                  <p key={parte.nome_arquivo}>
+                    <a
+                      href={parte.download_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-blue-700 underline"
+                    >
+                      {parte.nome_arquivo}
+                    </a>
+                  </p>
+                ))}
+              </div>
+            )}
             {ultimoRelatorio.falhas.slice(0, 5).map((f, i) => (
               <p key={i} className="text-xs text-gray-600">
                 {f.nome}: {f.motivo}
@@ -1109,32 +1433,124 @@ export function VinculosLotePanel({
         </Alert>
       )}
 
-      <Button
-        onClick={gerarLote}
-        disabled={
-          !fonteId ||
-          (modoSelecao === "grupo" && !grupoId) ||
-          selecionados.size === 0 ||
-          gerando ||
-          carregandoVidas ||
-          planilhaProcessando
-        }
-        className="bg-[#0F172A] hover:bg-[#1E293B] text-white font-bold"
-      >
-        {gerando ? (
+      <div className="flex flex-wrap gap-2">
+        <Button
+          onClick={gerarLote}
+          disabled={
+            !fonteId ||
+            (modoSelecao === "grupo" && !grupoId) ||
+            selecionados.size === 0 ||
+            gerando ||
+            carregandoVidas ||
+            planilhaProcessando
+          }
+          className="bg-[#0F172A] hover:bg-[#1E293B] text-white font-bold"
+        >
+          {gerando && !fila ? (
+            <>
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              Gerando {selecionados.size} PDF(s)…
+            </>
+          ) : (
+            <>
+              <Download className="h-4 w-4 mr-2" />
+              Gerar {selecionados.size || ""} PDF(s) em ZIP
+            </>
+          )}
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => void gerarTodosPendentes()}
+          disabled={
+            !fonteId ||
+            (modoSelecao === "grupo" && !grupoId) ||
+            pendentes.length === 0 ||
+            gerando ||
+            carregandoVidas ||
+            planilhaProcessando
+          }
+        >
+          {gerando && fila ? (
+            <>
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              Fila em andamento
+            </>
+          ) : (
+            `Gerar todos os pendentes (${pendentes.length})`
+          )}
+        </Button>
+        {fila?.status === "rodando" && (
           <>
-            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-            Gerando {selecionados.size} PDF(s)…
-          </>
-        ) : (
-          <>
-            <Download className="h-4 w-4 mr-2" />
-            Gerar {selecionados.size || ""} PDF(s) em ZIP
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                filaPausar.current = true
+                setFila((atual) =>
+                  atual ? { ...atual, status: "pausada", mensagem: "Pausada depois do lote em andamento." } : atual
+                )
+              }}
+            >
+              Pausar
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                filaParar.current = true
+                filaPausar.current = false
+              }}
+            >
+              Parar
+            </Button>
           </>
         )}
-      </Button>
+        {fila?.status === "pausada" && (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              filaParar.current = true
+              filaPausar.current = false
+            }}
+          >
+            Parar
+          </Button>
+        )}
+        {fila?.status === "pausada" && (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              filaPausar.current = false
+              setFila((atual) => (atual ? { ...atual, status: "rodando", mensagem: "Retomando a fila..." } : atual))
+            }}
+          >
+            Continuar
+          </Button>
+        )}
+      </div>
 
-      {gerando && <VinculosGeracaoProgresso modo="lote" total={selecionados.size} />}
+      {fila && (
+        <div className="rounded-lg border border-blue-200 bg-blue-50/70 p-4 space-y-2">
+          <p className="text-sm font-medium text-blue-950">
+            Lote {fila.loteAtual} de {fila.totalLotes} · {fila.concluidos} de {fila.total} fichas salvas
+          </p>
+          <Progress value={fila.total > 0 ? Math.round((fila.concluidos / fila.total) * 100) : 0} className="h-2" />
+          <p className="text-xs text-blue-800">{fila.mensagem}</p>
+          <p className="text-xs text-blue-700">
+            {fila.pastaEscolhida
+              ? "Mantenha esta página aberta. Cada ZIP entra na pasta escolhida ao fim do lote."
+              : "Mantenha esta página aberta. Se o navegador pedir, permita vários downloads."}
+            {modoSelecao === "planilha"
+              ? " Não troque a planilha até a fila acabar: a marcação usa o número da linha."
+              : ""}
+          </p>
+        </div>
+      )}
+
+      {gerando && !fila && <VinculosGeracaoProgresso modo="lote" total={selecionados.size} />}
     </div>
   )
 }

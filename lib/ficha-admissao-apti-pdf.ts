@@ -1,33 +1,14 @@
-import { existsSync, readFileSync } from "fs"
+import { existsSync, readFileSync, statSync } from "fs"
 import { resolve } from "path"
-import layout from "@/config/ficha-admissao-apti-layout.json"
 import {
   formatarDataFichaAdmissao,
   formatarSalarioFicha,
   type DadosAutomaticosFichaAdmissao,
   type DadosOpcionaisFichaAdmissao,
 } from "@/lib/vinculos-beneficiario-dados"
+import { obterModeloVinculo, type ModeloVinculo } from "@/lib/vinculos-modelos"
 
-type CampoLayout = {
-  page: number
-  x: number
-  y: number
-  size?: number
-  maxWidth?: number
-  lineHeight?: number
-  ajustarTamanho?: boolean
-}
-
-type LayoutConfig = {
-  modeloArquivo: string
-  fontSizePadrao: number
-  campos: Record<string, CampoLayout>
-  checkboxes: Record<string, CampoLayout>
-}
-
-const cfg = layout as LayoutConfig
-
-let modeloPdfCache: Uint8Array | null = null
+const modeloPdfCache = new Map<string, { assinatura: string; bytes: Uint8Array }>()
 
 function baseUrlPublica(): string | null {
   const candidatos = [
@@ -43,34 +24,38 @@ function baseUrlPublica(): string | null {
   return null
 }
 
-async function carregarModeloPdf(): Promise<Uint8Array> {
-  if (modeloPdfCache) return modeloPdfCache
-
-  const relativo = cfg.modeloArquivo.replace(/^\.?\//, "")
+export async function carregarBytesModeloVinculo(modelo: ModeloVinculo): Promise<Uint8Array> {
+  const relativo = modelo.layout.modeloArquivo.replace(/^\.?\//, "")
+  const nomeArquivo = relativo.split("/").pop() || ""
   const candidatos = [
     resolve(process.cwd(), relativo),
-    resolve(process.cwd(), "assets/modelos/ficha-admissao-apti.pdf"),
-    resolve(process.cwd(), "public/modelos/ficha-admissao-apti.pdf"),
-  ]
+    resolve(process.cwd(), modelo.arquivoPdf),
+    nomeArquivo ? resolve(process.cwd(), "public/modelos", nomeArquivo) : "",
+  ].filter(Boolean)
 
   for (const caminho of candidatos) {
-    if (existsSync(caminho)) {
-      modeloPdfCache = readFileSync(caminho)
-      return modeloPdfCache
-    }
+    if (!existsSync(caminho)) continue
+    const info = statSync(caminho)
+    const assinatura = `${caminho}:${info.mtimeMs}:${info.size}`
+    const emCache = modeloPdfCache.get(modelo.id)
+    if (emCache?.assinatura === assinatura) return emCache.bytes
+    const bytes = new Uint8Array(readFileSync(caminho))
+    modeloPdfCache.set(modelo.id, { assinatura, bytes })
+    return bytes
   }
 
   const base = baseUrlPublica()
-  if (base) {
-    const res = await fetch(`${base}/modelos/ficha-admissao-apti.pdf`, { cache: "force-cache" })
+  if (base && nomeArquivo) {
+    const res = await fetch(`${base}/modelos/${nomeArquivo}`, { cache: "force-cache" })
     if (res.ok) {
-      modeloPdfCache = new Uint8Array(await res.arrayBuffer())
-      return modeloPdfCache
+      const bytes = new Uint8Array(await res.arrayBuffer())
+      modeloPdfCache.set(modelo.id, { assinatura: `url:${nomeArquivo}:${bytes.byteLength}`, bytes })
+      return bytes
     }
   }
 
   throw new Error(
-    "Modelo PDF da ficha APTI não encontrado. Verifique assets/modelos/ficha-admissao-apti.pdf ou public/modelos/ficha-admissao-apti.pdf."
+    `Modelo PDF "${modelo.nome}" não encontrado. Verifique ${modelo.layout.modeloArquivo}.`
   )
 }
 
@@ -93,11 +78,19 @@ function tamanhoFonteAjustado(
 
 export async function gerarFichaAdmissaoAptiPdf(
   automaticos: DadosAutomaticosFichaAdmissao,
-  opcionais: DadosOpcionaisFichaAdmissao = {}
+  opcionais: DadosOpcionaisFichaAdmissao = {},
+  modeloId?: string | null
 ): Promise<Uint8Array> {
-  const { PDFDocument, StandardFonts, rgb } = await import("pdf-lib")
+  const modelo = obterModeloVinculo(modeloId)
+  if (!modelo) throw new Error("Modelo de documento inválido")
+  if (modelo.tipo === "ficha-cartao") {
+    throw new Error("O modelo de ficha, cartão e extrato usa outro preenchimento")
+  }
 
-  const modeloBytes = await carregarModeloPdf()
+  const { PDFDocument, StandardFonts, rgb } = await import("pdf-lib")
+  const cfg = modelo.layout
+
+  const modeloBytes = await carregarBytesModeloVinculo(modelo)
   const pdfDoc = await PDFDocument.load(modeloBytes)
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica)
   const pages = pdfDoc.getPages()

@@ -6,6 +6,7 @@ import {
 } from "@/lib/vinculos-gerar-lote"
 import type { DadosOpcionaisFichaAdmissao } from "@/lib/vinculos-beneficiario-dados"
 import { parseConfigPreenchimentoSintetico } from "@/lib/vinculos-dados-sinteticos"
+import { obterModeloVinculo } from "@/lib/vinculos-modelos"
 import type { EntradaPlanilhaLote } from "@/lib/vinculos-planilha"
 
 export const maxDuration = 300
@@ -39,6 +40,12 @@ function respostaZip(resultado: Awaited<ReturnType<typeof gerarLoteFichasVinculo
     })
   }
 
+  const downloads = resultado.downloads?.length
+    ? resultado.downloads
+    : resultado.download_url
+      ? [{ nome_arquivo: resultado.nome_arquivo, download_url: resultado.download_url }]
+      : []
+
   return NextResponse.json({
     success: true,
     entrega: "storage",
@@ -46,8 +53,10 @@ function respostaZip(resultado: Awaited<ReturnType<typeof gerarLoteFichasVinculo
     total_solicitado: resultado.total_solicitado,
     gerados_ids: resultado.gerados_ids,
     falhas: resultado.falhas,
-    download_url: resultado.download_url,
-    nome_arquivo: resultado.nome_arquivo,
+    download_url: downloads[0]?.download_url,
+    nome_arquivo: downloads[0]?.nome_arquivo || resultado.nome_arquivo,
+    downloads,
+    partes: downloads.length,
     expires_in_seconds: resultado.expires_in_seconds,
   })
 }
@@ -70,6 +79,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "administradora_id é obrigatório" }, { status: 400 })
     }
 
+    const modelo = obterModeloVinculo(body.modelo_id)
+    if (!modelo) {
+      return NextResponse.json({ error: "Modelo de documento inválido" }, { status: 400 })
+    }
+
     const opcionais = parseOpcionais(body)
     const preenchimentoSintetico = parseConfigPreenchimentoSintetico(body)
 
@@ -86,6 +100,7 @@ export async function POST(request: NextRequest) {
         entradas: linhasPlanilha,
         opcionaisLote: opcionais,
         preenchimentoSintetico,
+        modeloId: modelo.id,
       })
 
       return respostaZip(resultado)
@@ -109,6 +124,7 @@ export async function POST(request: NextRequest) {
       vidaImportadaIds: ids,
       opcionais,
       preenchimentoSintetico,
+      modeloId: modelo.id,
     })
 
     return respostaZip(resultado)

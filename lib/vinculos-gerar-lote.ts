@@ -1,7 +1,8 @@
 import JSZip from "jszip"
 import { supabaseAdmin } from "@/lib/supabase-admin"
 import { validarCPF } from "@/utils/validacoes"
-import { gerarFichaAdmissaoAptiPdf } from "@/lib/ficha-admissao-apti-pdf"
+import { obterModeloVinculo } from "@/lib/vinculos-modelos"
+import { gerarPdfVinculo } from "@/lib/vinculos-gerar-pdf"
 import {
   carregarVidaParaVinculos,
   mapearVidaParaFichaAdmissao,
@@ -12,7 +13,9 @@ import {
   type ConfigPreenchimentoSintetico,
 } from "@/lib/vinculos-dados-sinteticos"
 import {
+  nomeArquivoVinculoUnico,
   VINCULOS_LOTE_MAX_PDFS,
+  VINCULOS_LOTE_STORAGE_PARTE_MAX_BYTES,
   VINCULOS_LOTE_ZIP_DIRECT_MAX_BYTES,
 } from "@/lib/vinculos-constants"
 import type { EntradaPlanilhaLote } from "@/lib/vinculos-planilha"
@@ -29,6 +32,11 @@ export type FalhaLoteVinculos = {
   motivo: string
 }
 
+export type DownloadLoteVinculos = {
+  nome_arquivo: string
+  download_url: string
+}
+
 export type ResultadoLoteVinculos = {
   total_solicitado: number
   gerados: number
@@ -38,18 +46,13 @@ export type ResultadoLoteVinculos = {
   entrega: "direct" | "storage"
   zip_buffer?: Buffer
   download_url?: string
+  downloads?: DownloadLoteVinculos[]
   expires_in_seconds?: number
 }
 
-function nomeArquivoPdf(nome: string, vidaId: string): string {
-  const base = String(nome || "beneficiario")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-zA-Z0-9-_]+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "")
-    .slice(0, 50)
-  return `ficha-admissao-${base || vidaId.slice(0, 8)}.pdf`
+type ArquivoLote = {
+  nome: string
+  bytes: Uint8Array
 }
 
 function validarAutomaticosParaPdf(automaticos: ReturnType<typeof mapearVidaParaFichaAdmissao>): string | null {
@@ -107,15 +110,45 @@ function mesclarOpcionaisLote(
   return out
 }
 
+function agruparArquivosPorTamanho(arquivos: ArquivoLote[], limiteBytes: number): ArquivoLote[][] {
+  const grupos: ArquivoLote[][] = []
+  let atual: ArquivoLote[] = []
+  let tamanho = 0
+
+  for (const arquivo of arquivos) {
+    const peso = arquivo.bytes.byteLength
+    if (atual.length > 0 && tamanho + peso > limiteBytes) {
+      grupos.push(atual)
+      atual = []
+      tamanho = 0
+    }
+    atual.push(arquivo)
+    tamanho += peso
+  }
+
+  if (atual.length > 0) grupos.push(atual)
+  return grupos
+}
+
+async function zipDeArquivos(arquivos: ArquivoLote[], comprimir: boolean): Promise<Buffer> {
+  const zip = new JSZip()
+  for (const arquivo of arquivos) zip.file(arquivo.nome, arquivo.bytes)
+  return zip.generateAsync({
+    type: "nodebuffer",
+    compression: comprimir ? "DEFLATE" : "STORE",
+    compressionOptions: comprimir ? { level: 6 } : undefined,
+  })
+}
+
 async function finalizarZipLote(params: {
   administradoraId: string
-  zip: JSZip
+  arquivos: ArquivoLote[]
   falhas: FalhaLoteVinculos[]
   geradosIds: string[]
   gerados: number
   totalSolicitado: number
 }): Promise<ResultadoLoteVinculos> {
-  if (params.gerados === 0) {
+  if (params.gerados === 0 || params.arquivos.length === 0) {
     throw new Error(
       params.falhas.length > 0
         ? `Nenhum PDF gerado. Primeiro erro: ${params.falhas[0].motivo}`
@@ -123,35 +156,49 @@ async function finalizarZipLote(params: {
     )
   }
 
-  const zipBuffer = await params.zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE" })
   const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19)
-  const nomeArquivo = `fichas-admissao-lote-${stamp}.zip`
+  const nomeBase = `fichas-admissao-lote-${stamp}`
+  const tamanhoTotal = params.arquivos.reduce((soma, arquivo) => soma + arquivo.bytes.byteLength, 0)
 
   const base: ResultadoLoteVinculos = {
     total_solicitado: params.totalSolicitado,
     gerados: params.gerados,
     gerados_ids: params.geradosIds,
     falhas: params.falhas,
-    nome_arquivo: nomeArquivo,
+    nome_arquivo: `${nomeBase}.zip`,
     entrega: "direct",
   }
 
-  if (zipBuffer.length <= VINCULOS_LOTE_ZIP_DIRECT_MAX_BYTES) {
-    return { ...base, entrega: "direct", zip_buffer: zipBuffer }
+  if (tamanhoTotal <= VINCULOS_LOTE_ZIP_DIRECT_MAX_BYTES) {
+    const zipBuffer = await zipDeArquivos(params.arquivos, true)
+    if (zipBuffer.length <= VINCULOS_LOTE_ZIP_DIRECT_MAX_BYTES) {
+      return { ...base, entrega: "direct", zip_buffer: zipBuffer }
+    }
   }
 
-  const publicado = await publicarZipNoStorage({
-    administradoraId: params.administradoraId,
-    zipBuffer,
-    nomeArquivo,
-    gerados: params.gerados,
-  })
+  const grupos = agruparArquivosPorTamanho(params.arquivos, VINCULOS_LOTE_STORAGE_PARTE_MAX_BYTES)
+  const downloads: DownloadLoteVinculos[] = []
+
+  for (let indice = 0; indice < grupos.length; indice++) {
+    const zipBuffer = await zipDeArquivos(grupos[indice], false)
+    const nomeArquivo =
+      grupos.length === 1 ? `${nomeBase}.zip` : `${nomeBase}-parte-${indice + 1}-de-${grupos.length}.zip`
+    const publicado = await publicarZipNoStorage({
+      administradoraId: params.administradoraId,
+      zipBuffer,
+      nomeArquivo,
+      gerados: grupos[indice].length,
+    })
+    downloads.push({ nome_arquivo: nomeArquivo, download_url: publicado.download_url })
+  }
 
   return {
     ...base,
+    nome_arquivo: downloads[0]?.nome_arquivo || base.nome_arquivo,
     entrega: "storage",
-    download_url: publicado.download_url,
-    expires_in_seconds: publicado.expires_in_seconds,
+    download_url: downloads[0]?.download_url,
+    downloads,
+    expires_in_seconds: 3600,
   }
 }
 
@@ -160,14 +207,18 @@ export async function gerarLoteFichasVinculosZipFromPlanilha(params: {
   entradas: EntradaPlanilhaLote[]
   opcionaisLote: DadosOpcionaisFichaAdmissao
   preenchimentoSintetico?: ConfigPreenchimentoSintetico
+  modeloId?: string | null
 }): Promise<ResultadoLoteVinculos> {
+  const modelo = obterModeloVinculo(params.modeloId)
+  if (!modelo) throw new Error("Modelo de documento inválido")
   const entradas = params.entradas
   if (entradas.length === 0) throw new Error("Selecione ao menos um beneficiário da planilha")
   if (entradas.length > VINCULOS_LOTE_MAX_PDFS) {
     throw new Error(`Máximo de ${VINCULOS_LOTE_MAX_PDFS} PDFs por lote`)
   }
 
-  const zip = new JSZip()
+  const arquivos: ArquivoLote[] = []
+  const nomesUsados = new Set<string>()
   const falhas: FalhaLoteVinculos[] = []
   const geradosIds: string[] = []
   let gerados = 0
@@ -197,8 +248,16 @@ export async function gerarLoteFichasVinculosZipFromPlanilha(params: {
         continue
       }
 
-      const pdfBytes = await gerarFichaAdmissaoAptiPdf(automaticos, opcionais)
-      zip.file(nomeArquivoPdf(nome, refId), pdfBytes)
+      const pdfBytes = await gerarPdfVinculo({
+        modeloId: modelo.id,
+        automaticos,
+        opcionais,
+        partesEndereco: entrada.partesEndereco,
+      })
+      arquivos.push({
+        nome: nomeArquivoVinculoUnico(nomesUsados, nome, `linha-${entrada.linha}`),
+        bytes: pdfBytes,
+      })
       geradosIds.push(refId)
       gerados += 1
     } catch (e: unknown) {
@@ -212,7 +271,7 @@ export async function gerarLoteFichasVinculosZipFromPlanilha(params: {
 
   return finalizarZipLote({
     administradoraId: params.administradoraId,
-    zip,
+    arquivos,
     falhas,
     geradosIds,
     gerados,
@@ -225,14 +284,18 @@ export async function gerarLoteFichasVinculosZip(params: {
   vidaImportadaIds: string[]
   opcionais: DadosOpcionaisFichaAdmissao
   preenchimentoSintetico?: ConfigPreenchimentoSintetico
+  modeloId?: string | null
 }): Promise<ResultadoLoteVinculos> {
+  const modelo = obterModeloVinculo(params.modeloId)
+  if (!modelo) throw new Error("Modelo de documento inválido")
   const ids = Array.from(new Set(params.vidaImportadaIds.map((id) => String(id).trim()).filter(Boolean)))
   if (ids.length === 0) throw new Error("Selecione ao menos um beneficiário")
   if (ids.length > VINCULOS_LOTE_MAX_PDFS) {
     throw new Error(`Máximo de ${VINCULOS_LOTE_MAX_PDFS} PDFs por lote`)
   }
 
-  const zip = new JSZip()
+  const arquivos: ArquivoLote[] = []
+  const nomesUsados = new Set<string>()
   const falhas: FalhaLoteVinculos[] = []
   const geradosIds: string[] = []
   let gerados = 0
@@ -263,8 +326,16 @@ export async function gerarLoteFichasVinculosZip(params: {
         continue
       }
 
-      const pdfBytes = await gerarFichaAdmissaoAptiPdf(automaticos, opcionais)
-      zip.file(nomeArquivoPdf(nome, vidaId), pdfBytes)
+      const pdfBytes = await gerarPdfVinculo({
+        modeloId: modelo.id,
+        automaticos,
+        opcionais,
+        vida,
+      })
+      arquivos.push({
+        nome: nomeArquivoVinculoUnico(nomesUsados, nome, vidaId.slice(0, 8)),
+        bytes: pdfBytes,
+      })
       geradosIds.push(vidaId)
       gerados += 1
     } catch (e: unknown) {
@@ -286,7 +357,7 @@ export async function gerarLoteFichasVinculosZip(params: {
 
   return finalizarZipLote({
     administradoraId: params.administradoraId,
-    zip,
+    arquivos,
     falhas,
     geradosIds,
     gerados,

@@ -21,13 +21,25 @@ export type LinhaFichaPlanilha = {
   linha: number
   automaticos: DadosAutomaticosFichaAdmissao
   opcionais: DadosOpcionaisFichaAdmissao
+  partesEndereco?: PartesEnderecoVinculo
   faltando: string[]
+}
+
+export type PartesEnderecoVinculo = {
+  logradouro: string
+  numero: string
+  complemento: string
+  bairro: string
+  cidade: string
+  uf: string
+  cep: string
 }
 
 export type EntradaPlanilhaLote = {
   linha: number
   automaticos: DadosAutomaticosFichaAdmissao
   opcionais?: DadosOpcionaisFichaAdmissao
+  partesEndereco?: PartesEnderecoVinculo
 }
 
 export type CampoFichaVinculos = {
@@ -143,6 +155,35 @@ export const CAMPOS_FICHA_VINCULOS: CampoFichaVinculos[] = [
     aliases: ["estado", "uf"],
   },
   {
+    id: "telefone",
+    label: "Telefone",
+    obrigatorio: false,
+    descricao: "Preenche o celular e o WhatsApp na ficha com cartão",
+    aliases: [
+      "telefone",
+      "celular",
+      "whatsapp",
+      "telefone celular",
+      "tel",
+      "fone",
+      "phone",
+    ],
+  },
+  {
+    id: "email",
+    label: "E-mail",
+    obrigatorio: false,
+    descricao: "Preenche o e-mail na ficha com cartão",
+    aliases: ["email", "e-mail", "e mail", "correio eletronico"],
+  },
+  {
+    id: "profissao",
+    label: "Profissão",
+    obrigatorio: false,
+    descricao: "Preenche a profissão na ficha com cartão",
+    aliases: ["profissao", "profissão", "funcao", "função", "atividade", "cargo", "ocupacao"],
+  },
+  {
     id: "estado_civil",
     label: "Estado civil",
     obrigatorio: false,
@@ -156,7 +197,28 @@ export const CAMPOS_FICHA_VINCULOS: CampoFichaVinculos[] = [
     descricao: "Opcional no PDF; pode ser preenchido para todo o lote abaixo",
     aliases: ["grau_instrucao", "grau instrução", "escolaridade", "grau de instrucao"],
   },
+  {
+    id: "tem_dependentes",
+    label: "Tem dependentes",
+    obrigatorio: false,
+    descricao: "Sim marca a opção Sim na ficha; Não marca Não",
+    aliases: [
+      "tem dependentes",
+      "tem_dependentes",
+      "possui dependentes",
+      "possui_dependentes",
+      "dependentes",
+    ],
+  },
 ]
+
+/** Sim, S, 1 ou verdadeiro marcam Sim. Não, N, 0 ou qualquer outro texto marcam Não. Vazio não decide. */
+export function interpretarTemDependentes(valor: string): "sim" | "nao" | "" {
+  const texto = normalizarHeaderPlanilha(valor)
+  if (!texto) return ""
+  if (texto === "sim" || texto === "s" || texto === "yes" || texto === "true" || texto === "1") return "sim"
+  return "nao"
+}
 
 const ALIAS_NOME = ["nome", "name", "beneficiario", "beneficiário", "nome completo", "nome_beneficiario"]
 const ALIAS_CPF = ["cpf", "cpf beneficiario", "cpf beneficiário", "documento", "cpf_cnpj"]
@@ -373,6 +435,15 @@ export function mapearLinhaPlanilhaParaFicha(
 
   const cpfFmt = formatarCpfPlanilha(cpfDig)
   const dataIso = normalizarDataNascimentoPlanilha(getValorPlanilhaMapeado(row, "data_nascimento", mapCol))
+  const partesEndereco: PartesEnderecoVinculo = {
+    logradouro: getValorPlanilhaMapeado(row, "logradouro", mapCol).toUpperCase(),
+    numero: getValorPlanilhaMapeado(row, "numero", mapCol),
+    complemento: getValorPlanilhaMapeado(row, "complemento", mapCol).toUpperCase(),
+    bairro: getValorPlanilhaMapeado(row, "bairro", mapCol).toUpperCase(),
+    cidade: getValorPlanilhaMapeado(row, "cidade", mapCol).toUpperCase(),
+    uf: getValorPlanilhaMapeado(row, "estado", mapCol).slice(0, 2).toUpperCase(),
+    cep: getValorPlanilhaMapeado(row, "cep", mapCol).replace(/\D/g, ""),
+  }
 
   const automaticos: DadosAutomaticosFichaAdmissao = {
     nome: nome.toUpperCase(),
@@ -383,20 +454,27 @@ export function mapearLinhaPlanilhaParaFicha(
     rg: getValorPlanilhaMapeado(row, "identidade", mapCol),
     orgao_emissor: getValorPlanilhaMapeado(row, "orgao_emissor", mapCol).toUpperCase(),
     endereco_completo: montarEnderecoPlanilha({
-      logradouro: getValorPlanilhaMapeado(row, "logradouro", mapCol),
-      numero: getValorPlanilhaMapeado(row, "numero", mapCol),
-      complemento: getValorPlanilhaMapeado(row, "complemento", mapCol),
-      bairro: getValorPlanilhaMapeado(row, "bairro", mapCol),
-      cidade: getValorPlanilhaMapeado(row, "cidade", mapCol),
-      estado: getValorPlanilhaMapeado(row, "estado", mapCol).slice(0, 2).toUpperCase(),
-      cep: getValorPlanilhaMapeado(row, "cep", mapCol).replace(/\D/g, ""),
+      logradouro: partesEndereco.logradouro,
+      numero: partesEndereco.numero,
+      complemento: partesEndereco.complemento,
+      bairro: partesEndereco.bairro,
+      cidade: partesEndereco.cidade,
+      estado: partesEndereco.uf,
+      cep: partesEndereco.cep,
     }).toUpperCase(),
     carteira_trabalho_digital: cpfFmt,
   }
 
+  const temDependentes = interpretarTemDependentes(
+    getValorPlanilhaMapeado(row, "tem_dependentes", mapCol)
+  )
   const opcionaisLinha: DadosOpcionaisFichaAdmissao = {
     estado_civil: getValorPlanilhaMapeado(row, "estado_civil", mapCol),
     grau_instrucao: getValorPlanilhaMapeado(row, "grau_instrucao", mapCol),
+    telefone: getValorPlanilhaMapeado(row, "telefone", mapCol),
+    email: getValorPlanilhaMapeado(row, "email", mapCol),
+    funcao: getValorPlanilhaMapeado(row, "profissao", mapCol),
+    ...(temDependentes ? { possui_dependentes: temDependentes } : {}),
   }
   const opcionais = mesclarOpcionais(opcionaisLote, opcionaisLinha)
 
@@ -405,6 +483,7 @@ export function mapearLinhaPlanilhaParaFicha(
     linha: linhaNum,
     automaticos,
     opcionais,
+    partesEndereco,
     faltando: listarCamposFaltandoFicha(automaticos, opcionais),
   }
 }

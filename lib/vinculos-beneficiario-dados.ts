@@ -24,6 +24,12 @@ export type DadosOpcionaisFichaAdmissao = {
   estado_civil?: string
   grau_instrucao?: string
   contrato_experiencia?: "sim" | "nao" | ""
+  /** Ficha com cartão: Sim ou Não marca o campo "Tem dependentes?". */
+  possui_dependentes?: "sim" | "nao" | ""
+  /** Ficha com cartão: o mesmo número preenche celular e WhatsApp. */
+  telefone?: string
+  /** Ficha com cartão: preenche o e-mail. */
+  email?: string
 }
 
 function valorCampo(obj: Registro | null | undefined, chaves: string[]): string {
