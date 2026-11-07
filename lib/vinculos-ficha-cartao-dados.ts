@@ -134,6 +134,7 @@ function ultimoDiaDoMes(ano: number, mes: number): number {
   return new Date(ano, mes, 0).getDate()
 }
 
+/** Do mês da filiação até o mês atual. A ficha só tem 12 linhas, então um intervalo maior fica com os 12 mais recentes. */
 export function listarMesesContribuicao(inicio: Date, hoje: Date): Array<{ ano: number; mes: number }> {
   const cursor = new Date(inicio.getFullYear(), inicio.getMonth(), 1)
   const fim = new Date(hoje.getFullYear(), hoje.getMonth(), 1)

@@ -184,6 +184,22 @@ export const CAMPOS_FICHA_VINCULOS: CampoFichaVinculos[] = [
     aliases: ["profissao", "profissão", "funcao", "função", "atividade", "cargo", "ocupacao"],
   },
   {
+    id: "data_filiacao",
+    label: "Data de filiação",
+    obrigatorio: false,
+    descricao: "Data da ficha e início do extrato. Entram os meses da filiação até o mês atual, cada um como pago",
+    aliases: [
+      "data de filiacao",
+      "data filiacao",
+      "data_filiacao",
+      "filiacao",
+      "data de admissao",
+      "data admissao",
+      "data de associacao",
+      "associado desde",
+    ],
+  },
+  {
     id: "estado_civil",
     label: "Estado civil",
     obrigatorio: false,
@@ -468,12 +484,19 @@ export function mapearLinhaPlanilhaParaFicha(
   const temDependentes = interpretarTemDependentes(
     getValorPlanilhaMapeado(row, "tem_dependentes", mapCol)
   )
+  const dataFiliacaoIso = normalizarDataNascimentoPlanilha(
+    getValorPlanilhaMapeado(row, "data_filiacao", mapCol)
+  )
+  const dataFiliacao = /^\d{4}-\d{2}-\d{2}$/.test(dataFiliacaoIso)
+    ? formatarDataFichaAdmissao(dataFiliacaoIso)
+    : ""
   const opcionaisLinha: DadosOpcionaisFichaAdmissao = {
     estado_civil: getValorPlanilhaMapeado(row, "estado_civil", mapCol),
     grau_instrucao: getValorPlanilhaMapeado(row, "grau_instrucao", mapCol),
     telefone: getValorPlanilhaMapeado(row, "telefone", mapCol),
     email: getValorPlanilhaMapeado(row, "email", mapCol),
     funcao: getValorPlanilhaMapeado(row, "profissao", mapCol),
+    ...(dataFiliacao ? { data_admissao: dataFiliacao } : {}),
     ...(temDependentes ? { possui_dependentes: temDependentes } : {}),
   }
   const opcionais = mesclarOpcionais(opcionaisLote, opcionaisLinha)

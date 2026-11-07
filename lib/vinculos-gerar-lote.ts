@@ -15,6 +15,7 @@ import {
 import {
   nomeArquivoVinculoUnico,
   VINCULOS_LOTE_MAX_PDFS,
+  VINCULOS_LOTE_PDFS_POR_ZIP,
   VINCULOS_LOTE_STORAGE_PARTE_MAX_BYTES,
   VINCULOS_LOTE_ZIP_DIRECT_MAX_BYTES,
 } from "@/lib/vinculos-constants"
@@ -32,9 +33,16 @@ export type FalhaLoteVinculos = {
   motivo: string
 }
 
+export type ItemZipLote = {
+  linha: number | null
+  pdf: string
+}
+
 export type DownloadLoteVinculos = {
   nome_arquivo: string
   download_url: string
+  tamanho: number
+  itens: ItemZipLote[]
 }
 
 export type ResultadoLoteVinculos = {
@@ -53,6 +61,7 @@ export type ResultadoLoteVinculos = {
 type ArquivoLote = {
   nome: string
   bytes: Uint8Array
+  linha?: number
 }
 
 function validarAutomaticosParaPdf(automaticos: ReturnType<typeof mapearVidaParaFichaAdmissao>): string | null {
@@ -68,7 +77,7 @@ async function publicarZipNoStorage(params: {
   zipBuffer: Buffer
   nomeArquivo: string
   gerados: number
-}): Promise<{ download_url: string; expires_in_seconds: number }> {
+}): Promise<{ download_url: string; expires_in_seconds: number; tamanho: number }> {
   const storagePath = `${STORAGE_PREFIX}/${params.administradoraId}/${params.nomeArquivo}`
 
   const { error: uploadError } = await supabaseAdmin.storage
@@ -93,7 +102,7 @@ async function publicarZipNoStorage(params: {
     throw new Error("ZIP salvo, mas não foi possível gerar o link de download")
   }
 
-  return { download_url: downloadUrl, expires_in_seconds: expiresIn }
+  return { download_url: downloadUrl, expires_in_seconds: expiresIn, tamanho: params.zipBuffer.length }
 }
 
 function mesclarOpcionaisLote(
@@ -110,14 +119,19 @@ function mesclarOpcionaisLote(
   return out
 }
 
-function agruparArquivosPorTamanho(arquivos: ArquivoLote[], limiteBytes: number): ArquivoLote[][] {
+function agruparArquivosPorPacote(
+  arquivos: ArquivoLote[],
+  maxArquivos: number,
+  limiteBytes: number
+): ArquivoLote[][] {
   const grupos: ArquivoLote[][] = []
   let atual: ArquivoLote[] = []
   let tamanho = 0
 
   for (const arquivo of arquivos) {
     const peso = arquivo.bytes.byteLength
-    if (atual.length > 0 && tamanho + peso > limiteBytes) {
+    const pacoteCheio = atual.length >= maxArquivos || tamanho + peso > limiteBytes
+    if (atual.length > 0 && pacoteCheio) {
       grupos.push(atual)
       atual = []
       tamanho = 0
@@ -130,9 +144,28 @@ function agruparArquivosPorTamanho(arquivos: ArquivoLote[], limiteBytes: number)
   return grupos
 }
 
+function nomeZipDoGrupo(arquivos: ArquivoLote[], stamp: string, indice: number, total: number): string {
+  const linhas = arquivos.map((arquivo) => arquivo.linha).filter((linha): linha is number => typeof linha === "number")
+  if (linhas.length === arquivos.length && linhas.length > 0) {
+    const inicio = String(Math.min(...linhas)).padStart(4, "0")
+    const fim = String(Math.max(...linhas)).padStart(4, "0")
+    return `fichas-linhas-${inicio}-a-${fim}.zip`
+  }
+  if (total === 1) return `fichas-admissao-lote-${stamp}.zip`
+  const parte = String(indice + 1).padStart(2, "0")
+  const partes = String(total).padStart(2, "0")
+  return `fichas-admissao-lote-${stamp}-parte-${parte}-de-${partes}.zip`
+}
+
 async function zipDeArquivos(arquivos: ArquivoLote[], comprimir: boolean): Promise<Buffer> {
   const zip = new JSZip()
-  for (const arquivo of arquivos) zip.file(arquivo.nome, arquivo.bytes)
+  const indice = ["linha;pdf"]
+  for (const arquivo of arquivos) {
+    zip.file(arquivo.nome, arquivo.bytes)
+    const pdf = `"${arquivo.nome.replace(/"/g, '""')}"`
+    indice.push(`${arquivo.linha ?? ""};${pdf}`)
+  }
+  zip.file("indice.csv", indice.join("\n"))
   return zip.generateAsync({
     type: "nodebuffer",
     compression: comprimir ? "DEFLATE" : "STORE",
@@ -176,20 +209,29 @@ async function finalizarZipLote(params: {
     }
   }
 
-  const grupos = agruparArquivosPorTamanho(params.arquivos, VINCULOS_LOTE_STORAGE_PARTE_MAX_BYTES)
+  const grupos = agruparArquivosPorPacote(
+    params.arquivos,
+    VINCULOS_LOTE_PDFS_POR_ZIP,
+    VINCULOS_LOTE_STORAGE_PARTE_MAX_BYTES
+  )
   const downloads: DownloadLoteVinculos[] = []
 
   for (let indice = 0; indice < grupos.length; indice++) {
-    const zipBuffer = await zipDeArquivos(grupos[indice], false)
-    const nomeArquivo =
-      grupos.length === 1 ? `${nomeBase}.zip` : `${nomeBase}-parte-${indice + 1}-de-${grupos.length}.zip`
+    const grupo = grupos[indice]
+    const zipBuffer = await zipDeArquivos(grupo, false)
+    const nomeArquivo = nomeZipDoGrupo(grupo, stamp, indice, grupos.length)
     const publicado = await publicarZipNoStorage({
       administradoraId: params.administradoraId,
       zipBuffer,
       nomeArquivo,
-      gerados: grupos[indice].length,
+      gerados: grupo.length,
     })
-    downloads.push({ nome_arquivo: nomeArquivo, download_url: publicado.download_url })
+    downloads.push({
+      nome_arquivo: nomeArquivo,
+      download_url: publicado.download_url,
+      tamanho: publicado.tamanho,
+      itens: grupo.map((arquivo) => ({ linha: arquivo.linha ?? null, pdf: arquivo.nome })),
+    })
   }
 
   return {
@@ -257,6 +299,7 @@ export async function gerarLoteFichasVinculosZipFromPlanilha(params: {
       arquivos.push({
         nome: nomeArquivoVinculoUnico(nomesUsados, nome, `linha-${entrada.linha}`),
         bytes: pdfBytes,
+        linha: entrada.linha,
       })
       geradosIds.push(refId)
       gerados += 1

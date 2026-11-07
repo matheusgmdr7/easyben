@@ -28,11 +28,14 @@ import {
   type LinhaFichaPlanilha,
   type LinhaPlanilhaVinculos,
 } from "@/lib/vinculos-planilha"
-import { VINCULOS_LOTE_MAX_PDFS } from "@/lib/vinculos-constants"
+import { VINCULOS_LOTE_MAX_PDFS, VINCULOS_LOTE_PDFS_POR_ZIP } from "@/lib/vinculos-constants"
 import {
   limparGeradosVinculosLocal,
   listarGeradosVinculosLocal,
+  listarZipsVinculosLocal,
   marcarGeradosVinculosLocal,
+  marcarZipBaixadoVinculosLocal,
+  registrarZipsVinculosLocal,
 } from "@/lib/vinculos-gerados-local"
 import { VinculosGeracaoProgresso } from "@/components/administradora/vinculos-geracao-progresso"
 import { VinculosPreenchimentoForm } from "@/components/administradora/vinculos-preenchimento-form"
@@ -87,7 +90,12 @@ function extrairMensagemErroLote(payload: unknown): string | null {
   return null
 }
 
-type ParteDownloadLote = { nome_arquivo: string; download_url: string }
+type ParteDownloadLote = {
+  nome_arquivo: string
+  download_url: string
+  tamanho?: number
+  itens?: Array<{ linha: number | null; pdf: string }>
+}
 
 function baixarArquivoLote(url: string, nome: string) {
   const a = document.createElement("a")
@@ -132,6 +140,7 @@ type FilaAutomatica = {
   totalLotes: number
   mensagem: string
   pastaEscolhida: boolean
+  unidade: "fichas" | "arquivos"
 }
 
 async function escolherPastaDownloads(): Promise<PastaArquivos | null> {
@@ -142,6 +151,25 @@ async function escolherPastaDownloads(): Promise<PastaArquivos | null> {
   ).showDirectoryPicker
   if (!picker) return null
   return picker({ mode: "readwrite", id: "vinculos-fichas" })
+}
+
+async function arquivoCompletoNaPasta(
+  pasta: {
+    entries: () => AsyncIterable<[string, { kind: string; getFile: () => Promise<File> }]>
+  },
+  nome: string,
+  tamanho: number
+): Promise<boolean> {
+  const escapado = nome.replace(/\.zip$/i, "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+  const copia = new RegExp(`^${escapado} \\(\\d+\\)\\.zip$`, "i")
+  for await (const [nomeLocal, handle] of pasta.entries()) {
+    if (handle.kind !== "file" || nomeLocal.endsWith(".crdownload")) continue
+    const confere = nomeLocal === nome || nomeLocal.endsWith(`-${nome}`) || copia.test(nomeLocal)
+    if (!confere) continue
+    const file = await handle.getFile()
+    if (tamanho > 0 ? file.size >= tamanho * 0.95 : file.size > 0) return true
+  }
+  return false
 }
 
 async function gravarArquivosLote(
@@ -206,13 +234,12 @@ function aplicarPosGeracaoLote(params: {
     toast.warning(
       `ZIP gerado com ${params.gerados} PDF(s). ${params.falhas.length} beneficiário(s) não incluído(s).`
     )
-  } else {
-    const partes = params.partes?.length ?? 1
+  } else if (params.partes && params.partes.length > 0) {
     toast.success(
-      partes > 1
-        ? `${params.gerados} PDF(s) gerados em ${partes} arquivos ZIP`
-        : `${params.gerados} PDF(s) gerados e baixados em ZIP`
+      `${params.gerados} PDF(s) guardados em ${params.partes.length} ZIP(s). Baixe quando houver espaço.`
     )
+  } else {
+    toast.success(`${params.gerados} PDF(s) gerados e baixados em ZIP`)
   }
 }
 
@@ -233,6 +260,7 @@ export function VinculosLotePanel({
   const [carregandoGrupos, setCarregandoGrupos] = useState(true)
   const [carregandoVidas, setCarregandoVidas] = useState(false)
   const [gerando, setGerando] = useState(false)
+  const [repondo, setRepondo] = useState(false)
   const [fila, setFila] = useState<FilaAutomatica | null>(null)
   const filaParar = useRef(false)
   const filaPausar = useRef(false)
@@ -325,14 +353,14 @@ export function VinculosLotePanel({
   }, [grupoId, carregarVidasGrupo, modoSelecao])
 
   useEffect(() => {
-    if (!gerando) return
+    if (!gerando && !repondo) return
     const avisarSaida = (evento: BeforeUnloadEvent) => {
       evento.preventDefault()
       evento.returnValue = ""
     }
     window.addEventListener("beforeunload", avisarSaida)
     return () => window.removeEventListener("beforeunload", avisarSaida)
-  }, [gerando])
+  }, [gerando, repondo])
 
   function parseArquivoPlanilha(file: File): Promise<{ headers: string[]; rows: LinhaPlanilhaVinculos[] }> {
     return new Promise((resolve, reject) => {
@@ -538,6 +566,7 @@ export function VinculosLotePanel({
         "Telefone",
         "E-mail",
         "Profissão",
+        "Data de filiação",
         "Tem dependentes",
       ],
       [
@@ -557,9 +586,10 @@ export function VinculosLotePanel({
         "11988887777",
         "maria@exemplo.com",
         "ANALISTA",
+        "15/01/2026",
         "Sim",
       ],
-      ["JOAO SANTOS", "98765432100", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "Não"],
+      ["JOAO SANTOS", "98765432100", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "Não"],
     ])
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, "Beneficiarios")
@@ -727,19 +757,37 @@ export function VinculosLotePanel({
       }
 
       const partes: ParteDownloadLote[] = Array.isArray(data.downloads)
-        ? data.downloads.flatMap((item: { download_url?: string; nome_arquivo?: string }) =>
-            item?.download_url && item?.nome_arquivo
-              ? [{ download_url: item.download_url, nome_arquivo: item.nome_arquivo }]
-              : []
+        ? data.downloads.flatMap(
+            (item: {
+              download_url?: string
+              nome_arquivo?: string
+              tamanho?: number
+              itens?: Array<{ linha?: number | null; pdf?: string }>
+            }) =>
+              item?.download_url && item?.nome_arquivo
+                ? [
+                    {
+                      download_url: item.download_url,
+                      nome_arquivo: item.nome_arquivo,
+                      tamanho: Number(item.tamanho) || 0,
+                      itens: Array.isArray(item.itens)
+                        ? item.itens.flatMap((entrada) =>
+                            typeof entrada?.pdf === "string"
+                              ? [{ linha: Number(entrada.linha) || null, pdf: entrada.pdf }]
+                              : []
+                          )
+                        : [],
+                    },
+                  ]
+                : []
           )
-        : [{ download_url: data.download_url, nome_arquivo: data.nome_arquivo || "fichas-admissao-lote.zip" }]
-
-      const arquivos: Array<{ nome: string; blob: Blob }> = []
-      for (const parte of partes) {
-        const resposta = await fetch(parte.download_url)
-        if (!resposta.ok) throw new Error(`Não foi possível baixar ${parte.nome_arquivo}`)
-        arquivos.push({ nome: parte.nome_arquivo, blob: await resposta.blob() })
-      }
+        : [
+            {
+              download_url: data.download_url,
+              nome_arquivo: data.nome_arquivo || "fichas-admissao-lote.zip",
+              tamanho: Number(data.tamanho) || 0,
+            },
+          ]
 
       const geradosIds = Array.isArray(data.gerados_ids) ? data.gerados_ids : []
       const falhas = Array.isArray(data.falhas)
@@ -749,7 +797,7 @@ export function VinculosLotePanel({
           }))
         : []
 
-      return { gerados: data.gerados ?? geradosIds.length, geradosIds, falhas, partes, arquivos }
+      return { gerados: data.gerados ?? geradosIds.length, geradosIds, falhas, partes, arquivos: [] }
     }
 
     if (!contentType.includes("application/zip")) {
@@ -808,7 +856,20 @@ export function VinculosLotePanel({
       setFila(null)
       setUltimoRelatorio(null)
       const resultado = await executarLote(Array.from(selecionados))
-      await gravarArquivosLote(resultado.arquivos, null)
+      if (resultado.arquivos.length > 0) {
+        await gravarArquivosLote(resultado.arquivos, null)
+      } else if (resultado.partes.length > 0) {
+        registrarZipsVinculosLocal(
+          administradoraId,
+          resultado.partes.map((parte) => ({
+            nome: parte.nome_arquivo,
+            tamanho: parte.tamanho,
+            itens: parte.itens,
+          }))
+        )
+      } else {
+        throw new Error("O lote foi gerado, mas nenhum arquivo foi guardado")
+      }
       registrarLoteGerado(resultado)
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Erro ao gerar lote")
@@ -829,19 +890,6 @@ export function VinculosLotePanel({
       return
     }
 
-    let pasta: PastaArquivos | null = null
-    try {
-      pasta = await escolherPastaDownloads()
-    } catch (e: unknown) {
-      if (e instanceof DOMException && e.name === "AbortError") return
-      pasta = null
-    }
-    if (!pasta) {
-      toast.info(
-        "Sem pasta escolhida, os ZIPs vão para Downloads. Se o navegador pedir, permita vários downloads."
-      )
-    }
-
     const lotes = fatiarIds(idsPendentes, VINCULOS_LOTE_MAX_PDFS)
     filaParar.current = false
     filaPausar.current = false
@@ -853,10 +901,10 @@ export function VinculosLotePanel({
       concluidos: 0,
       loteAtual: 0,
       totalLotes: lotes.length,
-      mensagem: pasta
-        ? "Os ZIPs serão gravados na pasta escolhida."
-        : "Os ZIPs serão baixados pelo navegador.",
-      pastaEscolhida: Boolean(pasta),
+      mensagem:
+        "Os ZIPs ficam guardados na nuvem. Nada é baixado agora, para o disco não encher no meio da geração.",
+      pastaEscolhida: false,
+      unidade: "fichas",
     })
 
     let concluidos = 0
@@ -872,11 +920,12 @@ export function VinculosLotePanel({
                   ...atual,
                   status: "interrompida",
                   concluidos,
-                  mensagem: "Interrompido. As fichas já salvas continuam marcadas. Gere de novo para seguir os pendentes.",
+                  mensagem:
+                    "Interrompido. As fichas já guardadas continuam marcadas. Gere de novo para seguir os pendentes.",
                 }
               : atual
           )
-          toast.info("Fila interrompida. O que já foi salvo permanece marcado como gerado.")
+          toast.info("Fila interrompida. O que já foi guardado permanece marcado como gerado.")
           return
         }
 
@@ -894,19 +943,19 @@ export function VinculosLotePanel({
         )
 
         const resultado = await executarLote(idsLote)
-        const arquivosNumerados = resultado.arquivos.map((arquivo) => ({
-          ...arquivo,
-          nome: `lote-${String(indice + 1).padStart(3, "0")}-${arquivo.nome}`,
-        }))
-        try {
-          await gravarArquivosLote(arquivosNumerados, pasta)
-        } catch (erro) {
-          setUltimoRelatorio({
-            gerados: resultado.gerados,
-            falhas: resultado.falhas,
-            partes: resultado.partes,
-          })
-          throw erro
+        if (resultado.partes.length > 0) {
+          registrarZipsVinculosLocal(
+            administradoraId,
+            resultado.partes.map((parte) => ({
+            nome: parte.nome_arquivo,
+            tamanho: parte.tamanho,
+            itens: parte.itens,
+          }))
+          )
+        } else if (resultado.arquivos.length > 0) {
+          await gravarArquivosLote(resultado.arquivos, null)
+        } else {
+          throw new Error("O lote foi gerado, mas nenhum arquivo foi guardado")
         }
         registrarLoteGerado({
           gerados: resultado.gerados,
@@ -922,8 +971,8 @@ export function VinculosLotePanel({
                 ...atual,
                 concluidos,
                 mensagem: filaPausar.current
-                  ? `Lote ${indice + 1} salvo. Fila pausada.`
-                  : `Lote ${indice + 1} de ${lotes.length} salvo.`,
+                  ? `Lote ${indice + 1} guardado. Fila pausada.`
+                  : `Lote ${indice + 1} de ${lotes.length} guardado na nuvem. Nada foi baixado.`,
               }
             : atual
         )
@@ -936,11 +985,14 @@ export function VinculosLotePanel({
               status: "concluida",
               concluidos,
               loteAtual: lotes.length,
-              mensagem: "Todos os pendentes foram processados.",
+              mensagem:
+                "Pendentes gerados e guardados. Quando houver espaço, use Baixar só o que faltou: um ZIP por vez, e a fila para se o arquivo não couber.",
             }
           : atual
       )
-      toast.success(`${concluidos} ficha(s) geradas em ${lotes.length} lote(s)`)
+      toast.success(
+        `${concluidos} ficha(s) guardadas em ${lotes.length} lote(s). Baixe depois, quando houver espaço.`
+      )
     } catch (e: unknown) {
       const mensagem = e instanceof Error ? e.message : "Erro ao gerar a fila"
       setFila((atual) =>
@@ -949,7 +1001,7 @@ export function VinculosLotePanel({
               ...atual,
               status: "erro",
               concluidos,
-              mensagem: `${mensagem} As fichas já salvas continuam marcadas. Clique de novo para continuar pelos pendentes.`,
+              mensagem: `${mensagem} As fichas já guardadas continuam marcadas. Clique de novo para continuar pelos pendentes.`,
             }
           : atual
       )
@@ -959,18 +1011,277 @@ export function VinculosLotePanel({
     }
   }
 
+  function baixarIndiceFichas() {
+    const zips = listarZipsVinculosLocal(administradoraId)
+    const linhas = zips
+      .flatMap((zip) => {
+        const itens = zip.itens.length > 0 ? zip.itens : [{ linha: null, pdf: "" }]
+        return itens.map((item) => ({
+          ZIP: zip.nome,
+          Linha: item.linha ?? "",
+          PDF: item.pdf,
+          Baixado: zip.baixado ? "Sim" : "Não",
+        }))
+      })
+      .sort((a, b) => String(a.Linha).padStart(6, "0").localeCompare(String(b.Linha).padStart(6, "0")))
+    if (linhas.length === 0) {
+      toast.info("Gere as fichas antes para montar o índice.")
+      return
+    }
+    const planilha = XLSX.utils.json_to_sheet(linhas)
+    const livro = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(livro, planilha, "Índice")
+    XLSX.writeFile(livro, "indice-fichas-vinculos.xlsx")
+  }
+
+  async function baixarSomenteFaltantes() {
+    let pasta: PastaArquivos | null = null
+    try {
+      pasta = await escolherPastaDownloads()
+    } catch (e: unknown) {
+      if (e instanceof DOMException && e.name === "AbortError") return
+      pasta = null
+    }
+    if (!pasta || typeof (pasta as { entries?: unknown }).entries !== "function") {
+      toast.error("Escolha a pasta onde os ZIPs já baixados estão, para copiar só o que faltou.")
+      return
+    }
+    const pastaListavel = pasta as PastaArquivos & {
+      entries: () => AsyncIterable<[string, { kind: string; getFile: () => Promise<File> }]>
+    }
+
+    filaParar.current = false
+    filaPausar.current = false
+    setRepondo(true)
+    setFila({
+      status: "rodando",
+      total: 0,
+      concluidos: 0,
+      loteAtual: 0,
+      totalLotes: 0,
+      mensagem: "Comparando a pasta com os ZIPs guardados...",
+      pastaEscolhida: true,
+      unidade: "arquivos",
+    })
+
+    try {
+      const resposta = await fetch(
+        `/api/administradora/beneficiarios/vinculos/lotes-arquivos?administradora_id=${encodeURIComponent(administradoraId)}`
+      )
+      const data = await resposta.json().catch(() => ({}))
+      if (!resposta.ok) throw new Error(data?.error || "Não foi possível listar os ZIPs")
+      const todos = (Array.isArray(data.arquivos) ? data.arquivos : []) as Array<{
+        nome: string
+        tamanho: number
+        atualizado_em?: string | null
+      }>
+      const porNome = new Map(todos.map((arquivo) => [arquivo.nome, arquivo]))
+      const limiteRecente = Date.now() - 36 * 60 * 60 * 1000
+      const recentes = todos.filter((arquivo) => {
+        const quando = arquivo.atualizado_em ? new Date(arquivo.atualizado_em).getTime() : 0
+        return quando >= limiteRecente
+      })
+      const registrados = listarZipsVinculosLocal(administradoraId)
+      const jaBaixados = new Set(registrados.filter((item) => item.baixado).map((item) => item.nome))
+      const candidatos = new Map<string, number>()
+      for (const item of registrados) {
+        if (jaBaixados.has(item.nome)) continue
+        candidatos.set(item.nome, item.tamanho || porNome.get(item.nome)?.tamanho || 0)
+      }
+      for (const arquivo of recentes) {
+        if (jaBaixados.has(arquivo.nome) || candidatos.has(arquivo.nome)) continue
+        candidatos.set(arquivo.nome, arquivo.tamanho || 0)
+      }
+      if (candidatos.size === 0 && recentes.length === 0 && registrados.length === 0) {
+        throw new Error("Nenhum ZIP recente foi encontrado para baixar.")
+      }
+
+      const faltantes: Array<{ nome: string; tamanho: number }> = []
+      for (const [nome, tamanho] of [...candidatos.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+        if (await arquivoCompletoNaPasta(pastaListavel, nome, tamanho)) {
+          marcarZipBaixadoVinculosLocal(administradoraId, nome, tamanho)
+          continue
+        }
+        faltantes.push({ nome, tamanho })
+      }
+
+      if (faltantes.length === 0) {
+        setFila({
+          status: "concluida",
+          total: candidatos.size,
+          concluidos: candidatos.size,
+          loteAtual: candidatos.size,
+          totalLotes: candidatos.size,
+          mensagem: "Nenhum ZIP faltando. Os arquivos já confirmados não serão baixados de novo.",
+          pastaEscolhida: true,
+          unidade: "arquivos",
+        })
+        toast.success("Todos os ZIPs dessa pasta já estão completos")
+        return
+      }
+
+      setFila({
+        status: "rodando",
+        total: faltantes.length,
+        concluidos: 0,
+        loteAtual: 0,
+        totalLotes: faltantes.length,
+        mensagem: `${faltantes.length} ZIP(s) para baixar, um por vez. Se um não couber, a fila para e não começa o próximo.`,
+        pastaEscolhida: true,
+        unidade: "arquivos",
+      })
+
+      let salvos = 0
+      let indice = 0
+      while (indice < faltantes.length) {
+        while (filaPausar.current && !filaParar.current) {
+          await aguardar(300)
+        }
+        if (filaParar.current) {
+          setFila((atual) =>
+            atual
+              ? {
+                  ...atual,
+                  status: "interrompida",
+                  concluidos: salvos,
+                  mensagem: `${salvos} ZIP(s) confirmados. O restante continua guardado. Baixe de novo quando houver espaço.`,
+                }
+              : atual
+          )
+          toast.info("Download interrompido. O que já chegou completo não será baixado de novo.")
+          return
+        }
+
+        const arquivo = faltantes[indice]
+        if (await arquivoCompletoNaPasta(pastaListavel, arquivo.nome, arquivo.tamanho)) {
+          marcarZipBaixadoVinculosLocal(administradoraId, arquivo.nome, arquivo.tamanho)
+          salvos += 1
+          indice += 1
+          continue
+        }
+
+        setFila((atual) =>
+          atual
+            ? {
+                ...atual,
+                status: "rodando",
+                loteAtual: indice + 1,
+                concluidos: salvos,
+                mensagem: `Baixando ${arquivo.nome} (${indice + 1} de ${faltantes.length}). O próximo só começa se este terminar.`,
+              }
+            : atual
+        )
+        const pedido = await fetch(
+          `/api/administradora/beneficiarios/vinculos/lotes-arquivos?administradora_id=${encodeURIComponent(administradoraId)}&arquivo=${encodeURIComponent(arquivo.nome)}&link=1`
+        )
+        const link = await pedido.json().catch(() => ({}))
+        if (!pedido.ok || !link?.url) {
+          throw new Error(link?.error || `Falha ao preparar ${arquivo.nome}`)
+        }
+        baixarArquivoLote(link.url, arquivo.nome)
+
+        const limiteMs = Math.max(120_000, Math.round((arquivo.tamanho || 8_000_000) / 200_000) * 1000)
+        let decorrido = 0
+        let marco = Date.now()
+        let apareceu = false
+        while (!filaParar.current && decorrido < limiteMs) {
+          if (filaPausar.current) {
+            await aguardar(300)
+            marco = Date.now()
+            continue
+          }
+          await aguardar(2_000)
+          decorrido += Date.now() - marco
+          marco = Date.now()
+          apareceu = await arquivoCompletoNaPasta(pastaListavel, arquivo.nome, arquivo.tamanho)
+          if (apareceu) break
+        }
+        if (filaParar.current) continue
+        if (!apareceu) {
+          const pausaManual = filaPausar.current
+          filaPausar.current = true
+          if (!pausaManual) {
+            setFila((atual) =>
+              atual
+                ? {
+                    ...atual,
+                    status: "pausada",
+                    concluidos: salvos,
+                    loteAtual: indice + 1,
+                    mensagem: `${arquivo.nome} não terminou. A fila parou para não baixar outro arquivo em cima de um disco cheio. Libere espaço na pasta de Downloads e clique em Continuar.`,
+                  }
+                : atual
+            )
+            toast.warning("Download pausado. Libere espaço e clique em Continuar.")
+          }
+          continue
+        }
+
+        marcarZipBaixadoVinculosLocal(administradoraId, arquivo.nome, arquivo.tamanho)
+        salvos += 1
+        indice += 1
+        setFila((atual) =>
+          atual
+            ? {
+                ...atual,
+                concluidos: salvos,
+                mensagem: `${arquivo.nome} completo. Aguardando um instante antes do próximo.`,
+              }
+            : atual
+        )
+        if (indice < faltantes.length) await aguardar(5_000)
+      }
+
+      if (filaParar.current) return
+
+      setFila({
+        status: "concluida",
+        total: faltantes.length,
+        concluidos: salvos,
+        loteAtual: faltantes.length,
+        totalLotes: faltantes.length,
+        mensagem: `${salvos} ZIP(s) completos na pasta. Os que já estavam inteiros não foram baixados de novo.`,
+        pastaEscolhida: true,
+        unidade: "arquivos",
+      })
+      toast.success(`${salvos} ZIP(s) baixados por completo`)
+    } catch (e: unknown) {
+      const mensagem = e instanceof Error ? e.message : "Erro ao baixar os ZIPs faltantes"
+      setFila((atual) =>
+        atual
+          ? { ...atual, status: "erro", mensagem }
+          : {
+              status: "erro",
+              total: 0,
+              concluidos: 0,
+              loteAtual: 0,
+              totalLotes: 0,
+              mensagem,
+              pastaEscolhida: true,
+              unidade: "arquivos",
+            }
+      )
+      toast.error(mensagem)
+    } finally {
+      setRepondo(false)
+    }
+  }
+
   return (
     <div className="space-y-6">
       <Alert className="border-blue-200 bg-blue-50/80">
         <AlertDescription className="text-sm text-blue-900 space-y-1">
           <p>
-            Cada lote gera até <strong>{VINCULOS_LOTE_MAX_PDFS} fichas</strong>. Em listas grandes, use{" "}
-            <strong>Gerar todos os pendentes</strong>: a fila segue sozinha, grava os ZIPs e marca quem já foi
-            feito. Se parar ou a página for atualizada, o próximo clique continua só pelos que faltam.
+            Cada leva gera até <strong>{VINCULOS_LOTE_MAX_PDFS} fichas</strong> e guarda pacotes de{" "}
+            <strong>{VINCULOS_LOTE_PDFS_POR_ZIP}</strong>, no formato{" "}
+            <strong>fichas-linhas-0001-a-0020.zip</strong>. Dentro de cada ZIP há as fichas e um{" "}
+            <strong>indice.csv</strong>. <strong>Gerar todos os pendentes</strong> percorre a planilha e guarda
+            tudo na nuvem, sem baixar no meio do caminho.
           </p>
           <p className="text-xs text-blue-800">
-            Lotes grandes são salvos no Storage. Se o ZIP passar de 40 MB, o download vem em mais de um arquivo.
-            A seleção respeita o limite de {VINCULOS_LOTE_MAX_PDFS} por vez.
+            <strong>Baixar índice</strong> traz a planilha de controle. <strong>Baixar só o que faltou</strong>{" "}
+            pede a pasta de Downloads e baixa um ZIP por vez, em ordem. O próximo só começa quando o anterior
+            está completo. Se o arquivo não couber, a fila para até haver espaço.
           </p>
         </AlertDescription>
       </Alert>
@@ -1441,6 +1752,7 @@ export function VinculosLotePanel({
             (modoSelecao === "grupo" && !grupoId) ||
             selecionados.size === 0 ||
             gerando ||
+            repondo ||
             carregandoVidas ||
             planilhaProcessando
           }
@@ -1467,6 +1779,7 @@ export function VinculosLotePanel({
             (modoSelecao === "grupo" && !grupoId) ||
             pendentes.length === 0 ||
             gerando ||
+            repondo ||
             carregandoVidas ||
             planilhaProcessando
           }
@@ -1479,6 +1792,24 @@ export function VinculosLotePanel({
           ) : (
             `Gerar todos os pendentes (${pendentes.length})`
           )}
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => void baixarSomenteFaltantes()}
+          disabled={!administradoraId || gerando || repondo}
+        >
+          {repondo ? (
+            <>
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              Baixando o que faltou
+            </>
+          ) : (
+            "Baixar só o que faltou"
+          )}
+        </Button>
+        <Button type="button" variant="outline" onClick={baixarIndiceFichas} disabled={!administradoraId || gerando}>
+          Baixar índice
         </Button>
         {fila?.status === "rodando" && (
           <>
@@ -1535,14 +1866,15 @@ export function VinculosLotePanel({
       {fila && (
         <div className="rounded-lg border border-blue-200 bg-blue-50/70 p-4 space-y-2">
           <p className="text-sm font-medium text-blue-950">
-            Lote {fila.loteAtual} de {fila.totalLotes} · {fila.concluidos} de {fila.total} fichas salvas
+            Lote {fila.loteAtual} de {fila.totalLotes} · {fila.concluidos} de {fila.total}{" "}
+            {fila.unidade === "arquivos" ? "arquivos" : "fichas"}
           </p>
           <Progress value={fila.total > 0 ? Math.round((fila.concluidos / fila.total) * 100) : 0} className="h-2" />
           <p className="text-xs text-blue-800">{fila.mensagem}</p>
           <p className="text-xs text-blue-700">
-            {fila.pastaEscolhida
-              ? "Mantenha esta página aberta. Cada ZIP entra na pasta escolhida ao fim do lote."
-              : "Mantenha esta página aberta. Se o navegador pedir, permita vários downloads."}
+            {fila.unidade === "arquivos"
+              ? "Mantenha esta página aberta e permita o download se o navegador pedir. A pasta escolhida precisa ser a de Downloads."
+              : "Mantenha esta página aberta. Os ZIPs ficam guardados e não ocupam o disco agora."}
             {modoSelecao === "planilha"
               ? " Não troque a planilha até a fila acabar: a marcação usa o número da linha."
               : ""}
