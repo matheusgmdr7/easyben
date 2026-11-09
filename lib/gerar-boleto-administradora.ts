@@ -394,7 +394,10 @@ export async function gerarBoletoAdministradora(body: Record<string, unknown>): 
         }
       }
     }
+    // Fonte de verdade do boleto: `valor` enviado pelo modal/lote (permite desconto pontual).
+    // O cálculo familiar (titular + deps) só entra em descrição e sync de cadastro — nunca sobrescreve o Asaas.
     let valorTotalBoleto = valorNum + taxaAdministracao
+    let valorCadastroFamiliar: number | null = null
     log("Valor boleto", { valor_base: valorNum, taxa_administracao: taxaAdministracao, valor_total: valorTotalBoleto })
 
     // Carregar financeira (deve ser da mesma administradora)
@@ -490,7 +493,7 @@ export async function gerarBoletoAdministradora(body: Record<string, unknown>): 
           .maybeSingle()
         if (prod && (prod as any).nome) produtoNome = (prod as any).nome
       }
-      // Valor do boleto: titular + dependentes ativos (não exige mesmo grupo — pós-reativação)
+      // Nomes/valores familiares para descrição e cadastro; o valor do boleto permanece o do body.
       const valorTitularVida = Number(vidaAny.valor_mensal) || 0
       if (cpf && valorTitularVida > 0) {
         const familiar = await resolverValorFamiliarBoleto({
@@ -502,7 +505,7 @@ export async function gerarBoletoAdministradora(body: Record<string, unknown>): 
           log,
         })
         dependentesNomes = familiar.dependentesNomes
-        if (familiar.valorBase > 0) valorTotalBoleto = familiar.valorBase + taxaAdministracao
+        if (familiar.valorBase > 0) valorCadastroFamiliar = familiar.valorBase
       } else if (cpf) {
         const deps = await buscarDependentesValorFamiliar({
           administradoraId: String(administradora_id),
@@ -535,27 +538,35 @@ export async function gerarBoletoAdministradora(body: Record<string, unknown>): 
         if (ca) {
           clienteAdm = ca as { id: string; administradora_id: string; proposta_id: string | null }
           idParaFatura = ca.id
-          const syncPayload: Record<string, unknown> = {
-            // Persiste o valor familiar (titular + deps) quando já calculado; senão o do titular
-            valor_mensal:
-              valorTotalBoleto > taxaAdministracao
-                ? Number((valorTotalBoleto - taxaAdministracao).toFixed(2))
-                : Number(vidaAny.valor_mensal) || valorNum,
+          const valorMensalCadastro =
+            valorCadastroFamiliar != null && valorCadastroFamiliar > 0
+              ? Number(valorCadastroFamiliar.toFixed(2))
+              : Number(vidaAny.valor_mensal) || null
+          const syncPayload: Record<string, unknown> = {}
+          // Não grava o valor do boleto (pode ser desconto pontual) como mensalidade do contrato.
+          if (valorMensalCadastro != null && valorMensalCadastro > 0) {
+            syncPayload.valor_mensal = valorMensalCadastro
           }
           if (diaVencimentoVida) syncPayload.dia_vencimento = diaVencimentoVida
           if (dataVigenciaVida) syncPayload.data_vigencia = dataVigenciaVida
           if (vidaAny.corretor_id) syncPayload.corretor_id = vidaAny.corretor_id
-          await supabaseAdmin
-            .from("clientes_administradoras")
-            .update(syncPayload)
-            .eq("id", ca.id)
-            .eq("tenant_id", tenantId)
+          if (Object.keys(syncPayload).length > 0) {
+            await supabaseAdmin
+              .from("clientes_administradoras")
+              .update(syncPayload)
+              .eq("id", ca.id)
+              .eq("tenant_id", tenantId)
+          }
         }
       }
 
       if (!clienteAdm) {
         const dataVig = new Date()
         const dataVen = new Date(vencimentoIso)
+        const valorMensalCadastro =
+          valorCadastroFamiliar != null && valorCadastroFamiliar > 0
+            ? Number(valorCadastroFamiliar.toFixed(2))
+            : Number(vidaAny.valor_mensal) || valorNum
         const payloadCa: Record<string, unknown> = {
           administradora_id,
           tenant_id: tenantId,
@@ -563,10 +574,7 @@ export async function gerarBoletoAdministradora(body: Record<string, unknown>): 
           data_vencimento: dataVen.toISOString().slice(0, 10),
           dia_vencimento: diaVencimentoVida ?? Number(vencimentoIso.slice(8, 10)),
           data_vigencia: dataVigenciaVida ?? dataVig.toISOString().slice(0, 10),
-          valor_mensal:
-            valorTotalBoleto > taxaAdministracao
-              ? Number((valorTotalBoleto - taxaAdministracao).toFixed(2))
-              : Number(vidaAny.valor_mensal) || valorNum,
+          valor_mensal: valorMensalCadastro,
           status: "ativo",
           corretor_id: vidaAny.corretor_id || null,
         }
@@ -694,8 +702,7 @@ export async function gerarBoletoAdministradora(body: Record<string, unknown>): 
             if (prod && (prod as { nome?: string }).nome) produtoNome = (prod as { nome: string }).nome
           }
 
-          // Fonte de verdade: valor_mensal do titular na vida + dependentes ativos.
-          // Só recalcula quando o titular tem valor_mensal na vida (evita somar deps em cima de body já familiar).
+          // Mantém valor do body no boleto; familiar só para descrição e sync de mensalidade cadastrada.
           const valorTitularVida = Number(v.valor_mensal) || 0
           if (cpf && cpf.length === 11 && valorTitularVida > 0) {
             const familiar = await resolverValorFamiliarBoleto({
@@ -708,7 +715,7 @@ export async function gerarBoletoAdministradora(body: Record<string, unknown>): 
             })
             dependentesNomes = familiar.dependentesNomes
             if (familiar.valorBase > 0) {
-              valorTotalBoleto = familiar.valorBase + taxaAdministracao
+              valorCadastroFamiliar = familiar.valorBase
               await supabaseAdmin
                 .from("clientes_administradoras")
                 .update({ valor_mensal: Number(familiar.valorBase.toFixed(2)) })
