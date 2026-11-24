@@ -162,6 +162,43 @@ type UltimaSincronizacao = {
   verificadas: number
   atualizadas: number
   alteradas: number
+  /** concluida | parcial | interrompida */
+  status?: "concluida" | "parcial" | "interrompida"
+  periodoLabel?: string
+  restantes?: number
+}
+
+function chaveUltimaSync(administradoraId: string) {
+  return `administradora_dashboard_ultima_sync_${administradoraId}`
+}
+
+function lerUltimaSync(administradoraId: string): UltimaSincronizacao | null {
+  try {
+    const raw = localStorage.getItem(chaveUltimaSync(administradoraId))
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as UltimaSincronizacao
+    if (!parsed?.executadoEm) return null
+    return parsed
+  } catch {
+    return null
+  }
+}
+
+function formatarLinhaUltimaSync(u: UltimaSincronizacao): string {
+  const quando = new Date(u.executadoEm).toLocaleString("pt-BR")
+  const status =
+    u.status === "parcial"
+      ? "parcial"
+      : u.status === "interrompida"
+        ? "interrompida"
+        : u.status === "concluida"
+          ? "concluída"
+          : null
+  const periodo = u.periodoLabel ? ` · ${u.periodoLabel}` : ""
+  const statusTxt = status ? ` (${status}${periodo})` : periodo ? ` (${periodo.replace(/^ · /, "")})` : ""
+  const restantes =
+    u.restantes != null && u.restantes > 0 ? ` · Restantes: ~${u.restantes}` : ""
+  return `Última sincronização: ${quando}${statusTxt} · Verificadas: ${u.verificadas} · Atualizadas: ${u.atualizadas} · Status alterados: ${u.alteradas}${restantes}`
 }
 
 type FinanceiraOpcao = { id: string; nome: string }
@@ -293,17 +330,31 @@ export default function AdministradoraDashboard() {
         const administradoraLogada = getAdministradoraLogada()
         if (!administradoraLogada) return
         setAdministradora(administradoraLogada)
-        const storageKey = `administradora_dashboard_ultima_sync_${administradoraLogada.id}`
-        const raw = localStorage.getItem(storageKey)
-        if (raw) {
-          try {
-            setUltimaSincronizacao(JSON.parse(raw))
-          } catch {
-            setUltimaSincronizacao(null)
-          }
-        }
+        let ultima = lerUltimaSync(administradoraLogada.id)
         const ck = lerCheckpointSync(administradoraLogada.id)
         if (ck && (ck.offset > 0 || ck.restantes > 0)) {
+          const periodoCk = ck.todoPeriodo
+            ? "todo o período"
+            : ck.mes && ck.ano
+              ? `${String(ck.mes).padStart(2, "0")}/${ck.ano}`
+              : undefined
+          const ultimaDoCheckpoint: UltimaSincronizacao = {
+            executadoEm: ck.salvoEm || new Date().toISOString(),
+            verificadas: ck.verificadas,
+            atualizadas: ck.atualizadas,
+            alteradas: ck.alteradas,
+            status: "interrompida",
+            periodoLabel: periodoCk,
+            restantes: ck.restantes,
+          }
+          // Checkpoint mais recente sobrescreve o resumo antigo no navegador.
+          if (
+            !ultima ||
+            new Date(ultimaDoCheckpoint.executadoEm).getTime() >= new Date(ultima.executadoEm).getTime()
+          ) {
+            ultima = ultimaDoCheckpoint
+            localStorage.setItem(chaveUltimaSync(administradoraLogada.id), JSON.stringify(ultima))
+          }
           setProgressoSync({
             ...PROGRESSO_SYNC_INICIAL,
             etapa: "erro",
@@ -328,6 +379,7 @@ export default function AdministradoraDashboard() {
             setMesRef(String(ck.mes).padStart(2, "0"))
           }
         }
+        setUltimaSincronizacao(ultima)
         const finRes = await fetch(
           `/api/administradora/financeiras?administradora_id=${encodeURIComponent(administradoraLogada.id)}`,
           { cache: "no-store" }
@@ -451,8 +503,26 @@ export default function AdministradoraDashboard() {
     }
 
     const rotuloPeriodoSync = todoPeriodoSync
-      ? "todos os períodos"
+      ? "todo o período"
       : `${mesSync}/${anoSync}`
+
+    const gravarUltimaSync = (resumo: UltimaSincronizacao) => {
+      setUltimaSincronizacao(resumo)
+      localStorage.setItem(chaveUltimaSync(administradora.id), JSON.stringify(resumo))
+    }
+
+    const montarResumoSync = (
+      status: NonNullable<UltimaSincronizacao["status"]>,
+      restantes = 0
+    ): UltimaSincronizacao => ({
+      executadoEm: new Date().toISOString(),
+      verificadas,
+      atualizadas,
+      alteradas: alteradasAcumuladasAnterior + alteracoes.length,
+      status,
+      periodoLabel: rotuloPeriodoSync,
+      restantes: Math.max(0, restantes),
+    })
 
     const montarCheckpoint = (offsetSalvar: number, restantes: number, rodada: number): CheckpointSync => ({
       offset: offsetSalvar,
@@ -620,6 +690,7 @@ export default function AdministradoraDashboard() {
         if (proximo == null || proximo === "") {
           restantesAoParar = 0
           limparCheckpointSync(administradora.id)
+          gravarUltimaSync(montarResumoSync("concluida", 0))
           setProgressoSync((prev) => ({
             ...prev,
             etapa: "atualizando_faturas",
@@ -643,6 +714,8 @@ export default function AdministradoraDashboard() {
         restantesAoParar = restantesLote
         offset = Number(proximo)
         salvarCheckpointSync(administradora.id, montarCheckpoint(offset, restantesLote, loteAtual))
+        // Atualiza "Última sincronização" a cada lote — antes só gravava no fim da onda.
+        gravarUltimaSync(montarResumoSync("parcial", restantesLote))
         rodadas++
 
         setProgressoSync({
@@ -676,14 +749,9 @@ export default function AdministradoraDashboard() {
         limparCheckpointSync(administradora.id)
       }
 
-      const resumoSync: UltimaSincronizacao = {
-        executadoEm: new Date().toISOString(),
-        verificadas,
-        atualizadas,
-        alteradas,
-      }
-      setUltimaSincronizacao(resumoSync)
-      localStorage.setItem(`administradora_dashboard_ultima_sync_${administradora.id}`, JSON.stringify(resumoSync))
+      gravarUltimaSync(
+        montarResumoSync(incompleta ? "parcial" : "concluida", Number(restantesAoParar || 0))
+      )
 
       setProgressoSync((prev) => ({
         ...prev,
@@ -760,6 +828,9 @@ export default function AdministradoraDashboard() {
         Math.max(1, rodadasBase + rodadas)
       )
       salvarCheckpointSync(administradora.id, ck)
+      if (ck.verificadas > 0 || ck.atualizadas > 0 || ck.offset > 0) {
+        gravarUltimaSync(montarResumoSync("interrompida", ck.restantes))
+      }
       setProgressoSync((prev) => ({
         ...prev,
         etapa: "erro",
@@ -1010,7 +1081,7 @@ export default function AdministradoraDashboard() {
               </p>
               <p className="mt-3 text-xs leading-relaxed text-slate-500 max-w-2xl">
                 {ultimaSincronizacao
-                  ? `Última sincronização: ${new Date(ultimaSincronizacao.executadoEm).toLocaleString("pt-BR")} · Verificadas: ${ultimaSincronizacao.verificadas} · Atualizadas: ${ultimaSincronizacao.atualizadas} · Status alterados: ${ultimaSincronizacao.alteradas}`
+                  ? formatarLinhaUltimaSync(ultimaSincronizacao)
                   : "Última sincronização: ainda não executada neste navegador."}
               </p>
             </div>
