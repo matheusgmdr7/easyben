@@ -1,8 +1,7 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
-import Link from "next/link"
 import { getAdministradoraLogada } from "@/services/auth-administradoras-service"
 import { GruposBeneficiariosService, type GrupoBeneficiarios } from "@/services/grupos-beneficiarios-service"
 import { toast } from "sonner"
@@ -25,10 +24,9 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Input } from "@/components/ui/input"
-import { Loader2, ExternalLink, FileDown, FileSpreadsheet } from "lucide-react"
+import { Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { formatarData } from "@/utils/formatters"
-import * as XLSX from "xlsx"
+import { formatarData, formatarMoeda } from "@/utils/formatters"
 
 function mesAtualYm() {
   const h = new Date()
@@ -38,136 +36,65 @@ function mesAtualYm() {
 function formatarMesAno(ym: string) {
   const [y, m] = ym.split("-").map((x) => Number(x))
   if (!y || !m || m < 1 || m > 12) return ym
-  return new Date(y, m - 1, 1).toLocaleDateString("pt-BR", { month: "long", year: "numeric" })
+  const txt = new Date(y, m - 1, 1).toLocaleDateString("pt-BR", { month: "long", year: "numeric" })
+  return txt.charAt(0).toUpperCase() + txt.slice(1)
 }
 
-function formatarVencimentos(vencimentos: string[]) {
-  if (!vencimentos?.length) return "—"
-  return vencimentos.map((v) => formatarData(v)).join(", ")
+type FinanceiraOpcao = { id: string; nome: string }
+
+type ResumoMes = {
+  mes: string
+  faturas_geradas: number
+  faturas_em_aberto: number
+  faturas_pagas: number
+  faturas_canceladas: number
+  valor_gerado: number
+  valor_em_aberto: number
+  valor_pago: number
+  percentual_qtd: number
+  percentual_valor: number
 }
 
-type PorMes = { mes: string; titularesComFaturaAtrasada: number; percentual: number }
+type PorGrupo = {
+  grupo_id: string | null
+  grupo_nome: string
+  faturas_em_aberto: number
+  valor_em_aberto: number
+  percentual_qtd_da_inadimplencia: number
+  percentual_valor_da_inadimplencia: number
+}
+
+type FaturaAberta = {
+  fatura_id: string
+  cliente_nome: string
+  valor: number
+  status: string
+  vencimento: string
+  grupo_id: string | null
+  grupo_nome: string
+}
 
 type ResultadoInadimplencia = {
-  grupo: { id: string; nome: string }
-  mes_inicio: string
-  mes_fim: string
+  mes: string
+  financeira: { id: string | null; nome: string }
   criterio: string
-  totais: {
-    totalVidasAtivas: number
-    totalTitularesComVinculoFaturamento: number
-    basePercentualTitulares: number
-  }
-  resumoPeriodo: { titularesDistintosComAtrasada: number; percentual: number }
-  porMes: PorMes[]
-}
-
-type ClienteAtraso = {
-  cliente_administradora_id: string
-  cliente_nome: string
-  quantidadeFaturasAtrasadas: number
-  vencimentos: string[]
-}
-
-type ResumoControle = {
-  baseTitulares: number
-  titularesComFaturaAtrasada: number
-  percentualInadimplencia: number
-  comUmBoleto: number
-  comDoisOuMaisBoletos: number
-  percentualUmBoleto: number
-  percentualDoisOuMais: number
-}
-
-type ResultadoControle = {
-  grupo: { id: string; nome: string }
-  criterio: string
-  resumo: ResumoControle
-  clientesUmBoleto: ClienteAtraso[]
-  clientesDoisOuMaisBoletos: ClienteAtraso[]
-}
-
-type AbaControle = "um" | "dois_ou_mais"
-
-function rotuloAbaControle(aba: AbaControle) {
-  return aba === "um" ? "1 boleto em atraso" : "2+ boletos em atraso"
-}
-
-function slugArquivo(texto: string) {
-  return texto
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-zA-Z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 60)
-}
-
-function TabelaClientesAtraso({
-  clientes,
-  grupoId,
-  vazio,
-}: {
-  clientes: ClienteAtraso[]
-  grupoId: string
-  vazio: string
-}) {
-  if (clientes.length === 0) {
-    return <p className="text-sm text-gray-500 py-6 text-center">{vazio}</p>
-  }
-  return (
-    <div className="overflow-x-auto rounded-md border border-gray-100">
-      <Table>
-        <TableHeader>
-          <TableRow className="bg-gray-50">
-            <TableHead className="font-semibold">Cliente</TableHead>
-            <TableHead className="font-semibold text-right">Boletos atrasados</TableHead>
-            <TableHead className="font-semibold min-w-[160px]">Vencimentos</TableHead>
-            <TableHead className="font-semibold w-[120px]">Ação</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {clientes.map((c) => (
-            <TableRow key={c.cliente_administradora_id}>
-              <TableCell>
-                <span className="font-medium text-gray-900">{c.cliente_nome}</span>
-              </TableCell>
-              <TableCell className="text-right tabular-nums font-semibold text-amber-900">
-                {c.quantidadeFaturasAtrasadas}
-              </TableCell>
-              <TableCell className="text-sm text-gray-700">{formatarVencimentos(c.vencimentos)}</TableCell>
-              <TableCell>
-                <Button variant="outline" size="sm" className="h-8 text-xs" asChild>
-                  <Link
-                    href={`/administradora/grupos-beneficiarios/${grupoId}?aba=financeiro&cliente=${encodeURIComponent(c.cliente_administradora_id)}`}
-                    className="inline-flex items-center gap-1"
-                  >
-                    <ExternalLink className="h-3.5 w-3.5" />
-                    Financeiro
-                  </Link>
-                </Button>
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </div>
-  )
+  resumo: ResumoMes
+  historico: ResumoMes[]
+  por_grupo: PorGrupo[]
+  faturas_em_aberto: FaturaAberta[]
 }
 
 export default function InadimplenciaPage() {
   const router = useRouter()
   const [administradoraId, setAdministradoraId] = useState<string | null>(null)
+  const [financeiras, setFinanceiras] = useState<FinanceiraOpcao[]>([])
   const [grupos, setGrupos] = useState<GrupoBeneficiarios[]>([])
-  const [loadingGrupos, setLoadingGrupos] = useState(true)
+  const [loadingFiltros, setLoadingFiltros] = useState(true)
+  const [financeiraId, setFinanceiraId] = useState("")
   const [grupoId, setGrupoId] = useState("")
-  const [mesInicio, setMesInicio] = useState(mesAtualYm())
-  const [mesFim, setMesFim] = useState(mesAtualYm())
+  const [mes, setMes] = useState(mesAtualYm())
   const [loading, setLoading] = useState(false)
   const [resultado, setResultado] = useState<ResultadoInadimplencia | null>(null)
-  const [controle, setControle] = useState<ResultadoControle | null>(null)
-  const [abaControle, setAbaControle] = useState<AbaControle>("um")
-  const [exportandoPdfControle, setExportandoPdfControle] = useState(false)
-  const [exportandoExcelControle, setExportandoExcelControle] = useState(false)
 
   useEffect(() => {
     const adm = getAdministradoraLogada()
@@ -178,67 +105,66 @@ export default function InadimplenciaPage() {
     setAdministradoraId(adm.id)
     ;(async () => {
       try {
-        setLoadingGrupos(true)
-        const data = await GruposBeneficiariosService.buscarTodos(adm.id)
-        setGrupos(data || [])
+        setLoadingFiltros(true)
+        const [finRes, gruposData] = await Promise.all([
+          fetch(
+            `/api/administradora/financeiras?administradora_id=${encodeURIComponent(adm.id)}`,
+            { cache: "no-store" }
+          ),
+          GruposBeneficiariosService.buscarTodos(adm.id),
+        ])
+        if (finRes.ok) {
+          const lista = await finRes.json().catch(() => [])
+          const arr = Array.isArray(lista) ? lista : []
+          setFinanceiras(
+            arr
+              .map((f: { id?: string; nome?: string }) => ({
+                id: String(f?.id || ""),
+                nome: String(f?.nome || "Financeira"),
+              }))
+              .filter((f: FinanceiraOpcao) => f.id)
+          )
+        }
+        setGrupos(gruposData || [])
       } catch {
-        toast.error("Erro ao carregar grupos")
+        toast.error("Erro ao carregar filtros")
+        setFinanceiras([])
         setGrupos([])
       } finally {
-        setLoadingGrupos(false)
+        setLoadingFiltros(false)
       }
     })()
   }, [router])
 
   async function consultar() {
-    if (!administradoraId || !grupoId) {
-      toast.error("Selecione um grupo")
+    if (!administradoraId) return
+    if (!financeiraId) {
+      toast.error("Selecione uma financeira")
       return
     }
-    if (!/^\d{4}-\d{2}$/.test(mesInicio) || !/^\d{4}-\d{2}$/.test(mesFim)) {
-      toast.error("Informe mês inicial e final (AAAA-MM)")
-      return
-    }
-    if (mesInicio > mesFim) {
-      toast.error("Mês inicial não pode ser maior que o mês final")
+    if (!/^\d{4}-\d{2}$/.test(mes)) {
+      toast.error("Informe o mês de vencimento (AAAA-MM)")
       return
     }
     try {
       setLoading(true)
       setResultado(null)
-      setControle(null)
-
-      const qsPeriodo = new URLSearchParams({
-        grupo_id: grupoId,
+      const qs = new URLSearchParams({
         administradora_id: administradoraId,
-        mes_inicio: mesInicio,
-        mes_fim: mesFim,
+        mes,
+        financeira_id: financeiraId,
+        historico_meses: "6",
       })
-      const qsControle = new URLSearchParams({
-        grupo_id: grupoId,
-        administradora_id: administradoraId,
+      if (grupoId) qs.set("grupo_id", grupoId)
+
+      const res = await fetch(`/api/administradora/financeiro/inadimplencia?${qs}`, {
+        cache: "no-store",
       })
-
-      const [resPeriodo, resControle] = await Promise.all([
-        fetch(`/api/administradora/financeiro/inadimplencia-grupo?${qsPeriodo}`),
-        fetch(`/api/administradora/financeiro/clientes-multi-atraso?${qsControle}`),
-      ])
-
-      const dataPeriodo = await resPeriodo.json().catch(() => ({}))
-      const dataControle = await resControle.json().catch(() => ({}))
-
-      if (!resPeriodo.ok) {
-        throw new Error((dataPeriodo as { error?: string }).error || "Erro ao consultar indicadores por mês")
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        throw new Error((data as { error?: string }).error || "Erro ao consultar inadimplência")
       }
-      if (!resControle.ok) {
-        throw new Error((dataControle as { error?: string }).error || "Erro ao consultar situação atual")
-      }
-
-      setResultado(dataPeriodo as ResultadoInadimplencia)
-      setControle(dataControle as ResultadoControle)
-      setAbaControle(
-        (dataControle as ResultadoControle).clientesUmBoleto?.length > 0 ? "um" : "dois_ou_mais"
-      )
+      setResultado(data as ResultadoInadimplencia)
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Erro na consulta")
     } finally {
@@ -246,130 +172,17 @@ export default function InadimplenciaPage() {
     }
   }
 
-  const listaAbaControle =
-    abaControle === "um" ? controle?.clientesUmBoleto ?? [] : controle?.clientesDoisOuMaisBoletos ?? []
-
-  function exportarExcelControle() {
-    if (!controle || listaAbaControle.length === 0) {
-      toast.error("Não há registros na aba atual para exportar")
-      return
-    }
-    try {
-      setExportandoExcelControle(true)
-      const abaLabel = rotuloAbaControle(abaControle)
-      const wsData: (string | number)[][] = [
-        ["Grupo", controle.grupo.nome],
-        ["Situação", abaLabel],
-        ["% inadimplência (atual)", `${controle.resumo.percentualInadimplencia}%`],
-        ["Titulares com atraso", controle.resumo.titularesComFaturaAtrasada],
-        ["Base titulares", controle.resumo.baseTitulares],
-        [],
-        ["Nº", "Cliente", "Boletos atrasados", "Vencimentos"],
-        ...listaAbaControle.map((c, i) => [
-          i + 1,
-          c.cliente_nome,
-          c.quantidadeFaturasAtrasadas,
-          formatarVencimentos(c.vencimentos),
-        ]),
-      ]
-      const ws = XLSX.utils.aoa_to_sheet(wsData)
-      const wb = XLSX.utils.book_new()
-      XLSX.utils.book_append_sheet(wb, ws, abaLabel.slice(0, 31))
-      const nomeArquivo = `inadimplencia-${slugArquivo(controle.grupo.nome)}-${slugArquivo(abaLabel)}.xlsx`
-      XLSX.writeFile(wb, nomeArquivo)
-      toast.success("Excel exportado com sucesso")
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Erro ao exportar Excel")
-    } finally {
-      setExportandoExcelControle(false)
-    }
-  }
-
-  async function exportarPdfControle() {
-    if (!controle || listaAbaControle.length === 0) {
-      toast.error("Não há registros na aba atual para exportar")
-      return
-    }
-    try {
-      setExportandoPdfControle(true)
-      const jsPDF = (await import("jspdf")).default
-      const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" })
-      const margin = 10
-      let y = 15
-      const abaLabel = rotuloAbaControle(abaControle)
-
-      doc.setFontSize(14)
-      doc.setFont(undefined, "bold")
-      doc.text("Inadimplência — controle por boletos atrasados", margin, y)
-      y += 6
-      doc.setFontSize(10)
-      doc.setFont(undefined, "normal")
-      doc.text(`Grupo: ${controle.grupo.nome}`, margin, y)
-      y += 5
-      doc.text(`Situação: ${abaLabel}`, margin, y)
-      y += 5
-      doc.text(
-        `% inadimplência: ${controle.resumo.percentualInadimplencia}% (${controle.resumo.titularesComFaturaAtrasada} de ${controle.resumo.baseTitulares} titulares)`,
-        margin,
-        y
-      )
-      y += 8
-
-      const headers = ["Nº", "Cliente", "Boletos", "Vencimentos"]
-      const colWidths = [12, 75, 22, 155]
-      doc.setFont(undefined, "bold")
-      let x = margin
-      headers.forEach((h, i) => {
-        doc.text(h, x, y)
-        x += colWidths[i]
-      })
-      y += 5
-      doc.setFont(undefined, "normal")
-      const rowHeight = 6
-      const totalWidth = colWidths.reduce((a, b) => a + b, 0)
-
-      listaAbaControle.forEach((c, index) => {
-        if (y > 185) {
-          doc.addPage("landscape", "a4")
-          y = 15
-        }
-        if (index % 2 === 1) {
-          doc.setFillColor(245, 245, 245)
-          doc.rect(margin, y - 4, totalWidth, rowHeight, "F")
-        }
-        x = margin
-        doc.text(String(index + 1), x, y)
-        x += colWidths[0]
-        doc.text(doc.splitTextToSize(c.cliente_nome, colWidths[1] - 2)[0] || c.cliente_nome.slice(0, 40), x, y)
-        x += colWidths[1]
-        doc.text(String(c.quantidadeFaturasAtrasadas), x, y)
-        x += colWidths[2]
-        const venc = formatarVencimentos(c.vencimentos)
-        doc.text(doc.splitTextToSize(venc, colWidths[3] - 2)[0] || venc, x, y)
-        y += rowHeight
-      })
-
-      y += 4
-      doc.setFont(undefined, "bold")
-      doc.text(`Total na lista: ${listaAbaControle.length}`, margin, y)
-
-      const nomeArquivo = `inadimplencia-${slugArquivo(controle.grupo.nome)}-${slugArquivo(abaLabel)}.pdf`
-      doc.save(nomeArquivo)
-      toast.success("PDF exportado com sucesso")
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Erro ao exportar PDF")
-    } finally {
-      setExportandoPdfControle(false)
-    }
-  }
+  const maxPctHistorico = useMemo(() => {
+    if (!resultado?.historico?.length) return 1
+    return Math.max(1, ...resultado.historico.map((h) => Math.max(h.percentual_qtd, h.percentual_valor)))
+  }, [resultado])
 
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="bg-white border-b border-gray-200 px-6 py-4">
-        <h1 className="text-xl font-semibold text-gray-800">Inadimplência por grupo</h1>
+        <h1 className="text-xl font-semibold text-gray-800">Inadimplência</h1>
         <p className="text-sm text-gray-500 mt-0.5">
-          Percentual de inadimplência, evolução por mês de vencimento e controle de titulares com 1 boleto ou 2+ boletos
-          em atraso (situação atual).
+          Índice por financeira e mês de vencimento das faturas — com participação por grupo e histórico recente.
         </p>
       </div>
 
@@ -381,12 +194,49 @@ export default function InadimplenciaPage() {
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               <div className="space-y-2 lg:col-span-2">
-                <Label className="text-xs font-medium text-gray-600">Grupo de beneficiários</Label>
-                <Select value={grupoId} onValueChange={setGrupoId} disabled={loadingGrupos}>
+                <Label className="text-xs font-medium text-gray-600">Financeira</Label>
+                <Select
+                  value={financeiraId || undefined}
+                  onValueChange={setFinanceiraId}
+                  disabled={loadingFiltros}
+                >
                   <SelectTrigger className="h-10 border-gray-200 bg-white">
-                    <SelectValue placeholder={loadingGrupos ? "Carregando..." : "Selecione o grupo"} />
+                    <SelectValue
+                      placeholder={loadingFiltros ? "Carregando..." : "Selecione a financeira"}
+                    />
                   </SelectTrigger>
                   <SelectContent className="max-h-[min(60vh,320px)]">
+                    {financeiras.map((f) => (
+                      <SelectItem key={f.id} value={f.id}>
+                        {f.nome}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs font-medium text-gray-600">Mês de vencimento</Label>
+                <Input
+                  type="month"
+                  value={mes}
+                  onChange={(e) => setMes(e.target.value)}
+                  className="h-10"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs font-medium text-gray-600">
+                  Grupo (opcional)
+                </Label>
+                <Select
+                  value={grupoId || "__todos__"}
+                  onValueChange={(v) => setGrupoId(v === "__todos__" ? "" : v)}
+                  disabled={loadingFiltros}
+                >
+                  <SelectTrigger className="h-10 border-gray-200 bg-white">
+                    <SelectValue placeholder="Todos os grupos" />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-[min(60vh,320px)]">
+                    <SelectItem value="__todos__">Todos os grupos</SelectItem>
                     {grupos.map((g) => (
                       <SelectItem key={g.id} value={g.id}>
                         {g.nome}
@@ -395,19 +245,15 @@ export default function InadimplenciaPage() {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-2">
-                <Label className="text-xs font-medium text-gray-600">Mês inicial (série mensal)</Label>
-                <Input type="month" value={mesInicio} onChange={(e) => setMesInicio(e.target.value)} className="h-10" />
-              </div>
-              <div className="space-y-2">
-                <Label className="text-xs font-medium text-gray-600">Mês final (série mensal)</Label>
-                <Input type="month" value={mesFim} onChange={(e) => setMesFim(e.target.value)} className="h-10" />
-              </div>
             </div>
+            <p className="text-[11px] text-gray-500 leading-relaxed">
+              O cálculo usa todas as faturas cujo <span className="font-medium text-gray-700">vencimento</span>{" "}
+              cai no mês escolhido. O grupo é um recorte da inadimplência da financeira (participação %).
+            </p>
             <Button
               type="button"
               onClick={() => void consultar()}
-              disabled={loading || !grupoId}
+              disabled={loading || !financeiraId}
               className="bg-[#0F172A] hover:bg-[#1E293B] text-white"
             >
               {loading ? (
@@ -422,200 +268,237 @@ export default function InadimplenciaPage() {
           </CardContent>
         </Card>
 
-        {controle && (
-          <>
-            <p className="text-xs text-gray-500 leading-relaxed">{controle.criterio}</p>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              <Card className="rounded-md border border-slate-200 bg-white">
-                <CardHeader className="pb-1 pt-4">
-                  <CardTitle className="text-xs font-medium text-slate-500">% inadimplência (atual)</CardTitle>
-                </CardHeader>
-                <CardContent className="pt-0 pb-4">
-                  <p className="text-3xl font-semibold text-amber-900 tabular-nums">
-                    {controle.resumo.percentualInadimplencia}%
-                  </p>
-                  <p className="text-xs text-gray-500 mt-1">
-                    {controle.resumo.titularesComFaturaAtrasada} de {controle.resumo.baseTitulares} titulares com ≥1
-                    fatura atrasada
-                  </p>
-                </CardContent>
-              </Card>
-              <Card className="rounded-md border border-amber-100 bg-amber-50/40">
-                <CardHeader className="pb-1 pt-4">
-                  <CardTitle className="text-xs font-medium text-amber-900">1 boleto em atraso</CardTitle>
-                </CardHeader>
-                <CardContent className="pt-0 pb-4">
-                  <p className="text-3xl font-semibold text-amber-900 tabular-nums">{controle.resumo.comUmBoleto}</p>
-                  <p className="text-xs text-gray-600 mt-1">
-                    {controle.resumo.percentualUmBoleto}% da base · ~1 mês de atraso
-                  </p>
-                </CardContent>
-              </Card>
-              <Card className="rounded-md border border-red-100 bg-red-50/30">
-                <CardHeader className="pb-1 pt-4">
-                  <CardTitle className="text-xs font-medium text-red-900">2+ boletos em atraso</CardTitle>
-                </CardHeader>
-                <CardContent className="pt-0 pb-4">
-                  <p className="text-3xl font-semibold text-red-900 tabular-nums">
-                    {controle.resumo.comDoisOuMaisBoletos}
-                  </p>
-                  <p className="text-xs text-gray-600 mt-1">
-                    {controle.resumo.percentualDoisOuMais}% da base · dois ou mais meses em aberto
-                  </p>
-                </CardContent>
-              </Card>
-            </div>
-
-            <Card className="rounded-md border border-gray-200">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-lg">Controle por quantidade de boletos atrasados</CardTitle>
-                <p className="text-sm text-gray-500">{controle.grupo.nome}</p>
-                <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center sm:justify-between gap-3 pt-2">
-                  <div className="flex flex-wrap gap-2">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant={abaControle === "um" ? "default" : "outline"}
-                      className={cn(abaControle === "um" && "bg-[#0F172A] hover:bg-[#1E293B] text-white")}
-                      onClick={() => setAbaControle("um")}
-                    >
-                      1 boleto ({controle.clientesUmBoleto.length})
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant={abaControle === "dois_ou_mais" ? "default" : "outline"}
-                      className={cn(
-                        abaControle === "dois_ou_mais" && "bg-[#0F172A] hover:bg-[#1E293B] text-white"
-                      )}
-                      onClick={() => setAbaControle("dois_ou_mais")}
-                    >
-                      2+ boletos ({controle.clientesDoisOuMaisBoletos.length})
-                    </Button>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="border-gray-300"
-                      disabled={exportandoPdfControle || listaAbaControle.length === 0}
-                      onClick={() => void exportarPdfControle()}
-                    >
-                      {exportandoPdfControle ? (
-                        <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
-                      ) : (
-                        <FileDown className="h-4 w-4 mr-1.5" />
-                      )}
-                      Exportar PDF
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="border-gray-300"
-                      disabled={exportandoExcelControle || listaAbaControle.length === 0}
-                      onClick={exportarExcelControle}
-                    >
-                      {exportandoExcelControle ? (
-                        <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
-                      ) : (
-                        <FileSpreadsheet className="h-4 w-4 mr-1.5" />
-                      )}
-                      Exportar Excel
-                    </Button>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <TabelaClientesAtraso
-                  clientes={listaAbaControle}
-                  grupoId={controle.grupo.id}
-                  vazio={
-                    abaControle === "um"
-                      ? "Nenhum titular ativo com exatamente 1 fatura atrasada neste grupo."
-                      : "Nenhum titular ativo com 2 ou mais faturas atrasadas neste grupo."
-                  }
-                />
-              </CardContent>
-            </Card>
-          </>
-        )}
-
         {resultado && (
           <>
             <p className="text-xs text-gray-500 leading-relaxed">{resultado.criterio}</p>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-              <Card className="rounded-md border border-gray-200 bg-white">
+              <Card className="rounded-md border border-amber-100 bg-amber-50/40">
                 <CardHeader className="pb-1 pt-4">
-                  <CardTitle className="text-xs font-medium text-gray-500">Vidas ativas (grupo)</CardTitle>
+                  <CardTitle className="text-xs font-medium text-amber-900">
+                    Índice (qtd.)
+                  </CardTitle>
                 </CardHeader>
                 <CardContent className="pt-0 pb-4">
-                  <p className="text-2xl font-semibold text-gray-900">{resultado.totais.totalVidasAtivas}</p>
-                </CardContent>
-              </Card>
-              <Card className="rounded-md border border-gray-200 bg-white">
-                <CardHeader className="pb-1 pt-4">
-                  <CardTitle className="text-xs font-medium text-gray-500">Titulares (vínculo faturamento)</CardTitle>
-                </CardHeader>
-                <CardContent className="pt-0 pb-4">
-                  <p className="text-2xl font-semibold text-gray-900">
-                    {resultado.totais.totalTitularesComVinculoFaturamento}
+                  <p className="text-3xl font-semibold text-amber-900 tabular-nums">
+                    {resultado.resumo.percentual_qtd}%
                   </p>
-                  <p className="text-xs text-gray-500 mt-1">Base dos percentuais mensais.</p>
-                </CardContent>
-              </Card>
-              <Card className="rounded-md border border-gray-200 bg-white">
-                <CardHeader className="pb-1 pt-4">
-                  <CardTitle className="text-xs font-medium text-gray-500">Inadimplentes no período</CardTitle>
-                </CardHeader>
-                <CardContent className="pt-0 pb-4">
-                  <p className="text-2xl font-semibold text-amber-900">
-                    {resultado.resumoPeriodo.titularesDistintosComAtrasada}
+                  <p className="text-xs text-gray-600 mt-1">
+                    {resultado.resumo.faturas_em_aberto} em aberto de{" "}
+                    {resultado.resumo.faturas_geradas} geradas
                   </p>
-                  <p className="text-xs text-gray-500 mt-1">Com ≥1 fatura atrasada no intervalo de vencimento.</p>
+                </CardContent>
+              </Card>
+              <Card className="rounded-md border border-red-100 bg-red-50/30">
+                <CardHeader className="pb-1 pt-4">
+                  <CardTitle className="text-xs font-medium text-red-900">
+                    Índice (valor)
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="pt-0 pb-4">
+                  <p className="text-3xl font-semibold text-red-900 tabular-nums">
+                    {resultado.resumo.percentual_valor}%
+                  </p>
+                  <p className="text-xs text-gray-600 mt-1">
+                    {formatarMoeda(resultado.resumo.valor_em_aberto)} de{" "}
+                    {formatarMoeda(resultado.resumo.valor_gerado)}
+                  </p>
                 </CardContent>
               </Card>
               <Card className="rounded-md border border-gray-200 bg-white">
                 <CardHeader className="pb-1 pt-4">
-                  <CardTitle className="text-xs font-medium text-gray-500">% no período (vencimento)</CardTitle>
+                  <CardTitle className="text-xs font-medium text-gray-500">
+                    Faturas geradas
+                  </CardTitle>
                 </CardHeader>
                 <CardContent className="pt-0 pb-4">
-                  <p className="text-2xl font-semibold text-amber-900">{resultado.resumoPeriodo.percentual}%</p>
+                  <p className="text-2xl font-semibold text-gray-900 tabular-nums">
+                    {resultado.resumo.faturas_geradas}
+                  </p>
                   <p className="text-xs text-gray-500 mt-1">
-                    {formatarMesAno(resultado.mes_inicio)} — {formatarMesAno(resultado.mes_fim)}
+                    Pagas: {resultado.resumo.faturas_pagas} · Canceladas:{" "}
+                    {resultado.resumo.faturas_canceladas}
                   </p>
+                </CardContent>
+              </Card>
+              <Card className="rounded-md border border-gray-200 bg-white">
+                <CardHeader className="pb-1 pt-4">
+                  <CardTitle className="text-xs font-medium text-gray-500">Período</CardTitle>
+                </CardHeader>
+                <CardContent className="pt-0 pb-4">
+                  <p className="text-lg font-semibold text-gray-900">
+                    {formatarMesAno(resultado.mes)}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1">{resultado.financeira.nome}</p>
                 </CardContent>
               </Card>
             </div>
 
             <Card className="rounded-md border border-gray-200">
               <CardHeader>
-                <CardTitle className="text-lg">Indicador por mês (vencimento da fatura atrasada)</CardTitle>
-                <p className="text-sm text-gray-500">{resultado.grupo.nome}</p>
+                <CardTitle className="text-lg">Histórico dos últimos meses</CardTitle>
+                <p className="text-sm text-gray-500">
+                  Mesmo critério — vencimento no mês · {resultado.financeira.nome}
+                </p>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2.5">
+                  {resultado.historico.map((h) => (
+                    <div key={h.mes} className="space-y-1">
+                      <div className="flex items-baseline justify-between gap-2 text-xs">
+                        <span
+                          className={cn(
+                            "font-medium",
+                            h.mes === resultado.mes ? "text-slate-900" : "text-slate-600"
+                          )}
+                        >
+                          {formatarMesAno(h.mes)}
+                        </span>
+                        <span className="tabular-nums text-slate-600">
+                          {h.percentual_qtd}% qtd · {h.percentual_valor}% valor
+                          <span className="text-slate-400">
+                            {" "}
+                            ({h.faturas_em_aberto}/{h.faturas_geradas})
+                          </span>
+                        </span>
+                      </div>
+                      <div className="h-1.5 w-full overflow-hidden rounded-sm bg-slate-100">
+                        <div
+                          className={cn(
+                            "h-full rounded-sm transition-all",
+                            h.mes === resultado.mes ? "bg-[#0F172A]" : "bg-slate-400"
+                          )}
+                          style={{ width: `${Math.min(100, (h.percentual_qtd / maxPctHistorico) * 100)}%` }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="overflow-x-auto rounded-md border border-gray-100">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-gray-50">
+                        <TableHead className="font-semibold">Mês</TableHead>
+                        <TableHead className="font-semibold text-right">Geradas</TableHead>
+                        <TableHead className="font-semibold text-right">Em aberto</TableHead>
+                        <TableHead className="font-semibold text-right">% qtd</TableHead>
+                        <TableHead className="font-semibold text-right">Valor em aberto</TableHead>
+                        <TableHead className="font-semibold text-right">% valor</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {resultado.historico.map((h) => (
+                        <TableRow
+                          key={`t-${h.mes}`}
+                          className={h.mes === resultado.mes ? "bg-slate-50" : undefined}
+                        >
+                          <TableCell className="font-medium">{formatarMesAno(h.mes)}</TableCell>
+                          <TableCell className="text-right tabular-nums">{h.faturas_geradas}</TableCell>
+                          <TableCell className="text-right tabular-nums">{h.faturas_em_aberto}</TableCell>
+                          <TableCell className="text-right tabular-nums font-medium text-amber-900">
+                            {h.percentual_qtd}%
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {formatarMoeda(h.valor_em_aberto)}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums font-medium text-red-900">
+                            {h.percentual_valor}%
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="rounded-md border border-gray-200">
+              <CardHeader>
+                <CardTitle className="text-lg">Participação por grupo</CardTitle>
+                <p className="text-sm text-gray-500">
+                  Dentro das faturas em aberto de {formatarMesAno(resultado.mes)} ·{" "}
+                  {resultado.financeira.nome}
+                </p>
               </CardHeader>
               <CardContent>
-                {resultado.porMes.length === 0 ? (
-                  <p className="text-sm text-gray-500 py-4">Nenhum mês no intervalo.</p>
+                {resultado.por_grupo.length === 0 ? (
+                  <p className="text-sm text-gray-500 py-4 text-center">
+                    Nenhuma fatura em aberto neste recorte.
+                  </p>
                 ) : (
                   <div className="overflow-x-auto rounded-md border border-gray-100">
                     <Table>
                       <TableHeader>
                         <TableRow className="bg-gray-50">
-                          <TableHead className="font-semibold">Mês</TableHead>
-                          <TableHead className="font-semibold text-right">Titulares com fatura atrasada</TableHead>
-                          <TableHead className="font-semibold text-right">%</TableHead>
+                          <TableHead className="font-semibold">Grupo</TableHead>
+                          <TableHead className="font-semibold text-right">Faturas em aberto</TableHead>
+                          <TableHead className="font-semibold text-right">% da inadimplência</TableHead>
+                          <TableHead className="font-semibold text-right">Valor</TableHead>
+                          <TableHead className="font-semibold text-right">% do valor</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {resultado.porMes.map((row) => (
-                          <TableRow key={row.mes}>
-                            <TableCell className="font-medium">{formatarMesAno(row.mes)}</TableCell>
-                            <TableCell className="text-right tabular-nums">{row.titularesComFaturaAtrasada}</TableCell>
+                        {resultado.por_grupo.map((g) => (
+                          <TableRow key={g.grupo_id || g.grupo_nome}>
+                            <TableCell className="font-medium">{g.grupo_nome}</TableCell>
+                            <TableCell className="text-right tabular-nums">
+                              {g.faturas_em_aberto}
+                            </TableCell>
                             <TableCell className="text-right tabular-nums text-amber-900 font-medium">
-                              {row.percentual}%
+                              {g.percentual_qtd_da_inadimplencia}%
+                            </TableCell>
+                            <TableCell className="text-right tabular-nums">
+                              {formatarMoeda(g.valor_em_aberto)}
+                            </TableCell>
+                            <TableCell className="text-right tabular-nums text-red-900 font-medium">
+                              {g.percentual_valor_da_inadimplencia}%
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card className="rounded-md border border-gray-200">
+              <CardHeader>
+                <CardTitle className="text-lg">Faturas em aberto no mês</CardTitle>
+                <p className="text-sm text-gray-500">
+                  Até 500 registros · status pendente ou atrasada com vencimento em{" "}
+                  {formatarMesAno(resultado.mes)}
+                </p>
+              </CardHeader>
+              <CardContent>
+                {resultado.faturas_em_aberto.length === 0 ? (
+                  <p className="text-sm text-gray-500 py-4 text-center">
+                    Nenhuma fatura em aberto neste filtro.
+                  </p>
+                ) : (
+                  <div className="overflow-x-auto rounded-md border border-gray-100">
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="bg-gray-50">
+                          <TableHead className="font-semibold">Cliente</TableHead>
+                          <TableHead className="font-semibold">Grupo</TableHead>
+                          <TableHead className="font-semibold">Status</TableHead>
+                          <TableHead className="font-semibold">Vencimento</TableHead>
+                          <TableHead className="font-semibold text-right">Valor</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {resultado.faturas_em_aberto.map((f) => (
+                          <TableRow key={f.fatura_id}>
+                            <TableCell className="font-medium">{f.cliente_nome}</TableCell>
+                            <TableCell className="text-sm text-gray-700">{f.grupo_nome}</TableCell>
+                            <TableCell className="text-sm capitalize">{f.status}</TableCell>
+                            <TableCell className="text-sm tabular-nums">
+                              {f.vencimento ? formatarData(f.vencimento) : "—"}
+                            </TableCell>
+                            <TableCell className="text-right tabular-nums font-medium">
+                              {formatarMoeda(f.valor)}
                             </TableCell>
                           </TableRow>
                         ))}
