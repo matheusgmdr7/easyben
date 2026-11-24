@@ -7,8 +7,34 @@ import {
   normalizarStatusFatura,
 } from "@/lib/fatura-status"
 
-/** Lote pequeno para caber no maxDuration (60s) da Vercel por requisição. */
-export const LIMITE_FATURAS_POR_EXECUCAO = 40
+/** Lote pequeno para caber no maxDuration (Netlify/Vercel ~26–60s) por requisição. */
+export const LIMITE_FATURAS_POR_EXECUCAO = 20
+
+/** Período de vencimento da fila (null = todos os períodos). */
+export type PeriodoSyncAsaas = { ano: number; mes: number }
+
+function limitesVencimentoPeriodo(periodo: PeriodoSyncAsaas): { inicio: string; fimExclusivo: string } {
+  const ano = Math.trunc(periodo.ano)
+  const mes = Math.trunc(periodo.mes)
+  const inicio = `${ano}-${String(mes).padStart(2, "0")}-01`
+  const mesSeg = mes === 12 ? 1 : mes + 1
+  const anoSeg = mes === 12 ? ano + 1 : ano
+  return {
+    inicio,
+    fimExclusivo: `${anoSeg}-${String(mesSeg).padStart(2, "0")}-01`,
+  }
+}
+
+function faturaNoPeriodoVencimento(
+  f: { vencimento?: string | null; data_vencimento?: string | null },
+  periodo: PeriodoSyncAsaas | null | undefined
+): boolean {
+  if (!periodo) return true
+  const v = String(f.vencimento || f.data_vencimento || "").slice(0, 10)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return false
+  const { inicio, fimExclusivo } = limitesVencimentoPeriodo(periodo)
+  return v >= inicio && v < fimExclusivo
+}
 
 /** reconciliare = mesma fila do padrao (em aberto + inconsistentes), pensado para varredura pós-falha de update. */
 export type ModoSincronizacaoAsaas = "padrao" | "inconsistentes" | "todos" | "reconciliare"
@@ -342,6 +368,7 @@ function montarQueryFaturasSync(
     numeroFatura: string
     /** padrao/reconciliare: só em aberto (evita lotar o lote com milhares de pagas). */
     escopo: "pontual" | "abertas" | "todas"
+    periodo?: PeriodoSyncAsaas | null
   }
 ) {
   let q = supabaseAdmin.from("faturas").select(selectCols).eq("administradora_id", administradoraId)
@@ -358,6 +385,10 @@ function montarQueryFaturasSync(
   } else {
     q = q.not("asaas_charge_id", "is", null).order("vencimento", { ascending: false })
   }
+  if (filtros.periodo && !filtros.faturaId && !filtros.numeroFatura) {
+    const { inicio, fimExclusivo } = limitesVencimentoPeriodo(filtros.periodo)
+    q = q.gte("vencimento", inicio).lt("vencimento", fimExclusivo)
+  }
   return q
 }
 
@@ -367,6 +398,7 @@ async function buscarFaturasPaginadas(
     faturaId: string
     numeroFatura: string
     escopo: "pontual" | "abertas" | "todas"
+    periodo?: PeriodoSyncAsaas | null
   },
   erros: string[]
 ): Promise<{ lista: FaturaSyncRow[]; error: { message: string } | null }> {
@@ -429,6 +461,10 @@ async function buscarFaturasPaginadas(
     if (filtros.escopo === "abertas") {
       qGate = qGate.in("status", ["pendente", "atrasada", "vencida"])
     }
+    if (filtros.periodo) {
+      const { inicio, fimExclusivo } = limitesVencimentoPeriodo(filtros.periodo)
+      qGate = qGate.gte("vencimento", inicio).lt("vencimento", fimExclusivo)
+    }
     const { data: soGateway } = await qGate.limit(PAGE_FATURAS_SYNC)
     if (Array.isArray(soGateway) && soGateway.length > 0) {
       const ids = new Set(all.map((f) => String(f.id)))
@@ -438,7 +474,12 @@ async function buscarFaturasPaginadas(
     }
   }
 
-  return { lista: all, error: null }
+  const lista =
+    filtros.periodo && !filtros.faturaId && !filtros.numeroFatura
+      ? all.filter((f) => faturaNoPeriodoVencimento(f, filtros.periodo))
+      : all
+
+  return { lista, error: null }
 }
 
 async function buscarFaturasComCobranca(
@@ -450,12 +491,14 @@ async function buscarFaturasComCobranca(
     numeroFatura?: string | null
     faturaId?: string | null
     modo?: ModoSincronizacaoAsaas
+    periodo?: PeriodoSyncAsaas | null
   }
 ): Promise<FaturaSyncRow[]> {
   const numeroFatura = String(filtros?.numeroFatura || "").trim()
   const faturaId = String(filtros?.faturaId || "").trim()
   const alvoPontual = Boolean(numeroFatura || faturaId)
   const modo = filtros?.modo || "padrao"
+  const periodo = filtros?.periodo ?? null
   const escopo: "pontual" | "abertas" | "todas" = alvoPontual
     ? "pontual"
     : modo === "todos"
@@ -464,7 +507,7 @@ async function buscarFaturasComCobranca(
 
   const { lista: carregadas, error: faturasError } = await buscarFaturasPaginadas(
     administradoraId,
-    { faturaId, numeroFatura, escopo },
+    { faturaId, numeroFatura, escopo, periodo },
     erros
   )
 
@@ -494,7 +537,7 @@ async function buscarFaturasComCobranca(
 
   // Complemento: em aberto sem charge id, com número — reconciliáveis via customer/invoiceNumber
   if (!alvoPontual) {
-    const { data: semCharge } = await supabaseAdmin
+    let qSem = supabaseAdmin
       .from("faturas")
       .select(SELECT_FATURA_SYNC)
       .eq("administradora_id", administradoraId)
@@ -502,14 +545,22 @@ async function buscarFaturasComCobranca(
       .not("numero_fatura", "is", null)
       .is("asaas_charge_id", null)
       .is("gateway_id", null)
-      .limit(200)
+    if (periodo) {
+      const { inicio, fimExclusivo } = limitesVencimentoPeriodo(periodo)
+      qSem = qSem.gte("vencimento", inicio).lt("vencimento", fimExclusivo)
+    }
+    const { data: semCharge } = await qSem.limit(200)
 
     if (Array.isArray(semCharge) && semCharge.length > 0) {
       const ids = new Set(lista.map((f) => String(f.id)))
       for (const row of semCharge as FaturaSyncRow[]) {
-        if (!ids.has(String(row.id))) lista.push(row)
+        if (!ids.has(String(row.id)) && faturaNoPeriodoVencimento(row, periodo)) lista.push(row)
       }
     }
+  }
+
+  if (periodo) {
+    lista = lista.filter((f) => faturaNoPeriodoVencimento(f, periodo))
   }
 
   return lista
@@ -623,6 +674,10 @@ export async function sincronizarStatusFaturasComAsaas(opcoes: {
   /** Sync pontual (ex.: fatura paga no banco e ainda pendente no sistema). */
   numeroFatura?: string | null
   faturaId?: string | null
+  /** Filtra pela data de vencimento (mês/ano). null/omitido = todos os períodos. */
+  periodo?: PeriodoSyncAsaas | null
+  /** Se false, não chama /finance/balance (economiza tempo em lotes seguintes). */
+  validarChaves?: boolean
 }): Promise<ResultadoSincronizacaoAsaas> {
   const administradoraId = opcoes.administradoraId
   const financeiraId =
@@ -635,10 +690,19 @@ export async function sincronizarStatusFaturasComAsaas(opcoes: {
       ? modoRaw
       : "padrao"
   const offset = Math.max(0, Number(opcoes.offset || 0))
-  const limite = Math.max(1, Number(opcoes.limite || LIMITE_FATURAS_POR_EXECUCAO))
+  const limite = Math.max(1, Math.min(40, Number(opcoes.limite || LIMITE_FATURAS_POR_EXECUCAO)))
   const numeroFaturaFiltro = String(opcoes.numeroFatura || "").trim() || null
   const faturaIdFiltro = String(opcoes.faturaId || "").trim() || null
   const alvoPontual = Boolean(numeroFaturaFiltro || faturaIdFiltro)
+  const periodo =
+    opcoes.periodo &&
+    Number.isFinite(opcoes.periodo.ano) &&
+    Number.isFinite(opcoes.periodo.mes) &&
+    opcoes.periodo.mes >= 1 &&
+    opcoes.periodo.mes <= 12
+      ? { ano: Math.trunc(opcoes.periodo.ano), mes: Math.trunc(opcoes.periodo.mes) }
+      : null
+  const validarChaves = opcoes.validarChaves !== false
 
   const resultado: ResultadoSincronizacaoAsaas = {
     faturas_atualizadas: 0,
@@ -662,7 +726,9 @@ export async function sincronizarStatusFaturasComAsaas(opcoes: {
       "Configuração do Asaas não encontrada ou sem API key ativa para esta administradora."
     )
   }
-  const configsBusca = await filtrarConfigsComChaveValida(configsTodas, resultado.erros)
+  const configsBusca = validarChaves
+    ? await filtrarConfigsComChaveValida(configsTodas, resultado.erros)
+    : configsTodas
   if (configsBusca.length === 0) {
     throw new Error(
       "Nenhuma API Key Asaas válida para esta administradora. Atualize as chaves em Financeiras (401 inválida)."
@@ -687,7 +753,7 @@ export async function sincronizarStatusFaturasComAsaas(opcoes: {
     financeiraId,
     nomeFinanceiraSync,
     resultado.erros,
-    { numeroFatura: numeroFaturaFiltro, faturaId: faturaIdFiltro, modo }
+    { numeroFatura: numeroFaturaFiltro, faturaId: faturaIdFiltro, modo, periodo }
   )
 
   if (alvoPontual && todas.length === 0) {
@@ -864,7 +930,7 @@ export async function sincronizarStatusFaturasComAsaas(opcoes: {
         })
       }
 
-      await new Promise((resolve) => setTimeout(resolve, 15))
+      await new Promise((resolve) => setTimeout(resolve, 5))
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : String(error)
       resultado.erros.push(`Erro ao processar fatura ${fatura.id}: ${msg}`)
