@@ -62,7 +62,7 @@ async function executarJob(request: NextRequest) {
       let alteracoes = 0
       let rodadas = 0
 
-      while (rodadas < 20) {
+      while (rodadas < 60) {
         const r = await sincronizarStatusFaturasComAsaas({
           administradoraId: admId,
           modo: "padrao",

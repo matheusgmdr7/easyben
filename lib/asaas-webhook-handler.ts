@@ -49,17 +49,19 @@ async function tokensAsaasAtivos(): Promise<Set<string>> {
     return tokensAsaasCache.tokens
   }
 
+  // Aceita api_token (auth do webhook) e api_key (muitos cadastros usam a mesma chave no painel Asaas).
   const { data: financeiras } = await supabaseAdmin
     .from("administradora_financeiras")
-    .select("api_token, instituicao_financeira, ativo")
+    .select("api_token, api_key, instituicao_financeira, ativo")
     .eq("ativo", true)
-    .not("api_token", "is", null)
 
   const tokens = new Set<string>()
   for (const f of financeiras || []) {
     if (String(f.instituicao_financeira || "").toLowerCase() !== "asaas") continue
-    const t = String(f.api_token || "").trim()
-    if (t) tokens.add(t)
+    const token = String(f.api_token || "").trim()
+    const key = String(f.api_key || "").trim()
+    if (token) tokens.add(token)
+    if (key) tokens.add(key)
   }
 
   tokensAsaasCache = { tokens, expira: now + 5 * 60_000 }

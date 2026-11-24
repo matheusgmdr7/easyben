@@ -182,7 +182,8 @@ export default function FinanceiroPage() {
       let offset = 0
       let sincronizadas = 0
       let pagasCorrigidas = 0
-      for (let rodada = 0; rodada < 25; rodada++) {
+      let restantesFila = 0
+      for (let rodada = 0; rodada < 80; rodada++) {
         const response = await fetch("/api/sincronizar-status-asaas", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -201,14 +202,19 @@ export default function FinanceiroPage() {
             (a: { para?: string }) => String(a?.para || "") === "paga"
           ).length
         }
-        if (resultado.proximo_offset == null) break
+        if (resultado.proximo_offset == null) {
+          restantesFila = 0
+          break
+        }
+        restantesFila = Number(resultado.faturas_restantes || 0)
         offset = Number(resultado.proximo_offset)
       }
 
       toast.success(
-        `Atualização concluída! ${quantidadeAtrasadas} atrasada(s)` +
+        `Atualização ${restantesFila > 0 ? "parcial" : "concluída"}! ${quantidadeAtrasadas} atrasada(s)` +
           (sincronizadas > 0 ? `, ${sincronizadas} sincronizada(s) com o Asaas` : "") +
-          (pagasCorrigidas > 0 ? `, ${pagasCorrigidas} marcada(s) como paga` : "")
+          (pagasCorrigidas > 0 ? `, ${pagasCorrigidas} marcada(s) como paga` : "") +
+          (restantesFila > 0 ? `. Ainda restam ~${restantesFila} — clique novamente.` : "")
       )
 
       await carregarFaturas()

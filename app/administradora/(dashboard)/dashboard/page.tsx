@@ -263,8 +263,9 @@ export default function AdministradoraDashboard() {
       const avisos: string[] = []
       let cobrancasNaoEncontradas = 0
       let rodadas = 0
-      // Varredura mais longa: captura pendentes que no Asaas já estão RECEIVED (ex.: após falha de update)
-      const maxRodadas = 25
+      // Varredura longa: admins com 1k+ abertas precisam de várias rodadas (40/lote).
+      const maxRodadas = 80
+      let restantesAoParar: number | null = null
 
       while (rodadas < maxRodadas) {
         const body: {
@@ -279,6 +280,8 @@ export default function AdministradoraDashboard() {
           modo: "reconciliare",
           limite: 40,
         }
+        // Sem filtro de financeira: percorre todas as contas Asaas com key válida.
+        // Com filtro: só faturas daquela financeira (exige key válida nela).
         if (financeiraId.trim()) body.financeira_id = financeiraId.trim()
 
         const res = await fetch("/api/sincronizar-status-asaas", {
@@ -293,7 +296,7 @@ export default function AdministradoraDashboard() {
         } catch {
           if (res.status === 504 || res.status === 408) {
             throw new Error(
-              "A sincronização excedeu o tempo limite do servidor. Tente novamente — cada clique processa um lote de faturas."
+              "A sincronização excedeu o tempo limite do servidor. Clique de novo — a fila continua de onde parou nas faturas em aberto."
             )
           }
           throw new Error(
@@ -319,7 +322,11 @@ export default function AdministradoraDashboard() {
         }
 
         const proximo = payload?.proximo_offset
-        if (proximo == null || proximo === "") break
+        if (proximo == null || proximo === "") {
+          restantesAoParar = 0
+          break
+        }
+        restantesAoParar = Number(payload?.faturas_restantes || 0)
         offset = Number(proximo)
         rodadas++
       }
@@ -335,16 +342,22 @@ export default function AdministradoraDashboard() {
       localStorage.setItem(`administradora_dashboard_ultima_sync_${administradora.id}`, JSON.stringify(resumoSync))
 
       const pagasCorrigidas = alteracoes.filter((a) => String(a?.para || "") === "paga").length
+      const incompleta = restantesAoParar != null && restantesAoParar > 0
       toast.success(
-        `Sincronização concluída: ${atualizadas} atualizada(s), ${alteradas} status alterado(s)` +
+        `Sincronização ${incompleta ? "parcial" : "concluída"}: ${atualizadas} atualizada(s), ${alteradas} status alterado(s)` +
           (pagasCorrigidas > 0 ? `, ${pagasCorrigidas} marcada(s) como paga` : "") +
-          `, ${verificadas} verificada(s).`
+          `, ${verificadas} verificada(s).` +
+          (incompleta ? ` Ainda restam ~${restantesAoParar} na fila — clique novamente.` : "")
       )
 
       if (cobrancasNaoEncontradas > 0) {
         toast.info(
-          `${cobrancasNaoEncontradas} cobrança(s) não localizadas no Asaas (podem ser de outra conta ou já removidas).`
+          `${cobrancasNaoEncontradas} cobrança(s) não localizadas no Asaas (outra conta, key inválida ou removidas).`
         )
+      }
+      const avisoKey = avisos.find((a) => /API Key inválida/i.test(a))
+      if (avisoKey) {
+        toast.warning(avisoKey)
       } else if (avisos.length > 0) {
         toast.info(`Sincronização com avisos: ${avisos[0]}`)
       }

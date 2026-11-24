@@ -65,6 +65,11 @@ function extrairColunaInexistente(mensagem: string | undefined): string | null {
   // Postgres clássico: column "x" of relation "faturas"
   const m1 = txt.match(/column\s+"?([a-zA-Z0-9_]+)"?\s+of relation/i)
   if (m1?.[1]) return m1[1]
+  // Postgres: column faturas.valor_total does not exist
+  const mPg = txt.match(/column\s+[a-zA-Z0-9_]+\.([a-zA-Z0-9_]+)\s+does not exist/i)
+  if (mPg?.[1]) return mPg[1]
+  const mPg2 = txt.match(/column\s+"?([a-zA-Z0-9_]+)"?\s+does not exist/i)
+  if (mPg2?.[1]) return mPg2[1]
   // PostgREST / schema cache: Could not find the 'data_vencimento' column of 'faturas'
   const m2 = txt.match(/Could not find the ['"]([a-zA-Z0-9_]+)['"] column/i)
   if (m2?.[1]) return m2[1]
@@ -155,7 +160,7 @@ function montarFila(
   ])
 }
 
-type ConfigAsaas = { api_key: string; ambiente: string; nome?: string }
+type ConfigAsaas = { id?: string; api_key: string; ambiente: string; nome?: string }
 
 function financeiraAsaasAtiva(row: {
   instituicao_financeira?: string | null
@@ -191,13 +196,14 @@ function deduplicarConfigs(configs: ConfigAsaas[]): ConfigAsaas[] {
 async function buscarTodasConfigsAsaasAtivas(administradoraId: string): Promise<ConfigAsaas[]> {
   const { data: financeiras } = await supabaseAdmin
     .from("administradora_financeiras")
-    .select("nome, api_key, ambiente, instituicao_financeira, status_integracao, ativo")
+    .select("id, nome, api_key, ambiente, instituicao_financeira, status_integracao, ativo")
     .eq("administradora_id", administradoraId)
     .eq("ativo", true)
 
   const deFinanceiras = (financeiras || [])
     .filter(financeiraAsaasAtiva)
-    .map((f: { api_key: string; ambiente?: string; nome?: string }) => ({
+    .map((f: { id?: string; api_key: string; ambiente?: string; nome?: string }) => ({
+      id: f.id ? String(f.id) : undefined,
       api_key: String(f.api_key),
       ambiente: String(f.ambiente || "producao"),
       nome: String(f.nome || ""),
@@ -259,10 +265,174 @@ async function buscarConfigFinanceiraPorId(
 
   if (!uma || !financeiraAsaasAtiva(uma)) return null
   return {
+    id: financeiraId,
     api_key: String(uma.api_key),
     ambiente: String(uma.ambiente || "producao"),
     nome: String(uma.nome || ""),
   }
+}
+
+/** Descarta keys 401 (revogadas) para a varredura não perder tempo e marcar cobranças como "não encontradas". */
+async function filtrarConfigsComChaveValida(
+  configs: ConfigAsaas[],
+  erros: string[]
+): Promise<ConfigAsaas[]> {
+  const validas: ConfigAsaas[] = []
+  for (const conf of configs) {
+    const baseUrl =
+      conf.ambiente === "sandbox" ? "https://sandbox.asaas.com/api/v3" : "https://api.asaas.com/v3"
+    try {
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), 6000)
+      const response = await fetch(`${baseUrl}/finance/balance`, {
+        headers: {
+          access_token: conf.api_key,
+          "Content-Type": "application/json",
+        },
+        signal: controller.signal,
+      }).finally(() => clearTimeout(timeout))
+
+      if (response.ok) {
+        validas.push(conf)
+        continue
+      }
+      if (response.status === 401 || response.status === 403) {
+        erros.push(
+          `Aviso: API Key inválida na financeira "${conf.nome || "Asaas"}" (HTTP ${response.status}). Atualize em Financeiras — cobranças dessa conta não serão sincronizadas.`
+        )
+        continue
+      }
+      // Outros erros (rede/5xx): mantém a key para tentar nas cobranças
+      validas.push(conf)
+    } catch {
+      validas.push(conf)
+    }
+  }
+  return validas
+}
+
+function ordenarConfigsPorFinanceiraFatura(
+  configs: ConfigAsaas[],
+  financeiraIdFatura: string | null | undefined
+): ConfigAsaas[] {
+  const finId = String(financeiraIdFatura || "").trim()
+  if (!finId) return configs
+  const preferidas = configs.filter((c) => String(c.id || "") === finId)
+  const demais = configs.filter((c) => String(c.id || "") !== finId)
+  return [...preferidas, ...demais]
+}
+
+const SELECT_FATURA_SYNC =
+  "id, numero_fatura, cliente_nome, cliente_administradora_id, asaas_charge_id, gateway_id, status, pagamento_data, gateway_nome, financeira_id, valor, vencimento"
+
+/** PostgREST limita ~1000 por request; sem paginação a varredura do dashboard ignorava pendentes. */
+const PAGE_FATURAS_SYNC = 1000
+
+function montarQueryFaturasSync(
+  selectCols: string,
+  administradoraId: string,
+  filtros: {
+    faturaId: string
+    numeroFatura: string
+    /** padrao/reconciliare: só em aberto (evita lotar o lote com milhares de pagas). */
+    escopo: "pontual" | "abertas" | "todas"
+  }
+) {
+  let q = supabaseAdmin.from("faturas").select(selectCols).eq("administradora_id", administradoraId)
+  if (filtros.faturaId) {
+    q = q.eq("id", filtros.faturaId)
+  } else if (filtros.numeroFatura) {
+    q = q.eq("numero_fatura", filtros.numeroFatura)
+  } else if (filtros.escopo === "abertas") {
+    // .or() do PostgREST compete com outros filtros: usar filtro embutido
+    q = q
+      .in("status", ["pendente", "atrasada", "vencida"])
+      .not("asaas_charge_id", "is", null)
+      .order("vencimento", { ascending: true })
+  } else {
+    q = q.not("asaas_charge_id", "is", null).order("vencimento", { ascending: false })
+  }
+  return q
+}
+
+async function buscarFaturasPaginadas(
+  administradoraId: string,
+  filtros: {
+    faturaId: string
+    numeroFatura: string
+    escopo: "pontual" | "abertas" | "todas"
+  },
+  erros: string[]
+): Promise<{ lista: FaturaSyncRow[]; error: { message: string } | null }> {
+  const alvoPontual = Boolean(filtros.faturaId || filtros.numeroFatura)
+  const selects = [
+    SELECT_FATURA_SYNC,
+    SELECT_FATURA_SYNC.replace(", financeira_id", ""),
+    SELECT_FATURA_SYNC.replace(", financeira_id", "").replace(", gateway_nome", ""),
+    "id, numero_fatura, cliente_nome, asaas_charge_id, gateway_id, status, pagamento_data, valor, vencimento",
+    "id, numero_fatura, cliente_nome, asaas_charge_id, gateway_id, status",
+  ]
+
+  let selectUsado = selects[0]
+  let lastError: { message: string } | null = null
+
+  for (const cols of selects) {
+    const probe = await montarQueryFaturasSync(cols, administradoraId, filtros).limit(1)
+    if (!probe.error) {
+      selectUsado = cols
+      lastError = null
+      break
+    }
+    lastError = probe.error
+    if (!extrairColunaInexistente(probe.error.message)) break
+  }
+
+  if (lastError) return { lista: [], error: lastError }
+
+  if (alvoPontual) {
+    const { data, error } = await montarQueryFaturasSync(selectUsado, administradoraId, filtros)
+    if (error) return { lista: [], error }
+    return { lista: (data || []) as FaturaSyncRow[], error: null }
+  }
+
+  const all: FaturaSyncRow[] = []
+  // Também inclui gateway_id preenchido sem asaas_charge_id (legado)
+  const maxPages = filtros.escopo === "todas" ? 40 : 30
+  for (let page = 0; page < maxPages; page++) {
+    const from = page * PAGE_FATURAS_SYNC
+    const to = from + PAGE_FATURAS_SYNC - 1
+    const { data, error } = await montarQueryFaturasSync(selectUsado, administradoraId, filtros).range(from, to)
+    if (error) {
+      if (all.length === 0) return { lista: [], error }
+      erros.push(`Aviso: paginação de faturas interrompida: ${error.message}`)
+      break
+    }
+    const chunk = (data || []) as FaturaSyncRow[]
+    all.push(...chunk)
+    if (chunk.length < PAGE_FATURAS_SYNC) break
+  }
+
+  // Complemento: charge só em gateway_id (sem asaas_charge_id)
+  if (filtros.escopo === "abertas" || filtros.escopo === "todas") {
+    let qGate = supabaseAdmin
+      .from("faturas")
+      .select(selectUsado)
+      .eq("administradora_id", administradoraId)
+      .is("asaas_charge_id", null)
+      .not("gateway_id", "is", null)
+    if (filtros.escopo === "abertas") {
+      qGate = qGate.in("status", ["pendente", "atrasada", "vencida"])
+    }
+    const { data: soGateway } = await qGate.limit(PAGE_FATURAS_SYNC)
+    if (Array.isArray(soGateway) && soGateway.length > 0) {
+      const ids = new Set(all.map((f) => String(f.id)))
+      for (const row of soGateway as FaturaSyncRow[]) {
+        if (!ids.has(String(row.id))) all.push(row)
+      }
+    }
+  }
+
+  return { lista: all, error: null }
 }
 
 async function buscarFaturasComCobranca(
@@ -270,88 +440,41 @@ async function buscarFaturasComCobranca(
   financeiraId: string | null,
   nomeFinanceiraSync: string,
   erros: string[],
-  filtros?: { numeroFatura?: string | null; faturaId?: string | null }
+  filtros?: {
+    numeroFatura?: string | null
+    faturaId?: string | null
+    modo?: ModoSincronizacaoAsaas
+  }
 ): Promise<FaturaSyncRow[]> {
-  const selectComFin =
-    "id, numero_fatura, cliente_nome, cliente_administradora_id, asaas_charge_id, gateway_id, status, pagamento_data, gateway_nome, financeira_id, valor, valor_total, vencimento"
-  const selectSemFin =
-    "id, numero_fatura, cliente_nome, cliente_administradora_id, asaas_charge_id, gateway_id, status, pagamento_data, gateway_nome, valor, valor_total, vencimento"
-  const selectMin =
-    "id, numero_fatura, cliente_nome, cliente_administradora_id, asaas_charge_id, gateway_id, status, pagamento_data, valor, valor_total, vencimento"
-
   const numeroFatura = String(filtros?.numeroFatura || "").trim()
   const faturaId = String(filtros?.faturaId || "").trim()
   const alvoPontual = Boolean(numeroFatura || faturaId)
+  const modo = filtros?.modo || "padrao"
+  const escopo: "pontual" | "abertas" | "todas" = alvoPontual
+    ? "pontual"
+    : modo === "todos"
+      ? "todas"
+      : "abertas"
 
-  // Alvo pontual: não exige charge id (caso típico de fatura órfã / insert manual).
-  let qF = supabaseAdmin.from("faturas").select(selectComFin).eq("administradora_id", administradoraId)
-  if (faturaId) qF = qF.eq("id", faturaId)
-  else if (numeroFatura) qF = qF.eq("numero_fatura", numeroFatura)
-  else qF = qF.or("asaas_charge_id.not.is.null,gateway_id.not.is.null")
+  const { lista: carregadas, error: faturasError } = await buscarFaturasPaginadas(
+    administradoraId,
+    { faturaId, numeroFatura, escopo },
+    erros
+  )
 
-  let { data: faturas, error: faturasError } = await qF
+  let lista = carregadas
 
-  if (faturasError && extrairColunaInexistente(faturasError.message) === "financeira_id") {
-    let retryQ = supabaseAdmin
-      .from("faturas")
-      .select(selectSemFin)
-      .eq("administradora_id", administradoraId)
-    if (faturaId) retryQ = retryQ.eq("id", faturaId)
-    else if (numeroFatura) retryQ = retryQ.eq("numero_fatura", numeroFatura)
-    else {
-      retryQ = retryQ.or("asaas_charge_id.not.is.null,gateway_id.not.is.null")
-    }
-    const retry = await retryQ
-    faturas = retry.data as FaturaSyncRow[] | null
-    faturasError = retry.error
+  if (faturasError) {
+    throw new Error(`Erro ao buscar faturas: ${faturasError.message}`)
   }
 
-  if (faturasError && extrairColunaInexistente(faturasError.message) === "gateway_nome") {
-    let retryQ = supabaseAdmin
-      .from("faturas")
-      .select(selectMin)
-      .eq("administradora_id", administradoraId)
-    if (faturaId) retryQ = retryQ.eq("id", faturaId)
-    else if (numeroFatura) retryQ = retryQ.eq("numero_fatura", numeroFatura)
-    else retryQ = retryQ.or("asaas_charge_id.not.is.null,gateway_id.not.is.null")
-    const retry = await retryQ
-    faturas = retry.data as FaturaSyncRow[] | null
-    faturasError = retry.error
-  }
-
-  if (faturasError && extrairColunaInexistente(faturasError.message) === "pagamento_data") {
-    let retryQ = supabaseAdmin
-      .from("faturas")
-      .select(selectMin.replace(", pagamento_data", ""))
-      .eq("administradora_id", administradoraId)
-    if (faturaId) retryQ = retryQ.eq("id", faturaId)
-    else if (numeroFatura) retryQ = retryQ.eq("numero_fatura", numeroFatura)
-    else retryQ = retryQ.or("asaas_charge_id.not.is.null,gateway_id.not.is.null")
-    const retry = await retryQ
-    faturas = retry.data as FaturaSyncRow[] | null
-    faturasError = retry.error
-  }
-
-  if (faturasError && extrairColunaInexistente(faturasError.message) === "cliente_administradora_id") {
-    let retryQ = supabaseAdmin
-      .from("faturas")
-      .select(selectMin.replace(", cliente_administradora_id", ""))
-      .eq("administradora_id", administradoraId)
-    if (faturaId) retryQ = retryQ.eq("id", faturaId)
-    else if (numeroFatura) retryQ = retryQ.eq("numero_fatura", numeroFatura)
-    else retryQ = retryQ.or("asaas_charge_id.not.is.null,gateway_id.not.is.null")
-    const retry = await retryQ
-    faturas = retry.data as FaturaSyncRow[] | null
-    faturasError = retry.error
-  }
-
-  if (!faturasError && financeiraId && Array.isArray(faturas) && faturas.length > 0 && !alvoPontual) {
-    const amostra = faturas[0] as Record<string, unknown>
+  if (financeiraId && lista.length > 0 && !alvoPontual) {
+    const amostra = lista[0] as Record<string, unknown>
     const podeFiltrarPorFinanceira =
       Object.prototype.hasOwnProperty.call(amostra, "financeira_id") ||
       Object.prototype.hasOwnProperty.call(amostra, "gateway_nome")
     if (podeFiltrarPorFinanceira) {
-      faturas = faturas.filter((r) =>
+      lista = lista.filter((r) =>
         faturaPertenceAFinanceira(r.financeira_id, r.gateway_nome, financeiraId, nomeFinanceiraSync, {
           tratarGatewayVazioComoMatch: false,
         })
@@ -363,37 +486,17 @@ async function buscarFaturasComCobranca(
     }
   }
 
-  if (faturasError) {
-    let fallbackQ = supabaseAdmin
-      .from("faturas")
-      .select("id, numero_fatura, cliente_nome, asaas_charge_id, gateway_id, status")
-      .eq("administradora_id", administradoraId)
-    if (faturaId) fallbackQ = fallbackQ.eq("id", faturaId)
-    else if (numeroFatura) fallbackQ = fallbackQ.eq("numero_fatura", numeroFatura)
-    else fallbackQ = fallbackQ.or("asaas_charge_id.not.is.null,gateway_id.not.is.null")
-    const fallback = await fallbackQ
-    if (fallback.error) throw new Error(`Erro ao buscar faturas: ${fallback.error.message}`)
-    faturas = fallback.data as FaturaSyncRow[] | null
-    if (financeiraId && !alvoPontual) {
-      erros.push(
-        "Aviso: não foi possível filtrar por financeira (colunas indisponíveis); sincronização considerou todas as faturas com cobrança."
-      )
-    }
-  }
-
-  let lista = Array.isArray(faturas) ? faturas : []
-
   // Complemento: em aberto sem charge id, com número — reconciliáveis via customer/invoiceNumber
-  if (!alvoPontual && !faturasError) {
+  if (!alvoPontual) {
     const { data: semCharge } = await supabaseAdmin
       .from("faturas")
-      .select(selectComFin)
+      .select(SELECT_FATURA_SYNC)
       .eq("administradora_id", administradoraId)
       .in("status", ["pendente", "atrasada", "vencida"])
       .not("numero_fatura", "is", null)
       .is("asaas_charge_id", null)
       .is("gateway_id", null)
-      .limit(80)
+      .limit(200)
 
     if (Array.isArray(semCharge) && semCharge.length > 0) {
       const ids = new Set(lista.map((f) => String(f.id)))
@@ -463,13 +566,18 @@ async function buscarChargePorNumeroNoCliente(
 }
 
 async function buscarChargeNoAsaas(
-  configs: Array<{ api_key: string; ambiente: string }>,
-  idsCandidatos: string[]
+  configs: Array<{ api_key: string; ambiente: string; id?: string; nome?: string }>,
+  idsCandidatos: string[],
+  financeiraIdFatura?: string | null
 ): Promise<{ charge: Record<string, unknown> | null; ultimoStatusHttp: number | null }> {
   let charge: Record<string, unknown> | null = null
   let ultimoStatusHttp: number | null = null
+  const ordenadas = ordenarConfigsPorFinanceiraFatura(configs, financeiraIdFatura)
+  const keysInvalidas = new Set<string>()
 
-  for (const conf of configs) {
+  for (const conf of ordenadas) {
+    const key = String(conf.api_key || "").trim()
+    if (!key || keysInvalidas.has(key)) continue
     const baseUrl =
       conf.ambiente === "sandbox" ? "https://sandbox.asaas.com/api/v3" : "https://api.asaas.com/v3"
 
@@ -478,13 +586,17 @@ async function buscarChargeNoAsaas(
       const timeout = setTimeout(() => controller.abort(), 5000)
       const response = await fetch(`${baseUrl}/payments/${id}`, {
         headers: {
-          access_token: conf.api_key,
+          access_token: key,
           "Content-Type": "application/json",
         },
         signal: controller.signal,
       }).finally(() => clearTimeout(timeout))
 
       ultimoStatusHttp = response.status
+      if (response.status === 401 || response.status === 403) {
+        keysInvalidas.add(key)
+        break
+      }
       if (response.ok) {
         charge = (await response.json()) as Record<string, unknown>
         break
@@ -535,10 +647,16 @@ export async function sincronizarStatusFaturasComAsaas(opcoes: {
     diagnostico_pontual: undefined,
   }
 
-  const configsBusca = await buscarTodasConfigsAsaasAtivas(administradoraId)
-  if (configsBusca.length === 0) {
+  const configsTodas = await buscarTodasConfigsAsaasAtivas(administradoraId)
+  if (configsTodas.length === 0) {
     throw new Error(
       "Configuração do Asaas não encontrada ou sem API key ativa para esta administradora."
+    )
+  }
+  const configsBusca = await filtrarConfigsComChaveValida(configsTodas, resultado.erros)
+  if (configsBusca.length === 0) {
+    throw new Error(
+      "Nenhuma API Key Asaas válida para esta administradora. Atualize as chaves em Financeiras (401 inválida)."
     )
   }
 
@@ -560,7 +678,7 @@ export async function sincronizarStatusFaturasComAsaas(opcoes: {
     financeiraId,
     nomeFinanceiraSync,
     resultado.erros,
-    { numeroFatura: numeroFaturaFiltro, faturaId: faturaIdFiltro }
+    { numeroFatura: numeroFaturaFiltro, faturaId: faturaIdFiltro, modo }
   )
 
   if (alvoPontual && todas.length === 0) {
@@ -605,7 +723,11 @@ export async function sincronizarStatusFaturasComAsaas(opcoes: {
       let ultimoStatusHttp: number | null = null
 
       if (idBase) {
-        const busca = await buscarChargeNoAsaas(configsBusca, obterChargeIds(idBase))
+        const busca = await buscarChargeNoAsaas(
+          configsBusca,
+          obterChargeIds(idBase),
+          fatura.financeira_id
+        )
         charge = busca.charge
         ultimoStatusHttp = busca.ultimoStatusHttp
       }
