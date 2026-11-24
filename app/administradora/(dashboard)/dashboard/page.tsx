@@ -21,9 +21,59 @@ import * as XLSX from "xlsx"
 import { formatarData, formatarMoeda } from "@/utils/formatters"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Progress } from "@/components/ui/progress"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
 import { adicionarAlertaSistema } from "@/services/administradora-alertas-service"
+
+type EtapaSincronizacao =
+  | "ocioso"
+  | "iniciando"
+  | "validando_chaves"
+  | "montando_fila"
+  | "consultando_asaas"
+  | "atualizando_faturas"
+  | "recarregando_dashboard"
+  | "concluido"
+  | "erro"
+
+type ProgressoSincronizacao = {
+  etapa: EtapaSincronizacao
+  rotulo: string
+  detalhe: string
+  rodada: number
+  maxRodadas: number
+  verificadas: number
+  atualizadas: number
+  alteradas: number
+  naoEncontradas: number
+  restantes: number
+  totalFila: number
+  percentual: number
+  avisosRecentes: string[]
+}
+
+const PROGRESSO_SYNC_INICIAL: ProgressoSincronizacao = {
+  etapa: "ocioso",
+  rotulo: "",
+  detalhe: "",
+  rodada: 0,
+  maxRodadas: 80,
+  verificadas: 0,
+  atualizadas: 0,
+  alteradas: 0,
+  naoEncontradas: 0,
+  restantes: 0,
+  totalFila: 0,
+  percentual: 0,
+  avisosRecentes: [],
+}
+
+function percentualSync(verificadas: number, restantes: number, totalFilaHint: number) {
+  const total = Math.max(totalFilaHint, verificadas + Math.max(0, restantes))
+  if (total <= 0) return 0
+  return Math.min(99, Math.round((verificadas / total) * 100))
+}
 
 type PendenciaFatura = {
   fatura_id: string
@@ -88,6 +138,7 @@ export default function AdministradoraDashboard() {
   const [administradora, setAdministradora] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [sincronizando, setSincronizando] = useState(false)
+  const [progressoSync, setProgressoSync] = useState<ProgressoSincronizacao>(PROGRESSO_SYNC_INICIAL)
   const [mesRef, setMesRef] = useState<string>(String(agora.getMonth() + 1).padStart(2, "0"))
   const [anoRef, setAnoRef] = useState<string>(String(agora.getFullYear()))
   const [dashboardData, setDashboardData] = useState({
@@ -247,8 +298,17 @@ export default function AdministradoraDashboard() {
 
   async function sincronizarStatusAgora() {
     if (!administradora?.id) return
+    const maxRodadas = 80
     try {
       setSincronizando(true)
+      setProgressoSync({
+        ...PROGRESSO_SYNC_INICIAL,
+        etapa: "iniciando",
+        rotulo: "Iniciando sincronização",
+        detalhe: "Preparando varredura das faturas em aberto com o Asaas…",
+        maxRodadas,
+        percentual: 1,
+      })
 
       let offset = 0
       let verificadas = 0
@@ -263,11 +323,30 @@ export default function AdministradoraDashboard() {
       const avisos: string[] = []
       let cobrancasNaoEncontradas = 0
       let rodadas = 0
-      // Varredura longa: admins com 1k+ abertas precisam de várias rodadas (40/lote).
-      const maxRodadas = 80
       let restantesAoParar: number | null = null
+      let totalFilaHint = 0
 
       while (rodadas < maxRodadas) {
+        const loteAtual = rodadas + 1
+        setProgressoSync((prev) => ({
+          ...prev,
+          etapa: "consultando_asaas",
+          rotulo: `Consultando Asaas — lote ${loteAtual}`,
+          detalhe:
+            offset > 0
+              ? `Continuando a partir do offset ${offset} (até 40 faturas por lote)…`
+              : "Validando chaves, montando a fila e consultando cobranças no gateway…",
+          rodada: loteAtual,
+          maxRodadas,
+          verificadas,
+          atualizadas,
+          alteradas: alteracoes.length,
+          naoEncontradas: cobrancasNaoEncontradas,
+          restantes: Math.max(0, restantesAoParar ?? 0),
+          totalFila: totalFilaHint,
+          percentual: percentualSync(verificadas, restantesAoParar ?? 0, totalFilaHint) || 2,
+        }))
+
         const body: {
           administradora_id: string
           financeira_id?: string
@@ -308,27 +387,81 @@ export default function AdministradoraDashboard() {
           throw new Error(msg || `Erro na sincronização (HTTP ${res.status})`)
         }
 
-        verificadas += Number(payload?.faturas_verificadas || 0)
-        atualizadas += Number(payload?.faturas_atualizadas || 0)
+        setProgressoSync((prev) => ({
+          ...prev,
+          etapa: "atualizando_faturas",
+          rotulo: `Processando lote ${loteAtual}`,
+          detalhe: "Consolidando status e atualizações retornadas pelo gateway…",
+        }))
+
+        const verificadasLote = Number(payload?.faturas_verificadas || 0)
+        const atualizadasLote = Number(payload?.faturas_atualizadas || 0)
+        const restantesLote = Number(payload?.faturas_restantes || 0)
+        const totalFilaLote = Number(payload?.faturas_total_fila || 0)
+        if (totalFilaLote > 0) totalFilaHint = totalFilaLote
+
+        verificadas += verificadasLote
+        atualizadas += atualizadasLote
         cobrancasNaoEncontradas += Number(payload?.cobrancas_nao_encontradas || 0)
         if (Array.isArray(payload?.alteracoes_status)) {
-          alteracoes.push(...payload.alteracoes_status)
+          alteracoes.push(
+            ...(payload.alteracoes_status as Array<{
+              fatura_id: string
+              numero_fatura: string | null
+              cliente_nome: string | null
+              de: string
+              para: string
+            }>)
+          )
         }
         if (Array.isArray(payload?.erros)) {
           for (const e of payload.erros) {
             const msg = String(e || "").trim()
-            if (msg && !avisos.includes(msg)) avisos.push(msg)
+            // Continuação da fila não é erro operacional — só avisos reais.
+            if (!msg || /sincronização parcial/i.test(msg)) continue
+            if (!avisos.includes(msg)) avisos.push(msg)
           }
         }
 
         const proximo = payload?.proximo_offset
         if (proximo == null || proximo === "") {
           restantesAoParar = 0
+          setProgressoSync((prev) => ({
+            ...prev,
+            etapa: "atualizando_faturas",
+            rotulo: "Lotes concluídos",
+            detalhe: `Varredura finalizada neste ciclo · ${verificadas} verificada(s)`,
+            rodada: loteAtual,
+            verificadas,
+            atualizadas,
+            alteradas: alteracoes.length,
+            naoEncontradas: cobrancasNaoEncontradas,
+            restantes: 0,
+            totalFila: totalFilaHint || verificadas,
+            percentual: 92,
+            avisosRecentes: avisos.slice(-4),
+          }))
           break
         }
-        restantesAoParar = Number(payload?.faturas_restantes || 0)
+        restantesAoParar = restantesLote
         offset = Number(proximo)
         rodadas++
+
+        setProgressoSync({
+          etapa: "consultando_asaas",
+          rotulo: `Lote ${loteAtual} concluído`,
+          detalhe: `Restam ~${restantesLote} fatura(s) na fila · próximo offset ${offset}`,
+          rodada: loteAtual,
+          maxRodadas,
+          verificadas,
+          atualizadas,
+          alteradas: alteracoes.length,
+          naoEncontradas: cobrancasNaoEncontradas,
+          restantes: restantesLote,
+          totalFila: totalFilaHint,
+          percentual: percentualSync(verificadas, restantesLote, totalFilaHint),
+          avisosRecentes: avisos.slice(-4),
+        })
       }
 
       const alteradas = alteracoes.length
@@ -340,6 +473,19 @@ export default function AdministradoraDashboard() {
       }
       setUltimaSincronizacao(resumoSync)
       localStorage.setItem(`administradora_dashboard_ultima_sync_${administradora.id}`, JSON.stringify(resumoSync))
+
+      setProgressoSync((prev) => ({
+        ...prev,
+        etapa: "recarregando_dashboard",
+        rotulo: "Atualizando dashboard",
+        detalhe: "Recarregando cards e pendências com os dados sincronizados…",
+        percentual: 96,
+        verificadas,
+        atualizadas,
+        alteradas,
+        naoEncontradas: cobrancasNaoEncontradas,
+        restantes: Math.max(0, restantesAoParar ?? 0),
+      }))
 
       const pagasCorrigidas = alteracoes.filter((a) => String(a?.para || "") === "paga").length
       const incompleta = restantesAoParar != null && restantesAoParar > 0
@@ -378,8 +524,28 @@ export default function AdministradoraDashboard() {
 
       const p = periodoDashboardRef.current
       await carregarDashboard(administradora.id, p.ano, p.mes, financeiraId)
+
+      setProgressoSync((prev) => ({
+        ...prev,
+        etapa: "concluido",
+        rotulo: incompleta ? "Sincronização parcial" : "Sincronização concluída",
+        detalhe: incompleta
+          ? `Ainda restam ~${restantesAoParar} fatura(s). Clique novamente para continuar.`
+          : `${verificadas} verificada(s) · ${atualizadas} atualizada(s) · ${alteradas} status alterado(s)`,
+        percentual: 100,
+        restantes: Math.max(0, restantesAoParar ?? 0),
+        avisosRecentes: avisos.slice(-4),
+      }))
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Erro ao sincronizar status com o gateway")
+      const msg = error instanceof Error ? error.message : "Erro ao sincronizar status com o gateway"
+      setProgressoSync((prev) => ({
+        ...prev,
+        etapa: "erro",
+        rotulo: "Falha na sincronização",
+        detalhe: msg,
+        percentual: prev.percentual > 0 ? prev.percentual : 0,
+      }))
+      toast.error(msg)
     } finally {
       setSincronizando(false)
     }
@@ -686,10 +852,94 @@ export default function AdministradoraDashboard() {
                   >
                     <RefreshCw className={`h-4 w-4 mr-2 shrink-0 ${sincronizando ? "animate-spin" : ""}`} />
                     {sincronizando
-                      ? "Sincronizando (varredura Asaas)..."
+                      ? progressoSync.rodada > 0
+                        ? `Sincronizando · lote ${progressoSync.rodada}`
+                        : "Sincronizando…"
                       : "Sincronizar com gateway"}
                   </Button>
                 </div>
+                {(sincronizando ||
+                  progressoSync.etapa === "concluido" ||
+                  progressoSync.etapa === "erro") &&
+                progressoSync.etapa !== "ocioso" ? (
+                  <div
+                    className={cn(
+                      "w-full rounded-sm border px-3 py-3 sm:px-4",
+                      progressoSync.etapa === "erro"
+                        ? "border-red-200 bg-red-50/90"
+                        : progressoSync.etapa === "concluido"
+                          ? "border-emerald-200 bg-emerald-50/80"
+                          : "border-slate-200 bg-slate-50/90"
+                    )}
+                    aria-live="polite"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                          Andamento da sincronização
+                        </p>
+                        <p className="mt-0.5 text-sm font-semibold text-slate-900">{progressoSync.rotulo}</p>
+                        <p className="mt-0.5 text-xs leading-relaxed text-slate-600">{progressoSync.detalhe}</p>
+                      </div>
+                      <div className="shrink-0 text-right text-xs tabular-nums text-slate-600">
+                        {progressoSync.rodada > 0 ? (
+                          <p>
+                            Lote {progressoSync.rodada}
+                            {progressoSync.restantes > 0 || sincronizando
+                              ? ` · ~${progressoSync.restantes} restantes`
+                              : ""}
+                          </p>
+                        ) : null}
+                        <p className="font-medium text-slate-800">{progressoSync.percentual}%</p>
+                      </div>
+                    </div>
+                    <Progress
+                      value={progressoSync.percentual}
+                      className={cn(
+                        "mt-3 h-2 rounded-sm",
+                        progressoSync.etapa === "erro" ? "[&>div]:bg-red-600" : "[&>div]:bg-[#0F172A]"
+                      )}
+                    />
+                    <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                      <div className="rounded-sm border border-slate-200/80 bg-white/70 px-2 py-1.5">
+                        <p className="text-[10px] uppercase tracking-wide text-slate-500">Verificadas</p>
+                        <p className="text-sm font-semibold tabular-nums text-slate-900">
+                          {progressoSync.verificadas}
+                          {progressoSync.totalFila > 0 ? (
+                            <span className="font-normal text-slate-500">/{progressoSync.totalFila}</span>
+                          ) : null}
+                        </p>
+                      </div>
+                      <div className="rounded-sm border border-slate-200/80 bg-white/70 px-2 py-1.5">
+                        <p className="text-[10px] uppercase tracking-wide text-slate-500">Atualizadas</p>
+                        <p className="text-sm font-semibold tabular-nums text-slate-900">
+                          {progressoSync.atualizadas}
+                        </p>
+                      </div>
+                      <div className="rounded-sm border border-slate-200/80 bg-white/70 px-2 py-1.5">
+                        <p className="text-[10px] uppercase tracking-wide text-slate-500">Status alterados</p>
+                        <p className="text-sm font-semibold tabular-nums text-slate-900">
+                          {progressoSync.alteradas}
+                        </p>
+                      </div>
+                      <div className="rounded-sm border border-slate-200/80 bg-white/70 px-2 py-1.5">
+                        <p className="text-[10px] uppercase tracking-wide text-slate-500">Não encontradas</p>
+                        <p className="text-sm font-semibold tabular-nums text-slate-900">
+                          {progressoSync.naoEncontradas}
+                        </p>
+                      </div>
+                    </div>
+                    {progressoSync.avisosRecentes.length > 0 ? (
+                      <ul className="mt-3 space-y-1 border-t border-slate-200/80 pt-2">
+                        {progressoSync.avisosRecentes.map((aviso) => (
+                          <li key={aviso} className="text-[11px] leading-snug text-amber-900/90">
+                            {aviso}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
+                  </div>
+                ) : null}
                 {alertaFiltroGateway && financeiraId.trim() ? (
                   <div className="w-full min-w-0 max-w-full px-0 pt-1">
                     <Alert

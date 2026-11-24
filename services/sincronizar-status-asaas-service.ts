@@ -21,6 +21,12 @@ export interface ResultadoSincronizacaoAsaas {
   faturas_restantes: number
   cobrancas_nao_encontradas: number
   proximo_offset: number | null
+  /** Etapa concluída nesta rodada (para UI de progresso). */
+  etapa: "chaves_validadas" | "fila_montada" | "lote_processado"
+  /** Offset processado neste lote (início da fatia). */
+  offset_processado: number
+  /** Total estimado na fila no momento da montagem (offset + lote + restantes). */
+  faturas_total_fila: number
   erros: string[]
   alteracoes_status: Array<{
     fatura_id: string
@@ -642,6 +648,9 @@ export async function sincronizarStatusFaturasComAsaas(opcoes: {
     faturas_restantes: 0,
     cobrancas_nao_encontradas: 0,
     proximo_offset: null,
+    etapa: "chaves_validadas",
+    offset_processado: offset,
+    faturas_total_fila: 0,
     erros: [],
     alteracoes_status: [],
     diagnostico_pontual: undefined,
@@ -699,6 +708,8 @@ export async function sincronizarStatusFaturasComAsaas(opcoes: {
 
   resultado.faturas_na_fila = fila.length
   resultado.faturas_restantes = restantes
+  resultado.faturas_total_fila = filaOrdenada.length
+  resultado.etapa = "fila_montada"
   if (restantes > 0) resultado.proximo_offset = offset + fila.length
 
   for (const fatura of fila) {
@@ -860,11 +871,7 @@ export async function sincronizarStatusFaturasComAsaas(opcoes: {
     }
   }
 
-  if (restantes > 0) {
-    resultado.erros.push(
-      `Sincronização parcial: ${restantes} fatura(s) na fila para a próxima execução (offset ${resultado.proximo_offset}).`
-    )
-  }
+  resultado.etapa = "lote_processado"
 
   if (resultado.cobrancas_nao_encontradas > 8) {
     resultado.erros.push(
