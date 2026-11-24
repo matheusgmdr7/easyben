@@ -106,6 +106,9 @@ jspm_packages/
 tmp/
 temp/
 
+# Sessões Puppeteer/Chrome de testes (cache local; Netlify secrets scanning)
+sessions/
+
 # Supabase
 .env.local
 
